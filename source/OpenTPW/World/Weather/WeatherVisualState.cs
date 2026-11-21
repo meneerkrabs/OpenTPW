@@ -267,7 +267,12 @@ public sealed class WeatherVisualState
 		// x and z subtract the wrapped term, y adds the one wrapped from the negated position: every axis moves by -factor x the position.
 		var parallax = new NVector3( -QuantisedParallax( factor * camera.Eye.X ), QuantisedParallax( -factor * camera.Eye.Y ), -QuantisedParallax( factor * camera.Eye.Z ) );
 		offset = Wrap( fall + parallax, span );
+		UpdateBolts( deltaSeconds, source, drawFrame );
+	}
 
+	/// <summary>Ages the live bolts, redraws their flicker on a drawn frame, and starts a bolt for every strike the source has not handed over yet.</summary>
+	private void UpdateBolts( float deltaSeconds, IWeatherVisualSource source, bool drawFrame )
+	{
 		for ( var index = bolts.Count - 1; index >= 0; index-- )
 		{
 			var bolt = bolts[index];
@@ -295,6 +300,8 @@ public sealed class WeatherVisualState
 	private void UpdateTpiField( float deltaSeconds, ThemeParkIncWeatherVisualSource source, WeatherCamera camera, bool drawFrame )
 	{
 		direction = source.Direction;
+		// the storm's bolts do not depend on the precipitation: a dry spell's strikes are drawn too, and the source's queue is drained every frame
+		UpdateBolts( deltaSeconds, source, drawFrame );
 		if ( drawn == 0 )
 			return;
 		(fall, offset) = StepTpiScroll( fall, direction, source.Speed, deltaSeconds, camera );

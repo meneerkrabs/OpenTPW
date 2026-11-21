@@ -122,9 +122,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// The original game tick's packed word for the advisor's repeat check: the dword the world tick
-	/// (<c>0x649450</c>) increments, shifted right by two as <c>0x448EA0</c> reads it. OpenTPW's fixed tick is that tick.
+	/// (<c>0x649450</c>) increments once per world update, which is the park turn, shifted right by two as <c>0x448EA0</c> reads it.
 	/// </summary>
-	internal uint TpiForecastWorldTime => unchecked( (uint)(Tick >> 2) );
+	internal uint TpiForecastWorldTime => unchecked( (uint)(Turn >> 2) );
 
 	/// <summary>
 	/// [BIN:TPI-EXE:0x71BDC0 forecast eligibility] The four rows are class 2 (<c>+0xC = 2</c>), which the native check
@@ -1560,9 +1560,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// only when the player closes the letter it leads to (0x649E92, LoseThemeParkIncPark)
 			if ( !Rules.ThemeParkInc )
 				HandleBankruptcyMessage();
-			else
+			else if ( !IsBankrupt )
 				// [BIN:TPI-EXE:0x5C091F red-month notification] the bank's own handler receives the event value 2 and posts a type-25
-				// notification, which only the tag system consumes: one mail a month from the sixth on, carrying advice 0x1A2
+				// notification, which only the tag system consumes: one mail a month from the sixth on, carrying advice 0x1A2, unless the
+				// world state is already 4 (the park lost)
 				TpiPendingMail = ThemeParkIncAdviceMail.RedSixMonths;
 		}
 		if ( Rules.ThemeParkInc )
@@ -1696,6 +1697,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			return;
 		IsBankrupt = true;
 		ThemeParkIncLossReason = reason;
+		// a mail held while the letter was open is not shown over the loss scene: the bank posts nothing in world state 4 (0x5C091F)
+		TpiPendingMail = null;
 		Raise( ParkEventKind.Bankrupt, MonthsInRed );
 	}
 

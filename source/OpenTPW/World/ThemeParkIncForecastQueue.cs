@@ -76,7 +76,9 @@ internal sealed class ThemeParkIncForecastQueue( ThemeParkIncForecastTiming timi
 			slots[index] = state.Slots[index].Kind == 0 ? null : (ThemeParkIncForecastLine.For( state.Slots[index].Kind )!.Value, state.Slots[index].Score);
 		for ( var index = 0; index < history.Length; index++ )
 			history[index] = (state.History[index].WorldTime, state.History[index].Plays);
-		(lastStart, lastWindow) = (state.LastStart, state.LastWindow);
+		// the window is measured on the scene clock, which starts again at 0 in every level and is not saved: a window carried over would silence the advisor
+		// until the new clock passed the old one, so a restored queue starts with no voice window (LastStart and LastWindow stay in the snapshot for older files)
+		(lastStart, lastWindow) = (0u, 0u);
 	}
 
 	// [BIN:TPI-EXE:0x718820 forecast enqueue] worldTime is the original packed world word shifted right by two.

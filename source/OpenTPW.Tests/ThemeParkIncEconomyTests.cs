@@ -177,6 +177,9 @@ public class ThemeParkIncEconomyTests
 		Assert.IsNull( economy.TakeTpiMail(), "the caller takes the mail once" );
 		economy.AdvanceMonths( 1 );
 		Assert.AreEqual( ThemeParkIncAdviceMail.RedSixMonths, economy.TakeTpiMail(), "a further red month posts it again, as the bank's event does" );
+		economy.LoseThemeParkIncPark( ThemeParkIncAdviceMail.RedSixMonths.LossReason );
+		economy.AdvanceMonths( 2 );
+		Assert.IsNull( economy.TakeTpiMail(), "a lost park (world state 4) gets no further letter" );
 		var tpw = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
 		Assert.IsNull( tpw.TakeTpiMail(), "Theme Park World has no such mail" );
 	}

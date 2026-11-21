@@ -81,8 +81,7 @@ public sealed class WeatherRenderer : Entity
 		// first simulation step — so no gameplay frame pays the shader compile and pipeline build mid-rain.
 		rainMaterial = Prepare( ImagePaths[0], RainFlags );
 		snowMaterial = Prepare( ImagePaths[1], SnowFlags );
-		if ( source is not ThemeParkIncWeatherVisualSource )
-			boltMaterial = Prepare( ImagePaths[2], BoltFlags );
+		boltMaterial = Prepare( ImagePaths[2], BoltFlags );
 	}
 
 	/// <summary>A material textured with one weather image from the game data, or null when the game folder lacks it (nothing of that kind is drawn then).</summary>

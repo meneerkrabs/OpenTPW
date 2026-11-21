@@ -90,7 +90,8 @@ internal sealed partial class GameFlow
 		}
 		if ( level.Park?.Economy is { } tpiEconomy )
 		{
-			if ( tpiEconomy.TakeTpiMail() is { } mail )
+			// a mail that comes while a letter is open waits for it: what the tag system does with a second notification then is not read (docs/reverse/TPI-BANK-MAIL.md)
+			if ( !hud.LetterOpen && tpiEconomy.TakeTpiMail() is { } mail )
 				PresentThemeParkIncMail( hud, tpiEconomy, mail );
 			if ( tpiEconomy.TpiForecast is { } forecast )
 				PresentThemeParkIncForecast( level, hud, tpiEconomy, forecast );

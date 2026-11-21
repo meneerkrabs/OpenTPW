@@ -139,7 +139,8 @@ public sealed partial class ThemeParkIncHud
 	/// <summary>The simulation speed the HUD's buttons chose (the game flow scales the level by it).</summary>
 	public GameSpeed Speed => speed;
 	// [BIN:TPI-EXE:0x42A17C lost pause lock] in the lost state a pause request does nothing, so the lost park's menus and screens run the park on
-	public float TimeScale => MenuOpen && !Lost ? 0f : GameSpeedScale.Of( speed );
+	// [BIN:TPI-EXE:0x526CD0 letter window] the letter window's builder makes no pause request (0x42A170 is not among its calls): the park trades on while it is open
+	public float TimeScale => Stack.Screens.Skip( 1 ).Any( screen => screen.Name != ThemeParkIncLetterWindow.ScreenName ) && !Lost ? 0f : GameSpeedScale.Of( speed );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	public BuildCategory Category => category;
 

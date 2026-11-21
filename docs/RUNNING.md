@@ -212,7 +212,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park Inc' --load-original-level 
 Runs a Theme Park Inc world (`arabian`, `science` or `water`) as the experimental playable slice: the
 world in 3D with the park camera, an OpenTPW text HUD (build window, remove/rotate tools, speed
 control, pause menu on Esc), with Theme Park Inc guest profiles and three generations of sprite art. Guests still use the shared Theme Park World movement and update rules where TPI behavior has not been ported. Building is
-charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-PARK-INC.md#theme-park-inc-economy-money-only)), and the slice runs no staff, research, challenges, advisor or original Theme Park Inc in-game interface. Desktop Science supports [OpenTPW continuation saves](PARK-SAVES.md#experimental-science-continuation-on-desktop), not native TPI saves. P pauses
+charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-PARK-INC.md#theme-park-inc-economy-money-only)), and the slice runs no staff, research, challenges or original Theme Park Inc in-game interface, and no advisor apart from the weather forecasts and the bank's letter. Desktop Science supports [OpenTPW continuation saves](PARK-SAVES.md#experimental-science-continuation-on-desktop), not native TPI saves. P pauses
 the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
 hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
@@ -230,7 +230,7 @@ on Theme Park World data. See
 [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for what works.
 
 To verify Science continuation across a process restart, use the same fresh, dedicated `OPENTPW_SAVE_DIR`
-for both runs. Run Science with `--load-original-level science --debug-tpi-restart-smoke capture`, then
+for both runs, with `OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1` for an automated run. Run Science with `--load-original-level science --debug-tpi-restart-smoke capture`, then
 start a second process with `--front-end --debug-tpi-restart-smoke restore` and the same game data. The first
 process saves a played, paused park and exits. The second selects Water, clicks **Load A Game** in the
 Personnel File and checks that the saved Science state matches the first process. The smoke leaves its save

@@ -72,6 +72,21 @@ public sealed class ThemeParkIncForecastQueueTests
 	}
 
 	[TestMethod]
+	public void ARestoredQueueSpeaksOnTheNewScenesClockWithoutTheOldVoiceWindow()
+	{
+		// the scene clock starts again at 0 in a resumed level, so a window saved an hour into the old scene must not silence the advisor for an hour
+		var queue = new ThemeParkIncForecastQueue( new( 10, 5, 5, 5, 5 ) );
+		Assert.IsTrue( queue.Post( 1, 100, true ) );
+		Assert.IsNotNull( queue.Tick( 3_600_000, 100, true, _ => 2_000 ) );
+		Assert.IsTrue( queue.Post( 3, 120, true ) );
+		var saved = queue.Capture();
+		Assert.AreEqual( (3_600_000u, 3_000u), (saved.LastStart, saved.LastWindow) );
+		var restored = new ThemeParkIncForecastQueue( queue.Timing );
+		restored.Restore( saved );
+		Assert.AreEqual( 649, restored.Tick( 1, 121, true, _ => 0 )?.Response, "the pending forecast plays at once on the new clock" );
+	}
+
+	[TestMethod]
 	public void TheQueueStateRoundTripsAndRejectsForeignSlots()
 	{
 		var queue = new ThemeParkIncForecastQueue( new( 10, 5, 13, 29, 43 ) );

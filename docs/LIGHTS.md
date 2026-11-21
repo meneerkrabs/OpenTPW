@@ -54,7 +54,7 @@ original's default radius of 100 is **20 engine units, ten cells**. The light's 
 **Uniform layout.** Lights ride in the draw's own uniform upload, not in a second one (per-draw uniform uploads are already the largest single cost of a frame, `ENGINE-PERFORMANCE.md`). The engine's block
 (`ObjectUniformBuffer`, 272 bytes) is unchanged; the light count is a float in the padding after the light colour (byte 220, `g_flLightCount` in the lit shaders, `ObjectUniformBuffer.LightCount`), and the lights follow
 the block from byte 272 as `vec4 g_vPointLight[32]`, two vec4 per light: `(position.xyz, radius^2)` and `(colour.rgb, 1 / radius^2)` (`PointLightGpu`, `LitObjectUniformBuffer`). Only
-`272 + 32 x count` bytes are uploaded, so a draw with no lights uploads the same 272 bytes as before and a draw with all 16 uploads 784, inside the 2,048-byte buffer every material owns. std140
+`272 + 32 x count` bytes are uploaded, so a draw with no lights uploads the same 272 bytes as before and a draw with all 16 uploads 784, exactly the buffer every material owns (`Material.ScratchBufferBytes`). std140
 and the cross-compilers agree on this layout: a vec3 followed by a float packs, and a vec4 array after the float at byte 268 starts at 272.
 
 **Backends.** The lit shaders are `test.shader`, `pool-deck.shader` and `pool-basin.shader` (`Material.ReceivesPointLights`); the others (`sprite`, `particle`, `3d`, `unlit`, `water`, `pool-water`,

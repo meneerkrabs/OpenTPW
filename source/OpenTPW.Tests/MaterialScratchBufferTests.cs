@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -29,7 +30,10 @@ public class MaterialScratchBufferTests
 		Assert.IsNotNull( directory, "content/shaders" );
 		var blocks = 0;
 		var largest = 0u;
-		foreach ( var path in Directory.EnumerateFiles( Path.Combine( directory.FullName, "content", "shaders" ), "*.shader", SearchOption.AllDirectories ) )
+		var shaders = Path.Combine( directory.FullName, "content", "shaders" );
+		var web = Path.Combine( shaders, "web" ) + Path.DirectorySeparatorChar;
+		// every shader source, the *.shader files and the includes (includes/3d.vert) alike; web/ holds the browser's precompiled copies
+		foreach ( var path in Directory.EnumerateFiles( shaders, "*", SearchOption.AllDirectories ).Where( path => !path.StartsWith( web, StringComparison.Ordinal ) ) )
 		{
 			// comments go first, so a brace or a semicolon inside one cannot end a block or a member early
 			var source = Regex.Replace( Regex.Replace( File.ReadAllText( path ), @"/\*.*?\*/", "", RegexOptions.Singleline ), @"//[^\n]*", "" );

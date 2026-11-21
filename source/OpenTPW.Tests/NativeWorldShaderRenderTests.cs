@@ -33,7 +33,7 @@ public class NativeWorldShaderRenderTests
 	public void TexturedShaderKeepsTheTextureDetail( string shader, uint matFlags ) => AssertTextureDetail( shader, matFlags, materialScratchBuffer: false );
 
 	/// <summary>
-	/// The uniform block as Material uploads it: a 2048-byte dynamic uniform buffer of which each draw records only the block's bytes (272, more with point
+	/// The uniform block as Material uploads it: a 784-byte dynamic uniform buffer (Material.ScratchBufferBytes) of which each draw records only the block's bytes (272, more with point
 	/// lights). On Direct3D 11 Veldrid writes such a partial update through a staging buffer and a GPU copy.
 	/// </summary>
 	[DataTestMethod]
@@ -419,7 +419,7 @@ public class NativeWorldShaderRenderTests
 		if ( adjustUniforms != null )
 			ubo = adjustUniforms( ubo );
 		using var uniforms = factory.CreateBuffer( materialScratchBuffer
-			? new BufferDescription( 16 * 128, BufferUsage.UniformBuffer | BufferUsage.Dynamic ) // Material.SetupResources' ScratchBuffer
+			? new BufferDescription( Material.ScratchBufferBytes, BufferUsage.UniformBuffer | BufferUsage.Dynamic ) // Material.SetupResources' ScratchBuffer
 			: new BufferDescription( 4096, BufferUsage.UniformBuffer ) );
 
 		Vertex Corner( float x, float y, float u, float v ) => new Vertex( new Vector3( x, y, 0.5f ), new Vector3( 0, 0, -1 ), new Vector2( u, v ) ) { TexIndex = 0, MatFlags = matFlags };

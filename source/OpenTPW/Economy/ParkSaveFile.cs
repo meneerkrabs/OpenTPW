@@ -1055,6 +1055,11 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc weather." );
 			if ( !ThemeParkIncForecastQueue.IsValid( data.TpiForecast ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc forecast advice." );
+			// a Theme Park Inc park save from before the staff HQ and the research lab were kept holds neither: the park would continue without the lab the prebuilt Science park brings (the whole
+			// catalogue on offer) and without the HQ's slots, so an obstacle mission could never be met; it is refused, as the saves from before the career, the controller and the challenges are.
+			// Every save since then holds the HQ with its staff (ThemeParkIncStaff.Capture), so the missing HQ marks the older save before any asset check
+			if ( data.TpiStaff is { Hq: null } )
+				throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the staff HQ and the research lab and cannot be continued; start a new game from the Personnel File." );
 			if ( !ThemeParkIncStaff.IsValid( data.TpiStaff ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc staff." );
 			if ( !ThemeParkIncChallenges.IsValid( data.TpiChallenges ) )
@@ -1256,7 +1261,7 @@ public static class ParkSaveFile
 		else if ( park.TpiStaff != null )
 			// a Theme Park Inc save from before the staff economy holds no pool, and the pool's draws share the world generator: it cannot continue the same park
 			throw new InvalidDataException( "Park save was made before Theme Park Inc staff and cannot be continued; start the park again." );
-		// a park without a lab (a save from before the research, or a park no park file seeded) keeps none
+		// a park no park file seeded (a new zone, a headless economy) saved no lab and keeps none; a save from before the lab was kept is refused above (ValidateEdition)
 		if ( tpi )
 			park.RestoreThemeParkIncResearch( data.TpiResearch );
 		if ( data.TpiChallenges is { } challenges )

@@ -436,7 +436,7 @@ public sealed class ThemeParkIncStaff
 				&& member.Ability is >= 0 and < ThemeParkIncCareer.AbilityCount && member.LearningAbility is >= 0 and < ThemeParkIncCareer.AbilityCount
 				&& member.ChosenAbility is >= 0 and < ThemeParkIncCareer.AbilityCount && member.HqSlot is >= -1 and < ThemeParkIncStaffHeadquarters.SlotCount
 				&& member.ResearchRoom is >= 0 and <= ushort.MaxValue && member.ResearchStamp >= 0 )
-			&& ThemeParkIncStaffHeadquarters.IsValid( state.Hq )
+			&& state.Hq != null && ThemeParkIncStaffHeadquarters.IsValid( state.Hq )
 			&& state.Members.Where( member => member.World != null ).Select( member => member.World!.ThingId ).Distinct().Count() == state.Members.Count( member => member.World != null );
 	}
 
@@ -479,9 +479,8 @@ public sealed class ThemeParkIncStaff
 		StrikeForced = state.StrikeForced;
 		LastWageDemandDay = state.LastWageDemandDay;
 		SelectedSlot = -1;
-		// a save from before the staff HQ's slots keeps the HQ the park built
-		if ( state.Hq is { } hq )
-			Hq.Restore( hq );
+		// a save from before the staff HQ's slots is refused (ParkSaveFile.ValidateEdition), so every restored snapshot holds the HQ
+		Hq.Restore( state.Hq ?? throw new InvalidDataException( "The Theme Park Inc staff snapshot holds no staff HQ." ) );
 	}
 
 	/// <summary>Whether the slot's candidate is being placed.</summary>

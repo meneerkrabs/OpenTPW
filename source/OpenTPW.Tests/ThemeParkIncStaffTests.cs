@@ -49,6 +49,36 @@ public class ThemeParkIncStaffTests
 	}
 
 	[TestMethod]
+	public void ASaveFromBeforeTheStaffHqAndTheLabIsRefusedBeforeTheAssetCheck()
+	{
+		// a Theme Park Inc save from before the staff HQ and the research lab were kept holds no HQ: the park would continue without its lab, with the whole catalogue on offer and an obstacle
+		// mission that can never be met, so it is refused with the start-again message (ParkSaveFile.ValidateEdition)
+		var settings = RetailBalance();
+		var economy = new ParkEconomy( settings, new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
+		Assert.IsNotNull( json["TpiStaff"]!["Hq"], "every save keeps the staff HQ" );
+		Assert.IsTrue( json["TpiStaff"]!.AsObject().Remove( "Hq" ) );
+		var economyError = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Bytes( json.ToJsonString() ) ) );
+		StringAssert.Contains( economyError.Message, "before OpenTPW kept the staff HQ and the research lab" );
+		StringAssert.Contains( economyError.Message, "start a new game from the Personnel File" );
+
+		// a world save carrying such an economy is refused by the shape check, before its asset manifest (here empty) is looked at
+		var envelope = ParkResumeSaveFileTests.Envelope() with
+		{
+			Theme = "science",
+			StartKind = ParkStartKind.FullSimulation,
+			Economy = ParkSaveFile.Capture( economy ),
+			AssetHashes = new System.Collections.Generic.Dictionary<string, string>()
+		};
+		var world = System.Text.Json.Nodes.JsonNode.Parse( ParkResumeJson.Serialize( envelope ) )!.AsObject();
+		var current = Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Deserialize( Bytes( world.ToJsonString() ) ) );
+		Assert.IsTrue( world["Economy"]!["TpiStaff"]!.AsObject().Remove( "Hq" ) );
+		var worldError = Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Deserialize( Bytes( world.ToJsonString() ) ) );
+		StringAssert.Contains( worldError.Message, "before OpenTPW kept the staff HQ and the research lab" );
+		Assert.IsFalse( current.Message.Contains( "staff HQ", StringComparison.Ordinal ), "a save with the HQ passes this check and fails later on the synthetic envelope" );
+	}
+
+	[TestMethod]
 	public void AThemeParkWorldSaveCarryingTheStaffBlockIsRefused()
 	{
 		var tpi = new ParkEconomy( RetailBalance(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );

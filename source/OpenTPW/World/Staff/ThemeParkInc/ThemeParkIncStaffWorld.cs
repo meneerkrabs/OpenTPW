@@ -660,7 +660,8 @@ public sealed class ThemeParkIncStaffWorld
 		var w = energy >= 100 ? 140 : EnergySpeeds[energy / 10];
 		member.BaseSpeed = ThemeParkIncStaffSettings.Lerp( member.Experience, 0, settings.MaxExperience, w, settings.MaxSpeedDifference + w ) & 0xFFFF;
 		var happiness = (int)(long)member.Happiness & 0xFF;
-		if ( happiness > 10 && happiness > 0x61 )
+		// at most 10 only asks for a thought (presentation); above 97 the draw happens
+		if ( happiness > 0x61 )
 			_ = economy.World.NextWord();
 		return false;
 	}

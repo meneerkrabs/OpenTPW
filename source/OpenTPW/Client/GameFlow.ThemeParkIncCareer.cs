@@ -22,8 +22,15 @@ internal sealed partial class GameFlow
 	// [BIN:TPI-EXE:0x777B80 player file path] 0x7763E0(slot) = <root>\save\users\<slot+1><name> (0x776070, 0x776210, 0x776300), then "\" + the name + ".GMS" (".GMI" for the refresh flag);
 	// OpenTPW keeps the users\<slot+1><name>\<name>.GMS layout under its own folder
 	internal static string ThemeParkIncPlayerFilePath() =>
-		Path.Combine( ThemeParkIncPlayerRoot( SaveFileSystem.GetAbsolutePath( "" ), Settings.Default.GamePath, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! ),
+		Path.Combine( ThemeParkIncPlayerRoot( SaveFileSystem.GetAbsolutePath( "" ), GameFolder, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! ),
 			"users", $"1{ThemeParkIncPlayerName}", $"{ThemeParkIncPlayerName}.GMS" );
+
+	/// <summary>The game folder whose <c>save</c> folder is the original's own; the browser's saves have none.</summary>
+#if OPENTPW_BROWSER
+	private static string? GameFolder => null;
+#else
+	private static string? GameFolder => Settings.Default.GamePath;
+#endif
 
 	/// <summary>The folder under OpenTPW's own save folder that holds the player file's <c>users</c> folder.</summary>
 	internal const string ThemeParkIncPlayerFolder = "opentpw-tpi";

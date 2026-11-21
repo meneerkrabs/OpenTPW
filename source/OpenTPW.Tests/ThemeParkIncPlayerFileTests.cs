@@ -147,6 +147,48 @@ public class ThemeParkIncPlayerFileTests
 	}
 
 	[TestMethod]
+	public void ThePlayerFileStaysInOpenTpwsOwnFolderAndNeverInTheGamesSaveFolder()
+	{
+		var game = Path.Combine( root, "Theme Park Inc" );
+		var configuration = Path.Combine( root, "config" );
+		Assert.AreEqual( Path.Combine( configuration, "save", GameFlow.ThemeParkIncPlayerFolder ), GameFlow.ThemeParkIncPlayerRoot( Path.Combine( game, "save" ), game, configuration ),
+			"a save folder in the game folder is the original's own: the player file goes to the configuration's save folder" );
+		Assert.AreEqual( Path.Combine( root, "own", GameFlow.ThemeParkIncPlayerFolder ), GameFlow.ThemeParkIncPlayerRoot( Path.Combine( root, "own" ), game, configuration ),
+			"OPENTPW_SAVE_DIR and the other own folders keep it" );
+		Assert.AreEqual( Path.Combine( root, "own", GameFlow.ThemeParkIncPlayerFolder ), GameFlow.ThemeParkIncPlayerRoot( Path.Combine( root, "own" ), null, configuration ) );
+		Assert.AreEqual( Path.Combine( root, GameFlow.ThemeParkIncPlayerFolder, "users", "1New Player", "New Player.GMS" ), GameFlow.ThemeParkIncPlayerFilePath(),
+			"the test's save folder is its own temporary one" );
+		Flow().WriteThemeParkIncPlayerFile( Science(), "science" );
+		Assert.IsTrue( File.Exists( GameFlow.ThemeParkIncPlayerFilePath() ) );
+		Assert.IsFalse( Directory.Exists( Path.Combine( root, "users" ) ), "nothing is written where the original keeps its players" );
+		Assert.AreEqual( 0, Directory.EnumerateFiles( root, "*.tmp", SearchOption.AllDirectories ).Count(), "no temporary file is left" );
+	}
+
+	[TestMethod]
+	public void AnOversizedPlayerFileIsRefusedUnread()
+	{
+		var path = GameFlow.ThemeParkIncPlayerFilePath();
+		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
+		using ( var file = File.Create( path ) )
+			file.SetLength( GameFlow.MaxThemeParkIncPlayerFileBytes + 1L );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Flow().LoadThemeParkIncPlayerCareer( "science" ) ).Message, "larger than" );
+	}
+
+	[TestMethod]
+	public void ARestoredCareerTakesTheParksZoneAndARecordOutsideTheZoneTableIsRefused()
+	{
+		var economy = Science();
+		var node = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
+		node["TpiCareer"]!["CurrentZone"] = null;
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog );
+		Assert.AreEqual( ("science", 1), (restored.TpiCareer!.CurrentZone!.Name, restored.TpiCareer.CurrentZone.ParkNumber), "the load makes the park's zone current (0x74D110), whatever the save says" );
+		foreach ( var zone in node["TpiCareer"]!["Zones"]!.AsArray() )
+			zone!["ParkNumber"] = 9;
+		var error = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog ) );
+		StringAssert.Contains( error.Message, "outside the zone table", "a won challenge would find no record (0x74F4B0)" );
+	}
+
+	[TestMethod]
 	public void APlayerFileThatFailsToLoadIsRefused()
 	{
 		Assert.IsNull( Flow().LoadThemeParkIncPlayerCareer( "science" ), "no file: no career" );

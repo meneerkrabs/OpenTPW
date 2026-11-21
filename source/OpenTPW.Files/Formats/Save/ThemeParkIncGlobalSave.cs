@@ -175,7 +175,8 @@ public sealed class ThemeParkIncGlobalSave
 			return save.Fail( "the header is cut short" );
 		save.Theme = theme;
 		save.Version = version;
-		if ( version < SupportedVersion )
+		// [BIN:TPI-EXE:0x74D28F version test] cmp eax, 0xC; jae: an unsigned test, so a negative version word is a high one and is taken
+		if ( (uint)version < SupportedVersion )
 			return save.Fail( $"version {version} is below {SupportedVersion}" );
 		// career body, fields up to +0x13E5: short = failure
 		if ( !reader.TryI32( out var tickets ) || !reader.TryBytes( 8, out var awards ) )

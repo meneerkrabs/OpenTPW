@@ -344,11 +344,16 @@ public class ThemeParkIncMissionControllerTests
 		var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
 		node["TpiMissions"]!["State"] = 9;
 		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog ) );
+		var controller = node["TpiMissions"]!.DeepClone();
 		node.Remove( "TpiMissions" );
-		var older = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog );
-		Assert.AreEqual( ThemeParkIncMissionState.Idle, older.TpiMissions!.State, "a save from before the controller continues with it idle" );
-		Assert.IsFalse( ParkSaveFile.Serialize( new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 ) )
-			.Contains( "TpiMissions", StringComparison.Ordinal ), "a Theme Park World save writes no controller" );
+		var older = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog ) );
+		StringAssert.Contains( older.Message, "before OpenTPW kept the mission controller", "a save from before the controller is refused: a loaded controller never starts its statistics" );
+		var tpw = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
+		var tpwJson = ParkSaveFile.Serialize( tpw );
+		Assert.IsFalse( tpwJson.Contains( "TpiMissions", StringComparison.Ordinal ), "a Theme Park World save writes no controller" );
+		var carrying = System.Text.Json.Nodes.JsonNode.Parse( tpwJson )!.AsObject();
+		carrying["TpiMissions"] = controller;
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( carrying.ToJsonString() ) ), "a Theme Park World save may not carry the controller" );
 	}
 
 	[TestMethod]

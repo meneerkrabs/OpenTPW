@@ -15,15 +15,18 @@ namespace OpenTPW.Tests;
 public class ThemeParkIncLandTests
 {
 	private BaseFileSystem? previous;
+	private GameEdition previousEdition;
+	private string? previousBonusRoot;
 
 	[TestInitialize]
-	public void Initialize() => previous = FileSystem;
+	public void Initialize() => (previous, previousEdition, previousBonusRoot) = (FileSystem, GameEditions.Current, ObjectCatalog.BonusDataRoot);
 
 	[TestCleanup]
 	public void Cleanup()
 	{
 		FileSystem = previous!;
-		GameEditions.Select( GameEdition.ThemeParkWorld );
+		GameEditions.Select( previousEdition );
+		ObjectCatalog.BonusDataRoot = previousBonusRoot;
 	}
 
 	private static void UseTpiData()

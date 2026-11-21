@@ -113,7 +113,8 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   `0x678B00` (x-major bytes, map border skipped). Paths, queues and objects are refused on unowned land, as the cell validator `0x67E320` refuses them; no fence is
   laid and the land is not drawn darker (Theme Park Inc's boundary drawing is not read). `Level.ApplyThemeParkIncExtent` grows the land by `extents/extent.NNN` for the
   mission controller, and the build list applies the catalogue's gate `0x57CA20`: the four special rides are hidden in every mission, and the mission number (0 until the career
-  runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused.
+  runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused. The net worth counts the
+  owned squares only, by Theme Park World's cell-point rule (`ParkEconomy.CellPoints`, which skips unowned cells); Theme Park Inc's own net-worth routine has not been read against it.
 - **Guests** start with Theme Park Inc's own 24-row profile table, starting cash, exit counter and starting needs.
   The selected row supplies their excitement preference. The original prank code is saved separately from the
   Theme Park World flag but does not run any TPI prank actions yet. Existing guests in older saves keep their
@@ -503,7 +504,7 @@ executable, which the script's `--check` does not repeat: it reproduces the two 
   button per zone (Land of Invention = science, Polar Zone = water, Arabian Nights = arabian, named by `THEMENAMES.str`) above Enter Game. The label above them is OpenTPW's
   (`OpenTpwText.TpiZoneChooser`).
 - **Load A Game** resumes the [local OpenTPW Science save](PARK-SAVES.md#experimental-science-continuation-on-desktop), independent of the selected zone, with the career of the player file (below). It is disabled in the browser or when the slot does not exist. This is not the original save picker.
-- **The player file** (since November 21, 2026): the career is the Global Master Save `save/users/1New Player/New Player.GMS` (user decision, one player). Enter Game builds the zone's park with its career, saving the Science park writes it and leaving a park runs the full save (the player file, then the Science park save) ([TPI-CAREER.md](reverse/TPI-CAREER.md) §3.4).
+- **The player file** (since November 21, 2026): the career is the Global Master Save `opentpw-tpi/users/1New Player/New Player.GMS` in OpenTPW's own save folder, never the original's `save\users` (user decisions, one player and OpenTPW's own folder). Enter Game builds the zone's park with its career, saving the Science park writes it and leaving a park runs the full save (the player file, then the Science park save) ([TPI-CAREER.md](reverse/TPI-CAREER.md) §3.4).
 - **Delete Player** and **Coaster Design Kit** remain inactive. **Quit Game** (and Escape) asks for confirmation (cancel has the focus), and the tick closes the window.
 - Desktop: `--front-end`, or a plain start with Theme Park Inc data (`OPENTPW_GAME_PATH`/`--game-path` and no world), opens the page; `--load-original-level` still starts a world
   directly. The setup wizard and the remembered edition still ask for a world and start it directly in this phase, and the browser keeps its up-front theme choice.

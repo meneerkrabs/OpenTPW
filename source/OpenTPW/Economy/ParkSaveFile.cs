@@ -1234,9 +1234,13 @@ public static class ParkSaveFile
 			park.TpiForecast.Restore( forecast );
 		}
 		if ( data.TpiCareer is { } career )
-			park.TpiCareer!.Restore( career );
-		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1; a save from before the controller continues with it idle
-		park.TpiMissions?.Restore( data.TpiMissions ?? new ThemeParkIncMissionControllerSnapshot( 0, 0 ) );
+			park.RestoreThemeParkIncCareer( career );
+		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1
+		if ( data.TpiMissions is { } missions )
+			park.TpiMissions?.Restore( missions );
+		else if ( park.TpiMissions != null )
+			// a loaded controller never starts its exit statistics (0x64D5B4), so a park save from before the controller could never meet its mission: it is refused, not continued
+			throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the mission controller and cannot be continued; start a new game from the Personnel File." );
 		if ( data.TpiStaff is { } staff )
 		{
 			if ( park.TpiStaff == null )
@@ -1253,8 +1257,8 @@ public static class ParkSaveFile
 			park.TpiChallenges.Restore( challenges );
 		}
 		else if ( park.TpiChallenges != null )
-			// the challenge system draws no random number: a Theme Park Inc save from before it continues with the system as a new world builds it (switched off, every slot idle)
-			park.TpiChallenges.Restore( park.TpiChallenges.Capture() );
+			// a Theme Park Inc save from before the challenge system holds none of its slots, offer times or switch, and a new system would not be the park's: it is refused, not continued
+			throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the challenges and cannot be continued; start a new game from the Personnel File." );
 		park.PendingInitialDay = data.PendingInitialDay;
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );

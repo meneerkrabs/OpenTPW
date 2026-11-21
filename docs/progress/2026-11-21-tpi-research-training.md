@@ -15,5 +15,11 @@ The staff HQ's twenty obstacle slots, staff training and the research lab with i
   point); the training walk's stuck `rand()` only picks a thought bubble that is not drawn, so no draw is taken. A new zone's lab fill (`0x61FD50`, `rand() % 2 + 1`) is not ported: it waits for the
   user's decision at the zone package.
 
+- **Review fixes**: a Science save from before the HQ and the lab is refused by its missing HQ with the start-again message, before any asset check (docs/PARK-SAVES.md); the staff
+  route `0x62EB10` (the closed park's entrance refusal and the walk mask) and the cell steer `0x60B7F0` are ported, so a refused walk to the training room searches again with mask 1; the lab tick,
+  the advance's cash, the percent done and the researcher's step round every x87 operation to a single (control word 0x7F after DDSCL_FPUSETUP, `0x6BF33F`); a destroyed staff room's messages
+  reach the lab (0x21) and the staff (0xA) at the click, as `0x637C40` delivers them at the demolish (`0x4D30F8` → `0x660D80` → `0x666DA0`), not at the turn's deferred free; the lab's save keeps the
+  object types' research words, so a headless economy completes projects; the staff-destroyed listeners `0x61DAD0` and `0x634730` are removed (no member leaves the park in OpenTPW).
+
 Verified: new `ThemeParkIncStaffHqTests`, `ThemeParkIncTrainingTests` and `ThemeParkIncResearchTests`, the Theme Park Inc and save filters, and the silent, offscreen Science smoke (which now checks the
 HQ slots, the seeded lab and the research row).

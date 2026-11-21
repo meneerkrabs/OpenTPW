@@ -65,8 +65,8 @@ takings among the other income, without rows of their own, and a ring with no cl
   rank; an obstacle mission's obstacle removed; tickets at least `Obstacle.GoldenTickets`.
 - **MetRequirements (`0x55A620`).** The career's current zone must be `Completion.EndingTheme` (or `EndingTheme` 3). An obstacle mission (`0x5F0190`: a type and
   `Info.NoResearch` 0) then needs the obstacle state 2, every slot of the staff HQ's 20-entry obstacle table filled, and the tickets; it does not call
-  IsMissionComplete. Any other mission is IsMissionComplete. The staff HQ's slots belong to staff roles OpenTPW does not port, so an obstacle mission's
-  requirements are never met (`[EXT:tpi-capability-gates]`).
+  IsMissionComplete. Any other mission is IsMissionComplete. The staff HQ's slots are `ThemeParkIncStaffHeadquarters` (TPI-STAFF.md §12.1): the mission's
+  `ObstacleStaff` table, filled by trained staff whose ability matches; a park without Theme Park Inc staff has no HQ and never meets an obstacle mission.
 - **Obstacle state (`0x5F01D0`).** 0 without an obstacle (or with `NoResearch`); else 1, or 2 once researched; 3 when the current zone is the ending zone and
   the type's `Obstacle.OpenedAutomaticly` is 1; 4 once removed.
 - **OnMissionComplete (`0x5F0770`).** The mission window's button for a mission without an obstacle. In the wrong zone it logs "Mission is complete but we're in

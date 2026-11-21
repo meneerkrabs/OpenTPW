@@ -136,7 +136,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	{
 		member.Template = IdleTemplate;
 		member.Sprite.Delete();
-		member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( IdleTemplate ), SpriteClockMilliseconds, SpriteBanks );
+		member.Sprite.Create( SpriteTypeOf( member ), VariantOf( member, SpriteBanks ), ProgramOf( IdleTemplate ), SpriteClockMilliseconds, SpriteBanks );
 	}
 
 	/// <summary>

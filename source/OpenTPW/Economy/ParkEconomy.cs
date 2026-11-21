@@ -597,6 +597,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system and mission controller are things of the world pass (0x6375E0 -> 0x5C7930, 0x5EF520) whatever the staff
 			if ( TpiChallenges != null || TpiMissions != null )
 				UpdateChallenges( turn );
+			// [EXT:headless-economy] the research lab, an older thing of the prebuilt (id 6) than the controller and the challenge system, updates after them
+			UpdateThemeParkIncResearch( turn );
 			return;
 		}
 		UpdateStaffVitals();
@@ -2178,7 +2180,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			return PurchaseResult.UnknownObject;
 		if ( !moving && !info.IsBuyable )
 			return PurchaseResult.NotBuyable;
-		// [EXT:tpi-no-research] without research (refused for Theme Park Inc) every buyable object is on offer, as the experimental build list has always offered the whole catalogue
+		// a Theme Park Inc park's research gates its catalogue list (ThemeParkIncCatalogue.IsListed, 0x57CB66), not the purchase: [EXT:tpi-no-research] a Theme Park Inc economy without a seeded lab (a new zone,
+		// whose lab fill draws the CRT rand(), and the headless economy) offers every buyable object
 		if ( !moving && Rules.Research && !Research.IsAvailable( infoId ) )
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )

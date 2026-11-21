@@ -49,6 +49,12 @@ public sealed class ThemeParkIncStaffMember
 	public int ChosenAbility { get; internal set; }
 	/// <summary>The staff HQ obstacle slot the member fills (+0x228, <c>mSlotLocation</c>), -1 for none.</summary>
 	public int HqSlot { get; internal set; } = -1;
+	/// <summary>Listed in a research lab team (+0x274, <c>mResearching</c>): a researcher in a research room shows "Researching" only then.</summary>
+	public bool Listed { get; internal set; }
+	/// <summary>The research room the researcher walks to or works in (+0x27C, <c>mRRoom</c>), 0 for none.</summary>
+	public int ResearchRoom { get; internal set; }
+	/// <summary>The turn the researcher entered his research room (+0x278, <c>mTimeStartedResearching</c>).</summary>
+	public long ResearchStamp { get; internal set; }
 
 	/// <summary>Hires <paramref name="candidate"/>: its role, name, experience, wage as the salary, agency and look.</summary>
 	public static ThemeParkIncStaffMember Hire( ThemeParkIncHireCandidate candidate, int id ) =>
@@ -191,6 +197,16 @@ public sealed class ThemeParkIncStaffMember
 	// [BIN:TPI-EXE:0x60D0D0 meter add] field = clamp(field + delta, 0, 100), the x87 sum compared and stored as a single
 	internal void AddHappiness( float delta ) => Happiness = Clamp( (double)delta + Happiness );
 
+	/// <summary>One update of research in a room: energy and happiness fall by the step x = 1 − experience / MaxExperience, kept as a single.</summary>
+	// [BIN:TPI-EXE:0x6289BD research step] x = (float)(1.0 - experience (unsigned 64) / MaxExperience) (0x6289D5..0x6289E8); 0x60D0D0(&energy, (float)(x × -0.1f)); happiness = clamp(happiness + x × -0.05f)
+	// (the x87 sum compared, stored as a single)
+	internal void ResearchStep( ThemeParkIncStaffSettings settings )
+	{
+		var x = (float)(1.0 - (double)(uint)Experience / settings.MaxExperience);
+		Energy = Clamp( (double)(float)(x * -0.1f) + Energy );
+		Happiness = Clamp( (double)x * -0.05f + Happiness );
+	}
+
 	/// <summary>Whether the member is too tired to go on: its energy byte below RestLevel.</summary>
 	// [BIN:TPI-EXE:0x62B3B0 tired] (u8)trunc(energy) < RestLevel, signed
 	public bool Tired( ThemeParkIncStaffSettings settings ) => ((int)Energy & 0xFF) < settings.RestLevel;
@@ -246,9 +262,14 @@ public sealed class ThemeParkIncStaffMember
 	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld() => Navigation is not { } navigation ? null : new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost,
 		SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial );
 
-	/// <summary>The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10 and the training states 7, 8, 0x25 and 0x26.</summary>
-	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role == ThemeParkIncStaffRole.Handyman
-		&& state is 0 or 1 or 0x0F or 0x10 or ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended or ThemeParkIncTraining.ToTrainingRoomSuspended;
+	/// <summary>The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10 and the training states 7, 8, 0x25 and 0x26; a researcher's 0, 1, 24 and 25.</summary>
+	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
+	{
+		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 or ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended
+			or ThemeParkIncTraining.ToTrainingRoomSuspended,
+		ThemeParkIncStaffRole.Researcher => state is 0 or 1 or ThemeParkIncResearch.Researching or ThemeParkIncStaffWorld.ToResearchRoom,
+		_ => false
+	};
 
 	/// <summary>Whether a saved thing can be this model's: a ported state, a thing id of the pool, a cell word of the map, a valid walk.</summary>
 	internal static bool IsValidWorld( ThemeParkIncStaffRole role, ThemeParkIncStaffWorldSnapshot? world ) => world == null || IsPortedState( role, world.State )

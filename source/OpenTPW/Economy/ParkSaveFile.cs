@@ -65,6 +65,9 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncMissionControllerSnapshot? TpiMissions { get; init; }
+		/// <summary>Theme Park Inc's research lab and object controls (absent: the park has no lab).</summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncResearchSnapshot? TpiResearch { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -737,6 +740,7 @@ public static class ParkSaveFile
 			TpiChallenges = park.TpiChallenges?.Capture(),
 			TpiCareer = park.TpiCareer?.Capture(),
 			TpiMissions = park.TpiMissions?.Capture(),
+			TpiResearch = park.CaptureThemeParkIncResearch(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1060,6 +1064,8 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the player's career (missions, rank, golden tickets) and cannot be continued; start a new game from the Personnel File." );
 			if ( !ThemeParkIncCareer.IsValid( data.TpiCareer ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc career." );
+			if ( !ThemeParkIncResearch.IsValid( data.TpiResearch ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc research lab." );
 			if ( !ThemeParkIncMissionController.IsValid( data.TpiMissions ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc mission controller." );
 			foreach ( var item in data.Objects )
@@ -1072,7 +1078,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1250,6 +1256,9 @@ public static class ParkSaveFile
 		else if ( park.TpiStaff != null )
 			// a Theme Park Inc save from before the staff economy holds no pool, and the pool's draws share the world generator: it cannot continue the same park
 			throw new InvalidDataException( "Park save was made before Theme Park Inc staff and cannot be continued; start the park again." );
+		// a park without a lab (a save from before the research, or a park no park file seeded) keeps none
+		if ( tpi )
+			park.RestoreThemeParkIncResearch( data.TpiResearch );
 		if ( data.TpiChallenges is { } challenges )
 		{
 			if ( park.TpiChallenges == null )

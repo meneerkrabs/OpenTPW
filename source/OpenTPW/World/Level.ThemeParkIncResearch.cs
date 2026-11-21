@@ -13,6 +13,60 @@ public partial class Level
 			return;
 		if ( world.StaffHq is { } hq && economy.TpiStaff is { } staff )
 			staff.Hq.Import( hq.StaffSlots, hq.TrainedStaff );
+		if ( world.ResearchLab is { } lab )
+			economy.SeedThemeParkIncResearch( lab, world.ObjectControls );
+	}
+
+	/// <summary>
+	/// Gives the park's research lab (also one a load put in place) this level's object types' research words and the obstacle's research group; called every tick, as the economy can be replaced.
+	/// </summary>
+	private void AttachThemeParkIncResearchInfos()
+	{
+		if ( !IsThemeParkIncSlice || Park?.Economy is not { TpiResearch: { } research } economy || research.Infos.Count > 0 )
+			return;
+		research.Infos = ThemeParkIncResearchInfos();
+		economy.TpiResearchGroupOf = GroupOf;
+	}
+
+	private Dictionary<int, byte>? researchGroups;
+
+	private byte GroupOf( int type ) => researchGroups != null && researchGroups.TryGetValue( type, out var group ) ? group : (byte)0;
+
+	/// <summary>
+	/// The research words of every object type of the zone (the type list <c>0xA09AC8</c>): the catalogue's objects and the obstacles (<c>levels/&lt;zone&gt;/obstacles</c>), a missing key read as 0 (the SAM
+	/// reset's value).
+	/// </summary>
+	// [DATA:<object>.sam:Research.Category, Research.LinkedWith, Research.Group, Upgrades[n].CostOfResearch, Upgrades[n].CashPerBrainPoint] info +0x254, +0x24C, +0x250, +0x270 + 0x48 n, +0x274 + 0x48 n
+	private IReadOnlyList<ThemeParkIncResearchInfo> ThemeParkIncResearchInfos()
+	{
+		var infos = new List<ThemeParkIncResearchInfo>();
+		researchGroups = new Dictionary<int, byte>();
+		ThemeParkIncResearchInfo Info( int id, Func<string, int> value )
+		{
+			researchGroups[id] = (byte)value( "Research.Group" );
+			return new ThemeParkIncResearchInfo( id, value( "Research.Category" ), value( "Research.LinkedWith" ),
+				Enumerable.Range( 0, 3 ).Select( level => value( $"Upgrades[{level}].CostOfResearch" ) ).ToArray(),
+				Enumerable.Range( 0, 3 ).Select( level => value( $"Upgrades[{level}].CashPerBrainPoint" ) ).ToArray() );
+		}
+		var seen = new HashSet<int>();
+		foreach ( var entry in Objects.Catalog.Entries )
+			if ( seen.Add( entry.Settings.GetInt( "Info.Id" ) ) )
+				infos.Add( Info( entry.Settings.GetInt( "Info.Id" ), key => entry.Settings.GetInt( key ) ) );
+		var folder = $"/levels/{LevelName}/obstacles";
+		if ( FileSystem.DirectoryExists( folder ) )
+		{
+			foreach ( var archive in FileSystem.GetDirectories( folder ).Select( path => FileSystem.GetRelativePath( FileSystem.GetAbsolutePath( path ) ) ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
+			{
+				foreach ( var file in FileSystem.GetFiles( archive ).Where( path => path.EndsWith( ".sam", StringComparison.OrdinalIgnoreCase ) ) )
+				{
+					var settings = ObjectSettingsFile.Load( FileSystem, FileSystem.GetRelativePath( FileSystem.GetAbsolutePath( file ) ) );
+					int Value( string key ) => settings.Values.TryGetValue( key, out var text ) && int.TryParse( text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var number ) ? number : 0;
+					if ( settings.Values.ContainsKey( "Info.Id" ) && seen.Add( Value( "Info.Id" ) ) )
+						infos.Add( Info( Value( "Info.Id" ), Value ) );
+				}
+			}
+		}
+		return infos;
 	}
 
 	/// <summary>The Theme Park Inc staff rooms of this level: the newest built object of a kind, its entrance cell, and its script's variable 0.</summary>
@@ -54,10 +108,21 @@ public partial class Level
 		// listed) is the seam, at the removal rather than at the turn's deferred destroy
 		Objects.ObjectRemoving += item =>
 		{
-			if ( TpiStaffWorld is { } staffWorld && Park?.Economy is { } economy && item.Entry.Settings.GetInt( "UsageInfo.TrainingRoom" ) != 0 )
+			if ( TpiStaffWorld is not { } staffWorld || Park?.Economy is not { } economy )
+				return;
+			if ( item.Entry.Settings.GetInt( "UsageInfo.TrainingRoom" ) != 0 )
 				staffWorld.TrainingRoomRemoved( economy, economy.Turn );
+			// [BIN:TPI-EXE:0x61DC20 lab message 0x21] a destroyed kind-3 thing with +0x43 & 2 (a research room) clears both teams (0x61DB90); the researchers whose room it is hear message 10
+			if ( item.Entry.Settings.GetInt( "UsageInfo.ThinkingSpace" ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue )
+			{
+				staffWorld.ResearchRoomRemoved( economy, (ushort)item.ThingId, economy.Turn );
+				economy.TpiResearch?.ResearchRoomRemoved();
+			}
 		};
 	}
+
+	/// <summary>Whether the object type is researched (the object control's +0x10); every type in a park without a seeded lab.</summary>
+	internal bool ThemeParkIncResearched( int type ) => Park?.Economy.TpiResearch?.IsResearched( type ) ?? true;
 
 	/// <summary>Whether the park has a training room (the text HUD offers training only then: the original's walk to the room would read thing 0's entrance).</summary>
 	internal bool ThemeParkIncHasTrainingRoom => TpiStaffWorld?.Rooms?.First( ThemeParkIncRoomKind.Training ) != null;

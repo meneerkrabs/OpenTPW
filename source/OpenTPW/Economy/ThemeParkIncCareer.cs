@@ -132,6 +132,21 @@ public sealed class ThemeParkIncCareer
 	public IReadOnlyList<int> Regions => regions;
 	/// <summary>The mission object at <c>+0x10B4</c>.</summary>
 	public ThemeParkIncMission Mission { get; } = new();
+	/// <summary>The career told that an object type is researched (<c>0x74D740</c>, message 0x11): the CDK table's entry of the type, when it has one, clears its flag.</summary>
+	// [BIN:TPI-EXE:0x74D740 researched object] "GlobaMasterSave has been informed that Object %d has been researched"; the first of the +0x54 entries at +0x5C (stride 0x10) whose id dword is the type gets
+	// its flag (+8) = 0 ("Object was recognised as a base coaster and has been logged."), else "The object was not recognised."
+	public void InformResearched( int type )
+	{
+		for ( var index = 0; index < CardCount && index < cards.Length; index++ )
+		{
+			if ( cards[index].Id == type )
+			{
+				cards[index] = cards[index] with { Flag = 0 };
+				return;
+			}
+		}
+	}
+
 	/// <summary><c>+0x13E4</c>: the mission's obstacle has been researched.</summary>
 	public bool ObstacleResearched { get; private set; }
 	/// <summary><c>+0x13E5</c>: the mission's obstacle has been removed.</summary>

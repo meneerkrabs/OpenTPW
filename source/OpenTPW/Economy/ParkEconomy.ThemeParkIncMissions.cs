@@ -139,15 +139,17 @@ public sealed partial class ParkEconomy
 		}
 
 		// [BIN:TPI-EXE:0x61CBF0 obstacle research] the research lab adds a kind-5 project for the mission's obstacle (HasObstacle, a current obstacle thing, the zone's type range, obstacle state 1,
-		// no such project yet)
-		// [EXT:tpi-capability-gates] Theme Park Inc's research is not ported: no project is registered
-		public void EnsureObstacleResearch()
-		{
-		}
+		// no such project yet): ThemeParkIncResearch.RegisterObstacle
+		public void EnsureObstacleResearch() => economy.RegisterThemeParkIncObstacleResearch();
 
 		public void PostObjectiveLetter( int completed ) => AddTpiMissionNotice( economy.TpiObjectiveLetters, completed );
 
-		public void StatusChanged() => economy.TpiMissionRevision++;
+		// [BIN:TPI-EXE:0x61DC20 lab message 0x27] the research lab hears the controller's status broadcast and runs its obstacle registration 0x61CBF0 again
+		public void StatusChanged()
+		{
+			economy.TpiMissionRevision++;
+			economy.RegisterThemeParkIncObstacleResearch();
+		}
 
 		private IThemeParkIncMissionWorld World( string action ) =>
 			economy.TpiMissionWorld ?? throw new InvalidOperationException( $"The mission controller cannot {action} in a park without a world." );

@@ -120,9 +120,12 @@ public sealed class ThemeParkIncStaffMember
 	// on strike +0x298, researching +0x294, training +0x290; picked up and the others count nothing
 	public void CountTick( DisplayState state )
 	{
-		if ( state is not DisplayState.PickedUp && (int)state != 6 )
+		if ( state is not DisplayState.PickedUp && (int)state != UncountedDisplayState )
 			dayCounters[(int)state]++;
 	}
+
+	/// <summary>The display state 6, which the counter table <c>0x628114</c> sends to no counter (like picked up); OpenTPW names no state 6.</summary>
+	private const int UncountedDisplayState = 6;
 
 	/// <summary>The daily experience gain from the share of the day spent working or researching, then the day's counters start again.</summary>
 	// [BIN:TPI-EXE:0x629650 experience gain] f = (working + researching) / (all seven counters), rounded to a single (NaN for an empty day gives 0); gain = trunc(ExperiencePerMonth[0] × f)

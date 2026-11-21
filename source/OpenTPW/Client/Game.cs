@@ -385,6 +385,9 @@ internal static class Game
 		var tpiRestartPhase = GetOption( args, "--debug-tpi-restart-smoke", "'capture' or 'restore'" );
 		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );
+		// the smoke's Quit leaves the park, which saves (the Science slot and the player file): it must never write into a real save folder
+		if ( sliceSmoke && string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_SAVE_DIR" ) ) )
+			throw new ArgumentException( "--tpi-smoke-test saves as it leaves the park: give it a fresh, dedicated OPENTPW_SAVE_DIR (docs/RUNNING.md)." );
 		if ( tpiRestartPhase != null && (!GameEditions.IsThemeParkInc || sliceSmoke
 			|| string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_SAVE_DIR" ) )
 			|| (tpiRestartPhase switch

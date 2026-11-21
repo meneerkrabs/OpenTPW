@@ -76,6 +76,21 @@ public sealed partial class ParkEconomy
 		career.ChangeTheme( Settings.Theme );
 		if ( career.CurrentZone == null )
 			throw new InvalidDataException( $"The Theme Park Inc zone '{Settings.Theme}' has no record in the career: its global.sam does not load." );
+		// a won challenge counts in the record of the current zone's park number (0x5C4514 -> 0x74F4B0), which has no record outside the name table: a career whose record says otherwise
+		// (a player file or save edited by hand) is refused here rather than at the first win
+		if ( career.CurrentZone.ParkNumber < 0 || career.CurrentZone.ParkNumber >= ThemeParkIncCareer.ZoneNames.Count )
+			throw new InvalidDataException( $"The Theme Park Inc zone '{Settings.Theme}' has park number {career.CurrentZone.ParkNumber} in the career, outside the zone table." );
+	}
+
+	/// <summary>
+	/// Restores a saved career into the park's (a park save) and makes the park's zone its current one, as the original's career load ends (<c>0x74D110</c> finds the current zone's record by
+	/// the theme name): the saved current zone is not trusted, so a challenge win always finds its record.
+	/// </summary>
+	internal void RestoreThemeParkIncCareer( ThemeParkIncCareerSnapshot state )
+	{
+		var career = TpiCareer ?? throw new InvalidOperationException( "Only a Theme Park Inc park has a career." );
+		career.Restore( state );
+		EnterThemeParkIncZone( career );
 	}
 
 	/// <summary>

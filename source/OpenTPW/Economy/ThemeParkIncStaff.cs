@@ -1,5 +1,16 @@
 namespace OpenTPW;
 
+/// <summary>A saved Theme Park Inc staff member: its economy state and the day counters the experience gain reads.</summary>
+public sealed record ThemeParkIncStaffMemberSnapshot( int Id, ThemeParkIncStaffRole Role, int NameIndex, uint SpriteDraw, int Experience, int Salary, int Agency,
+	float Happiness, float Motivation, float Energy, int WageShortfall, int WageDemandDay, uint[] DayCounters );
+
+/// <summary>
+/// The saved Theme Park Inc staff: the 32 pool slots with their being-placed bytes, the members in list order, the park-maximum flags and hired counts of the last
+/// check, the pool stamp, the opening-pool latch, the next id, the strike records and the last wage demand's day.
+/// </summary>
+public sealed record ThemeParkIncStaffSnapshot( ThemeParkIncStaffCandidate?[] Slots, bool[] Placing, ThemeParkIncStaffMemberSnapshot[] Members, bool[] AtParkMaximum,
+	int[] Hired, long PoolStamp, bool OpeningPoolMade, int NextId, ThemeParkIncStaff.StrikeRecord[] Strikes, bool StrikeForced, uint LastWageDemandDay );
+
 /// <summary>
 /// Theme Park Inc's staff economy: the 32-slot hiring pool and the hired members (docs/reverse/TPI-STAFF.md). The pool follows the executable's own routines,
 /// which keep Theme Park World's skeleton with experience, wages and agencies in place of grades and a sixth role, the gardener.
@@ -381,6 +392,64 @@ public sealed class ThemeParkIncStaff
 			member.WageShortfall = 0;
 		}
 		return demands;
+	}
+
+	/// <summary>The staff for a save.</summary>
+	internal ThemeParkIncStaffSnapshot Capture() => new(
+		(ThemeParkIncStaffCandidate?[])slots.Clone(), (bool[])placing.Clone(),
+		members.Select( member => new ThemeParkIncStaffMemberSnapshot( member.Id, member.Role, member.NameIndex, member.SpriteDraw, member.Experience, member.Salary,
+			member.Agency, member.Happiness, member.Motivation, member.Energy, member.WageShortfall, member.WageDemandDay, member.CaptureDayCounters() ) ).ToArray(),
+		(bool[])atParkMaximum.Clone(), (int[])hired.Clone(), PoolStamp, openingPoolMade, NextId, (StrikeRecord[])strikes.Clone(), StrikeForced, LastWageDemandDay );
+
+	/// <summary>Whether a saved staff snapshot can come from this model: the array sizes, known roles, ids below the next id and unique.</summary>
+	internal static bool IsValid( ThemeParkIncStaffSnapshot? state )
+	{
+		if ( state == null )
+			return true;
+		if ( state.Slots is not { Length: PoolSlots } || state.Placing is not { Length: PoolSlots } || state.AtParkMaximum is not { Length: 6 } || state.Hired is not { Length: 6 }
+			|| state.Strikes is not { Length: 6 } || state.Members == null || state.NextId < 1 )
+			return false;
+		var ids = new HashSet<int>();
+		for ( var slot = 0; slot < PoolSlots; slot++ )
+		{
+			if ( state.Slots[slot] is { } candidate ? !Enum.IsDefined( candidate.Role ) || candidate.Id < 1 || candidate.Id >= state.NextId || !ids.Add( candidate.Id ) : state.Placing[slot] )
+				return false;
+		}
+		return state.Strikes.All( strike => strike != null )
+			&& state.Members.All( member => member != null && Enum.IsDefined( member.Role ) && member.Id >= 1 && member.Id < state.NextId && ids.Add( member.Id )
+				&& member.DayCounters is { Length: 9 } );
+	}
+
+	/// <summary>Restores a saved staff state (a valid snapshot, see <see cref="IsValid"/>).</summary>
+	internal void Restore( ThemeParkIncStaffSnapshot state )
+	{
+		if ( !IsValid( state ) )
+			throw new InvalidDataException( "Invalid Theme Park Inc staff snapshot." );
+		Array.Copy( state.Slots, slots, PoolSlots );
+		Array.Copy( state.Placing, placing, PoolSlots );
+		Array.Copy( state.AtParkMaximum, atParkMaximum, 6 );
+		Array.Copy( state.Hired, hired, 6 );
+		Array.Copy( state.Strikes, strikes, 6 );
+		members.Clear();
+		foreach ( var saved in state.Members )
+		{
+			var member = new ThemeParkIncStaffMember( saved.Id, saved.Role, saved.NameIndex, saved.Experience, saved.Salary, saved.Agency, saved.SpriteDraw )
+			{
+				Happiness = saved.Happiness,
+				Motivation = saved.Motivation,
+				Energy = saved.Energy,
+				WageShortfall = saved.WageShortfall,
+				WageDemandDay = saved.WageDemandDay
+			};
+			member.RestoreDayCounters( saved.DayCounters );
+			members.Add( member );
+		}
+		PoolStamp = state.PoolStamp;
+		openingPoolMade = state.OpeningPoolMade;
+		NextId = state.NextId;
+		StrikeForced = state.StrikeForced;
+		LastWageDemandDay = state.LastWageDemandDay;
+		SelectedSlot = -1;
 	}
 
 	/// <summary>Whether the slot's candidate is being placed.</summary>

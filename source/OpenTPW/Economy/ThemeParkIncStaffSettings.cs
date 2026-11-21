@@ -29,6 +29,10 @@ public sealed record ThemeParkIncStaffRoleSettings( ThemeParkIncStaffRole Role, 
 /// </summary>
 public sealed class ThemeParkIncStaffSettings
 {
+	/// <summary>The staff settings of a Theme Park Inc <c>Standard.sam</c>, or null when it lacks the staff keys (a synthetic or partial file).</summary>
+	public static ThemeParkIncStaffSettings? Read( SamSettings standard ) =>
+		standard.Contains( "AllStaffConstants.MaxExperience" ) && standard.Contains( "StaffAgencies[0].RequiredPromotionLevel" ) ? new ThemeParkIncStaffSettings( standard ) : null;
+
 	public ThemeParkIncStaffSettings( SamSettings standard )
 	{
 		ArgumentNullException.ThrowIfNull( standard );

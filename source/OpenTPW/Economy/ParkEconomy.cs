@@ -69,6 +69,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 			TpiWeather = new ThemeParkIncWeatherSpells( weather );
 			TpiForecast = CreateThemeParkIncForecast();
 		}
+		if ( Rules.ThemeParkInc && settings.ThemeParkIncStaff is { } staffSettings )
+		{
+			TpiStaff = new ThemeParkIncStaff( staffSettings, TpiStaffNameText );
+			// [BIN:TPI-EXE:0x630CB0 opening pool] the new-world init (0x6482BA -> 0x5D65B0 -> 0x630CB0) fills the opening pool from the world generator and stamps it with the turn,
+			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
+			TpiStaff.CreateOpeningPool( World, 0, ThemeParkIncCareerRank );
+		}
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -116,6 +123,19 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	/// <summary>The spells the Theme Park Inc weather has started (ThemeParkIncWeatherSpells.SpellStarts).</summary>
 	public int TpiSpellStarts => TpiWeather?.SpellStarts ?? 0;
+
+	/// <summary>The career's promotion rank, which decides the staff agencies a candidate may come from: a new career's rank.</summary>
+	// [BIN:TPI-EXE:0x74BDC7 career rank] the career reset 0x74BB40 sets the rank (+0x1060) to 1 and the mission counter (+0x105C) to 0; OpenTPW has no promotions yet, so the rank stays 1
+	public const int ThemeParkIncCareerRank = 1;
+
+	/// <summary>Theme Park Inc's staff: the hiring pool, the members and their strikes (null in Theme Park World and where the staff keys are missing).</summary>
+	public ThemeParkIncStaff? TpiStaff { get; private set; }
+
+	/// <summary>
+	/// A Theme Park Inc staff name's identity for the pool's name test, which compares the texts of the per-language <c>*_NAMES.str</c> tables. No retail language holds a
+	/// text twice across the six tables (ThemeParkIncLanguageTests), so the role and index decide the test exactly and the economy needs no strings.
+	/// </summary>
+	private static string TpiStaffNameText( ThemeParkIncStaffRole role, int index ) => $"{role}:{index}";
 
 	/// <summary>Theme Park Inc's forecast advice queue (null in Theme Park World, and where <c>Advisor.sam</c> is missing or lacks the group keys).</summary>
 	internal ThemeParkIncForecastQueue? TpiForecast { get; private set; }
@@ -505,6 +525,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 			UpdateThings( turn );
 			TpiWeather?.OnTurn( World.NextWord );
 		}
+		// [BIN:TPI-EXE:0x649868 staff pool update] after the thing loop the world update's tail updates the hiring pool (0x5D65E0 -> 0x631B40: expiry, refill and top-up, drawing
+		// from the world generator) in every world state, and only then the calendar (0x5D65FB -> 0x6083D0), whose day and month messages follow below
+		TpiStaff?.UpdatePool( World, turn, ThemeParkIncCareerRank );
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
 		var changes = ParkCalendar.Update( ref stored, turn );

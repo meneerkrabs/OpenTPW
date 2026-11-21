@@ -192,6 +192,7 @@ public sealed class BalanceSettings
 		Costs = ReadCosts( standard );
 		EntryFee = ReadEntryFee( standard );
 		Weather = ThemeParkIncWeatherSettings.Read( standard );
+		ThemeParkIncStaff = ThemeParkIncStaffSettings.Read( standard );
 		// inert placeholders: nothing reads them while staff, research and challenges are refused
 		BaseWage = Array.Empty<int>();
 		RecuperationRate = HappinessRecuperationRate = Array.Empty<float>();
@@ -245,6 +246,8 @@ public sealed class BalanceSettings
 	public CellCosts Costs { get; }
 	/// <summary>Theme Park Inc's weather settings (null in Theme Park World and in a file with no weather).</summary>
 	public ThemeParkIncWeatherSettings? Weather { get; }
+	/// <summary>Theme Park Inc's staff settings (null in Theme Park World and in a file without the staff keys).</summary>
+	public ThemeParkIncStaffSettings? ThemeParkIncStaff { get; }
 	public EntryFeePerception EntryFee { get; }
 	public GoldenTicketSettings GoldenTickets { get; }
 	public ChallengeSchedule ChallengeTiming { get; }

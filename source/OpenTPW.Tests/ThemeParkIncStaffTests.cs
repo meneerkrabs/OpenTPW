@@ -226,6 +226,39 @@ public class ThemeParkIncStaffTests
 		Assert.AreEqual( (hired[1], 0xA, 9), (demand.Member, demand.Type, demand.Shortfall), "a grieved role in a park younger than MinMonthsForStrike" );
 	}
 
+	[TestMethod]
+	public void TheStaffStateRoundTripsThroughASnapshotAndRejectsForeignOnes()
+	{
+		var staff = RetailStaff();
+		var world = new WorldRng( 99 );
+		staff.CreateOpeningPool( world, 0, 0 );
+		staff.BeginHire( 0 );
+		var member = staff.EndHire( 0, placed: true )!;
+		member.CountTick( ThemeParkIncStaffMember.DisplayState.Working );
+		member.Energy = 42.5f;
+		member.WageDemandDay = 7;
+		staff.BeginHire( 1 );
+		staff.ConsiderStrikes( 9000 );
+		var saved = staff.Capture();
+		var restored = RetailStaff();
+		restored.Restore( saved );
+		Assert.AreEqual( System.Text.Json.JsonSerializer.Serialize( saved ), System.Text.Json.JsonSerializer.Serialize( restored.Capture() ), "a restored staff captures the same state" );
+		Assert.IsTrue( restored.IsPlacing( 1 ), "the slot being placed stays so" );
+		Assert.AreEqual( 1u, restored.Members[0].DayTicks( ThemeParkIncStaffMember.DisplayState.Working ), "with the day's counters" );
+		world = new WorldRng( 5 );
+		var other = new WorldRng( 5 );
+		staff.UpdatePool( world, 100_000, 0 );
+		restored.UpdatePool( other, 100_000, 0 );
+		Assert.AreEqual( world.State, other.State, "and draws the same refill" );
+		CollectionAssert.AreEqual( staff.Slots.ToArray(), restored.Slots.ToArray() );
+
+		Assert.IsTrue( ThemeParkIncStaff.IsValid( null ) );
+		Assert.IsFalse( ThemeParkIncStaff.IsValid( saved with { Slots = saved.Slots.Take( 3 ).ToArray() } ), "the pool has 32 slots" );
+		Assert.IsFalse( ThemeParkIncStaff.IsValid( saved with { NextId = 1 } ), "ids stay below the next id" );
+		Assert.ThrowsException<InvalidDataException>( () => restored.Restore( saved with { Placing = new bool[ThemeParkIncStaff.PoolSlots].Select( ( _, index ) => index == 31 ).ToArray() } ),
+			"an empty slot cannot be being placed" );
+	}
+
 	private static ThemeParkIncStaff RetailStaff() => new( RetailSettings(), ( role, index ) => $"{role} {index}" );
 
 	[TestMethod]

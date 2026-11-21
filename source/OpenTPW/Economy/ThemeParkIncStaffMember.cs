@@ -90,6 +90,18 @@ public sealed class ThemeParkIncStaffMember
 
 	private readonly uint[] dayCounters = new uint[9];
 
+	/// <summary>The nine day counters, for a save.</summary>
+	internal uint[] CaptureDayCounters() => (uint[])dayCounters.Clone();
+
+	/// <summary>Restores the day counters a save holds.</summary>
+	internal void RestoreDayCounters( IReadOnlyList<uint> counters )
+	{
+		if ( counters.Count != dayCounters.Length )
+			throw new InvalidDataException( "Invalid Theme Park Inc staff day counters." );
+		for ( var index = 0; index < dayCounters.Length; index++ )
+			dayCounters[index] = counters[index];
+	}
+
 	/// <summary>The day's tick count in a display state.</summary>
 	public uint DayTicks( DisplayState state ) => dayCounters[(int)state];
 

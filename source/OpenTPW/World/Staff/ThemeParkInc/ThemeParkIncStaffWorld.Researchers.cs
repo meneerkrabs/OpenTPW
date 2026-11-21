@@ -75,7 +75,7 @@ public sealed partial class ThemeParkIncStaffWorld
 			SetState( economy, member, Idle, turn );
 			return;
 		}
-		if ( FindResearchRoom( member ) != 0 )
+		if ( FindResearchRoom( economy, member ) != 0 )
 			SetState( economy, member, ToResearchRoom, turn );
 		else
 		{
@@ -85,13 +85,13 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>The research-room finder (<c>0x62E0E0</c>): the first research room, when a walk to its entrance reaches it, becomes the researcher's room. Its thing, or 0.</summary>
-	// [BIN:TPI-EXE:0x62E0E0 room finder] the list park+0x1EAB88 to the first thing with +0x42 & 0x200 (no distance, capacity or tie test, no retry of another room); the walk 0x62EB10 to the centre of its
-	// entrance cell (+0x46): success sets +0x27C = the room ("Found a rest area!") and answers it; a refused walk answers 0 and keeps +0x27C
-	private int FindResearchRoom( ThemeParkIncStaffMember member )
+	// [BIN:TPI-EXE:0x62E0E0 room finder] the list park+0x1EAB88 to the first thing with +0x42 & 0x200 (no distance, capacity or tie test, no retry of another room); the staff route 0x62EB10 to the centre
+	// of its entrance cell (+0x46, 0x62E198): success sets +0x27C = the room ("Found a rest area!") and answers it; a refused walk answers 0 and keeps +0x27C (no 0x60B7F0 fallback here)
+	private int FindResearchRoom( ParkEconomy economy, ThemeParkIncStaffMember member )
 	{
 		if ( Rooms?.First( ThemeParkIncRoomKind.Research ) is not { } room )
 			return 0;
-		if ( !Route( member, room.Entrance, GuestWander.CentreByte, GuestWander.CentreByte ) )
+		if ( !StaffRoute( economy, member, room.Entrance, GuestWander.CentreByte, GuestWander.CentreByte ) )
 			return 0;
 		member.ResearchRoom = room.Thing;
 		return room.Thing;

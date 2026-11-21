@@ -3,10 +3,11 @@ namespace OpenTPW;
 /// <summary>
 /// Theme Park Inc's staff in the park (docs/reverse/TPI-STAFF.md §11): the placed members' things and their state machines, beside Theme Park World's
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
-/// meters, day counters and search; the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
+/// meters, day counters and search, and the training states 7 and 8; the researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the other roles are refused at the hire
+/// (<c>[EXT:tpi-capability-gates]</c>).
 /// </summary>
 /// <remarks>
-/// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route set-up 0x62EB10, the patrol destination 0x609F70 and the speed step 0x60BC90 are not
+/// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
 /// proven identical to Theme Park World's (WP0 movement: D1 the arrival heading, D2 the run flag, D5 the cell node stride; 0x609F70 is read as a call skeleton only), so a member walks
 /// Theme Park World's walk (the guests' steering step with separation, the route search, the wander destination 0x004F9490 with its off-path search, the speed smoothing 0x004FA870 and the
 /// caps 0x00510190), over Theme Park Inc's own speed words (+0xD4, +0xD6, +0xD8).
@@ -632,7 +633,7 @@ public sealed partial class ThemeParkIncStaffWorld
 				if ( InPatrolArea( member, found ) )
 				{
 					var (bx, by) = ParkLitter.SweepSpot( economy.World, cell.X, cell.Y );
-					if ( Route( member, cell, bx, by ) )
+					if ( StaffRoute( economy, member, cell, bx, by ) )
 					{
 						// [BIN:TPI-EXE:0x5D8FE0 litter claim] +0x34 = the member's thing id, +0x38 = the world turn, as Theme Park World's 0x004D9600
 						economy.Litter.Claim( cell.X, cell.Y, member.ThingId, turn );
@@ -739,7 +740,7 @@ public sealed partial class ThemeParkIncStaffWorld
 				RequestTemplate( member, WalkTemplate );
 				break;
 			case ThemeParkIncTraining.ToTrainingRoom:
-				EnterToTrainingRoom( member );
+				EnterToTrainingRoom( economy, member );
 				break;
 			case ThemeParkIncTraining.Training:
 				EnterTraining( economy, member, turn );
@@ -807,7 +808,26 @@ public sealed partial class ThemeParkIncStaffWorld
 		return GuestNavigation.Separation( self, neighbours );
 	}
 
-	/// <summary>Sets the walk to a point of a cell; false when no route reaches it (the walk then stands arrived and stuck).</summary>
+	/// <summary>
+	/// The staff route (<c>0x62EB10</c>): a closed park refuses a walk to the entrance cells (47, 17) and (48, 17); else the walk mask is 1 when the member's cell or the target cell is empty (type 0),
+	/// 0 otherwise, and the walk is set to the point (<c>0x60B8E0</c>). False when no route reaches it.
+	/// </summary>
+	// [BIN:TPI-EXE:0x62EB10 staff route] park+0x1EAB44 (0x64FA30, nonzero: the park is closed) with the target word's cell x (its high byte) 0x2F or 0x30 and the y word's cell 0x11 answers 0 and leaves the
+	// walk; the member's cell record (+0x418 + 72 × (y << 7 + x + 1), from the bytes +5 and +7) of type 0 (0x67F6D0, its dword +8) or else the target's sets +0x1A0 = 1, else +0x1A0 = 0 (the walk's +0xB4,
+	// the mask the search and the edge test read); then 0x60B8E0 with the two words
+	// [BIN:TPI-EXE:0x60B8E0 staff steer] the stamp counter raised (0x5D81F0, ParkCellMap.StampCounter: OpenTPW counts the edits only); the stranded mark +0x1B0 is tested (0x60BB50) only while nonzero,
+	// and a staff member's never is: its only setter with a stamp, 0x60A4AE in the wander, is reached by kind 1 (the guests) alone, the staff kinds 4, 5, 6, 8, 7 and 0x14 branching to 0x62C720 at
+	// 0x60A454, and every other writer stores 0 (0x608F94, 0x60A56C, 0x60A84C, 0x60B4CA, 0x60B9FC); then +0x28, +0x2A = the words, +0x1B0 = 0 and SetDest 0x63EE80 (0x63E3A0 with the point << 8)
+	private bool StaffRoute( ParkEconomy economy, ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY )
+	{
+		if ( !economy.IsParkOpen && cell.Y == 0x11 && cell.X is 0x2F or 0x30 )
+			return false;
+		var (x, y) = member.Navigation!.Cell;
+		member.Navigation.Mask = grid.Cells.RawTypeAt( x, y ) == 0 || grid.Cells.RawTypeAt( cell.X, cell.Y ) == 0 ? 1 : 0;
+		return Route( member, cell, byteX, byteY );
+	}
+
+	/// <summary>Sets the walk to a point of a cell with the walk's mask (SetDest, <c>0x63EE80</c>); false when no route reaches it (the walk then stands arrived and stuck).</summary>
 	private bool Route( ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY )
 	{
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
@@ -843,7 +863,8 @@ public sealed partial class ThemeParkIncStaffWorld
 		{
 			var x = (int)(economy.World.NextWord() % (uint)(area.X1 - area.X0 + 1)) + area.X0;
 			var y = (int)(economy.World.NextWord() % (uint)(area.Y1 - area.Y0 + 1)) + area.Y0;
-			if ( grid.IsWalkable( x, y ) && Route( member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
+			// [BIN:TPI-EXE:0x62C84E patrol entry route] the staff route 0x62EB10 to the cell's centre
+			if ( grid.IsWalkable( x, y ) && StaffRoute( economy, member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
 				return true;
 		}
 		return false;

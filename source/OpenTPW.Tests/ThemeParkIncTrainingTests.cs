@@ -144,7 +144,8 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 	{
 		// [BIN:TPI-EXE:0x626638 room removed] [BIN:TPI-EXE:0x62E7A0 training cancel]
 		var economy = ScienceEconomy();
-		var world = new ThemeParkIncStaffWorld( Row( economy ) );
+		var grid = Row( economy );
+		var world = new ThemeParkIncStaffWorld( grid );
 		var rooms = new TestRooms { Training = new ThemeParkIncRoom( 500, (2, 5) ) };
 		world.Rooms = rooms;
 		var member = Hire( economy, world, (1, 5), experience: 20000 );
@@ -159,15 +160,45 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 		Assert.IsTrue( world.TrainingNotices.Single() is { Finished: false, Ability: 7 } );
 		Assert.AreEqual( 0, member.Ability, "nothing learnt" );
 
-		// a room no route reaches: the walk is stuck and each update costs HappyHitCosRoomInaccessible
+		// a room no route reaches, even off the paths (its entrance cell of type 2 blocks every walk mask): the staff route and the cell steer 0x60B7F0 both fail, the walk is stuck and each update
+		// costs HappyHitCosRoomInaccessible
 		var settings = economy.TpiStaff!.Settings;
+		grid.Cells.SetType( 8, 9, 2 );
 		rooms.Training = new ThemeParkIncRoom( 501, (8, 9) );
 		member.Happiness = 100f;
 		world.ChooseAbility( economy, member, 7, confirmed: false, turn );
+		Assert.AreEqual( 1, member.Navigation!.Mask, "the cell steer's walk mask" );
 		world.Update( economy, member, ++turn );
 		world.Update( economy, member, ++turn );
 		Assert.AreEqual( 7, member.State, "still walking to the room" );
 		Assert.AreEqual( 100f - 2 * settings.HappyHitRoomInaccessible, member.Happiness, 0.001f );
+	}
+
+	[TestMethod]
+	public void AFailedRouteToTheTrainingRoomFallsBackToTheCellSteerOffThePaths()
+	{
+		// [BIN:TPI-EXE:0x628492 state 7 entry] [BIN:TPI-EXE:0x62EB10 staff route] [BIN:TPI-EXE:0x60B7F0 cell steer]
+		var economy = ScienceEconomy();
+		var grid = Row( economy );
+		// a path cell of its own, two cells below the row: the route along the paths (mask 0) cannot reach it, the cell steer's mask 1 walks over the grass
+		grid.SetPath( 8, 7, true );
+		var world = new ThemeParkIncStaffWorld( grid );
+		var rooms = new TestRooms { Training = new ThemeParkIncRoom( 500, (8, 7) ) };
+		world.Rooms = rooms;
+		var member = Hire( economy, world, (1, 5), experience: 20000 );
+		Assert.AreEqual( 0, member.Navigation!.Mask );
+		world.ChooseAbility( economy, member, 7, confirmed: false, economy.Turn );
+		Assert.AreEqual( (7, 1, false), (member.State, member.Navigation.Mask, member.Navigation.Stuck), "the second search, with mask 1, found the way" );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 400 && member.State == 7; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( 8, member.State, "arrived and training" );
+
+		// a path cell beside the row: the staff route reaches it along the paths with mask 0, and no fallback runs
+		var second = Hire( economy, world, (2, 5), experience: 20000 );
+		rooms.Training = new ThemeParkIncRoom( 502, (10, 5) );
+		world.ChooseAbility( economy, second, 7, confirmed: false, turn );
+		Assert.AreEqual( (7, 0), (second.State, second.Navigation!.Mask) );
 	}
 
 	[TestMethod]

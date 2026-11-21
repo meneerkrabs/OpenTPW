@@ -60,14 +60,20 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>State 7 entered (<c>0x628492</c>): a walk to the centre of the training room's entrance cell, the walk's speed bonus and the walk template.</summary>
-	// [BIN:TPI-EXE:0x628492 state 7 entry] room = 0x639AA0, c = its word +0x46; 0x62EB10 to ((c - 1) & 0x7F, (c - 1) >> 7) + 0.5 in 8.8; a refused route sets +0x1A0 = 1 and calls 0x60B7F0(c) (unread);
-	// 0x60B3F0(1) (+0xD6 = 25); the thought 0x1A (0x638960, presentation); template 1 (0x5D1000 without a handle, else 0x5D0F90(1))
-	// [EXT:tpi-twp-guest-rules] the route is Theme Park World's walk; a refused route leaves the walk stuck (0x60B7F0's fallback move is unread), so the state-7 tick costs happiness until a route opens
-	private void EnterToTrainingRoom( ThemeParkIncStaffMember member )
+	// [BIN:TPI-EXE:0x628492 state 7 entry] room = 0x639AA0, c = its word +0x46; the staff route 0x62EB10 to ((c - 1) & 0x7F, (c - 1) >> 7) + 0.5 in 8.8; a refused route sets +0x1A0 = 1 and calls
+	// 0x60B7F0(c); 0x60B3F0(1) (+0xD6 = 25); the thought 0x1A (0x638960, presentation); template 1 (0x5D1000 without a handle, else 0x5D0F90(1))
+	// [BIN:TPI-EXE:0x60B7F0 cell steer] the route to a cell's centre, Theme Park World's 0x004FA530: the bytes ((c - 1) & 0x7F, 0x80) and ((c - 1) >> 7, 0x80); the stamp counter raised (0x5D81F0); the
+	// stranded mark +0x1B0 tested only while nonzero (0x60BB50), which a staff member's never is (StaffRoute); +0x28, +0x2A = the words, +0x1B0 = 0, SetDest 0x63EE80 (the point << 8). So the fallback
+	// searches the same point again with the walk mask 1, which lets the walk leave the paths; a walk it cannot set either stands stuck, and the state-7 tick costs happiness
+	private void EnterToTrainingRoom( ParkEconomy economy, ThemeParkIncStaffMember member )
 	{
 		if ( TrainingRoom is not { } room )
 			throw new InvalidOperationException( "A Theme Park Inc staff member cannot walk to a training room the park does not have (the original reads thing 0's entrance word)." );
-		Route( member, room.Entrance, GuestWander.CentreByte, GuestWander.CentreByte );
+		if ( !StaffRoute( economy, member, room.Entrance, GuestWander.CentreByte, GuestWander.CentreByte ) )
+		{
+			member.Navigation!.Mask = 1;
+			Route( member, room.Entrance, GuestWander.CentreByte, GuestWander.CentreByte );
+		}
 		member.SpeedBonus = BonusTable[1];
 		RequestTemplate( member, 1 );
 	}

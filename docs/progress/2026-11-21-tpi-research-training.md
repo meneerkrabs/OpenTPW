@@ -11,8 +11,9 @@ The staff HQ's twenty obstacle slots, staff training and the research lab with i
 - **Research** (`ThemeParkIncResearch`): the prebuilt's lab and object controls, the tick every sixth world tick from listed scientists in state 24, the cash per brain point, message 0x11 (the
   career's CDK flag, a Park Expansion's 0x23), the obstacle project (`0x61CBF0`), the consultant pick, the catalogue's researched gate, and the panel's rules as text HUD rows. Researchers are hired
   and placed with their start, look for work, room finder and states 25/24.
-- **Open, awaiting a decision**: the level project after a completion draws the CRT `rand()` and drops it (`0x61FF1A`; every shipped `CashPerBrainPoint` is 0), and a new zone's lab fill draws
-  `rand() % 2 + 1` (`0x61FD50`); neither is ported. The training walk's stuck branch draws a CRT `rand()` only for a thought, which is not drawn.
+- **CRT `rand()` decisions (user, 2026-11-21)**: the level project after a completion (`0x61FE70`) is ported and takes no draw for the discarded `rand()` at `0x61FF1A` (always 1 cash per brain
+  point); the training walk's stuck `rand()` only picks a thought bubble that is not drawn, so no draw is taken. A new zone's lab fill (`0x61FD50`, `rand() % 2 + 1`) is not ported: it waits for the
+  user's decision at the zone package.
 
 Verified: new `ThemeParkIncStaffHqTests`, `ThemeParkIncTrainingTests` and `ThemeParkIncResearchTests`, the Theme Park Inc and save filters, and the silent, offscreen Science smoke (which now checks the
 HQ slots, the seeded lab and the research row).

@@ -86,8 +86,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x62A7C0 walk to training] the walk step 0x60B440: 0 -> 0x639CF0 (the room's script variable 0 += 1, answers 1, so the refused branch at 0x62A892 is dead), 0x628180(8), message 0x2A
 	// (0x4363C0, the member's id) to the queue 0xA09728; 2 -> rand() % 50 picks the thought 0x1A (0 or 49) or 0x1E (25), then happiness -= HappyHitCosRoomInaccessible (0xA0225C), clamped; walking ->
 	// nothing (no moving step)
-	// the stuck branch's CRT rand() (0x870D38, seeded from the clock by srand(GetTickCount()) at 0x6A151B) picks only a thought, which OpenTPW does not draw (as the handyman's thoughts); OpenTPW models no
-	// C runtime stream and takes no world draw for it
+	// the stuck branch's CRT rand() (0x870D38, seeded from the clock by srand(GetTickCount()) at 0x6A151B) only picks a thought bubble, which is not drawn (as the handyman's thoughts), so no draw is taken
+	// (user decision 2026-11-21)
 	private void UpdateToTrainingRoom( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		switch ( Walk( member ) )

@@ -402,9 +402,9 @@ public sealed class ThemeParkIncResearch
 	// [BIN:TPI-EXE:0x61FE70 level project] info +0x254 == 4 or LinkedWith != 0: none; for L = control +0x14 + 1 while L < 3: Upgrades[L].CostOfResearch (+0x270 + 0x48 L) > 0 makes the project, else control
 	// +0x14 = L; the project: level L, group 0, category 4, cost = (float)(cost × CostScaleUp), cash = Upgrades[L].CashPerBrainPoint, objId, done 0, StaffRqd = StaffSA = 0 (mType not written); a cash of
 	// 0 calls the CRT rand() at 0x61FF1A, drops its result and takes 1
-	private ThemeParkIncLabProject? NextLevel( ThemeParkIncResearchInfo info, out bool needsDraw )
+	// the original calls rand() there and throws the result away, so the project always costs 1 cash per brain point; no draw is taken (user decision 2026-11-21)
+	private ThemeParkIncLabProject? NextLevel( ThemeParkIncResearchInfo info )
 	{
-		needsDraw = false;
 		if ( info.Category == 4 || info.LinkedWith != 0 )
 			return null;
 		var control = ControlIndex( info.Id );
@@ -412,9 +412,8 @@ public sealed class ThemeParkIncResearch
 		{
 			if ( info.CostOfResearch[level] > 0 )
 			{
-				needsDraw = info.CashPerBrainPoint[level] == 0;
 				return projects[Count] with { Level = (byte)level, Group = 0, Category = 4, Cost = (float)((double)info.CostOfResearch[level] * CostScaleUp),
-					CashPerBrainPoint = needsDraw ? 1 : info.CashPerBrainPoint[level], ObjectId = (ushort)info.Id, Done = 0f, StaffRqd = 0, StaffSA = 0 };
+					CashPerBrainPoint = info.CashPerBrainPoint[level] == 0 ? 1 : info.CashPerBrainPoint[level], ObjectId = (ushort)info.Id, Done = 0f, StaffRqd = 0, StaffSA = 0 };
 			}
 			controls[control] = controls[control] with { Level = level };
 		}
@@ -425,13 +424,11 @@ public sealed class ThemeParkIncResearch
 	/// Message 0x11's lab side (<c>0x61DC20</c>): after the career is told and a Park Expansion posted 0x23 (the caller's), the next upgrade level's project of the object is appended. True when one was.
 	/// </summary>
 	// [BIN:TPI-EXE:0x61DE15 level append] info = 0x43C700(type); 0x61FE70(&projects[count], info) true -> count + 1
-	// [EXT:tpi-capability-gates] a level project whose Upgrades[n].CashPerBrainPoint is 0 (every shipped object: no WAD sets the key) is made after a CRT rand() whose result is dropped (0x61FF1A); that draw
-	// awaits the user's decision (OpenTPW models no C runtime stream), so such a project is not appended: the object's next level stays unresearched
 	public bool AppendNextLevel( int objectId )
 	{
 		if ( Infos.FirstOrDefault( info => info.Id == objectId ) is not { } info )
 			throw new InvalidOperationException( $"Object type {objectId} has no object info (the original's 0x43C700 returns none and its caller faults)." );
-		if ( NextLevel( info, out var needsDraw ) is not { } project || needsDraw )
+		if ( NextLevel( info ) is not { } project )
 			return false;
 		if ( Count >= ProjectCapacity )
 			throw new InvalidOperationException( $"The research lab's {ProjectCapacity} projects are full (the original would write past them)." );

@@ -3,8 +3,8 @@ namespace OpenTPW;
 public sealed partial class ParkEconomy
 {
 	/// <summary>
-	/// Theme Park Inc's research lab and object controls; null in Theme Park World and in a park whose lab no park file brought (a new zone's lab fill draws the CRT rand(), see
-	/// <see cref="ThemeParkIncResearch.AppendNextLevel"/>).
+	/// Theme Park Inc's research lab and object controls; null in Theme Park World and in a park whose lab no park file brought (a new zone's lab fill, 0x61C9E0 with the CRT rand() % 2 + 1 of
+	/// 0x61FD50, is not ported: it waits for the user's decision at the zone package).
 	/// </summary>
 	public ThemeParkIncResearch? TpiResearch { get; private set; }
 

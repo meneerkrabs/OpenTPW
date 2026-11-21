@@ -2181,7 +2181,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( !moving && !info.IsBuyable )
 			return PurchaseResult.NotBuyable;
 		// a Theme Park Inc park's research gates its catalogue list (ThemeParkIncCatalogue.IsListed, 0x57CB66), not the purchase: [EXT:tpi-no-research] a Theme Park Inc economy without a seeded lab (a new zone,
-		// whose lab fill draws the CRT rand(), and the headless economy) offers every buyable object
+		// whose lab fill waits for the user's decision at the zone package, and the headless economy) offers every buyable object
 		if ( !moving && Rules.Research && !Research.IsAvailable( infoId ) )
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )

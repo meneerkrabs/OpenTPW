@@ -165,23 +165,34 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
-	public void ALevelProjectWhoseCashPerBrainPointIsZeroIsNotAppended()
+	public void CompletingALevelOneUpgradeAddsTheLevelTwoProjectWithoutADraw()
 	{
-		// [BIN:TPI-EXE:0x61FE70 level project] every shipped Upgrades[n].CashPerBrainPoint is 0, so the level project draws the dropped CRT rand(): not appended (awaiting the user's decision)
-		var (_, research) = Seeded();
+		// [BIN:TPI-EXE:0x61FE70 level project] every shipped Upgrades[n].CashPerBrainPoint is 0: the original calls rand() and drops it (0x61FF1A), the project costs 1 cash a point, no draw is taken
+		var (economy, research) = Seeded();
 		research.Infos = new[]
 		{
 			new ThemeParkIncResearchInfo( 1100, 0, 0, new[] { 0, 100, 200 }, new int[3] ),
 			new ThemeParkIncResearchInfo( 1106, 0, 0, new[] { 300, 0, 0 }, new int[3] ),
 			new ThemeParkIncResearchInfo( 1102, 0, 0, new[] { 300, 50, 0 }, new[] { 0, 3, 0 } )
 		};
+		// project 0: Bellows 1100's level-1 upgrade, no consultant
+		var scientist = new ThemeParkIncStaffMember( 900, ThemeParkIncStaffRole.Researcher, 0, economy.TpiStaff!.Settings.MaxExperience, 50, 0, 0 ) { ThingId = 900, State = ThemeParkIncResearch.Researching };
+		research.Member = id => id == 900 ? scientist : null;
+		research.SetProject( 1, 0 );
+		research.SetTeam( 1, new ushort[] { 900 }.Concat( new ushort[19] ).ToArray() );
 		var count = research.Count;
-		Assert.IsFalse( research.AppendNextLevel( 1100 ) );
-		Assert.AreEqual( count, research.Count );
+		var state = economy.World.State;
+		var appended = false;
+		for ( var turn = 6L; !appended; turn += 6 )
+			research.Tick( turn, research.Member, economy.TpiStaff.Settings, _ => { }, ( type, _ ) => appended = research.AppendNextLevel( type ) );
+		Assert.AreEqual( count + 1, research.Count );
+		var level2 = research.Projects[count];
+		Assert.AreEqual( (1100, 4, 2, 200f, 1, 0f), ((int)level2.ObjectId, level2.Category, (int)level2.Level, level2.Cost, level2.CashPerBrainPoint, level2.Done) );
+		Assert.AreEqual( 1, research.Controls.First( control => control.Id == 1100 ).Level, "level 1 researched" );
+		Assert.AreEqual( state, economy.World.State, "no draw from the world generator" );
 		Assert.IsFalse( research.AppendNextLevel( 1106 ), "no further level costs research" );
-		Assert.IsTrue( research.AppendNextLevel( 1102 ), "a level with its own cash per point is appended" );
-		Assert.AreEqual( (1102, 4, 1, 50f, 3), ((int)research.Projects[count].ObjectId, research.Projects[count].Category, (int)research.Projects[count].Level, research.Projects[count].Cost,
-			research.Projects[count].CashPerBrainPoint) );
+		Assert.IsTrue( research.AppendNextLevel( 1102 ), "a level with its own cash per point keeps it" );
+		Assert.AreEqual( 3, research.Projects[count + 1].CashPerBrainPoint );
 	}
 
 	[TestMethod]

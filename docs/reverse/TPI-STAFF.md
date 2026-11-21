@@ -341,7 +341,7 @@ the HQ before the mission controller.
   OpenTPW's drop (handymen only) therefore never trains, as the original's.
 - **Training room**: the first thing of the object list `park+0x1EAB88` whose flag word has 0x400 (`UsageInfo.TrainingRoom`, set by the attraction builder `0x5DB79A`); one room serves every trainee.
 - **State 7** (entry `0x628492`, tick `0x62A7C0`): a walk to the centre of the room's entrance cell (`+0x46`) with the speed bonus 25; arrived, the room's script variable 0 rises, state 8 and
-  message **0x2A** (the HQ releases his old ability, §12.1); stuck, every update costs `HappyHitCosRoomInaccessible` (the CRT `rand()` there picks only a thought, not drawn).
+  message **0x2A** (the HQ releases his old ability, §12.1); stuck, every update costs `HappyHitCosRoomInaccessible` (the CRT `rand()` there only picks a thought bubble, which is not drawn, so no draw is taken; user decision 2026-11-21).
 - **State 8** (entry `0x62852A`, tick `0x62AA50`): the sprite source is deleted; `+0x220 = +0x22C` and the progress 0 (experience ≥ 10000); `+0x224 += SkillIncrement` (10) each update; at
   `ProgessUpperLimit` (3000: **300 updates**) the ability is learnt, the advisor's line 0x175, the finish `0x62AB90` (message **0x2B**, the letter of kind 0xC, the room's variable 0 falls, the sprite
   again, state 0), motivation 100, `TrainingExtraExperience` (5000) and then `StaffAgencies[agency].TrainingExperienceGainModifier` percent of the new experience, capped at MaxExperience, and a look
@@ -385,7 +385,8 @@ World's effort split:
   `HappyHitCosRoomInaccessible` and idle. State 24 (`0x6289BD`): energy `+= (float)(x × −0.1f)`, happiness `+= x × −0.05f` (x the single `1 − exp/MaxExp`); at an energy byte of at most RestLevel
   he leaves (variable 0 falls, shown again), idles and looks for work — at exactly RestLevel the tired test (`<`) lets the finder send him back. Research ends no other way. The display state counts
   "Researching" only for a listed researcher (`+0x274`). A removed research room sends its researchers out (message 10, `0x61B570`) and clears both teams (`0x61DB90`).
-- Not ported: the **level projects** of researched objects: every shipped `Upgrades[n].CashPerBrainPoint` is 0, so `0x61FE70` calls the CRT `rand()` (`0x61FF1A`) and drops the result; that draw
-  awaits the user's decision and such projects are not appended (`[EXT:tpi-capability-gates]`). The lab fill of a new zone (`0x61C9E0`, `rand() % 2 + 1` per project, `0x61FD50`) is not ported for the
-  same reason. Also not ported: the category efforts (computed, read by no tick), the lab-active messages 5/6 (advisor), the "project suspended" texts 300–304, and the per-object staff requirement
-  lists of §12.1. Ride projects need a mechanic consultant, and mechanics are not hired in the slice yet.
+- **Level projects** `0x61FE70`: after a completion, levels without a research cost count as researched at once and the first level with one becomes a category-4 project (cost × CostScaleUp). Every
+  shipped `Upgrades[n].CashPerBrainPoint` is 0, so the original calls the CRT `rand()` (`0x61FF1A`) and throws the result away: the project always costs 1 cash per brain point and no draw is taken
+  (user decision, 2026-11-21).
+- Not ported: the lab fill of a new zone (`0x61C9E0`, `rand() % 2 + 1` per project at `0x61FD50`): it waits for the user's decision at the zone package. Also not ported: the category efforts
+  (computed, read by no tick), the lab-active messages 5/6 (advisor), the "project suspended" texts 300–304, and the per-object staff requirement lists of §12.1. Ride projects need a mechanic consultant, and mechanics are not hired in the slice yet.

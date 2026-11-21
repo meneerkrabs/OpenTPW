@@ -87,17 +87,21 @@ public class ThemeParkIncLayoutCheckpointTests
 	}
 
 	[TestMethod]
-	public void LegacyEnvelopeMigratesButCannotSmuggleNewQueueFields()
+	public void CheckpointsWrittenBeforeTheOwnedLandWasKeptAreRefusedByVersion()
 	{
-		var source = Checkpoint() with { Version = 1 };
-		var migrated = ThemeParkIncLayoutCheckpoint.Deserialize(ParkResumeJson.Serialize(source));
-		Assert.AreEqual(ThemeParkIncLayoutCheckpoint.CurrentVersion, migrated.Version);
-		var cells = source.Layout.Cells with { QueuePassSchemaVersion = 1, QueuePassResidues = new() };
-		Assert.ThrowsException<InvalidDataException>(() => ThemeParkIncLayoutCheckpoint.Deserialize(ParkResumeJson.Serialize(source with { Layout = source.Layout with { Cells = cells } })));
+		// versions 1 and 2 were written before PR #978 kept Theme Park Inc's owned land; both are refused and the message names the version
+		foreach (var version in new[] { 1, 2 })
+		{
+			var old = Checkpoint() with { Version = version };
+			var message = Assert.ThrowsException<InvalidDataException>(() => ThemeParkIncLayoutCheckpoint.Deserialize(ParkResumeJson.Serialize(old))).Message;
+			StringAssert.Contains(message, $"version {version}");
+			StringAssert.Contains(message, "owned land");
+		}
+		Assert.AreEqual(3, ThemeParkIncLayoutCheckpoint.CurrentVersion);
 	}
 
 	[TestMethod]
-	public void VersionTwoRestoresResidueAfterActualObjectReconstruction()
+	public void TheCurrentVersionRestoresResidueAfterActualObjectReconstruction()
 	{
 		var source = Checkpoint();
 		var map = ParkLayoutSnapshot.RestoreCellMap(source.Layout);
@@ -116,7 +120,7 @@ public class ThemeParkIncLayoutCheckpointTests
 	}
 
 	[TestMethod]
-	public void AVersionTwoCheckpointWithUntypedFootprintsIsTypedAndLinkedWhenItConnects()
+	public void ACheckpointWithUntypedFootprintsIsTypedAndLinkedWhenItConnects()
 	{
 		// [BIN:TPI-EXE:0x668552 footprint commit] a checkpoint saved before the footprints were typed holds none of them; the connect stamps them again and lays the entrance's links (RIDES-031, Level.StampRestoredFootprint)
 		var settings = new ObjectSettings(new[] { new ObjectSettingsFile("Info.Id 1101\nInfo.Name Queued\nInfo.IsChoosable 1\n", "queued.sam") });
@@ -218,8 +222,10 @@ public class ThemeParkIncLayoutCheckpointTests
 	{
 		var checkpoint = Checkpoint();
 		var json = Encoding.UTF8.GetString(ThemeParkIncLayoutCheckpoint.Serialize(checkpoint));
-		foreach (var invalid in new[] { json.Replace("\"Version\":2", "\"Version\":99"), json.Replace("\"Version\":2", "\"Version\":2,\"Version\":2"),
-			json.Replace("\"Version\":2", "\"Unknown\":1,\"Version\":2"), json.Replace("\"Version\":2,", ""), json.Replace("new-session", "resume"), "{" })
+		var version = $"\"Version\":{ThemeParkIncLayoutCheckpoint.CurrentVersion}";
+		StringAssert.Contains(json, version);
+		foreach (var invalid in new[] { json.Replace(version, "\"Version\":99"), json.Replace(version, version + "," + version),
+			json.Replace(version, "\"Unknown\":1," + version), json.Replace(version + ",", ""), json.Replace("new-session", "resume"), "{" })
 			Assert.ThrowsException<InvalidDataException>(() => ThemeParkIncLayoutCheckpoint.Deserialize(Encoding.UTF8.GetBytes(invalid)));
 		foreach (var suffix in new[] { ".tpws", ".tpwi", ".gms", ".gmi", ".cos", ".json" })
 		{

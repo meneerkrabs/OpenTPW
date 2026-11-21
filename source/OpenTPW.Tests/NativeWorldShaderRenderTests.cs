@@ -33,8 +33,8 @@ public class NativeWorldShaderRenderTests
 	public void TexturedShaderKeepsTheTextureDetail( string shader, uint matFlags ) => AssertTextureDetail( shader, matFlags, materialScratchBuffer: false );
 
 	/// <summary>
-	/// The uniform block as Material uploads it: a 2048-byte dynamic uniform buffer of which each draw records only the block's bytes (272, more with point
-	/// lights). On Direct3D 11 Veldrid writes such a partial update through a staging buffer and a GPU copy.
+	/// The uniform block as Material uploads it: a 784-byte dynamic uniform buffer (Material.ScratchBufferBytes) of which each draw records only the block's bytes (272, more with point
+	/// lights), written through DynamicBufferUpload as Material writes it, so on Direct3D 11 the upload is widened to the whole buffer (Map WRITE_DISCARD).
 	/// </summary>
 	[DataTestMethod]
 	[DataRow( "test.shader" )]
@@ -419,7 +419,7 @@ public class NativeWorldShaderRenderTests
 		if ( adjustUniforms != null )
 			ubo = adjustUniforms( ubo );
 		using var uniforms = factory.CreateBuffer( materialScratchBuffer
-			? new BufferDescription( 16 * 128, BufferUsage.UniformBuffer | BufferUsage.Dynamic ) // Material.SetupResources' ScratchBuffer
+			? new BufferDescription( Material.ScratchBufferBytes, BufferUsage.UniformBuffer | BufferUsage.Dynamic ) // Material.SetupResources' ScratchBuffer
 			: new BufferDescription( 4096, BufferUsage.UniformBuffer ) );
 
 		Vertex Corner( float x, float y, float u, float v ) => new Vertex( new Vector3( x, y, 0.5f ), new Vector3( 0, 0, -1 ), new Vector2( u, v ) ) { TexIndex = 0, MatFlags = matFlags };
@@ -452,7 +452,18 @@ public class NativeWorldShaderRenderTests
 
 		using var commands = factory.CreateCommandList();
 		commands.Begin();
-		commands.UpdateBuffer( uniforms, 0, ubo );
+		// as Material writes it (Renderer.UpdateUniform): through DynamicBufferUpload, which on Direct3D 11 widens the partial write into the dynamic buffer
+		// to the whole 784 bytes; the device here does not come from Renderer.CreateDevice, so its backend is recorded for this upload
+		var recordedBackend = DynamicBufferUpload.Backend;
+		DynamicBufferUpload.Backend = device.BackendType;
+		try
+		{
+			DynamicBufferUpload.Update( commands, uniforms, ref ubo );
+		}
+		finally
+		{
+			DynamicBufferUpload.Backend = recordedBackend;
+		}
 		commands.UpdateBuffer( vertexBuffer, 0, vertices );
 		commands.GenerateMipmaps( texture );
 		commands.SetFramebuffer( framebuffer );

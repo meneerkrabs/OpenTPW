@@ -35,29 +35,6 @@ public partial class Editor
 		tabs.ForEach( x => x.ImGuiRenderer = this.imguiRenderer );
 	}
 
-	private static void SetKeyMappings( ImGuiIOPtr io )
-	{
-		io.KeyMap[(int)ImGuiKey.Tab] = (int)Key.Tab;
-		io.KeyMap[(int)ImGuiKey.LeftArrow] = (int)Key.Left;
-		io.KeyMap[(int)ImGuiKey.RightArrow] = (int)Key.Right;
-		io.KeyMap[(int)ImGuiKey.UpArrow] = (int)Key.Up;
-		io.KeyMap[(int)ImGuiKey.DownArrow] = (int)Key.Down;
-		io.KeyMap[(int)ImGuiKey.PageUp] = (int)Key.PageUp;
-		io.KeyMap[(int)ImGuiKey.PageDown] = (int)Key.PageDown;
-		io.KeyMap[(int)ImGuiKey.Home] = (int)Key.Home;
-		io.KeyMap[(int)ImGuiKey.End] = (int)Key.End;
-		io.KeyMap[(int)ImGuiKey.Delete] = (int)Key.Delete;
-		io.KeyMap[(int)ImGuiKey.Backspace] = (int)Key.BackSpace;
-		io.KeyMap[(int)ImGuiKey.Enter] = (int)Key.Enter;
-		io.KeyMap[(int)ImGuiKey.Escape] = (int)Key.Escape;
-		io.KeyMap[(int)ImGuiKey.A] = (int)Key.A;
-		io.KeyMap[(int)ImGuiKey.C] = (int)Key.C;
-		io.KeyMap[(int)ImGuiKey.V] = (int)Key.V;
-		io.KeyMap[(int)ImGuiKey.X] = (int)Key.X;
-		io.KeyMap[(int)ImGuiKey.Y] = (int)Key.Y;
-		io.KeyMap[(int)ImGuiKey.Z] = (int)Key.Z;
-	}
-
 	private void InitIO()
 	{
 		var io = ImGui.GetIO();
@@ -70,7 +47,7 @@ public partial class Editor
 		// io.Fonts.Build();
 		// imguiRenderer.RecreateFontDeviceTexture( graphicsDevice );
 
-		SetKeyMappings( io );
+		// the key map is the overlay renderer's (ImGuiOverlayRenderer.SetOpenTKKeyMappings, filled when it made this ImGui context)
 	}
 
 	private void DrawMenuBar()

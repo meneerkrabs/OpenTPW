@@ -170,7 +170,8 @@ public sealed class ParkEconomyRuntime
 
 	/// <summary>
 	/// Creates the money economy of a Theme Park Inc <paramref name="park"/> (<see cref="EconomyRules.ThemeParkIncMoney"/>): Theme Park Inc's own settings and
-	/// object catalogue, no native economy/clock import, a staff hiring pool but no hiring yet, no research or challenges. Saved analyser history is retained across this fresh host start;
+	/// object catalogue, no native economy/clock import, Theme Park Inc's own staff (the hiring pool and handymen), challenge system, career and missions, and no research. Saved analyser
+	/// history is retained across this fresh host start;
 	/// its partial arrivals and recent stays contribute to the first new host month, not the remainder of the saved native month. Objects register uncharged.
 	/// </summary>
 	public static ParkEconomyRuntime ForThemeParkIncLevel( OriginalPark park, WorldSeed? seed = null )

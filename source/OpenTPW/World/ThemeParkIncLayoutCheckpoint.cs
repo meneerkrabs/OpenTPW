@@ -16,7 +16,8 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 	public required IReadOnlyDictionary<string, string> AssetHashes { get; init; }
 
 	public const string FormatName = "opentpw-tpi-layout";
-	public const int CurrentVersion = 2;
+	// version 3 keeps Theme Park Inc's owned land (PR #978); versions 1 and 2 never recorded it
+	public const int CurrentVersion = 3;
 	public const string FreshSession = "new-session";
 	public const int MaximumFileSize = ParkResumeSaveFile.MaximumFileSize;
 
@@ -31,7 +32,7 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 			throw new InvalidDataException("The checkpoint layout or world seed is inconsistent.");
 		// a checkpoint written before Theme Park Inc's land was kept would restore every square as owned, which the original never reaches
 		if (Layout.Cells.TpiUnowned == null || Layout.Cells.Land != null)
-			throw new InvalidDataException("The checkpoint was saved before Theme Park Inc's owned land was kept and cannot be loaded; save the layout again.");
+			throw new InvalidDataException("The checkpoint's owned land is missing or inconsistent.");
 		// Reuse the cell validator and reconstruction contract; no live map is changed.
 		_ = ParkLayoutSnapshot.RestoreCellMap(Layout);
 		if (Layout.NextSeed < 1 || Layout.NextSeed == int.MaxValue || Layout.NextAttractionId < 1 || Layout.NextAttractionId == int.MaxValue ||
@@ -91,13 +92,12 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 		{
 			using var document = JsonDocument.Parse(bytes.ToArray(), new JsonDocumentOptions { MaxDepth = 32 });
 			RejectDuplicates(document.RootElement);
+			// a checkpoint written before Theme Park Inc's land was kept (version 1 or 2) would restore every square as owned, which the original never reaches
+			if (document.RootElement.ValueKind == JsonValueKind.Object &&
+				document.RootElement.TryGetProperty(nameof(Version), out var version) &&
+				version.ValueKind == JsonValueKind.Number && version.TryGetInt32(out var number) && number is 1 or 2)
+				throw new InvalidDataException($"The checkpoint is version {number}, saved before Theme Park Inc's owned land was kept, and cannot be loaded; save the layout again.");
 			var snapshot = ParkResumeJson.Deserialize<ThemeParkIncLayoutCheckpoint>(bytes);
-			if (snapshot.Version == 1)
-			{
-				if (snapshot.Layout?.Cells == null || snapshot.Layout.Cells.QueuePassSchemaVersion != 0 || snapshot.Layout.Cells.QueuePassResidues != null)
-					throw new InvalidDataException("Legacy layout checkpoint contains unsupported queue pass fields.");
-				snapshot = snapshot with { Version = CurrentVersion };
-			}
 			snapshot.ValidateShape();
 			return snapshot;
 		}

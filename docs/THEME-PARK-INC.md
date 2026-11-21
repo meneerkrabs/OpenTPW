@@ -266,11 +266,26 @@ Science continuation save. The system draws no random number.
 
 What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count comes from the sale bookings), 25 (the least happy staff member; the trigger is an
 entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
-or value reads park state OpenTPW does not model. The availability reads the career's mission counter; the mission controller that completes missions is not ported
-yet, so a career stays at mission 0 unless the cheats extension's Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. Left off
+or value reads park state OpenTPW does not model. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
+but its completion waits for a camera flight OpenTPW does not port, so a career stays at mission 0 unless the cheats extension's Skip Mission advances it, and the
+Science rows that need mission 2, 3 or 4 wait for that. Left off
 under the same label: the shares (prize and price effect). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
 their `CHALLENGE_TITLES.str` title with the days left and the progress value, and accepts an offered row while the park is open, as the original's mail does
 (`[EXT:tpi-text-hud]`); the challenge mail's full text, its sounds and the advisor's sender advice are not ported.
+
+<a id="theme-park-inc-missions"></a>
+### Theme Park Inc missions
+
+Since November 21, 2026 a Theme Park Inc park runs the executable's mission controller (`ThemeParkIncMissionController`, `ParkEconomy.TpiMissions`;
+[TPI-MISSIONS.md](reverse/TPI-MISSIONS.md)). It starts the mission's exit statistics in the viewed zone, tests them once a game day on every fourth world tick, and
+answers the obstacle, promotion and camera messages. Its completion tick spends the tickets, grows the land by the mission's extent, opens a theme, advances the
+career, finds the next obstacle and starts the new mission's statistics; the build list's mission gate reads the career's mission number. Types 1, 2, 3, 5 and 8
+are measured from the park; 4 (monthly profit), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
+Science continuation save.
+
+What does not run yet: the camera flight, whose end is the only sender of the completion message 0x29, so the slice offers no Proceed control and miss00 cannot
+be completed in play (the tests deliver 0x29 themselves); the obstacles as world things and their opening (their types are read from the zones' `obstacles`
+archives); the mission window, the objective letter's window, the research that registers an obstacle project, and the staff HQ's obstacle slots.
 
 ### Prebuilt science save
 

@@ -158,12 +158,10 @@ listed `0x538F30` as the Get Promoted dialog. That dialog is the obstacle and ti
 
 ## 5. Not ported yet
 
-- **The mission controller thing.**
-  - InitExitStatistics `0x5EEF60`, the daily evaluation `0x5EF520` and the requirements test `0x55A620`.
-  - The obstacle messages and the camera flights.
-  - The mission window.
-  - The world side of the completion tick: the new extent `extent.%03d`, the end sequence, the next obstacle thing, message 0x2C.
-  - The prebuilt-park choice of `+0x50`, the zone switch and the per-zone park files.
+- **The mission controller** is ported since November 21, 2026 ([TPI-MISSIONS.md](TPI-MISSIONS.md)): the exit statistics, the requirements, the messages and the
+  completion tick with its extent, next obstacle and statistics. Still open there: the camera flights, the obstacles as world things and their opening,
+  the end sequence and message 0x2C.
+- **The mission window**, the prebuilt-park choice of `+0x50`, the zone switch and the per-zone park files.
 - **The meaning of some fields:** `+0x20..+0x29` beyond `+0x20`, `+0x58`, the history, the zone records' `+0x04`/`+0x0A` fields, and the
   `0xA6C0A0` and `0xAA0180` objects.
 - **The CDK registration scan** of `data\cdk registration\*.cdk`. None ships; a folder with `.cdk` files is refused, because the validation's

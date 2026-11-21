@@ -204,7 +204,7 @@ public partial class Level
 				// the writer writes only differences, and no Theme Park World shape has '@' or 'Q' cells) and nothing is repaired (a placement under a negative balance leaves its entrance
 				// and exit without links, which the repair would lay)
 				// Current Science saves also hold the exact cell links, with no legacy repair to replay.
-				if ( joinRestore != null || resumeState?.Economy.Edition == GameEdition.ThemeParkInc )
+				if ( joinRestore != null || ResumesThemeParkInc )
 					continue;
 				if ( incLayout != null )
 				{
@@ -262,7 +262,7 @@ public partial class Level
 		}
 		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off
 		// [BIN:TPW-EXE:0x00528A70 placement leaves people alone] the placement commit writes the footprint cells and clears the paths under them (0x5367A0) but holds no code that finds or moves a person (its calls are the cell ops 0x532FC0, 0x5348D0, 0x53A510, the owner and link writers, the creation 0x529E10 and the sound 0x51BFC0); a guest on a cell that becomes an object's (type 4) keeps walking by the edge test, which lets a walker out of a type 4 cell over a path (0x4D8806) or another type 4 cell (0x4D883E) and over any cell the walk's later tests open, and its own route search starts from that cell, so nothing sets it down
-		var repairLegacyQueueLinks = resumeState?.Economy.Edition != GameEdition.ThemeParkInc;
+		var repairLegacyQueueLinks = !ResumesThemeParkInc;
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item, repairLegacyQueueLinks );
 		Objects.ObjectPlaced += item => RegisterObjectWithGuests( item, repairLegacyQueueLinks: true );
@@ -328,6 +328,9 @@ public partial class Level
 	/// exit (shape 'S'/'N'/'E', else the entrance). Until a queue path is built there (and while that cell is
 	/// not a walkable path), the nearest walkable cell serves as a one-cell queue.
 	/// </summary>
+	/// <summary>Whether the level resumes a Theme Park Inc continuation save (whose cells hold the exact links, with no legacy repair to replay).</summary>
+	private bool ResumesThemeParkInc => resumeState?.Economy is { Edition: GameEdition.ThemeParkInc };
+
 	private void RegisterObjectWithGuests( OriginalObject item, bool repairLegacyQueueLinks )
 	{
 		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ), ownExitCell: TypesFootprints, queueEntryResolver: TypesFootprints && item.Entry.HasQueue

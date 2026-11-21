@@ -5,7 +5,7 @@ namespace OpenTPW;
 /// experience, the turn it was made on and its timeout (it leaves the pool once more than 4 × the timeout turns have passed).
 /// </summary>
 // [BIN:TPI-EXE:0x6302C0 candidate record] +0 role, +4 name index, +8 wage, +0xC agency, +0x10 sprite byte, +0x11 valid, +0x12 being placed, +0x14 stamp, +0x18 timeout, +0x1C experience
-public sealed record ThemeParkIncStaffCandidate( int Id, ThemeParkIncStaffRole Role, int NameIndex, int Wage, int Agency, uint SpriteDraw, int Experience, long Stamp, int Timeout );
+public sealed record ThemeParkIncHireCandidate( int Id, ThemeParkIncStaffRole Role, int NameIndex, int Wage, int Agency, uint SpriteDraw, int Experience, long Stamp, int Timeout );
 
 /// <summary>Theme Park Inc's candidate generation (docs/reverse/TPI-STAFF.md, section 3).</summary>
 public static class ThemeParkIncStaffCandidates
@@ -37,7 +37,7 @@ public static class ThemeParkIncStaffCandidates
 	// plus the 32-bit product wage × InitialWageModifier divided by 100 unsigned when both are nonzero (0x630642..0x63066B); the name is R % 35 drawn again while
 	// it is taken, at most 15 draws (0x6300F0); the timeout is StaffTimeoutTime + R % (StaffTimeoutTime >> 1), unsigned (0x630690..0x6306AC)
 	// [EXT:tpi-staff-crt-rand] user-approved 2026-11-21: the agency's rand() (0x870D38, seeded from the clock by srand(GetTickCount()) at 0x6A151B) is drawn from the park's world generator
-	public static ThemeParkIncStaffCandidate Generate( ThemeParkIncStaffSettings settings, ThemeParkIncStaffRole role, WorldRng world, int promotionLevel, int id, long turn,
+	public static ThemeParkIncHireCandidate Generate( ThemeParkIncStaffSettings settings, ThemeParkIncStaffRole role, WorldRng world, int promotionLevel, int id, long turn,
 		Func<ThemeParkIncStaffRole, int, bool> nameTaken )
 	{
 		var roleSettings = settings.Roles[role];
@@ -63,6 +63,6 @@ public static class ThemeParkIncStaffCandidates
 		}
 		while ( nameTaken( role, name ) && draws < MaximumNameDraws );
 		var timeout = settings.StaffTimeoutTime + (int)(world.NextWord() % (uint)(settings.StaffTimeoutTime >> 1));
-		return new ThemeParkIncStaffCandidate( id, role, name, wage, agency, spriteDraw, experience, turn, timeout );
+		return new ThemeParkIncHireCandidate( id, role, name, wage, agency, spriteDraw, experience, turn, timeout );
 	}
 }

@@ -22,7 +22,7 @@ public sealed class ThemeParkIncStaff
 
 	private readonly ThemeParkIncStaffSettings settings;
 	private readonly Func<ThemeParkIncStaffRole, int, string> nameText;
-	private readonly ThemeParkIncStaffCandidate?[] slots = new ThemeParkIncStaffCandidate?[PoolSlots];
+	private readonly ThemeParkIncHireCandidate?[] slots = new ThemeParkIncHireCandidate?[PoolSlots];
 	private readonly bool[] placing = new bool[PoolSlots];
 	private readonly List<ThemeParkIncStaffMember> members = new();
 	private readonly bool[] atParkMaximum = new bool[6];
@@ -38,8 +38,8 @@ public sealed class ThemeParkIncStaff
 
 	public ThemeParkIncStaffSettings Settings => settings;
 	/// <summary>The pool's slots; null for an empty one.</summary>
-	public IReadOnlyList<ThemeParkIncStaffCandidate?> Slots => slots;
-	public IEnumerable<ThemeParkIncStaffCandidate> Candidates => slots.OfType<ThemeParkIncStaffCandidate>();
+	public IReadOnlyList<ThemeParkIncHireCandidate?> Slots => slots;
+	public IEnumerable<ThemeParkIncHireCandidate> Candidates => slots.OfType<ThemeParkIncHireCandidate>();
 	public IReadOnlyList<ThemeParkIncStaffMember> Members => members;
 	/// <summary>The turn of the pool's last refill (pool +0x418).</summary>
 	public long PoolStamp { get; private set; }

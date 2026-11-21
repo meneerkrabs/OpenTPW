@@ -438,7 +438,7 @@ public sealed class ParkObjects
 			return null;
 		// the new object is built (models, script) before anything is demolished or cleared, so a failed build leaves the park as it was;
 		// like Add, its script draws from the world generator (DET-013)
-		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) );
+		var item = Constructed( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ) );
 		foreach ( var victim in plan.Overwritten )
 			Remove( victim );
 		foreach ( var (x, y) in plan.ClearedPaths )
@@ -459,7 +459,28 @@ public sealed class ParkObjects
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
 	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
 		// the placement ordinal stays the object's creation seed (identity and save bookkeeping); its script draws from the world generator like the original's (DET-013)
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ) );
+		Register( Constructed( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ) ) );
+
+	/// <summary>
+	/// The Standard words a new Theme Park Inc object's script takes (<see cref="ThemeParkIncConstructionWords"/>), read from the theme's Standard.sam on first use; the reset object's zeros without
+	/// the game's Standard.sam (a synthetic catalogue). Null outside Theme Park Inc.
+	/// </summary>
+	private ThemeParkIncConstructionWords? tpiConstruction;
+
+	/// <summary>
+	/// The end of a new object's construction in a Theme Park Inc world: its litter bin or plant script variables take the Standard words (<see cref="ThemeParkIncConstructionWords.Apply"/>). Theme Park
+	/// World's constructor (tp.exe <c>0x4DB07D</c>) writes none of them, so a Theme Park World park, and a Theme Park Inc object a mod brings into one, keeps them at 0. A restored or imported object keeps its
+	/// variables as its load gives them.
+	/// </summary>
+	private OriginalObject Constructed( OriginalObject item )
+	{
+		if ( !GameEditions.IsThemeParkInc )
+			return item;
+		tpiConstruction ??= ThemeParkIncStandard.ConstructionWords( ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, Catalog.Theme )
+			?? new ThemeParkIncSamObject( ThemeParkIncStandard.Schema ) );
+		tpiConstruction.Value.Apply( item.Entry.Settings, item.Runtime.Script );
+		return item;
+	}
 
 	/// <summary>
 	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>

@@ -140,6 +140,16 @@ public static class ThemeParkIncStandard
 	}
 
 	/// <summary>
+	/// The Standard object's words the attraction constructor writes into a new thing's script (<c>0x5DB7D5</c>): <c>LitterBin.Capacity</c>, <c>Dirty</c> and <c>FireRisk</c> (<c>+0xF30</c>,
+	/// <c>+0xF34</c>, <c>+0xF38</c>: <c>0xA02990</c>..<c>0xA02998</c>) and <c>Vegetation.TimeBetweenWaterings</c> and <c>TestAnimation</c> (<c>+0xF3C</c>, <c>+0xF40</c>).
+	/// </summary>
+	public static ThemeParkIncConstructionWords ConstructionWords( ThemeParkIncSamObject standard )
+	{
+		ArgumentNullException.ThrowIfNull( standard );
+		return new ThemeParkIncConstructionWords( standard[0xF30], standard[0xF34], standard[0xF38], standard[0xF3C], standard[0xF40] );
+	}
+
+	/// <summary>
 	/// The word the promotion compares the firing line with for <paramref name="rank"/>: <c>0xA028F8 + 4 × rank</c> (32-bit), which for ranks 0 to 5 is <c>FiringLineForRank[rank].Limit</c>,
 	/// for 6 its count dword, for 7 to 26 <c>ChallengesInThisLevel[rank - 7].ChallengeType</c> and so on through the object. Null when the address leaves the object or lands on a string
 	/// leaf's pointer, whose value is a heap address.
@@ -153,5 +163,41 @@ public static class ThemeParkIncStandard
 		if ( offset < 8 || offset >= (uint)standard.Size || standard.HoldsPointer( (int)offset ) )
 			return null;
 		return standard[(int)offset];
+	}
+}
+
+/// <summary>The Standard words a new Theme Park Inc litter bin's and plant's script variables take at construction (<see cref="ThemeParkIncStandard.ConstructionWords"/>).</summary>
+public readonly record struct ThemeParkIncConstructionWords( int BinCapacity, int BinDirty, int BinFireRisk, int TimeBetweenWaterings, int TestAnimation )
+{
+	/// <summary>
+	/// The attraction constructor's script writes (<c>0x5DB7D5</c>..<c>0x5DB88F</c>) on a new thing of <paramref name="settings"/> through the setter <c>0x6B0780</c>: a litter bin (<c>UsageInfo.HoldsLitter</c>,
+	/// thing flag 0x40) takes variables 3, 11 and 12 (the bin scripts' VAR_CAPACITY, VAR_DIRTY, VAR_FIRERISK), a plant (<c>UsageInfo.RequiresWatering</c>, flag 0x1000) variables 2, 5 and 14 (vegetation.rse's
+	/// VAR_TIMEOUT, VAR_TEST, VAR_SCALE = 1000). Each write is dropped without a script or for an index outside its variables, as the setter drops it.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DB7D5 construction variables] test byte [thing+0x42] & 0x40 (set at 0x5DB6AE..0x5DB6C0 from the type's +0x1A8, HoldsLitter): 0x6B0780(inst, 3, [0xA02990]) (0x5DB7F1), (inst, 11, [0xA02994])
+	// (0x5DB80F), (inst, 12, [0xA02998]) (0x5DB82C); test word [thing+0x42] & 0x1000 (0x5DB63F..0x5DB658, the type's +0x1AC, RequiresWatering): (inst, 2, [0xA0299C]) (0x5DB850), (inst, 5, [0xA029A0])
+	// (0x5DB86E), (inst, 14, 1000) (0x5DB88A); inst = 0x6B0740(thing+0x2C), the script the constructor loaded just before (0x5DB7D0 -> 0x5DE610)
+	// [BIN:TPI-EXE:0x6B0780 script variable setter] nothing without the subsystem, without an instance or for an index outside 0..+0x8C; else the instance's array (+0x1C) takes the value
+	public void Apply( ObjectSettings settings, RideVM? script )
+	{
+		ArgumentNullException.ThrowIfNull( settings );
+		if ( settings.GetBool( "UsageInfo.HoldsLitter" ) )
+		{
+			Set( script, 3, BinCapacity );
+			Set( script, 11, BinDirty );
+			Set( script, 12, BinFireRisk );
+		}
+		if ( settings.GetBool( "UsageInfo.RequiresWatering" ) )
+		{
+			Set( script, 2, TimeBetweenWaterings );
+			Set( script, 5, TestAnimation );
+			Set( script, 14, 1000 );
+		}
+	}
+
+	private static void Set( RideVM? script, int index, int value )
+	{
+		if ( script != null && index >= 0 && index < script.Variables.Length )
+			script.Variables[index] = value;
 	}
 }

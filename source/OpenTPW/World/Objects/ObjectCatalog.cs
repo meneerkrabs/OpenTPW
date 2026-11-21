@@ -586,7 +586,12 @@ public sealed class ObjectCatalog
 		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
 		if ( easyFile != null )
 			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
-		// [BIN:TPI-EXE:0x6B0780 script variable setter] Theme Park Inc's bounds-checked setter of a script variable (thunk 0x4028EC) has 89 call sites, among them the camera flight (0x5D0619: variable 0), its end (0x5D0938: variables 0 and 1) and the ride view's entry on an ordinary attraction (0x5E5BD5: variable 12); which slots the other call sites write (0x542F65, 0x5589A9..0x558E56, 0x5BE074..0x5BF162 and more) is not traced here; the earlier reading that nothing calls the setter missed the thunk (docs/progress/2026-11-21-tpi-camera-obstacles.md). A guest's litter still arms a bin's first variable by name (Level.SetBinTrigger), which is Theme Park World's rule
+		// [BIN:TPI-EXE:0x6B0780 script variable setter] Theme Park Inc's bounds-checked setter of a script variable (thunk 0x4028EC) has 89 call sites: the attraction constructor's writes at a new thing (0x5DB7F1..0x5DB88A:
+		// a litter bin's variables 3, 11 and 12 and a plant's 2, 5 and 14 from Standard.sam, ThemeParkIncConstructionWords, written by ParkObjects in a Theme Park Inc world), its duration and closing writes
+		// (0x5DB99D, 0x5DBBF4), the camera flight (0x5D0619, 0x5D0938), the ride view's entry (0x5E5BD5), the open, repair, queue, plant, staff and visitor handlers
+		// [BIN:TPW-EXE:0x55A0B0 script variable setter] Theme Park World's setter has 45 direct call sites and its constructor (0x4DB07D) writes only the duration (0x4DB633) and the closing (0x4DB779): it sets the
+		// litter flag (0x4DB3FB) but writes no bin variable, and has no watering flag, so a Theme Park Inc object a mod brings into a Theme Park World park keeps those variables at 0 (RIDES-045, retired). A guest's
+		// litter still arms a bin's first variable by name (Level.SetBinTrigger), which is Theme Park World's rule
 		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)
 		// the designers' own Info.Name, before objects.json puts a name over it (the key a Theme Park Inc string table is matched by, ObjectNames.ApplyThemeParkIncNames)
 		var ownName = modObject != null ? new ObjectSettings( layers )["Info.Name"] : null;

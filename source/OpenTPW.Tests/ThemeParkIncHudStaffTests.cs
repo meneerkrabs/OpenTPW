@@ -30,8 +30,10 @@ public class ThemeParkIncHudStaffTests
 		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 		Set( level, "Objects", new ParkObjects( catalog, new SandboxParkGrid(), new WorldSeed( 1 ) ) );
 		Set( level, "CellTool", new CellBuildTool() );
+		Set( level, "LastActionMessage", "" );
 		var economy = (ParkEconomy)RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomy ) );
 		Set( economy, "TpiStaff", staff );
+		Set( economy, "TpiWageDemands", new List<ThemeParkIncStaff.WageDemand>() );
 		var runtime = (ParkEconomyRuntime)RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomyRuntime ) );
 		Set( runtime, "Economy", economy );
 		Set( level, "Park", runtime );
@@ -122,6 +124,21 @@ public class ThemeParkIncHudStaffTests
 		Assert.AreEqual( -1, level.TpiPlacingSlot );
 		Assert.IsFalse( staff.IsPlacing( 2 ), "the being-placed byte is cleared" );
 		Assert.AreSame( candidate, staff.Slots[2], "the candidate stays in the pool" );
+	}
+
+	[TestMethod]
+	public void StaffPanelIsHiddenWhileThePauseMenuIsOpen()
+	{
+		var hud = BuildHud( Strings(), SyntheticStaff( (0, Candidate( 1, ThemeParkIncStaffRole.Handyman, 1, 800, 5 )) ) );
+		var panel = new[] { "staffPanelTitle", "staffPanelNote", "staffPanelList", "staffPanelClose" }.Select( id => hud.Screen.Find( id )! ).ToArray();
+		((UiButton)hud.Screen.Find( "staff" )!).Clicked!();
+		Assert.IsTrue( panel.All( element => element.Visible ) );
+		typeof( ThemeParkIncHud ).GetMethod( "OpenPauseMenu", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( hud, null );
+		Assert.IsTrue( hud.MenuOpen );
+		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
+		var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 1024, 768 ) };
+		hud.Update( context, new UiInput() );
+		Assert.IsTrue( panel.All( element => !element.Visible ), "the staff panel hides under the pause menu" );
 	}
 
 	[TestMethod]

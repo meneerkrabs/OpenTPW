@@ -8,7 +8,7 @@ public sealed record ThemeParkIncStaffMemberSnapshot( int Id, ThemeParkIncStaffR
 /// The saved Theme Park Inc staff: the 32 pool slots with their being-placed bytes, the members in list order, the park-maximum flags and hired counts of the last
 /// check, the pool stamp, the opening-pool latch, the next id, the strike records and the last wage demand's day.
 /// </summary>
-public sealed record ThemeParkIncStaffSnapshot( ThemeParkIncStaffCandidate?[] Slots, bool[] Placing, ThemeParkIncStaffMemberSnapshot[] Members, bool[] AtParkMaximum,
+public sealed record ThemeParkIncStaffSnapshot( ThemeParkIncHireCandidate?[] Slots, bool[] Placing, ThemeParkIncStaffMemberSnapshot[] Members, bool[] AtParkMaximum,
 	int[] Hired, long PoolStamp, bool OpeningPoolMade, int NextId, ThemeParkIncStaff.StrikeRecord[] Strikes, bool StrikeForced, uint LastWageDemandDay );
 
 /// <summary>
@@ -396,7 +396,7 @@ public sealed class ThemeParkIncStaff
 
 	/// <summary>The staff for a save.</summary>
 	internal ThemeParkIncStaffSnapshot Capture() => new(
-		(ThemeParkIncStaffCandidate?[])slots.Clone(), (bool[])placing.Clone(),
+		(ThemeParkIncHireCandidate?[])slots.Clone(), (bool[])placing.Clone(),
 		members.Select( member => new ThemeParkIncStaffMemberSnapshot( member.Id, member.Role, member.NameIndex, member.SpriteDraw, member.Experience, member.Salary,
 			member.Agency, member.Happiness, member.Motivation, member.Energy, member.WageShortfall, member.WageDemandDay, member.CaptureDayCounters() ) ).ToArray(),
 		(bool[])atParkMaximum.Clone(), (int[])hired.Clone(), PoolStamp, openingPoolMade, NextId, (StrikeRecord[])strikes.Clone(), StrikeForced, LastWageDemandDay );

@@ -123,8 +123,8 @@ public sealed partial class ParkEconomy
 
 		public bool OpensAutomatically( int type ) => economy.TpiMissionWorld?.OpensAutomatically( type ) ?? false;
 
-		// the staff HQ's slot table is not modelled ([EXT:tpi-capability-gates] at ThemeParkIncMissionController.MetRequirements)
-		public bool? ObstacleStaffSlotsFilled => null;
+		// [BIN:TPI-EXE:0x64E940 staff HQ] the HQ thing park+0x1EAB4C, whose 20 slots ThemeParkIncStaffHeadquarters keeps; a park without Theme Park Inc staff has no HQ
+		public bool? ObstacleStaffSlotsFilled => economy.TpiStaff?.Hq.AllFilled;
 
 		public void OpenObstacle( ushort thing ) => World( "open an obstacle" ).OpenObstacle( thing );
 

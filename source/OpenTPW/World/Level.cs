@@ -710,6 +710,7 @@ public partial class Level : IDisposable
 			{
 				SetupThemeParkIncStaff();
 				SeedThemeParkIncCurrentObstacle();
+				SeedThemeParkIncHqAndLab();
 				AttachThemeParkIncMissionWorld();
 			}
 			yield return 0.95f;

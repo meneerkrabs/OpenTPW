@@ -304,3 +304,26 @@ of a 180 or 270 degree object covers the rectangle `0x5E9320` computes, which is
 their draws are taken, the voices queued); TPI litter types 9 to 12 (the pending-item drop `0x613D00`, whose gate
 is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0x5D73A0` (no static caller).
 
+
+## 12. Staff HQ obstacle slots, training and research (November 21, 2026)
+
+### 12.1 The staff HQ's obstacle slots
+
+`ThemeParkIncStaffHeadquarters` (held by `ThemeParkIncStaff.Hq`, saved in its snapshot) is the slot part of the HQ thing (class 9, `park+0x1EAB4C`, constructor `0x632270`):
+
+- **Table `0x634600`.** The mission's five `ObstacleStaff` records (StaffType `+0x2E0`, Ability `+0x2E4`, Number `+0x2E8`, stride 12) append `Number` empty slots each, whatever the count dword; the rest up to 20
+  are `{7, 0, 0}` ("no requirement"). The append has no bound in the executable; OpenTPW refuses a mission asking for more than 20.
+- **Staff type codes `0x62AF70`** are the role order: handyman 0, mechanic 1, entertainer 2, guard 3, researcher 4, gardener 5 (r7 §8.1 had guard and entertainer swapped; the table `0x62AFD0` settles it).
+- **Assign `0x634B00`**: a member with slot index -1 takes the first slot whose ability equals his trained ability and whose thing word is 0. The staff type is not compared (`0x62AF70`'s answer is dropped
+  at `0x634B50`), so an untrained member can fill a padding slot and any role with the ability can fill a requirement.
+- **Release `0x634730`** (message 0x21 for a staff thing, 0x2A gone to train): the ability's count falls (also for ability 0); ability 0 stops; a member in a slot leaves it (only gardeners, handymen and
+  mechanics have the slot cleared, at their own index) and the first member of his role with the same ability who fills no slot (the finders `0x6348C0`/`0x634980`/`0x634A40` over the role's list, the
+  table excluding the slotted, `0x55E3B0`) is assigned.
+- **Training finished `0x63256F`** (message 0x2B): count up, assign.
+- **Rebuild `0x634D20`** (messages 0x23 and 0x24): every slotted gardener/handyman/mechanic leaves his slot, the table is rebuilt, and for an obstacle mission each requirement's finder by staff type (0
+  handyman, 1 mechanic, 5 gardener; another type repeats the last answer) assigns a member.
+- **MetRequirements `0x55A620`** reads the real slots (`ThemeParkIncStaffHeadquarters.AllFilled`). A park file's HQ is loaded, not constructed: the prebuilt Science park keeps its saved twenty `{7, 0, 0}`.
+- Not ported: the per-object trained-staff requirement lists at `0xAA0330` (`0x623FB0` on 0x2B, `0x6241B0` on a release), which an attraction's activation reads (UITEXT 985).
+
+Message delivery: the queue `0xA09728` reaches its listeners in ascending handle order; OpenTPW calls the listeners at the post (`ParkEconomy.ThemeParkIncObstacleResearched`, `ThemeParkIncObstacleRemoved`),
+the HQ before the mission controller.

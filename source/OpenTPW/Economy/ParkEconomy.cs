@@ -76,6 +76,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// [BIN:TPI-EXE:0x630CB0 opening pool] the new-world init (0x6482BA -> 0x5D65B0 -> 0x630CB0) fills the opening pool from the world generator and stamps it with the turn,
 			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
 			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
+			// [BIN:TPI-EXE:0x6482E3 staff HQ thing] the new-world init builds the staff HQ, whose constructor fills its slot table from the career's mission (0x632270 -> 0x634600)
+			TpiStaff.Hq.BuildSlots( TpiCareer.Mission );
 		}
 		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
 		CreateThemeParkIncChallenges();

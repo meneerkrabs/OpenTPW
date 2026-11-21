@@ -39,6 +39,16 @@ public sealed class ThemeParkIncStaffMember
 	public int WageShortfall { get; internal set; }
 	/// <summary>The day of the month the member will demand a rise on (+0x26C), 0 for none.</summary>
 	public int WageDemandDay { get; internal set; }
+	/// <summary>The trained ability (+0x218, <c>mKnownAbilities</c>; ABILITIES.str): 0 for none, one at a time.</summary>
+	public int Ability { get; internal set; }
+	/// <summary>The ability being learnt (+0x220, <c>mCurrentlyLearning</c>), 0 for none.</summary>
+	public int LearningAbility { get; internal set; }
+	/// <summary>The training progress (+0x224, <c>mSAProgress</c>).</summary>
+	public int TrainingProgress { get; internal set; }
+	/// <summary>The ability chosen to learn (+0x22C, <c>mGoingToLearn</c>), which entering training (state 8) takes.</summary>
+	public int ChosenAbility { get; internal set; }
+	/// <summary>The staff HQ obstacle slot the member fills (+0x228, <c>mSlotLocation</c>), -1 for none.</summary>
+	public int HqSlot { get; internal set; } = -1;
 
 	/// <summary>Hires <paramref name="candidate"/>: its role, name, experience, wage as the salary, agency and look.</summary>
 	public static ThemeParkIncStaffMember Hire( ThemeParkIncHireCandidate candidate, int id ) =>

@@ -84,6 +84,13 @@ public static class ParkLayoutSnapshot
 		/// which this record carries for the whole map.
 		/// </summary>
 		public LandData? Land { get; init; }
+		/// <summary>
+		/// A Theme Park Inc map's owned land (docs/reverse/TPI-BOUNDARY.md): Base64 of one bit per cell in row order (bit <c>i &amp; 7</c> of byte <c>i &gt;&gt; 3</c>), set where the
+		/// cell is not owned. Theme Park Inc has no fence or Buy Land, so it carries no <see cref="Land"/>; the cell records' flags omit the unowned bit, which this carries for the whole map.
+		/// Null for Theme Park World maps; a Theme Park Inc continuation or layout checkpoint without it predates the land and is refused.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public string? TpiUnowned { get; init; }
 	}
 
 	/// <summary>The land of a park: the fence's gate posts and ring, and the unowned cells as a row-major bit map.</summary>
@@ -177,13 +184,14 @@ public static class ParkLayoutSnapshot
 		ArgumentNullException.ThrowIfNull( cells );
 		ArgumentNullException.ThrowIfNull( objects );
 		var cellRecords = new List<CellData>();
+		var tpiLand = cells.Land == null && cells.HasThemeParkIncLand;
 		for ( var y = 0; y < cells.Height; y++ )
 		{
 			for ( var x = 0; x < cells.Width; x++ )
 			{
 				var type = cells.RawTypeAt( x, y );
-				// with land, the land record carries the unowned bit of every cell, so a cell is not recorded for it alone
-				var flags = (ushort)(cells.Land != null ? cells.FlagsAt( x, y ) & ~ParkCellFlags.Unowned : cells.FlagsAt( x, y ));
+				// with land (or a Theme Park Inc map's ownership bits), the land record carries the unowned bit of every cell, so a cell is not recorded for it alone
+				var flags = (ushort)(cells.Land != null || tpiLand ? cells.FlagsAt( x, y ) & ~ParkCellFlags.Unowned : cells.FlagsAt( x, y ));
 				var placements = cells.PlacementCountAt( x, y );
 				var links = cells.LinksAt( x, y );
 				var queueLink = cells.QueueLinkAt( x, y );
@@ -223,7 +231,7 @@ public static class ParkLayoutSnapshot
 		var stamps = cells.CaptureBlockStamps();
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, QueuePassSchemaVersion = cells.HasQueuePassResidues ? 1 : 0, QueuePassResidues = cells.HasQueuePassResidues ? cells.CaptureQueuePassResidues().ToList() : null, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ) },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, QueuePassSchemaVersion = cells.HasQueuePassResidues ? 1 : 0, QueuePassResidues = cells.HasQueuePassResidues ? cells.CaptureQueuePassResidues().ToList() : null, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ), TpiUnowned = tpiLand ? Convert.ToBase64String( UnownedBits( cells ) ) : null },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
@@ -232,12 +240,9 @@ public static class ParkLayoutSnapshot
 		};
 	}
 
-	/// <summary>The land record of <paramref name="cells"/>, null when the map has no land.</summary>
-	public static LandData? CaptureLand( ParkCellMap cells )
+	/// <summary>One bit per cell in row order, set where the cell carries <see cref="ParkCellFlags.Unowned"/>.</summary>
+	private static byte[] UnownedBits( ParkCellMap cells )
 	{
-		ArgumentNullException.ThrowIfNull( cells );
-		if ( cells.Land is not { } land )
-			return null;
 		var bits = new byte[(cells.Width * cells.Height + 7) / 8];
 		for ( var y = 0; y < cells.Height; y++ )
 		{
@@ -248,6 +253,16 @@ public static class ParkLayoutSnapshot
 					bits[index >> 3] |= (byte)(1 << (index & 7));
 			}
 		}
+		return bits;
+	}
+
+	/// <summary>The land record of <paramref name="cells"/>, null when the map has no land.</summary>
+	public static LandData? CaptureLand( ParkCellMap cells )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		if ( cells.Land is not { } land )
+			return null;
+		var bits = UnownedBits( cells );
 		return new LandData
 		{
 			PostAX = land.PostA.X, PostAY = land.PostA.Y, PostBX = land.PostB.X, PostBY = land.PostB.Y,
@@ -415,7 +430,7 @@ public static class ParkLayoutSnapshot
 			// an owner word is the cell word y * 128 + x + 1 of a cell of the 128 x 128 array (0x4D0AF0 decodes it as cell - 1)
 			Require( cell.Owner <= 128 * 128, $"cell ({cell.X}, {cell.Y}) has owner word {cell.Owner} beyond the cell array" );
 			// with a land record the unowned flag lives in the record's bits, never in a cell record (see CaptureSnapshot)
-			Require( cells.Land == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
+			Require( cells.Land == null && cells.TpiUnowned == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
 				$"cell ({cell.X}, {cell.Y}) carries the unowned flag beside a land record" );
 		}
 		if ( cells.BlockStamps is { } stamps )
@@ -428,6 +443,39 @@ public static class ParkLayoutSnapshot
 			Require( cells.StampCounter == 0, "the cell map has a stamp counter but no block stamps" );
 		if ( cells.Land is { } land )
 			ReadLand( land, cells.Width, cells.Height );
+		if ( cells.TpiUnowned is { } tpiUnowned )
+		{
+			Require( cells.Land == null, "the cell map carries both a land record and Theme Park Inc ownership bits" );
+			ReadUnownedBits( tpiUnowned, cells.Width, cells.Height );
+		}
+	}
+
+	/// <summary>Sets <see cref="ParkCellFlags.Unowned"/> on every cell whose bit is set in <paramref name="unowned"/> (row order).</summary>
+	private static void SetUnowned( ParkCellMap cells, byte[] unowned )
+	{
+		for ( var index = 0; index < cells.Width * cells.Height; index++ )
+		{
+			if ( (unowned[index >> 3] & (1 << (index & 7))) == 0 )
+				continue;
+			var (x, y) = (index % cells.Width, index / cells.Width);
+			cells.SetFlags( x, y, cells.FlagsAt( x, y ) | ParkCellFlags.Unowned );
+		}
+	}
+
+	/// <summary>The unowned-cell bits of a Base64 bit map covering a <paramref name="width"/> x <paramref name="height"/> map; throws <see cref="InvalidDataException"/> otherwise.</summary>
+	private static byte[] ReadUnownedBits( string base64, int width, int height )
+	{
+		byte[] bits;
+		try
+		{
+			bits = Convert.FromBase64String( base64 );
+		}
+		catch ( FormatException )
+		{
+			throw new InvalidDataException( "Layout snapshot is inconsistent: the unowned cells are not Base64." );
+		}
+		Require( bits.Length == (width * height + 7) / 8, $"the unowned cells cover {bits.Length} bytes, not {(width * height + 7) / 8}" );
+		return bits;
 	}
 
 	/// <summary>The land and unowned-cell bits of a land record; throws <see cref="InvalidDataException"/> for an inconsistent one.</summary>
@@ -483,14 +531,13 @@ public static class ParkLayoutSnapshot
 		if ( snapshot.Cells.Land is { } saved )
 		{
 			var (land, unowned) = ReadLand( saved, cells.Width, cells.Height );
-			for ( var index = 0; index < cells.Width * cells.Height; index++ )
-			{
-				if ( (unowned[index >> 3] & (1 << (index & 7))) == 0 )
-					continue;
-				var (x, y) = (index % cells.Width, index / cells.Width);
-				cells.SetFlags( x, y, cells.FlagsAt( x, y ) | ParkCellFlags.Unowned );
-			}
+			SetUnowned( cells, unowned );
 			cells.SetLand( land );
+		}
+		else if ( snapshot.Cells.TpiUnowned is { } tpiUnowned )
+		{
+			SetUnowned( cells, ReadUnownedBits( tpiUnowned, cells.Width, cells.Height ) );
+			cells.HasThemeParkIncLand = true;
 		}
 		else
 			newLand?.Invoke( cells );

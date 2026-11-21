@@ -108,6 +108,12 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   undoes, right-click cancels; a placed `Info.HasQueue` ride switches to the queue tool. The build
   ghost markers now resolve their textures by name without extension, so Theme Park Inc's own
   `blue.tga`/`red.tga` markers draw (Theme Park World keeps its `blue.wct`/`red.wct`).
+- **Owned land** is Theme Park Inc's own ([TPI-BOUNDARY.md](reverse/TPI-BOUNDARY.md)): the prebuilt Science park keeps its saved flags (1259 owned squares), and a new
+  water or arabian world marks every square but the NoModify ones unowned, opens the gate strip beside the entrance and clears its `hoardings.map` with the land loader
+  `0x678B00` (x-major bytes, map border skipped). Paths, queues and objects are refused on unowned land, as the cell validator `0x67E320` refuses them; no fence is
+  laid and the land is not drawn darker (Theme Park Inc's boundary drawing is not read). `Level.ApplyThemeParkIncExtent` grows the land by `extents/extent.NNN` for the
+  mission controller, and the build list applies the catalogue's gate `0x57CA20`: the four special rides are hidden in every mission, and the mission number (0 until the career
+  runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused.
 - **Guests** start with Theme Park Inc's own 24-row profile table, starting cash, exit counter and starting needs.
   The selected row supplies their excitement preference. The original prank code is saved separately from the
   Theme Park World flag but does not run any TPI prank actions yet. Existing guests in older saves keep their
@@ -216,7 +222,7 @@ The object catalogue adds the keys only Theme Park Inc's type record has: `Info.
 | `LoanInfo[n]` (ten slots, eight used) | `0x5BFB97` (`0x00A020C4`); the loan loop and the monthly step `0x5C0B10`..`0x5C0C49` | `0x4CF7C0`, `0x4D0370` | `LoanMath` unchanged (oracle X8, X9) |
 | bank debit | `0x5C07B0` | `0x4D01F0` | `ParkEconomy.Post` |
 | `Costs.QueueCell`, `PathCell`, `KartTrackCell`, `WaterTrackCell` | setter `0x4289AC` (`0x00A0264C`..`0x00A02658`) | `0x408192` | path, queue and track charges as in Theme Park World |
-| `Costs.MapCell` | in the data (`0x00A0265C`), read by no instruction found | the Buy Land tool | **no Buy Land**: `TryBuyCells(Land)` answers `NoLandForSale`; the park boundary is the mission's `BoundaryClicks` (moderate confidence) |
+| `Costs.MapCell` | in the data (`0x00A0265C`), read by no instruction found | the Buy Land tool | **no Buy Land**: `TryBuyCells(Land)` answers `NoLandForSale`; the owned land is the zone's `hoardings.map` and grows by `extents/extent.NNN` ([TPI-BOUNDARY.md](reverse/TPI-BOUNDARY.md)); a mission's `BoundaryClicks` is read only by dead code |
 | calendar | constructor `0x607E90` | `0x4F7E80` | 2000-01-01, 15,000 game seconds per real second (`ParkCalendar`) |
 | entry-fee judgement | `0x6157D0` (divisor word `0x00A01A90`) | `0x4FF5C0` | same routine; the divisor is data: 6 in Theme Park Inc's global file (4 in arabian's layer), 4 in Theme Park World's |
 | object purchase, upgrade purchase | `0x5DBE3C`, `0x5E2A99` | `0x4DB090`, `0x4AF4E9` | the build charges `Upgrades[0].CostOfUpgrade`; the upgrade needs a mechanic, so it stays refused (`NeedsStaff`) |

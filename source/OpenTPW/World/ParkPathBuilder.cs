@@ -226,6 +226,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		if ( !Cells.InBounds( x, y ) || x >= Terrain.Width || y >= Terrain.Height )
 			return CellBuildResult.OutsideTerrain;
 		// [BIN:STP-PPC:0x1008432C placement validator] a cell with flag 0x40 (not owned; set by map initialisation 0x10085538 on every non-InitialPath cell) is refused
+		// [BIN:TPI-EXE:0x67E4AC cell validator] Theme Park Inc's validator 0x67E320 refuses a 0x40 square with 1 for every tool mode past its early exits (0x1F, 0x22, 0x3A/0x3D/0x3E, 0x36/0x88/0x89), the path, queue and line tools (0x660D80) among them
 		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) )
 			return CellBuildResult.NotOwned;
 		// [BIN:TPW-EXE:0x535D66 overwrite priority] a type 4, 9 or 10 cell is tested by its owner's overwrite priority alone: below the tool's 0x818C10 (2 for a path, set by the hover 0x5234D0) it is allowed, otherwise refused

@@ -66,7 +66,7 @@ public class ThemeParkIncLayoutCheckpointTests
 		objects.Remove(removed);
 		var live = objects.Add(entry, 3, 4, 90, open: false);
 		live.Runtime.SetVariable(nameof(RideVariables.VAR_RUNNING), 77);
-		var cells = new ParkCellMap(16, 16);
+		var cells = new ParkCellMap(16, 16) { HasThemeParkIncLand = true };
 		cells.SetType(4, 6, ParkCellType.Path); cells.SetFlags(4, 6, ParkCellFlags.NoModify);
 		cells.SetType(4, 5, ParkCellType.Queue); cells.SetQueueLink(4, 5, 64);
 		return new ThemeParkIncLayoutCheckpoint
@@ -75,6 +75,15 @@ public class ThemeParkIncLayoutCheckpointTests
 			Theme = "science", Seed = seed.Value, SavedUtc = DateTimeOffset.UnixEpoch,
 			Layout = ParkLayoutSnapshot.CaptureSnapshot(cells, objects), AssetHashes = assets
 		};
+	}
+
+	[TestMethod]
+	public void ACheckpointWithoutTheOwnedLandIsRefused()
+	{
+		var source = Checkpoint();
+		Assert.IsNotNull(source.Layout.Cells.TpiUnowned, "the land travels as one bit map");
+		var old = source with { Layout = source.Layout with { Cells = source.Layout.Cells with { TpiUnowned = null } } };
+		StringAssert.Contains(Assert.ThrowsException<InvalidDataException>(() => ThemeParkIncLayoutCheckpoint.Deserialize(ParkResumeJson.Serialize(old))).Message, "owned land");
 	}
 
 	[TestMethod]
@@ -117,7 +126,7 @@ public class ThemeParkIncLayoutCheckpointTests
 			new object[] { "science", new[] { queued } }, null)!;
 		var objects = new ParkObjects(queuedCatalog, new SandboxParkGrid(), seed);
 		objects.Add(queued, 6, 6, 0);
-		var cells = new ParkCellMap(16, 16);
+		var cells = new ParkCellMap(16, 16) { HasThemeParkIncLand = true };
 		var front = objects.Objects.Single().AccessPoints.First(point => point.Kind == ObjectCellKind.Entrance);
 		cells.SetType(front.OutsideX, front.OutsideY, ParkCellType.Path);
 		var checkpoint = new ThemeParkIncLayoutCheckpoint
@@ -261,7 +270,7 @@ public class ThemeParkIncLayoutCheckpointTests
 	{
 		var objects = new ParkObjects(catalog, new SandboxParkGrid(), seed);
 		objects.Add(entry, 3, 4, 90);
-		var cells = new ParkCellMap(16, 16); cells.SetType(4, 6, ParkCellType.Path);
+		var cells = new ParkCellMap(16, 16) { HasThemeParkIncLand = true }; cells.SetType(4, 6, ParkCellType.Path);
 		var guests = new GuestSimulation(new GuestPathGrid(cells), GuestTests.CreateSettings(), seed.GuestStream);
 		var level = (Level)RuntimeHelpers.GetUninitializedObject(typeof(Level));
 		Set(level, "OriginalPark", RuntimeHelpers.GetUninitializedObject(typeof(OriginalPark)));

@@ -305,7 +305,7 @@ public sealed partial class ParkCellMap
 				}
 				var (type, flags) = MapStartCell( map.GetCellAt( x, y ), inside );
 				// the init's 0x40 over the terrain is the land's to set (ParkLand.ApplyToNewPark) or an imported save's to restore (ImportLand)
-				// [EXT:no-land-maps] a map that gets no land (a level without a fence setup, a Theme Park Inc map, a read-only visit) keeps its cells over the terrain owned: the fence needs the theme's Hoardings.sam and entrance cells, which those maps lack, and a visit is OpenTPW's read-only extension
+				// [EXT:no-land-maps] a map that gets no land (a level without a fence setup, a read-only visit) keeps its cells over the terrain owned: the fence needs the theme's Hoardings.sam and entrance cells, which those maps lack, and a visit is OpenTPW's read-only extension; a Theme Park Inc map takes its own land afterwards (ThemeParkIncLand)
 				if ( inside )
 					flags &= ~ParkCellFlags.Unowned;
 				if ( type != (byte)ParkCellType.Path && type != 0 )
@@ -727,6 +727,12 @@ public sealed partial class ParkCellMap
 	public TrackCellLayer Tracks { get; }
 	/// <summary>The park's fence and enclosed land (Buy Land); null for a map without one, where no cell is made unowned.</summary>
 	public ParkLand? Land { get; private set; }
+
+	/// <summary>
+	/// Whether the map holds Theme Park Inc's owned land (<see cref="ThemeParkIncLand"/>): set by the land's set-up and by a restore of its saved bit map, so a layout
+	/// snapshot keeps the unowned bits as one bit map (<see cref="ParkLayoutSnapshot.CellMapData.TpiUnowned"/>) whatever edition is selected when it is captured.
+	/// </summary>
+	public bool HasThemeParkIncLand { get; internal set; }
 
 	/// <summary>Replaces the land model (a purchase, a load); the cells' ownership flags are written separately.</summary>
 	public void SetLand( ParkLand? land )

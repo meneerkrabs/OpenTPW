@@ -112,9 +112,12 @@ public sealed class EconomyParkStatus : IHudParkStatus
 public sealed class OriginalBuildCatalog : IBuildCatalog
 {
 	private readonly IReadOnlyDictionary<BuildCategory, BuildItem[]> categories;
+	private readonly Func<ObjectCatalogEntry, bool>? listed;
 
-	public OriginalBuildCatalog( ObjectCatalog catalog )
+	/// <param name="listed">Which entries the list shows right now, asked on every read (Theme Park Inc's mission gate, <see cref="ThemeParkIncCatalogue"/>); null shows them all.</param>
+	public OriginalBuildCatalog( ObjectCatalog catalog, Func<ObjectCatalogEntry, bool>? listed = null )
 	{
+		this.listed = listed;
 		// [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -> 0x10139084 -> 0x1005C35C) instances the p<name> preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model
 		categories = catalog.Buildable.OrderBy( entry => entry.InfoId ).Select( Item )
 			.GroupBy( item => item.Category ).ToDictionary( group => group.Key, group => group.ToArray() );
@@ -134,7 +137,8 @@ public sealed class OriginalBuildCatalog : IBuildCatalog
 		entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) : null, entry );
 
 	public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) =>
-		categories.TryGetValue( category, out var items ) ? items : Array.Empty<BuildItem>();
+		!categories.TryGetValue( category, out var items ) ? Array.Empty<BuildItem>()
+		: listed == null ? items : items.Where( item => item.Entry != null && listed( item.Entry ) ).ToArray();
 }
 
 /// <summary>

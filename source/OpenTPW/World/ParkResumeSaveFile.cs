@@ -370,6 +370,16 @@ internal static class ParkResumeSaveFile
 				$"the park provides asset '{key}', which the save does not expect" );
 	}
 
+	/// <summary>The message a Theme Park Inc continuation without its owned land is refused with.</summary>
+	internal const string ThemeParkIncLandMissing = "the Theme Park Inc park was saved before its owned land was kept; this save cannot be continued, start the park again";
+
+	/// <summary>
+	/// Refuses a Theme Park Inc continuation whose layout carries no ownership bits (<see cref="ParkLayoutSnapshot.CellMapData.TpiUnowned"/>): one written before the land was kept
+	/// would restore every square as owned, which the original never reaches (docs/reverse/TPI-BOUNDARY.md).
+	/// </summary>
+	internal static void RequireThemeParkIncLand( ParkLayoutSnapshot.Data? layout ) =>
+		Require( layout?.Cells?.TpiUnowned != null, ThemeParkIncLandMissing );
+
 	/// <summary>
 	/// The envelope's own consistency, with no catalog or settings: header bounds, the embedded economy's format
 	/// and invariants, the layout's pure allocator/identity rules, the script world's graph, one runtime per
@@ -425,11 +435,13 @@ internal static class ParkResumeSaveFile
 				&& snapshot.Advisor == null && snapshot.Weather == null && snapshot.Layout?.Cells?.Land == null,
 				"Theme Park Inc continuation contains unsupported world state" );
 			Require( snapshot.TpiHudSpeed is { } speed && Enum.IsDefined( speed ), "the saved Theme Park Inc HUD speed is invalid" );
+			RequireThemeParkIncLand( snapshot.Layout );
 			Require( snapshot.TpiWeatherClosingsSeen is >= 0 && snapshot.TpiWeatherClosingsSeen <= (snapshot.Economy.TpiWeather?.SpellStarts ?? 0),
 				"the saved Theme Park Inc weather delivery count is invalid" );
 		}
 		else
-			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null && snapshot.TpiStaffChain == null, "Theme Park World save contains Theme Park Inc continuation state" );
+			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null && snapshot.TpiStaffChain == null && snapshot.Layout?.Cells?.TpiUnowned == null,
+				"Theme Park World save contains Theme Park Inc continuation state" );
 		yield return true;
 		Require( snapshot.Layout != null, "the layout snapshot is missing" );
 		Require( snapshot.Guests != null, "the guest snapshot is missing" );

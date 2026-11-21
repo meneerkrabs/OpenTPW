@@ -246,5 +246,5 @@ Not ported yet: the role state machines and their walking, working, slacking (`0
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a read-only Staff panel in the HUD.
-The plan for the members' world is in OpenTPW-notes (tpi-staff-world-plan.md): a separate Theme Park Inc staff world, handymen first.
+The members' world comes next as a separate Theme Park Inc staff world beside Theme Park World's, handymen first.
 

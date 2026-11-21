@@ -922,7 +922,7 @@ public partial class Renderer : IDisplaySettings
 	internal void UpdateUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged
 	{
 		if ( IsFrameRecording )
-			CommandList.UpdateBuffer( buffer, 0, ref value );
+			DynamicBufferUpload.Update( CommandList, buffer, ref value );
 		else
 			SubmitUniform( buffer, value );
 	}
@@ -935,14 +935,14 @@ public partial class Renderer : IDisplaySettings
 	{
 		if ( IsFrameRecording )
 		{
-			CommandList.UpdateBuffer( buffer, 0, ref value, sizeInBytes );
+			DynamicBufferUpload.Update( CommandList, buffer, ref value, sizeInBytes );
 			return;
 		}
 		var bytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes( new ReadOnlySpan<T>( in value ) )[..(int)sizeInBytes].ToArray();
-		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, bytes ) );
+		ImmediateSubmit( commands => DynamicBufferUpload.Update( commands, buffer, bytes ) );
 	}
 
 	// Keep the rare immediate-upload closure out of the per-draw allocation path.
 	private void SubmitUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged =>
-		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, value ) );
+		ImmediateSubmit( commands => DynamicBufferUpload.Update( commands, buffer, ref value ) );
 }

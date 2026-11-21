@@ -64,8 +64,8 @@ internal static partial class Graphics
 		var indices = new List<uint>() { 3, 2, 1, 0, 1, 2 };
 
 		var cmd = Render.CommandList;
-		cmd.UpdateBuffer( vertexBuffer, 0, vertices.ToArray() );
-		cmd.UpdateBuffer( indexBuffer, 0, indices.ToArray() );
+		DynamicBufferUpload.Update( cmd, vertexBuffer, vertices.ToArray() );
+		DynamicBufferUpload.Update( cmd, indexBuffer, indices.ToArray() );
 
 		cmd.SetIndexBuffer( indexBuffer, IndexFormat.UInt32 );
 		cmd.SetVertexBuffer( 0, vertexBuffer );

@@ -64,7 +64,7 @@ internal sealed class TextRenderer : IDisposable
 			vertexBuffer?.Dispose();
 			vertexBuffer = Device.ResourceFactory.CreateBuffer( new BufferDescription( Math.Max( bytes * 2, 4096u ), BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 		}
-		commands.UpdateBuffer( vertexBuffer, 0, ref vertices[0], bytes );
+		DynamicBufferUpload.Update( commands, vertexBuffer, ref vertices[0], bytes );
 		commands.SetPipeline( pipeline );
 		commands.SetVertexBuffer( 0, vertexBuffer );
 

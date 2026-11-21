@@ -171,7 +171,7 @@ internal sealed class UiRenderer : IDisposable
 				buffers[bufferIndex] = CreateBuffer( bytes );
 			}
 			var buffer = buffers[bufferIndex++];
-			Device.UpdateBuffer( buffer, 0, ref depthVertices[0], bytes );
+			DynamicBufferUpload.Update( Device, buffer, ref depthVertices[0], bytes );
 			commands.SetPipeline( DepthPipeline( target.Framebuffer.OutputDescription ) );
 			commands.SetVertexBuffer( 0, buffer );
 			var start = 0u;
@@ -261,7 +261,7 @@ internal sealed class UiRenderer : IDisposable
 			slot[frameBuffers] = CreateBuffer( bytes );
 		}
 		var buffer = slot[frameBuffers++];
-		Device.UpdateBuffer( buffer, 0, ref vertices[0], bytes );
+		DynamicBufferUpload.Update( Device, buffer, ref vertices[0], bytes );
 		commands.SetPipeline( invert ? invertPipeline : pipeline );
 		commands.SetVertexBuffer( 0, buffer );
 		var start = 0u;

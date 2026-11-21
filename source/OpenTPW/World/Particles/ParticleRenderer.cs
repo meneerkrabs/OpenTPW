@@ -190,7 +190,7 @@ public sealed class ParticleRenderer : Entity
 		var stride = Vertex.SizeInBytes;
 		vertexBuffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( (uint)vertices.Length * stride, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 		var commandList = global::Global.Render.CommandList;
-		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)vertexCount * stride );
+		DynamicBufferUpload.Update( commandList, vertexBuffer, ref vertices[0], (uint)vertexCount * stride );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		var eye = Camera.Position.GetSystemVector3();
 		// [BIN:TPW-EXE:0x576A00 scene pass order] the scene render calls the terrain (0x56F670, 0x570D90), the particle pass (0x57C620, 0x576CBD), the model list loop that queues the advisor's model (0x584B10, 0x584BE0), the sprite flush (0x58A660, 0x576D72), the weather (0x57FF60, 0x576DAB) and the frame flush (0x582170, 0x576DBE); the screen-space quads are drawn in the particle pass with the world's, so everything the HUD windows submit and the advisor's model lie over them in the original too (PTCL-909 retired)
@@ -307,7 +307,7 @@ public sealed class ParticleRenderer : Entity
 			return;
 		var stride = Vertex.SizeInBytes;
 		sortedBuffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( (uint)sortedVertices.Length * stride, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
-		commandList.UpdateBuffer( sortedBuffer, 0, ref sortedVertices[0], (uint)sortedCount * stride );
+		DynamicBufferUpload.Update( commandList, sortedBuffer, ref sortedVertices[0], (uint)sortedCount * stride );
 	}
 
 	/// <summary>Draws <paramref name="count"/> consecutive sorted slots from <paramref name="firstSlot"/>: neighbours of one kind are one draw, and the vertex buffer is bound once.</summary>

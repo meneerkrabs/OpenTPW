@@ -77,8 +77,8 @@ public sealed class UiStringTable
 		? helpTemplates[index].Fill( values ) : Get( helpText, index ) + string.Concat( values );
 	/// <summary>UITEXT record <paramref name="index"/> by the file's own numbering (Theme Park Inc's table has 994 records with ids unlike Theme Park World's, so no <see cref="UIStrings"/> name applies); empty when out of range.</summary>
 	public string Entry( int index ) => Get( uiText, index );
-	/// <summary>STAFF_TYPES.str: the staff role's name by role number (handyman 0 .. gardener 5); empty when the table is not loaded.</summary>
-	public string StaffType( int role ) => Get( staffTypes, role );
+	/// <summary>STAFF_TYPES.str: the staff role's singular name by role number (handyman 0 .. gardener 5), the table holding each role's singular and plural in turn; empty when the table is not loaded.</summary>
+	public string StaffType( int role ) => Get( staffTypes, 2 * role );
 	/// <summary>The per-role name table's entry at <paramref name="index"/> (HANDYMAN_NAMES.str etc.); empty when out of range.</summary>
 	public string StaffName( int role, int index ) => role >= 0 && role < staffNames.Length ? Get( staffNames[role], index ) : "";
 	public string Theme( int index ) => Get( themeNames, index );

@@ -73,7 +73,7 @@ public class ThemeParkIncHudStaffTests
 		StringAssert.Contains( rows[1], "Guard: GuardName7" );
 		StringAssert.Contains( rows[2], "Scientist: ScientistName0" );
 		StringAssert.Contains( rows[1], "30" );
-		StringAssert.Contains( rows[1], "1,200" );
+		StringAssert.Contains( rows[1], 1200.ToString( "N0" ) );
 		CollectionAssert.AreEqual( before, staff.Slots.ToArray(), "the panel does not change the pool" );
 	}
 
@@ -120,12 +120,12 @@ public class ThemeParkIncHudStaffTests
 			var strings = UiStringTable.Load( language );
 			for ( var role = 0; role < 6; role++ )
 			{
-				Assert.IsFalse( string.IsNullOrWhiteSpace( strings.StaffType( 2 * role ) ), $"role {role}" );
+				Assert.IsFalse( string.IsNullOrWhiteSpace( strings.StaffType( role ) ), $"role {role}" );
 				Assert.IsFalse( string.IsNullOrWhiteSpace( strings.StaffName( role, 0 ) ), $"name 0 of role {role}" );
 				Assert.IsFalse( string.IsNullOrWhiteSpace( strings.StaffName( role, 34 ) ), $"name 34 of role {role}" );
 				Assert.AreEqual( "", strings.StaffName( role, 35 ), $"role {role} table has 35 entries" );
 			}
-			CollectionAssert.AreEqual( new[] { "Cleaner", "Engineer", "Entertainer", "Guard", "Scientist", "Gardener" }, Enumerable.Range( 0, 6 ).Select( role => strings.StaffType( 2 * role ) ).ToArray() );
+			CollectionAssert.AreEqual( new[] { "Cleaner", "Engineer", "Entertainer", "Guard", "Scientist", "Gardener" }, Enumerable.Range( 0, 6 ).Select( role => strings.StaffType( role ) ).ToArray() );
 		}
 		finally { FileSystem = previous; }
 	}

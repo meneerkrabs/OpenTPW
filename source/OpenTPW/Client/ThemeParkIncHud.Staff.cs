@@ -75,7 +75,7 @@ public sealed partial class ThemeParkIncHud
 	// (the candidate's R mod 35) and no leading header entries; [BIN:TPI-EXE:0x62FFB0 staff name] the formatter passes the role's table and the candidate's word +4, its name
 	// index, to the string lookup 0x8934A0, so the NameIndex is the table index
 	private string StaffRow( ThemeParkIncStaffRole role, int nameIndex, int experience, int wage ) => string.Format( T( OpenTpwText.TpiStaffRow ),
-		strings.StaffType( 2 * (int)role ), strings.StaffName( (int)role, nameIndex ), experience, wage.ToString( "N0" ) );
+		strings.StaffType( (int)role ), strings.StaffName( (int)role, nameIndex ), experience, wage.ToString( "N0" ) );
 
 	private void ToggleStaffPanel()
 	{

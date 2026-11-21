@@ -47,14 +47,38 @@ internal sealed partial class GameFlow
 		return Path.Combine( root, ThemeParkIncPlayerFolder );
 	}
 
-	// A case-insensitive test errs towards the configuration's folder on a case-sensitive disk, never towards the game's
+	// A case-insensitive test errs towards the configuration's folder on a case-sensitive disk, never towards the game's; so does testing both the given and the real paths, with
+	// their symbolic links resolved (a linked game folder, /tmp against /private/tmp)
 	private static bool IsInsideFolder( string path, string? folder )
 	{
 		if ( string.IsNullOrWhiteSpace( folder ) )
 			return false;
-		var full = Path.TrimEndingDirectorySeparator( Path.GetFullPath( path ) ) + Path.DirectorySeparatorChar;
-		var parent = Path.TrimEndingDirectorySeparator( Path.GetFullPath( folder ) ) + Path.DirectorySeparatorChar;
-		return full.StartsWith( parent, StringComparison.OrdinalIgnoreCase );
+		return StartsWithFolder( Path.GetFullPath( path ), Path.GetFullPath( folder ) ) || StartsWithFolder( RealPath( path ), RealPath( folder ) );
+	}
+
+	private static bool StartsWithFolder( string path, string folder ) =>
+		( Path.TrimEndingDirectorySeparator( path ) + Path.DirectorySeparatorChar ).StartsWith( Path.TrimEndingDirectorySeparator( folder ) + Path.DirectorySeparatorChar,
+			StringComparison.OrdinalIgnoreCase );
+
+	/// <summary>The full path with every symbolic link among its existing parts resolved; the parts that do not exist yet are kept as given.</summary>
+	internal static string RealPath( string path, int depth = 0 )
+	{
+		var full = Path.GetFullPath( path );
+		var root = Path.GetPathRoot( full )!;
+		var parts = full[root.Length..].Split( new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries );
+		var current = root;
+		for ( var index = 0; index < parts.Length; index++ )
+		{
+			var next = Path.Combine( current, parts[index] );
+			FileSystemInfo info = Directory.Exists( next ) ? new DirectoryInfo( next ) : new FileInfo( next );
+			if ( !info.Exists )
+				return Path.Combine( new[] { current }.Concat( parts[index..] ).ToArray() );
+			// a link's final target may itself lie below linked folders; a cycle stops at the depth guard and keeps the path as it is
+			current = info.LinkTarget != null && depth < 32 && info.ResolveLinkTarget( returnFinalTarget: true ) is { } target
+				? RealPath( target.FullName, depth + 1 )
+				: next;
+		}
+		return current;
 	}
 
 	/// <summary>The largest player file read: the retail files are about 18 KB, so anything near this is not one.</summary>
@@ -81,6 +105,9 @@ internal sealed partial class GameFlow
 			throw new InvalidDataException( $"The Theme Park Inc player file could not be loaded ({save.OutcomeDetail}): {path}" );
 		if ( outcome == ThemeParkIncGlobalSaveOutcome.Stopped )
 			Log.Warning( $"Theme Park Inc player file: {save.OutcomeDetail}; the career keeps its reset values after that point." );
+		// the same refusal as the park's zone entry (ParkEconomy.EnterThemeParkIncZone), made here so a hand-edited file fails before the Personnel File is torn down
+		if ( career.CurrentZone is { } current && ( current.ParkNumber < 0 || current.ParkNumber >= ThemeParkIncCareer.ZoneNames.Count ) )
+			throw new InvalidDataException( $"The Theme Park Inc player file gives the zone '{zone}' park number {current.ParkNumber}, outside the zone table: {path}" );
 		var fresh = NewThemeParkIncSession();
 		save.OptionsBytesRaw ??= fresh.OptionsBytesRaw;
 		save.FirstHourTime ??= fresh.FirstHourTime;

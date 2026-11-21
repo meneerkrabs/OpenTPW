@@ -39,9 +39,7 @@ internal sealed partial class GameFlow
 		var candidateHud = CreateThemeParkIncHud( candidate, snapshot.TpiHudSpeed!.Value );
 		candidate.SimulationTimeScale = candidateHud.TimeScale;
 		scene.Detach();
-		incReplacingPark = true;
-		try { TearDown( applyPendingLanguage: false ); }
-		finally { incReplacingPark = false; }
+		TearDownReplacingThemeParkIncPark();
 		scene.Activate();
 		Level = ViewerLevel = candidate;
 		IncHud = candidateHud;
@@ -61,6 +59,14 @@ internal sealed partial class GameFlow
 
 	private Level RequireThemeParkIncScience() => Level is { IsThemeParkIncSlice: true, LevelName: "science", IsReadOnlyVisit: false, CoopRole: CoopRole.None } level
 		? level : throw new NotSupportedException( "Only a solo Theme Park Inc Science park can be continued." );
+
+	/// <summary>Retires the park a load replaces without the leave's save: a load replacing the park discards it (docs/reverse/TPI-CAREER.md §3.4).</summary>
+	private void TearDownReplacingThemeParkIncPark()
+	{
+		incReplacingPark = true;
+		try { TearDown( applyPendingLanguage: false ); }
+		finally { incReplacingPark = false; }
+	}
 
 	internal void SaveThemeParkIncLayout()
 	{
@@ -84,7 +90,7 @@ internal sealed partial class GameFlow
 		var candidate = new Level(checkpoint, OnlineFolders) { ShowDeveloperPanels = false };
 		var candidateHud = CreateThemeParkIncHud(candidate);
 		scene.Detach();
-		TearDown(applyPendingLanguage: false);
+		TearDownReplacingThemeParkIncPark();
 		scene.Activate();
 		Level = candidate;
 		ViewerLevel = candidate;

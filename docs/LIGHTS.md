@@ -54,13 +54,13 @@ original's default radius of 100 is **20 engine units, ten cells**. The light's 
 **Uniform layout.** Lights ride in the draw's own uniform upload, not in a second one (per-draw uniform uploads are already the largest single cost of a frame, `ENGINE-PERFORMANCE.md`). The engine's block
 (`ObjectUniformBuffer`, 272 bytes) is unchanged; the light count is a float in the padding after the light colour (byte 220, `g_flLightCount` in the lit shaders, `ObjectUniformBuffer.LightCount`), and the lights follow
 the block from byte 272 as `vec4 g_vPointLight[32]`, two vec4 per light: `(position.xyz, radius^2)` and `(colour.rgb, 1 / radius^2)` (`PointLightGpu`, `LitObjectUniformBuffer`). Only
-`272 + 32 x count` bytes are uploaded, so a draw with no lights uploads the same 272 bytes as before and a draw with all 16 uploads 784, inside the 2,048-byte buffer every material owns. std140
+`272 + 32 x count` bytes are uploaded, so a draw with no lights uploads the same 272 bytes as before and a draw with all 16 uploads 784, exactly the buffer every material owns (`Material.ScratchBufferBytes`). std140
 and the cross-compilers agree on this layout: a vec3 followed by a float packs, and a vec4 array after the float at byte 268 starts at 272.
 
 **Backends.** The lit shaders are `test.shader`, `pool-deck.shader` and `pool-basin.shader` (`Material.ReceivesPointLights`); the others (`sprite`, `particle`, `3d`, `unlit`, `water`, `pool-water`,
 `weather`, `advisor`, UI) do not read the lights and never carry them. Desktop shaders are compiled through Veldrid.SPIRV to Metal, Vulkan, Direct3D and OpenGL; the browser's GLES 3.00 versions are
 precompiled into `content/shaders/web` (regenerate with `OPENTPW_NATIVE_SHADER_TESTS=1 OPENTPW_WRITE_WEB_SHADERS=1 dotnet test --filter WebShaderTests`), and the browser's buffer binding is the whole
-2,048-byte scratch buffer, which is larger than the 784-byte block. The pool water (`pool-water.shader`) keeps the padding slot for its wave phase and is not lit; the guests, staff and
+scratch buffer, 784 bytes, exactly the lit block (`Material.ScratchBufferBytes`). The pool water (`pool-water.shader`) keeps the padding slot for its wave phase and is not lit; the guests, staff and
 particles are pre-rendered sprites or unlit billboards (as in the original) and take no light.
 
 **No lights, no change.** A draw without lights takes the same code path as before the lights existed: the same shader source apart from a branch on `g_flLightCount > 0.5` that adds nothing, the same 272-byte

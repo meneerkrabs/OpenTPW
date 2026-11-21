@@ -83,6 +83,7 @@ public sealed partial class ThemeParkIncHud
 		AddLabel( "forecast", () => advisorCaption ?? "", new UiRect( 24, 436, 1300, 120 ) );
 		BuildTopLine();
 		BuildWindow();
+		BuildStaffPanel();
 		removeButton = ToolButton( "remove", () => T( OpenTpwText.TpiRemove ), T( OpenTpwText.TpiRemoveHelp ),
 			() => { level.IsRemovingObjects = !level.IsRemovingObjects; if ( level.IsRemovingObjects ) DisarmBuild(); }, 1 );
 		removeButton.Selected = () => level.IsRemovingObjects;
@@ -91,6 +92,7 @@ public sealed partial class ThemeParkIncHud
 		ToolButton( "cancel", () => T( OpenTpwText.TpiCancel ), T( OpenTpwText.TpiCancelHelp ), DisarmAll, 3 );
 		ToolButton( "speed", SpeedText, T( OpenTpwText.TpiSpeedHelp ), CycleSpeed, 4 );
 		ToolButton( "menu", () => T( OpenTpwText.TpiMenu ), T( OpenTpwText.TpiMenuHelp ), OpenPauseMenu, 5 );
+		ToolButton( "staff", () => T( OpenTpwText.TpiStaff ), T( OpenTpwText.TpiStaffHelp ), ToggleStaffPanel, 5 ).Bounds = new UiRect( 2024 - 306, 1270, 286, 110 );
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
@@ -104,6 +106,8 @@ public sealed partial class ThemeParkIncHud
 				DisarmBuild();
 			else if ( buildOpen )
 				CloseBuildWindow();
+			else if ( staffOpen )
+				CloseStaffPanel();
 			else if ( level.IsRemovingObjects )
 				level.IsRemovingObjects = false;
 			else
@@ -299,6 +303,7 @@ public sealed partial class ThemeParkIncHud
 			CloseBuildWindow();
 		else
 		{
+			CloseStaffPanel();
 			buildOpen = true;
 			level.IsRemovingObjects = false;
 			SetBuildWindowVisible( true );

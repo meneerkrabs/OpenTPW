@@ -18,11 +18,15 @@ public sealed class UiStringTable
 	private readonly StringTemplate[] helpTemplates;
 	private readonly StringFile? kidStates;
 	private readonly string[] thoughtNames;
+	private readonly string[] staffTypes;
+	private readonly string[][] staffNames;
 
 	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null,
 		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null, StringFile? kidStates = null, string[]? thoughtNames = null,
-		StringTemplate[]? helpTemplates = null )
+		StringTemplate[]? helpTemplates = null, string[]? staffTypes = null, string[][]? staffNames = null )
 	{
+		this.staffTypes = staffTypes ?? Array.Empty<string>();
+		this.staffNames = staffNames ?? Array.Empty<string[]>();
 		this.helpTemplates = helpTemplates ?? Array.Empty<StringTemplate>();
 		this.kidStates = kidStates;
 		this.thoughtNames = thoughtNames ?? Array.Empty<string>();
@@ -43,8 +47,12 @@ public sealed class UiStringTable
 		return new( language.Name, uiText.Entries, helpText.Entries,
 			language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
 			language.LoadStrings( "LOANNAMES.str" ).Entries, uiText.Templates, OptionalStrings( language, "INGREDIENT.str" ),
-			OptionalFile( language, "KIDSTATES.str" ), OptionalStrings( language, "THOUGHTS.str" ), helpText.Templates );
+			OptionalFile( language, "KIDSTATES.str" ), OptionalStrings( language, "THOUGHTS.str" ), helpText.Templates,
+			OptionalStrings( language, "STAFF_TYPES.str" ), StaffNameFiles.Select( name => OptionalStrings( language, name ) ?? Array.Empty<string>() ).ToArray() );
 	}
+
+	/// <summary>Theme Park Inc's per-role name tables, in the staff role order (handyman, mechanic, entertainer, guard, researcher, gardener).</summary>
+	private static readonly string[] StaffNameFiles = { "HANDYMAN_NAMES.str", "MECHANIC_NAMES.str", "ENTERTAINER_NAMES.str", "GUARD_NAMES.str", "RESEARCHER_NAMES.str", "GARDENER_NAMES.str" };
 
 	private static StringFile? OptionalFile( GameLanguage language, string name )
 	{
@@ -69,6 +77,10 @@ public sealed class UiStringTable
 		? helpTemplates[index].Fill( values ) : Get( helpText, index ) + string.Concat( values );
 	/// <summary>UITEXT record <paramref name="index"/> by the file's own numbering (Theme Park Inc's table has 994 records with ids unlike Theme Park World's, so no <see cref="UIStrings"/> name applies); empty when out of range.</summary>
 	public string Entry( int index ) => Get( uiText, index );
+	/// <summary>STAFF_TYPES.str: the staff role's name by role number (handyman 0 .. gardener 5); empty when the table is not loaded.</summary>
+	public string StaffType( int role ) => Get( staffTypes, role );
+	/// <summary>The per-role name table's entry at <paramref name="index"/> (HANDYMAN_NAMES.str etc.); empty when out of range.</summary>
+	public string StaffName( int role, int index ) => role >= 0 && role < staffNames.Length ? Get( staffNames[role], index ) : "";
 	public string Theme( int index ) => Get( themeNames, index );
 	public string Object( int index ) => Get( objectNames, index );
 	public string Lender( int index ) => Get( lenderNames, index );

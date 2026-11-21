@@ -69,12 +69,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 			TpiWeather = new ThemeParkIncWeatherSpells( weather );
 			TpiForecast = CreateThemeParkIncForecast();
 		}
+		CreateThemeParkIncCareer();
 		if ( Rules.ThemeParkInc && settings.ThemeParkIncStaff is { } staffSettings )
 		{
 			TpiStaff = new ThemeParkIncStaff( staffSettings, TpiStaffNameText );
 			// [BIN:TPI-EXE:0x630CB0 opening pool] the new-world init (0x6482BA -> 0x5D65B0 -> 0x630CB0) fills the opening pool from the world generator and stamps it with the turn,
 			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
-			TpiStaff.CreateOpeningPool( World, 0, ThemeParkIncCareerRank );
+			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
 		}
 		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
 		CreateThemeParkIncChallenges();
@@ -125,10 +126,6 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	/// <summary>The spells the Theme Park Inc weather has started (ThemeParkIncWeatherSpells.SpellStarts).</summary>
 	public int TpiSpellStarts => TpiWeather?.SpellStarts ?? 0;
-
-	/// <summary>The career's promotion rank, which decides the staff agencies a candidate may come from: a new career's rank.</summary>
-	// [BIN:TPI-EXE:0x74BDC7 career rank] the career reset 0x74BB40 sets the rank (+0x1060) to 1 and the mission counter (+0x105C) to 0; OpenTPW has no promotions yet, so the rank stays 1
-	public const int ThemeParkIncCareerRank = 1;
 
 	/// <summary>Theme Park Inc's staff: the hiring pool, the members and their strikes (null in Theme Park World and where the staff keys are missing).</summary>
 	public ThemeParkIncStaff? TpiStaff { get; private set; }
@@ -507,7 +504,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		}
 		// [BIN:TPI-EXE:0x649868 staff pool update] after the thing loop the world update's tail updates the hiring pool (0x5D65E0 -> 0x631B40: expiry, refill and top-up, drawing
 		// from the world generator) in every world state, and only then the calendar (0x5D65FB -> 0x6083D0), whose day and month messages follow below
-		TpiStaff?.UpdatePool( World, turn, ThemeParkIncCareerRank );
+		// [BIN:TPI-EXE:0x630CB0 pool rank] the pool reads the career's rank (+0x1060), which promotions raise (ThemeParkIncCareer.Promote)
+		TpiStaff?.UpdatePool( World, turn, TpiCareer!.Rank );
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
 		var changes = ParkCalendar.Update( ref stored, turn );

@@ -78,6 +78,6 @@ public class ThemeParkIncHudChallengeTests
 		Assert.AreEqual( ThemeParkIncChallengeStatus.Grace, economy.TpiChallenges.Slots[1].Status, "an accepted row accepts nothing again" );
 		Assert.IsFalse( economy.CanAcceptThemeParkIncChallenge( 1 ) );
 		Assert.AreEqual( "Challenges you may still fail: 5 - golden tickets: 0", string.Format( SupplementaryStrings.Get( OpenTpwText.TpiChallengesCareer, "English" ),
-			economy.TpiChallenges.FiringLine, economy.TpiChallenges.GoldenTickets ) );
+			economy.TpiCareer!.FiringLine, economy.TpiCareer.GoldenTickets ) );
 	}
 }

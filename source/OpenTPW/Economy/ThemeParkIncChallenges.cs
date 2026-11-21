@@ -182,10 +182,10 @@ public sealed record ThemeParkIncChallengeSlotSnapshot( int Type, int TargetTime
 	ThemeParkIncChallengeStatus Status );
 
 /// <summary>
-/// The challenge system as a park save keeps it: the ten slots, the next offer time and the switch, and the two career words the system writes (the firing line and the
-/// golden tickets). The career object is the original's (0xBFC484); OpenTPW keeps its two challenge words with the park.
+/// The challenge system as a park save keeps it: the ten slots, the next offer time and the switch. The career words the system writes (the firing line and the golden tickets) are the
+/// career's (<see cref="ThemeParkIncCareer"/>, the original's 0xBFC484).
 /// </summary>
-public sealed record ThemeParkIncChallengesSnapshot( ThemeParkIncChallengeSlotSnapshot[] Slots, long NextChallengeDelayTime, bool SystemSwitchedOn, int FiringLine, int GoldenTickets );
+public sealed record ThemeParkIncChallengesSnapshot( ThemeParkIncChallengeSlotSnapshot[] Slots, long NextChallengeDelayTime, bool SystemSwitchedOn );
 
 /// <summary>What the challenge system reads from the park and what its outcomes do there (ParkEconomy in a park, a synthetic host in the tests).</summary>
 public interface IThemeParkIncChallengeHost
@@ -194,6 +194,8 @@ public interface IThemeParkIncChallengeHost
 	bool ParkOpen { get; }
 	/// <summary>The career's mission counter (<c>+0x105C</c>).</summary>
 	int MissionCounter { get; }
+	/// <summary>A first loss's step of the career's firing line (<c>+0</c>, <c>0x5C4857</c>).</summary>
+	void LowerFiringLine();
 	/// <summary><c>0x5B9380</c>: some attraction thing's type record has <c>UsageInfo.SpecialIngredient</c> (<c>+0x218</c>) 1, fat (a hot-dog shop).</summary>
 	bool HasFatShop();
 	/// <summary><c>0x5B32F0(kind)</c>: the highest experience (<c>+0x210</c>) of the staff things of a kind, 0 when there is none above 0.</summary>
@@ -230,14 +232,6 @@ public sealed class ThemeParkIncChallenges
 	/// <summary>The clock's base: the FILETIME of 2000-01-01, the shared calendar's start (<see cref="ParkCalendar.Epoch"/>).</summary>
 	public static readonly long ClockBase = new DateTime( 2000, 1, 1, 0, 0, 0, DateTimeKind.Utc ).ToFileTimeUtc();
 
-	/// <summary>The career's mission counter in OpenTPW: a new career's 0. Missions are not ported, so nothing raises it.</summary>
-	// [BIN:TPI-EXE:0x74BDC1 career mission counter] the career reset 0x74BB40 stores 0 in +0x105C (and the rank 1, the firing line 5, the golden tickets 0 at 0x74BDE4)
-	public const int NewCareerMissionCounter = 0;
-
-	/// <summary>The career's firing line after the career reset.</summary>
-	// [BIN:TPI-EXE:0x74BDD1 career firing line] the career reset stores 5 in the career's first word
-	public const int NewCareerFiringLine = 5;
-
 	private readonly ThemeParkIncChallengeSlot[] slots = new ThemeParkIncChallengeSlot[SlotCount];
 
 	/// <summary>A system with the level's challenges loaded (<c>0x5C7630</c>).</summary>
@@ -253,10 +247,6 @@ public sealed class ThemeParkIncChallenges
 	public long NextChallengeDelayTime { get; private set; }
 	/// <summary><c>mSystemSwitchedOn</c> (<c>sys+0x5C0</c>): latched once and never cleared.</summary>
 	public bool SystemSwitchedOn { get; private set; }
-	/// <summary>The career's firing line (the career object's first word): challenges the player may still fail.</summary>
-	public int FiringLine { get; internal set; } = NewCareerFiringLine;
-	/// <summary>The career's golden tickets (<c>+0x1074</c>), which a won challenge's <c>mGTPrize</c> raises.</summary>
-	public int GoldenTickets { get; internal set; }
 
 	/// <summary>
 	/// The challenge types whose trigger and value OpenTPW computes exactly from the park; any other type is never made available.
@@ -502,7 +492,7 @@ public sealed class ThemeParkIncChallenges
 		slot.Status = ThemeParkIncChallengeStatus.Offered;
 		var first = slot.ChallengeLost == 0;
 		if ( first )
-			FiringLine = unchecked( FiringLine - 1 );
+			host.LowerFiringLine();
 		slot.ChallengeLost = unchecked( slot.ChallengeLost + 1 );
 		host.Lost( index, slot, first );
 	}
@@ -542,7 +532,7 @@ public sealed class ThemeParkIncChallenges
 		return Offer( turn );
 	}
 
-	internal ThemeParkIncChallengesSnapshot Capture() => new( slots.Select( slot => slot.Capture() ).ToArray(), NextChallengeDelayTime, SystemSwitchedOn, FiringLine, GoldenTickets );
+	internal ThemeParkIncChallengesSnapshot Capture() => new( slots.Select( slot => slot.Capture() ).ToArray(), NextChallengeDelayTime, SystemSwitchedOn );
 
 	internal static bool IsValid( ThemeParkIncChallengesSnapshot? state ) =>
 		state == null || state.Slots is { Length: SlotCount } saved && saved.All( slot => slot != null && Enum.IsDefined( slot.Status )
@@ -555,7 +545,5 @@ public sealed class ThemeParkIncChallenges
 			slots[index] = ThemeParkIncChallengeSlot.Restore( state.Slots[index] );
 		NextChallengeDelayTime = state.NextChallengeDelayTime;
 		SystemSwitchedOn = state.SystemSwitchedOn;
-		FiringLine = state.FiringLine;
-		GoldenTickets = state.GoldenTickets;
 	}
 }

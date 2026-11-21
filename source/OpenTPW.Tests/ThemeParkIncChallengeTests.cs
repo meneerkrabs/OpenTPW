@@ -18,6 +18,8 @@ public class ThemeParkIncChallengeTests
 	{
 		public bool ParkOpen { get; set; } = true;
 		public int MissionCounter { get; set; }
+		public int FiringLine { get; set; } = 5;
+		public void LowerFiringLine() => FiringLine--;
 		public bool FatShop { get; set; }
 		public int EntertainerExperience { get; set; }
 		public int Staff { get; set; }
@@ -254,13 +256,13 @@ public class ThemeParkIncChallengeTests
 		system.Update( 1, host );
 		Assert.AreEqual( ThemeParkIncChallengeStatus.Offered, system.Slots[0].Status, "a lost challenge returns to state 1" );
 		CollectionAssert.AreEqual( new[] { (0, true) }, host.Losses.ToArray() );
-		Assert.AreEqual( 4, system.FiringLine, "its first loss takes one off the firing line" );
+		Assert.AreEqual( 4, host.FiringLine, "its first loss takes one off the firing line" );
 		host.ParkOpen = true;
 		system.Accept( 0, 2 );
 		host.ParkOpen = false;
 		system.Update( 3, host );
 		Assert.AreEqual( (0, false), host.Losses[1], "a second loss of the same slot is not a first" );
-		Assert.AreEqual( 4, system.FiringLine );
+		Assert.AreEqual( 4, host.FiringLine );
 		Assert.AreEqual( 2, system.Slots[0].ChallengeLost );
 	}
 
@@ -383,7 +385,7 @@ public class ThemeParkIncChallengeTests
 
 	private static ParkEconomy TpwEconomy() => new( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
 
-	private static ParkEconomy Economy()
+	internal static ParkEconomy Economy()
 	{
 		var settings = BalanceSettings.ForThemeParkInc( new SamSettings( new[] { SamDocument.Parse( Standard, "Standard.sam" ) } ), "science",
 			new SamSettings( new[] { SamDocument.Parse( ChallengesSam, "Challenges.sam" ) } ) );
@@ -429,7 +431,7 @@ public class ThemeParkIncChallengeTests
 		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 1 ) - economy.Tick );
 		Assert.AreEqual( ThemeParkIncChallengeStatus.Won, challenges.Slots[0].Status );
 		Assert.AreEqual( balance + 30 + 5000, economy.Balance, "the takings and the cash prize" );
-		Assert.AreEqual( 2, challenges.GoldenTickets, "the golden tickets go to the career" );
+		Assert.AreEqual( 2, economy.TpiCareer!.GoldenTickets, "the golden tickets go to the career" );
 		Assert.AreEqual( ThemeParkIncChallengeNoticeKind.Won, economy.TpiChallengeNotices.Last().Kind );
 	}
 
@@ -439,27 +441,28 @@ public class ThemeParkIncChallengeTests
 		var economy = Economy();
 		economy.OpenPark();
 		var challenges = economy.TpiChallenges!;
-		challenges.FiringLine = 2;
+		var career = economy.TpiCareer!;
+		career.FiringLine = 2;
 		economy.Advance( ParkCalendar.TickOfTurn( 1 ) - economy.Tick );
 		Assert.AreEqual( 0, economy.DebugOfferThemeParkIncChallenge( 0 ) );
 		economy.AcceptThemeParkIncChallenge( 0 );
 		economy.ClosePark();
 		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 1 ) - economy.Tick );
-		Assert.AreEqual( 1, challenges.FiringLine );
+		Assert.AreEqual( 1, career.FiringLine );
 		Assert.IsNull( economy.TakeTpiMail(), "a positive line posts the lost mail, not the letter" );
 		Assert.AreEqual( ThemeParkIncChallengeNoticeKind.Lost, economy.TpiChallengeNotices.Last().Kind );
 		economy.OpenPark();
 		economy.AcceptThemeParkIncChallenge( 0 );
 		economy.ClosePark();
 		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 1 ) - economy.Tick );
-		Assert.AreEqual( 1, challenges.FiringLine, "the same challenge lost again takes nothing off" );
+		Assert.AreEqual( 1, career.FiringLine, "the same challenge lost again takes nothing off" );
 		Assert.IsNull( economy.TakeTpiMail() );
 		economy.OpenPark();
 		challenges.Slots[1].Status = ThemeParkIncChallengeStatus.Offered;
 		economy.AcceptThemeParkIncChallenge( 1 );
 		economy.ClosePark();
 		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 1 ) - economy.Tick );
-		Assert.AreEqual( 0, challenges.FiringLine );
+		Assert.AreEqual( 0, career.FiringLine );
 		Assert.AreEqual( ThemeParkIncAdviceMail.ChallengeLost, economy.TakeTpiMail(), "the loss that empties the line posts the firing letter" );
 		economy.OpenPark();
 		economy.AcceptThemeParkIncChallenge( 0 );
@@ -477,15 +480,15 @@ public class ThemeParkIncChallengeTests
 		economy.Advance( ParkCalendar.TickOfTurn( TurnAtDays( 1 ) + 2 ) - economy.Tick );
 		economy.AcceptThemeParkIncChallenge( 0 );
 		economy.TpiChallenges!.AddEvent( 2, 2, 0, false );
-		economy.TpiChallenges.FiringLine = 3;
-		economy.TpiChallenges.GoldenTickets = 4;
+		economy.TpiCareer!.FiringLine = 3;
+		economy.TpiCareer.AddGoldenTickets( 4 );
 		var json = ParkSaveFile.Serialize( economy );
 		StringAssert.Contains( json, "\"TpiChallenges\"" );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog );
 		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ), "the reloaded park saves the same" );
 		var slot = restored.TpiChallenges!.Slots[0];
 		Assert.AreEqual( (ThemeParkIncChallengeStatus.Running, 2), (slot.Status, slot.Value) );
-		Assert.AreEqual( (3, 4, true), (restored.TpiChallenges.FiringLine, restored.TpiChallenges.GoldenTickets, restored.TpiChallenges.SystemSwitchedOn) );
+		Assert.AreEqual( (3, 4, true), (restored.TpiCareer!.FiringLine, restored.TpiCareer.GoldenTickets, restored.TpiChallenges.SystemSwitchedOn) );
 		Assert.IsFalse( ParkSaveFile.Serialize( TpwEconomy() ).Contains( "TpiChallenges", StringComparison.Ordinal ), "a Theme Park World save writes no Theme Park Inc challenges" );
 		var saved = economy.TpiChallenges.Capture();
 		Assert.IsTrue( ThemeParkIncChallenges.IsValid( saved ) );

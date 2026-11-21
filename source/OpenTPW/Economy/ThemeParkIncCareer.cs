@@ -399,11 +399,16 @@ public sealed class ThemeParkIncCareer
 		? ZoneNames[theme]
 		: throw new ArgumentOutOfRangeException( nameof( theme ), $"Zone {theme} is past the name table." );
 
-	/// <summary>The challenges won in a zone (<c>0x5C4594</c>: the current zone record's <c>+0xF0</c> += 1).</summary>
-	internal void CountChallengeWon()
+	/// <summary>
+	/// A challenge won in the current zone (<c>0x5C4514</c>): its record counts it (<c>+0xF0</c>) and, when every slot of the zone's system is empty or won, marks all done (<c>+0xF4</c>).
+	/// </summary>
+	internal void CountChallengeWon( bool allDone )
 	{
-		if ( CurrentZone is { } zone )
-			zone.Data.ChallengesDone = unchecked( zone.Data.ChallengesDone + 1 );
+		if ( CurrentZone is not { } current || current.ParkNumber < 0 || current.ParkNumber >= ZoneNames.Count || ZoneRecord( current.ParkNumber ) is not { } zone )
+			throw new InvalidOperationException( "A challenge was won with no current zone record (the original's 0x74F4B0 would return none and fault)." );
+		if ( allDone )
+			zone.Data.AllChallengesDone = 1;
+		zone.Data.ChallengesDone = unchecked( zone.Data.ChallengesDone + 1 );
 	}
 
 	/// <summary>

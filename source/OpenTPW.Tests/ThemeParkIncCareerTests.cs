@@ -291,6 +291,35 @@ public class ThemeParkIncCareerTests
 	}
 
 	[TestMethod]
+	public void AWonChallengeCountsInTheCurrentZoneAndMarksAllDone()
+	{
+		var career = New();
+		career.ChangeTheme( "science" );
+		career.CountChallengeWon( allDone: false );
+		career.CountChallengeWon( allDone: true );
+		Assert.AreEqual( (2, (byte)1), (career.CurrentZone!.ChallengesDone, career.CurrentZone.Data.AllChallengesDone) );
+		Assert.ThrowsException<InvalidOperationException>( () => New().CountChallengeWon( false ), "no current zone" );
+	}
+
+	[TestMethod]
+	public void AThemeParkIncParkSaveWithoutACareerIsRefused()
+	{
+		var economy = ThemeParkIncChallengeTests.Economy();
+		var settings = economy.Settings;
+		Assert.AreEqual( (1, 5, 0), (economy.TpiCareer!.Rank, economy.TpiCareer.FiringLine, economy.TpiCareer.MissionCounter) );
+		CollectionAssert.AreEqual( new[] { 255, 5, 0, 0, 0, 0, 2 }, ThemeParkIncCareer.FiringLineTable( new SamSettings( new[] { SamDocument.Parse(
+			"FiringLineForRank[0].Limit 255\nFiringLineForRank[1].Limit 5\n", "Standard.sam" ) } ) ).ToArray(), "the limits and the count dword" );
+		var json = ParkSaveFile.Serialize( economy );
+		StringAssert.Contains( json, "\"TpiCareer\"" );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), settings, economy.Catalog );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
+		var withoutCareer = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
+		withoutCareer.Remove( "TpiCareer" );
+		var error = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( withoutCareer.ToJsonString() ) ), settings, economy.Catalog ) );
+		StringAssert.Contains( error.Message, "before OpenTPW kept the player's career" );
+	}
+
+	[TestMethod]
 	public void ASnapshotRestoresTheSameCareer()
 	{
 		var career = New();

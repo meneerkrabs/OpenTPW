@@ -194,6 +194,7 @@ public sealed class BalanceSettings
 		Weather = ThemeParkIncWeatherSettings.Read( standard );
 		ThemeParkIncStaff = ThemeParkIncStaffSettings.Read( standard );
 		ThemeParkIncChallenges = ThemeParkIncChallengeSettings.Read( standard, challenges );
+		ThemeParkIncFiringLines = ThemeParkIncCareer.FiringLineTable( standard );
 		// inert placeholders: nothing reads them while staff, research and Theme Park World's challenges are refused
 		BaseWage = Array.Empty<int>();
 		RecuperationRate = HappinessRecuperationRate = Array.Empty<float>();
@@ -251,6 +252,8 @@ public sealed class BalanceSettings
 	public ThemeParkIncStaffSettings? ThemeParkIncStaff { get; }
 	/// <summary>Theme Park Inc's challenge settings and rows (null in Theme Park World and where the challenge keys or <c>Challenges.sam</c> are missing).</summary>
 	public ThemeParkIncChallengeSettings? ThemeParkIncChallenges { get; }
+	/// <summary>Theme Park Inc's <c>FiringLineForRank[n].Limit</c> table with its count dword after it (<see cref="ThemeParkIncCareer.FiringLineTable"/>); empty in Theme Park World.</summary>
+	public IReadOnlyList<int> ThemeParkIncFiringLines { get; } = Array.Empty<int>();
 	public EntryFeePerception EntryFee { get; }
 	public GoldenTicketSettings GoldenTickets { get; }
 	public ChallengeSchedule ChallengeTiming { get; }

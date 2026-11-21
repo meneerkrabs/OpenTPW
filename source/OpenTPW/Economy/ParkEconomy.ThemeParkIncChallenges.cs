@@ -136,8 +136,11 @@ public sealed partial class ParkEconomy
 	{
 		public bool ParkOpen => economy.IsParkOpen;
 
-		// OpenTPW has no missions: the counter keeps the new career's 0 (ThemeParkIncChallenges.NewCareerMissionCounter)
-		public int MissionCounter => ThemeParkIncChallenges.NewCareerMissionCounter;
+		// [BIN:TPI-EXE:0x5C7967 mission gate] the switch and the availability read the career's +0x105C (ThemeParkIncCareer.MissionCounter)
+		public int MissionCounter => economy.TpiCareer!.MissionCounter;
+
+		// [BIN:TPI-EXE:0x5C4857 firing line step] the first loss of a slot lowers the career's first word by one
+		public void LowerFiringLine() => economy.TpiCareer!.LowerFiringLine();
 
 		// [BIN:TPI-EXE:0x5B9380 fat shop] walks every thing; a kind-3 thing (an attraction) whose type record has +0x218 == 1 answers true
 		public bool HasFatShop() => economy.objects.Values.Any( item => economy.Catalog.TryGet( item.InfoId, out var info ) && info.SpecialIngredient == 1 );
@@ -178,16 +181,25 @@ public sealed partial class ParkEconomy
 
 		// [BIN:TPI-EXE:0x5C4285 cash prize] a CashPrize above 0 (signed) is credited by the bank (0x5C0760: the balance, the income history and the bank's +0x12C), as a paid fare is;
 		// [BIN:TPI-EXE:0x5C42C8 ticket prize] a GTPrize above 0 is added to the career's golden tickets (+0x1074, 0x74C890)
-		// [EXT:tpi-capability-gates] the share prize and the share price effect (0x621CE0, 0x621D30; Theme Park Inc's share system is not ported), the promotion of PromoGiven (message 0x25 ->
-		// 0x74C450: the rank and the firing line of FiringLineForRank; promotions are not ported) and the level record's challenge counts (+0xF0, +0xF4; the career's missions are not ported)
-		// are left off; the won mail (message 0x1B kind 2) is the HUD's notice
+		// [BIN:TPI-EXE:0x5C43AF promotion] a PromoGiven (+0x58) above 0 (unsigned) posts message 0x25 with it (0x5C4405), which the mission controller's handler (0x5F0F50) turns into
+		// 0x74C450(rank): the rank and the firing line of FiringLineForRank; the promotion letter 0x5CF4D0 and the controller's panel 0x1A4 are presentation
+		// [BIN:TPI-EXE:0x5C4514 challenge count] every slot of the system empty (type 0) or won (state 4) sets the current zone record's +0xF4 (0x5C45A9); either way its +0xF0 rises by one
+		// (0x5C4594, 0x5C45FC), the record being 0x74F4B0(current zone +0x64)
+		// [EXT:tpi-capability-gates] the share prize and the share price effect (0x621CE0, 0x621D30; Theme Park Inc's share system is not ported) are left off; the won mail (message 0x1B kind 2)
+		// is the HUD's notice
 		public void Won( int index, ThemeParkIncChallengeSlot slot )
 		{
+			var career = economy.TpiCareer!;
 			if ( slot.CashPrize > 0 )
 				economy.Post( LedgerCategory.OtherIncome, slot.CashPrize );
 			if ( slot.GTPrize > 0 )
-				economy.TpiChallenges!.GoldenTickets = unchecked( economy.TpiChallenges.GoldenTickets + slot.GTPrize );
+				career.AddGoldenTickets( slot.GTPrize );
 			economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Won ) );
+			if ( slot.PromoGiven != 0 )
+				career.Promote( slot.PromoGiven );
+			// [EXT:headless-economy] a headless economy without the zone's global.sam has no current zone record to count in
+			if ( career.CurrentZone != null )
+				career.CountChallengeWon( economy.TpiChallenges!.Slots.All( other => other.Type == 0 || other.Status == ThemeParkIncChallengeStatus.Won ) );
 		}
 
 		// [BIN:TPI-EXE:0x5C48B6 firing line post] after the count the lost branch posts the lost mail (message 0x1B kind 3, 0x5C49A3) while the career's firing line is above 0 (signed jg),
@@ -196,7 +208,7 @@ public sealed partial class ParkEconomy
 		// [EXT:tpi-capability-gates] the first loss's share price fall (0x621D30 with -SharePriceEffectIfLost) is left off: Theme Park Inc's share system is not ported
 		public void Lost( int index, ThemeParkIncChallengeSlot slot, bool firstLoss )
 		{
-			if ( economy.TpiChallenges!.FiringLine > 0 )
+			if ( economy.TpiCareer!.FiringLine > 0 )
 				economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Lost ) );
 			else
 				economy.TpiPendingMail = ThemeParkIncAdviceMail.ChallengeLost;

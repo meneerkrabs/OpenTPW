@@ -66,8 +66,8 @@ public sealed partial class ThemeParkIncHud
 	/// <summary>The slots of the listed rows, in row order (the rows <see cref="ChallengeRows"/> listed last).</summary>
 	private readonly List<int> challengeRowSlots = new();
 
-	private string ChallengeCareerText() => level.Park?.Economy.TpiChallenges is { } challenges
-		? string.Format( T( OpenTpwText.TpiChallengesCareer ), challenges.FiringLine, challenges.GoldenTickets ) : "";
+	private string ChallengeCareerText() => level.Park?.Economy is { TpiChallenges: not null, TpiCareer: { } career }
+		? string.Format( T( OpenTpwText.TpiChallengesCareer ), career.FiringLine, career.GoldenTickets ) : "";
 
 	/// <summary>A slot's title: <c>CHALLENGE_TITLES.str</c> at its <c>ScriptIndex</c>, or the panel's name and the index when the table lacks it.</summary>
 	internal string ChallengeTitle( ThemeParkIncChallengeSlot slot ) =>

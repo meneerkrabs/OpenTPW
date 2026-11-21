@@ -53,6 +53,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncChallengesSnapshot? TpiChallenges { get; init; }
+		/// <summary>
+		/// Theme Park Inc's career (the original's Global Master Save object): the mission counter, rank, firing line, golden tickets, zone records and the rest. Required in a Theme Park Inc
+		/// save; absent in Theme Park World saves. A Theme Park Inc save from before the career is refused.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncCareerSnapshot? TpiCareer { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -723,6 +729,7 @@ public static class ParkSaveFile
 			TpiForecast = park.TpiForecast?.Capture(),
 			TpiStaff = park.TpiStaff?.Capture(),
 			TpiChallenges = park.TpiChallenges?.Capture(),
+			TpiCareer = park.TpiCareer?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1040,6 +1047,11 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc staff." );
 			if ( !ThemeParkIncChallenges.IsValid( data.TpiChallenges ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc challenges." );
+			// user decision 2026-11-21: a Theme Park Inc park save from before the career is refused, not continued with a new career
+			if ( data.TpiCareer == null )
+				throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the player's career (missions, rank, golden tickets) and cannot be continued; start a new game from the Personnel File." );
+			if ( !ThemeParkIncCareer.IsValid( data.TpiCareer ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc career." );
 			foreach ( var item in data.Objects )
 			{
 				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
@@ -1050,7 +1062,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
 	}
 
@@ -1209,6 +1221,8 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "Park save has Theme Park Inc forecast advice, but the advisor settings are unavailable." );
 			park.TpiForecast.Restore( forecast );
 		}
+		if ( data.TpiCareer is { } career )
+			park.TpiCareer!.Restore( career );
 		if ( data.TpiStaff is { } staff )
 		{
 			if ( park.TpiStaff == null )

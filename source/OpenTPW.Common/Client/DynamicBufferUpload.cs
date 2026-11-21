@@ -16,18 +16,21 @@ namespace OpenTPW;
 /// with <c>WRITE_DISCARD</c>; the bytes past the caller's are left as they were in the scratch copy and are never drawn. The other backends keep
 /// the caller's byte count.
 /// </remarks>
-internal static class DynamicBufferUpload
+public static class DynamicBufferUpload
 {
 	[ThreadStatic] private static byte[]? scratch;
 
+	/// <summary>The backend of the device the game draws with, set where the device is made (Renderer.CreateDevice); null before that.</summary>
+	public static GraphicsBackend? Backend { get; set; }
+
 	/// <summary>Whether partial writes into dynamic buffers must become whole-buffer writes on this device.</summary>
-	internal static bool WholeBufferWrites => Device.BackendType == GraphicsBackend.Direct3D11;
+	public static bool WholeBufferWrites => Backend == GraphicsBackend.Direct3D11;
 
 	/// <summary>
 	/// How many bytes an update of <paramref name="bytes"/> from offset 0 uploads: the buffer's whole size when the buffer is dynamic, the write is
 	/// partial and <paramref name="wholeBuffer"/> holds; otherwise the caller's count.
 	/// </summary>
-	internal static uint UploadBytes( BufferUsage usage, uint bufferSize, uint bytes, bool wholeBuffer ) =>
+	public static uint UploadBytes( BufferUsage usage, uint bufferSize, uint bytes, bool wholeBuffer ) =>
 		wholeBuffer && (usage & BufferUsage.Dynamic) != 0 && bytes < bufferSize ? bufferSize : bytes;
 
 	/// <summary>Records an update of the buffer's first <paramref name="bytes"/> bytes from <paramref name="source"/>.</summary>
@@ -79,7 +82,7 @@ internal static class DynamicBufferUpload
 	}
 
 	/// <summary>The caller's bytes at the start of a scratch array at least <paramref name="upload"/> bytes long (the update copies it before returning).</summary>
-	internal static byte[] Widen<T>( ref T source, uint bytes, uint upload ) where T : unmanaged
+	public static byte[] Widen<T>( ref T source, uint bytes, uint upload ) where T : unmanaged
 	{
 		var buffer = scratch;
 		if ( buffer == null || buffer.Length < upload )

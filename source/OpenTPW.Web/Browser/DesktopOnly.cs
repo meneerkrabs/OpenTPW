@@ -26,19 +26,29 @@ namespace OpenTPW.ModKit
 {
 	public static class GlobalNamespace
 	{
-		public static ImGuiRenderer? ImGuiManager { get; set; }
+		public static ImGuiOverlayRenderer? ImGuiManager { get; set; }
 	}
 }
 
 namespace OpenTPW
 {
+	/// <summary>ImGui draws the developer panels and the setup wizard (OpenTPW.ModKit), which the browser build leaves out.</summary>
+	public class ImGuiOverlayRenderer : IDisposable
+	{
+		public ImGuiOverlayRenderer( GraphicsDevice graphicsDevice, OutputDescription outputDescription, int width, int height ) { }
+		public void Update( float deltaSeconds, InputSnapshot snapshot ) { }
+		public void Render( GraphicsDevice graphicsDevice, CommandList commandList ) { }
+		public void WindowResized( int width, int height ) { }
+		public void Dispose() { }
+	}
+
 	/// <summary>The developer editor (OpenTPW.ModKit) draws with ImGui; in the browser it stays closed.</summary>
 	public class Editor
 	{
 		public static Editor Instance { get; private set; } = null!;
 		public bool shouldRender = false;
 
-		public Editor( ImGuiRenderer imguiRenderer, GraphicsDevice graphicsDevice ) => Instance = this;
+		public Editor( ImGuiOverlayRenderer imguiRenderer, GraphicsDevice graphicsDevice ) => Instance = this;
 		public void UpdateFrom( InputSnapshot inputSnapshot ) { }
 		public void Render( CommandList commandList ) { }
 	}

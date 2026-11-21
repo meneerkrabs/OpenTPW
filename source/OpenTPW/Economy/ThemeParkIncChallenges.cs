@@ -537,7 +537,10 @@ public sealed class ThemeParkIncChallenges
 	internal static bool IsValid( ThemeParkIncChallengesSnapshot? state ) =>
 		state == null || state.Slots is { Length: SlotCount } saved && saved.All( slot => slot != null && Enum.IsDefined( slot.Status )
 			&& (slot.Status == ThemeParkIncChallengeStatus.Idle || slot.Type != 0)
-			&& (slot.Status is not (ThemeParkIncChallengeStatus.Offered or ThemeParkIncChallengeStatus.Grace or ThemeParkIncChallengeStatus.Running) || IsPorted( slot.Type )) && slot.ChallengeLost >= 0 && (slot.Type == 0 || slot.GTPrize >= 1) );
+			&& (slot.Status is not (ThemeParkIncChallengeStatus.Offered or ThemeParkIncChallengeStatus.Grace or ThemeParkIncChallengeStatus.Running) || IsPorted( slot.Type ))
+			// an idle slot latched as due would be offered by 0x5C8140, which does not test the type: only a ported type ever latches (CalcAvailTime)
+			&& (slot.Status != ThemeParkIncChallengeStatus.Idle || slot.Type == 0 || !slot.OfferTimeSet || IsPorted( slot.Type ))
+			&& slot.ChallengeLost >= 0 && (slot.Type == 0 || slot.GTPrize >= 1) );
 
 	internal void Restore( ThemeParkIncChallengesSnapshot state )
 	{

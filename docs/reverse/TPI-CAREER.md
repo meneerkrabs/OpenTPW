@@ -139,8 +139,10 @@ words, and the shares name's tail. OpenTPW writes 0 there (`[EXT:original-undefi
 
 The original's path is `0x777B80`: `<root>\save\users\<slot + 1><name>\<name>.GMS` (`.GMI` with the refresh flag).
 
-OpenTPW has one player (`[EXT:tpi-front-end-one-player]`), so the file is `users\1New Player\New Player.GMS` in the save folder (user decision,
-2026-11-21). It is used as follows:
+OpenTPW has one player (`[EXT:tpi-front-end-one-player]`), so the file is `users\1New Player\New Player.GMS` (user decision, 2026-11-21), under
+`opentpw-tpi` in OpenTPW's own save folder: never in the original's `<root>\save\users`, which holds the original's own players (user decision, 2026-11-21).
+When OpenTPW's save folder is inside the game folder, the file goes to the `save` folder in OpenTPW's configuration folder instead
+(`GameFlow.ThemeParkIncPlayerRoot`). A file above 4 MiB is refused unread; the retail files are about 18 KB. It is used as follows:
 - **Saving the Science park** writes it first, as `0x745720` writes the global save before the park files.
 - **Leaving a Theme Park Inc park** runs the full save (`0x6A47B0` → `0x744E10` → `0x745720`): the player file, then the Science continuation park save
   (only the player file in a zone without an OpenTPW park slot). Nothing is saved when the park is lost, or when a load replaces the park.

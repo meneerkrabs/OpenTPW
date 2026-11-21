@@ -397,8 +397,9 @@ to the career (`+0x1074`), the promotion of `PromoGiven` (`0x74C450`), the curre
 loss and the firing letter once the line is spent. "Now" is the clock base (the FILETIME of 2000-01-01)
 plus floor(turn × 15000 / 4) seconds in 100 ns units, and the park age of the day counts is `ThemeParkIncStaff.GameDay` (`0x608C70`), as the staff port reads it.
 The slots, `mNextChallengeDelayTime` and the switch are saved with the park (`ParkSaveFile.Data.TpiChallenges`); the firing line, the golden tickets, the rank and the
-mission counter are the career's (`ThemeParkIncCareer`, `ParkSaveFile.Data.TpiCareer`, [TPI-CAREER.md](TPI-CAREER.md)). A Theme Park Inc save from before the career
-is refused.
+mission counter are the career's (`ThemeParkIncCareer`, `ParkSaveFile.Data.TpiCareer`, [TPI-CAREER.md](TPI-CAREER.md)). A Theme Park Inc save from before the challenge
+system or the career is refused ([PARK-SAVES.md](../PARK-SAVES.md)). A saved idle slot of an unmeasured type that is latched as due is refused as invalid: the offer
+`0x5C8140` does not test the type, so it would be offered.
 
 **Mission counter.** The availability reads the career's `+0x105C`; a new career's is 0 (`0x74BDC1`) and the mission controller is not ported yet, so it stays 0 unless
 the cheats extension's Skip Mission advances it. Every Science row except 8 and 22 needs

@@ -495,5 +495,18 @@ public class ThemeParkIncChallengeTests
 		var unmeasured = saved with { Slots = saved.Slots.Select( ( item, index ) => index == 0 ? item with { Type = 17 } : item ).ToArray() };
 		Assert.IsFalse( ThemeParkIncChallenges.IsValid( unmeasured ), "a running challenge of a type OpenTPW cannot measure is refused" );
 		Assert.IsFalse( ThemeParkIncChallenges.IsValid( saved with { Slots = saved.Slots.Take( 9 ).ToArray() } ), "ten slots" );
+		var latched = saved with { Slots = saved.Slots.Select( ( item, index ) => index == 1 ? item with { Type = 17, Status = ThemeParkIncChallengeStatus.Idle, OfferTimeSet = true } : item ).ToArray() };
+		Assert.IsFalse( ThemeParkIncChallenges.IsValid( latched ), "an idle slot of an unmeasured type latched as due would be offered" );
+		Assert.IsTrue( ThemeParkIncChallenges.IsValid( latched with { Slots = latched.Slots.Select( ( item, index ) => index == 1 ? item with { OfferTimeSet = false } : item ).ToArray() } ),
+			"unlatched, it waits" );
+
+		var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
+		var system = node["TpiChallenges"]!.DeepClone();
+		node.Remove( "TpiChallenges" );
+		var older = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog ) );
+		StringAssert.Contains( older.Message, "before OpenTPW kept the challenges", "a Theme Park Inc save from before the challenge system is refused, not continued with a new one" );
+		var carrying = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( TpwEconomy() ) )!.AsObject();
+		carrying["TpiChallenges"] = system;
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( carrying.ToJsonString() ) ), "a Theme Park World save may not carry the challenges" );
 	}
 }

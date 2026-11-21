@@ -32,16 +32,16 @@ public class ImGuiOverlayRendererTests
 		using var device = CreateDevice();
 		var previousBackend = DynamicBufferUpload.Backend;
 		var previousContext = ImGui.GetCurrentContext();
-		DynamicBufferUpload.Backend = device.BackendType;
-		var factory = device.ResourceFactory;
-		using var colour = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget ) );
-		using var staging = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging ) );
-		using var framebuffer = factory.CreateFramebuffer( new FramebufferDescription( null, colour ) );
-		using var commands = factory.CreateCommandList();
-		var renderer = new ImGuiOverlayRenderer( device, framebuffer.OutputDescription, (int)Size, (int)Size );
-		var context = ImGui.GetCurrentContext();
+		ImGuiOverlayRenderer? renderer = null;
 		try
 		{
+			DynamicBufferUpload.Backend = device.BackendType;
+			var factory = device.ResourceFactory;
+			using var colour = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget ) );
+			using var staging = factory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging ) );
+			using var framebuffer = factory.CreateFramebuffer( new FramebufferDescription( null, colour ) );
+			using var commands = factory.CreateCommandList();
+			renderer = new ImGuiOverlayRenderer( device, framebuffer.OutputDescription, (int)Size, (int)Size );
 			// colours are ABGR: 0xFF0000FF red, 0xFF00FF00 green, 0xFFFF0000 blue
 			var first = Frame( device, renderer, commands, framebuffer, colour, staging, centre: 0xFF0000FFu, band: 0xFF00FF00u );
 			Assert.AreEqual( (255, 0, 0), first.Centre, "the foreground list's rectangle" );
@@ -52,8 +52,11 @@ public class ImGuiOverlayRendererTests
 		}
 		finally
 		{
-			renderer.Dispose();
-			ImGui.DestroyContext( context );
+			if ( renderer != null )
+			{
+				renderer.Dispose();
+				ImGui.DestroyContext( ImGui.GetCurrentContext() );
+			}
 			if ( previousContext != IntPtr.Zero )
 				ImGui.SetCurrentContext( previousContext );
 			DynamicBufferUpload.Backend = previousBackend;
@@ -80,7 +83,8 @@ public class ImGuiOverlayRendererTests
 			(int, int, int) Pixel( int x, int y )
 			{
 				var offset = (int)(y * mapped.RowPitch) + x * 4;
-				return (System.Runtime.InteropServices.Marshal.ReadByte( mapped.Data, offset ), System.Runtime.InteropServices.Marshal.ReadByte( mapped.Data, offset + 1 ), System.Runtime.InteropServices.Marshal.ReadByte( mapped.Data, offset + 2 ));
+				int Read( int at ) => System.Runtime.InteropServices.Marshal.ReadByte( mapped.Data, offset + at );
+				return (Read( 0 ), Read( 1 ), Read( 2 ));
 			}
 			return (Pixel( 32, 32 ), Pixel( 32, 4 ));
 		}

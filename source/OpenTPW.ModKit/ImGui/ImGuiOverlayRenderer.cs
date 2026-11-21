@@ -25,7 +25,11 @@
 //
 // OpenTPW's changes: the class is OpenTPW.ImGuiOverlayRenderer; it reads the shaders embedded in the Veldrid.ImGui package; and the draw lists'
 // vertices and indices go up as one write from offset 0 through DynamicBufferUpload instead of one partial write per list at its offset (issue #829:
-// on Direct3D 11 a partial write into a dynamic buffer is a staging copy into it, outside the documented Map path). Formatting is Veldrid's.
+// on Direct3D 11 a partial write into a dynamic buffer is a staging copy into it, outside the documented Map path), the projection matrix
+// included. Compiled against the ImGui.NET this repository uses (1.87) instead of the 1.72 the package was built with, SetOpenTKKeyMappings now fills
+// io.KeyMap at the ImGuiKey values 1.87 reads (512 and up): the package wrote indices 0..21, which 1.87 ignores, so Tab, the arrows, Backspace,
+// Delete, Enter, Escape and Ctrl+A/C/V/X/Y/Z did nothing in an ImGui text field before. The game already leaves keys to ImGui while it wants them
+// (WantCaptureKeyboard, WantTextInput). Formatting is Veldrid's.
 
 #nullable disable
 using ImGuiNET;

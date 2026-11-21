@@ -8,4 +8,4 @@ Two continuation questions from the review are answered in code comments rather 
 - A letter can never be open when the game saves, because the pause menu that saves does not open over it.
 - The challenge firing line changes only when a challenge is lost, and the slice runs no Theme Park Inc challenges yet. The challenge port must save the line and the set of challenges lost once.
 
-Verified: the Theme Park Inc, guest, arrival and determinism filters pass (1476), including a new test that a live guest's base speed is the drawn word times its profile's multiplier. The site status tests pass after regenerating the front page.
+Verified: the Theme Park Inc, guest, resume and save filters pass (2410), including a new test that a live guest's base speed is the drawn word times its profile's multiplier and survives a snapshot (the guest and Science save validators now accept the scaled words, and the unscaled words of older saves). The silent, offscreen Science smoke exits 0. The site status tests pass after regenerating the front page.

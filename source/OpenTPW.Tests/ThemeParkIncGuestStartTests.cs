@@ -127,6 +127,10 @@ public sealed class ThemeParkIncGuestStartTests
 		var guest = park.SpawnInPark( 1, 1 );
 		Assert.AreEqual( (int)(word * (double)0.41f), guest.BaseSpeed );
 		Assert.AreNotEqual( word, guest.BaseSpeed, "the multiplier applies" );
+		var saved = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( park.CaptureSnapshot() ) )!;
+		var resumed = MakePark( tpi: true, speedMultiplier: 0.41f );
+		resumed.RestoreSnapshot( saved );
+		Assert.AreEqual( guest.BaseSpeed, resumed.Guests.Single().BaseSpeed, "a scaled base speed below the walk speeds passes the snapshot's validation" );
 		var tpw = MakePark( tpi: false ).SpawnInPark( 1, 1 ).BaseSpeed;
 		Assert.IsTrue( GuestSpeed.BaseSpeeds.ToArray().Any( value => value == tpw ), "a Theme Park World guest keeps a table word" );
 	}

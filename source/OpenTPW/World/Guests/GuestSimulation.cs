@@ -531,6 +531,25 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		};
 	}
 
+	/// <summary>
+	/// Whether a guest's base speed is one its birth can give: a walk speed, or for a Theme Park Inc guest also a walk speed scaled by its profile's multiplier
+	/// (a Science save from before the scale was applied holds the unscaled word, which its guests keep).
+	/// </summary>
+	private bool IsBirthBaseSpeed( int baseSpeed, int type, bool themeParkInc )
+	{
+		if ( baseSpeed is >= 60 and <= 140 )
+			return true;
+		if ( !themeParkInc || Settings.TpiGuestStart is not { } start || type < 0 || type >= start.Types.Count )
+			return false;
+		var multiplier = start.Types[type].SpeedMultiplier;
+		foreach ( var word in GuestSpeed.BaseSpeeds )
+		{
+			if ( baseSpeed == ThemeParkIncGuestStart.ScaleBaseSpeed( word, multiplier, singlePrecision: false ) )
+				return true;
+		}
+		return false;
+	}
+
 	private Guest CreateThemeParkWorldGuest( int id )
 	{
 		// [BIN:STP-PPC:0x100E7644 guest constructor] the starting values come from GuestStart (ORACLE.md F25): eight draws in the constructor's order
@@ -4642,7 +4661,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
 		foreach ( var problem in navigation.Problems( guest.Id, Grid.InBounds ) )
 			error( char.ToUpperInvariant( problem[0] ) + problem[1..] + "." );
-		if ( guest.BaseSpeed is < 60 or > 140 )
+		// [BIN:TPI-EXE:0x60C712 guest base speed] a Theme Park Inc guest's base speed is a walk speed scaled by its profile's SpeedMultiplier
+		if ( !IsBirthBaseSpeed( guest.BaseSpeed, guest.Type, guest.TpiPrankCode.HasValue ) )
 			error( $"Guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds." );
 		if ( guest.MaxSpeed is < GuestSpeed.Floor or > GuestSpeed.VelocityBound )
 			error( $"Guest {guest.Id} max speed {guest.MaxSpeed} is outside the speed setter's range." );

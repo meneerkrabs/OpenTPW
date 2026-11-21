@@ -64,6 +64,25 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Plan( captureForRestart: restartPhase == "capture" );
 	}
 
+	/// <summary>The mission window (docs/reverse/TPI-MISSIONS.md §7): the Objectives key opens it over mission 0, whose Proceed waits for the forty guests; it pauses nothing.</summary>
+	private void PlanMissionWindow()
+	{
+		Do( "open the mission window with the Objectives key", () => flow.InjectedInput = UiInput.Key( UiKeys.Objectives ) );
+		Wait( "mission window opens", 1 );
+		Do( "the mission window shows mission 0 with Proceed disabled", () =>
+		{
+			Require( Hud.MissionWindowOpen && Hud.Stack.Top?.Name == ThemeParkIncMissionWindow.ScreenName, "the Objectives key opens the mission window" );
+			var top = Hud.Stack.Top!;
+			Require( ((UiLabel)top.Find( "title" )!).Text() == flow.Strings.Entry( ThemeParkIncMissionWindow.TitleText ), "the window's title is UITEXT 461" );
+			Require( top.Find( "proceed" ) is { Enabled: false } && Hud.MissionWindow is { ProceedEnabled: false, Page: 0 }, "mission 0's Proceed is disabled at the start" );
+			Require( Hud.MissionWindow!.Briefing.Length > 0, "the briefing page shows the mission's text" );
+			Require( Hud.TimeScale > 0, "the mission window pauses nothing" );
+		} );
+		Do( "close the mission window", () => Click( Hud.Stack.Top!, "cancel" ) );
+		Wait( "mission window closes", 1 );
+		Do( "the mission window is closed", () => Require( !Hud.MissionWindowOpen && !Hud.MenuOpen, "Cancel closes the mission window" ) );
+	}
+
 	private void Plan( bool captureForRestart )
 	{
 		Wait( "slice starts", 10 );
@@ -86,6 +105,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 					"the current obstacle is the prebuilt's 1700 gate" );
 			}
 		} );
+		if ( flow.Level?.LevelName == "science" )
+			PlanMissionWindow();
 		if ( flow.Level?.LevelName == "science" )
 			PlanPrecipitation();
 		Do( "open the build window", () => Click( Hud.Screen, "build" ) );

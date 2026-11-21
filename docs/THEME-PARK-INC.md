@@ -286,10 +286,18 @@ career, finds the next obstacle and starts the new mission's statistics; the bui
 are measured from the park; 4 (last month's takings, whose ride and facility rows OpenTPW's ledger does not keep), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
 Science continuation save.
 
-**No mission completes in play, except through the cheats extension's Skip Mission.** Nothing calls OnMissionComplete: there is no mission window or Proceed
-control, and its camera flight, whose end is the only sender of the completion message 0x29, is not ported (the tests deliver 0x29 themselves). An obstacle
-mission would also need the research (message 0x23) and the staff HQ's obstacle slots, neither of which OpenTPW runs. What does not run yet besides: the obstacles as world things and their opening (their types are read from the zones' `obstacles`
-archives), and the objective letter's window.
+**The mission window.** The executable's "Current Objective" window (`ThemeParkIncMissionWindow`, builder `0x55A7F0`, table `0x9BE808`;
+[TPI-MISSIONS.md §7](reverse/TPI-MISSIONS.md#7-the-mission-window)) opens with the Objectives key O (key table `0x9A8A14`) or the text HUD's "Current Objective"
+button, which stands in for the native HUD's buttons (`[EXT:tpi-text-hud]`). It shows the mission's title, picture and sender, the briefing page and the details page
+with every exit statistic's requirement and status, the promotion hint, required challenges and golden tickets. Proceed is enabled when the controller's requirements are
+met and runs OnMissionComplete or the remove-obstacle message 0x24. It pauses nothing. The first briefing's automatic opening after the zone-arrival flight belongs to
+the camera flight, which is ported separately.
+
+**Few missions complete in play yet.** A mission without an obstacle whose Proceed finds no `ObstacleOpened` or `CutsceneObject` thing completes at once; one that
+shows a thing waits for the camera flight's end (message 0x29), and an obstacle mission also needs the research (message 0x23) and the staff HQ's obstacle slots,
+neither of which OpenTPW runs. The cheats extension's Skip Mission still runs the completion tick. What does not run yet besides: the obstacles as world things and their
+opening (their types are read from the zones' `obstacles` archives), the challenges window (the text HUD's challenge panel stands in for its tab) and the tag tube that
+would file the "Objective Complete!" letter; the letter itself is composed (`ThemeParkIncObjectiveLetter`) but waits in `ParkEconomy.TpiObjectiveLetters`.
 
 ### Prebuilt science save
 

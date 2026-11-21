@@ -502,7 +502,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
 		// A guest placed without the arrival constructor's position draws is spread by a stable hash of its ID, not a world draw.
 		(guest.OffsetX, guest.OffsetY) = PlacementJitter( id );
-		guest.BaseSpeed = baseSpeed;
+		// [BIN:TPI-EXE:0x60C712 guest base speed] a Theme Park Inc guest's base speed is the drawn word times its profile's SpeedMultiplier, truncated to a word
+		// [BIN:TPI-EXE:0x5BCD60 precision] the product is read at 53 bits, as the economy's other Theme Park Inc routines (equal at either precision for the retail words)
+		guest.BaseSpeed = Settings.TpiGuestStart is { } start
+			? ThemeParkIncGuestStart.ScaleBaseSpeed( (ushort)baseSpeed, start.Types[guest.Type].SpeedMultiplier, singlePrecision: false )
+			: baseSpeed;
 		// [EXT:smarter-guests] the birth id comes with the guest, before its first decision (the counter is the extension's, no draw)
 		if ( SmarterGuests is { } smarter )
 			guest.BirthId = smarter.AllocateBirthId();
@@ -511,6 +515,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return guest;
 	}
 
+	// [EXT:tpi-twp-guest-rules] the constructor's profile, meters, base speed and appearance are Theme Park Inc's; the guest then walks, decides and animates by the shared
+	// Theme Park World update wherever Theme Park Inc's has not been ported
 	private Guest CreateThemeParkIncGuest( int id, ThemeParkIncGuestStartSettings settings )
 	{
 		// [BIN:TPI-EXE:0x60C58F guest profile] The unforced constructor uses four profile draws,

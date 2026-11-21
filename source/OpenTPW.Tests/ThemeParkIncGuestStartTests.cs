@@ -116,13 +116,28 @@ public sealed class ThemeParkIncGuestStartTests
 	private static int Preferred( GuestSimulation park, Guest guest ) =>
 		OriginalGuestDecisions.ScoreInputOf( new DecisionContext( park.Settings, 0, false ), park.ViewOf( guest ), default ).PreferredExcitement;
 
-	private static GuestSimulation MakePark( bool tpi )
+	[TestMethod]
+	public void ALiveTpiGuestsBaseSpeedIsTheDrawnWordTimesItsProfilesMultiplier()
+	{
+		// [BIN:TPI-EXE:0x608FA4 base speed draw] [BIN:TPI-EXE:0x60C712 guest base speed] the first draw picks the word, the profile's SpeedMultiplier scales it, truncated
+		var park = MakePark( tpi: true, speedMultiplier: 0.41f );
+		park.World.Reseed( 0x73826fe5 );
+		var replay = new WorldRng( 0x73826fe5 );
+		var word = GuestSpeed.BaseSpeeds[(int)replay.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
+		var guest = park.SpawnInPark( 1, 1 );
+		Assert.AreEqual( (int)(word * (double)0.41f), guest.BaseSpeed );
+		Assert.AreNotEqual( word, guest.BaseSpeed, "the multiplier applies" );
+		var tpw = MakePark( tpi: false ).SpawnInPark( 1, 1 ).BaseSpeed;
+		Assert.IsTrue( GuestSpeed.BaseSpeeds.ToArray().Any( value => value == tpw ), "a Theme Park World guest keeps a table word" );
+	}
+
+	private static GuestSimulation MakePark( bool tpi, float speedMultiplier = 1f )
 	{
 		var grid = new GuestPathGrid( 4, 4 );
 		grid.SetPath( 1, 1, true );
 		var settings = new GuestSettings();
 		if ( tpi )
-			settings.TpiGuestStart = new( Enumerable.Range( 0, 24 ).Select( i => new ThemeParkIncGuestType( 90 - i, 300 + 20 * i, 40 + i, i / 8 ) ).ToArray(),
+			settings.TpiGuestStart = new( Enumerable.Range( 0, 24 ).Select( i => new ThemeParkIncGuestType( 90 - i, 300 + 20 * i, 40 + i, i / 8, speedMultiplier ) ).ToArray(),
 				400, 30, 15, 70, 20, 10, 100 );
 		return new GuestSimulation( grid, settings, 1 );
 	}

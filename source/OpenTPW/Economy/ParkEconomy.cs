@@ -160,6 +160,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 	private int challengeFiringLine = ThemeParkIncStartingFiringLine;
 
 	/// <summary>The challenges a Theme Park Inc park has lost at least once: each takes one off the firing line only on its first loss.</summary>
+	// The firing line and this set are not in the Science continuation save yet: they change only when a challenge is lost, and the slice runs no Theme Park Inc challenges.
+	// The challenge port must save both (the career object holds the line, the slots their loss counts, docs/reverse/TPI-CHALLENGE-SYSTEM.md). A letter is never open at a save:
+	// the pause menu that saves does not open over it (ThemeParkIncHud.OpenPauseMenu), and a pending mail is shown on the frame of the turn that posts it.
 	private readonly HashSet<int> challengesLostOnce = new();
 
 	/// <summary>

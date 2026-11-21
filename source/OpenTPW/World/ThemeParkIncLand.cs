@@ -29,7 +29,7 @@ public static class ThemeParkIncLand
 	// [BIN:TPI-EXE:0x677E90 no career fence] the clicks run only with the debug flag 0xA2738C & 0x400 or in coaster-edit mode ([0xC65B80] == 3): a career or online game lays no posts
 	// [BIN:TPI-EXE:0x677F89 gate strip] for x from post B.x + 2 while x < post A.x the squares (x, A.y) and (x, A.y + 1) clear 0x40 (0x67ED10) and refresh (0x67FB80)
 	// [BIN:TPI-EXE:0x67806A starting land] outside debug and coaster-edit mode the fence setup loads <level>\hoardings.map (0xB1DFF8) with 0x678B00
-	public static bool SetUpNewWorld( ParkCellMap cells, (int X, int Y) entranceA, (int X, int Y) entranceB, ReadOnlySpan<byte> hoardingsMap )
+	public static bool SetUpNewWorld( ParkCellMap cells, (int X, int Y) entranceA, (int X, int Y) entranceB, byte[] hoardingsMap )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
 		for ( var y = 0; y < cells.Height; y++ )
@@ -41,6 +41,7 @@ public static class ThemeParkIncLand
 					cells.SetFlags( x, y, flags | ParkCellFlags.Unowned );
 			}
 		}
+		cells.HasThemeParkIncLand = true;
 		var postB = (X: entranceA.X - 4, Y: entranceA.Y);
 		var postA = (X: entranceB.X + 3, Y: entranceB.Y);
 		for ( var x = postB.X + 2; x < postA.X; x++ )
@@ -58,25 +59,35 @@ public static class ThemeParkIncLand
 	// [BIN:TPI-EXE:0x678B2F land loader] the outer loop is x (ebp, 0..0x7F), the inner y (edi, 0..0x7F), the square id y * 128 + x + 1 (0x678B3F); each byte is read alone (0x7CC930, 1 byte) and a failed read returns 0 at once (0x678B6F..0x678B7A), the earlier cells kept
 	// [BIN:TPI-EXE:0x678B80 border skip] a byte is applied only when it is 0 and x is neither 0 nor width - 1 (0x64E8D0) and y neither 0 nor height - 1 (0x64E8F0): extent.000 has 36 border zeros, the water hoardings.map 13, and none of them is owned
 	// [BIN:TPI-EXE:0x678BE0 owned square] the square clears 0x40 (0x67ED10(0x40)); the fence walk mark 0x676530(1) follows
-	public static bool ApplyLandFile( ParkCellMap cells, ReadOnlySpan<byte> bytes )
+	public static bool ApplyLandFile( ParkCellMap cells, byte[] bytes )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
+		ArgumentNullException.ThrowIfNull( bytes );
 		if ( cells.Width != 128 || cells.Height != 128 )
 			throw new ArgumentException( "Theme Park Inc's land files cover a 128 x 128 map.", nameof( cells ) );
+		// the post check runs over every cell the file would own before any cell changes, so a refused file leaves the land as it was
+		foreach ( var (x, y) in OwnedCells( cells, bytes ) )
+			RefusePost( cells, x, y );
+		foreach ( var (x, y) in OwnedCells( cells, bytes ) )
+			Own( cells, x, y );
+		return bytes.Length >= MapFileBytes;
+	}
+
+	/// <summary>The cells the loader owns from <paramref name="bytes"/> in its x-major order: 0 bytes off the border, up to the file's end.</summary>
+	private static IEnumerable<(int X, int Y)> OwnedCells( ParkCellMap cells, byte[] bytes )
+	{
 		for ( var x = 0; x < 128; x++ )
 		{
 			for ( var y = 0; y < 128; y++ )
 			{
 				var index = x * 128 + y;
 				if ( index >= bytes.Length )
-					return false;
+					yield break;
 				if ( bytes[index] != 0 || x == 0 || x == cells.Width - 1 || y == 0 || y == cells.Height - 1 )
 					continue;
-				Own( cells, x, y );
-				RemovePost( cells, x, y );
+				yield return (x, y);
 			}
 		}
-		return bytes.Length >= MapFileBytes;
 	}
 
 	/// <summary>Reads <paramref name="path"/> through the game's file system and applies it (<see cref="ApplyLandFile"/>); a missing file answers false and changes nothing.</summary>
@@ -100,6 +111,7 @@ public static class ThemeParkIncLand
 	{
 		ArgumentNullException.ThrowIfNull( cells );
 		ArgumentNullException.ThrowIfNull( savedUnowned );
+		cells.HasThemeParkIncLand = true;
 		for ( var y = 0; y < cells.Height; y++ )
 		{
 			for ( var x = 0; x < cells.Width; x++ )
@@ -135,10 +147,11 @@ public static class ThemeParkIncLand
 
 	/// <summary>
 	/// The loader's structure-record step for a newly owned cell: a hoarding post there is removed and the record's own 0x40 cleared before its mesh refresh. OpenTPW's
-	/// Theme Park Inc worlds hold no posts (career mode lays none and the prebuilt park has none), and its track layer has no 0x40 bit, so a post here is an error.
+	/// Theme Park Inc worlds hold no posts (career mode lays none and the prebuilt park has none), and its track layer has no 0x40 bit, so a post here is refused
+	/// before any cell changes; porting the post branch belongs with coaster-edit mode, the only mode that lays posts.
 	/// </summary>
 	// [BIN:TPI-EXE:0x678BFB post removal] the record of the square (0x5C17F0; an extension, 0x685760, through its parent +0x10) is tested for a hoarding post (0x685710, type 0x19): clear 0x20 (0x684A30), remove it (0x685DE0(0,0,0); the 0x15 branch 0x686880 cannot follow a type-0x19 test), 0x65CCE0(0) and 0x680A10 twice; every record then clears 0x40 (0x684A30(0x40)) and refreshes its mesh (0x685A70)
-	private static void RemovePost( ParkCellMap cells, int x, int y )
+	private static void RefusePost( ParkCellMap cells, int x, int y )
 	{
 		if ( QueueCellValidator.StructureTypeAt( cells, x, y ) == ParkCellTypes.Hoarding )
 			throw new InvalidOperationException( $"Theme Park Inc land cell ({x}, {y}) holds a fence post, which a career world never lays." );

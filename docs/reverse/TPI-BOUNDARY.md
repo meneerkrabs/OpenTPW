@@ -27,7 +27,7 @@ Both `hoardings.map` and `extents/extent.NNN` are 16,384 bytes, one per cell, no
 - [BIN:TPI-EXE:0x678BE0 owned square] An applied byte clears the square's `0x40`.
 - [BIN:TPI-EXE:0x678BFB post removal] It then looks at the square's structure record (an extension through its parent). A hoarding post (type `0x19`) is removed (`0x685DE0`, then `0x65CCE0` and `0x680A10` twice). Every record clears its own `0x40` and refreshes its mesh (`0x685A70`).
 
-OpenTPW's Theme Park Inc worlds hold no fence posts (no career fence, and the prebuilt park has none) and its track layer has no `0x40` bit, so the post branch and the record step have nothing to act on; finding a post there is reported as an error rather than guessed at.
+OpenTPW's Theme Park Inc worlds hold no fence posts (no career fence, and the prebuilt park has none) and its track layer has no `0x40` bit, so the post branch and the record step have nothing to act on. A file whose owned cells include a post is refused as a whole before any cell changes, rather than guessed at. **Follow-up:** the real post branch (`0x678C37..0x678C7D`: clear `0x20`, remove the post with `0x685DE0`, then `0x65CCE0(0)` and `0x680A10` twice) belongs with coaster-edit mode, the only mode that lays posts.
 
 ## Who calls the loader
 
@@ -64,6 +64,15 @@ OpenTPW's existing rules already refuse unowned cells for these tools (`ParkPath
 
 [BIN:TPI-EXE:0x4A5E30 land refresh] Theme Park World darkens unowned land: its land refresh `0x450D10` sets bit `0x400` of the landscape word and the terrain draw halves the colours (`UnownedLandDim`). Theme Park Inc's refresh is different: it clears `0x400` and the bits `0xF000`, and sets bits `0x1000` to `0x8000` from the `0x40` of the square and its neighbours (`0x4A5EE2`, `0x4A5F4D`, `0x4A5FB9`, `0x4A6024` and the combinations after them). How the terrain draw uses those bits is not read, and neither is who instances the `ho_*` fence models of `hoarding.wad` (the only instancer `0x65D5A0` has no static caller). OpenTPW therefore draws Theme Park Inc's land as before, with no dimming and no fence (`Level` leaves `OriginalTerrain.LandFlagsSource` null for Theme Park Inc).
 
+## Unread items
+
+These stay open and carry no register entry, because nothing is approximated for them: OpenTPW leaves them out.
+
+- The boundary drawing: how the terrain draw uses the landscape word's bits `0x1000..0x8000` that the land refresh `0x4A5E30` sets from the squares' `0x40`, and who instances the `ho_*` fence models.
+- Whether guests, staff walks or a free-walk camera are limited by `0x40`; the callers of `0x683850`.
+- The zone check on the obstacle-completion path before an extent is applied.
+- Whether a GMS load runs the world init before the cells are restored.
+
 ## The catalogue's mission gate (`0x57CA20`)
 
 The list builder of one catalogue tab skips, for each object type:
@@ -72,7 +81,7 @@ The list builder of one catalogue tab skips, for each object type:
 - [BIN:TPI-EXE:0x57CB00 thinking space] a type whose `+0x1B4` equals 1 while the mission number (`0x5F03A0 +0xC`) is below 1. `+0x1B4` is `UsageInfo.ThinkingSpace` (the UsageInfo key table ends at file offset `0x5A51C8`; the word is 26 before `UsageInfo.AppearanceEffect` at `+0x21C`). The research lab (1404) carries it.
 - [BIN:TPI-EXE:0x57CB2A training room] a type whose `+0x1B8` (`UsageInfo.TrainingRoom`, the next word) is nonzero, unless the mission number is above 1, or is 1 and the obstacle status of `0x5F01D0` is 2 (the Park Expansion research is done). The training room (1440) carries it.
 
-`ThemeParkIncCatalogue.IsListed` ports these rules as a function of the type's settings, the mission number and whether the obstacle research is done. The experimental HUD's build list applies it with `Level.ThemeParkIncMissionNumber` and `Level.ThemeParkIncObstacleResearchDone`, which stay 0 and false until the career runs, so the four special rides are no longer offered (the Science smoke now arms the Bellows). The research lab and the training room are Facilities (`Info.WhichUIType` 5), which the slice's catalogue does not load yet. The rest of the builder (the `+0x65C` and `+0x600` words, the `0x5CFCF0` record's byte `+0x10` and the research availability flag) is not ported here.
+`ThemeParkIncCatalogue.IsListed` ports these rules as a function of the type's settings, the mission number and whether the obstacle research is done. The experimental HUD's build list applies it with `Level.ThemeParkIncMissionNumber` and `Level.ThemeParkIncObstacleResearchDone`, which stay 0 and false until the career runs, so the four special rides are no longer offered; they are hidden in every mission, not only before the career starts (the Science smoke now arms the Bellows). The research lab and the training room are Facilities (`Info.WhichUIType` 5), which the slice's catalogue does not load yet. The rest of the builder (the `+0x65C` and `+0x600` words, the `0x5CFCF0` record's byte `+0x10` and the research availability flag) is not ported here.
 
 ## The API for the mission controller
 
@@ -80,4 +89,4 @@ The list builder of one catalogue tab skips, for each object type:
 
 ## Saves
 
-The ownership is world state. The Science continuation save stores the cell flags of every cell that differs from an empty owned cell, so the unowned squares come back with their `0x40` (`ParkLayoutSnapshot`); nothing reloads `hoardings.map` on a load, as in the original. A continuation save written before this port holds no `0x40` cells and loads with all land owned.
+The ownership is world state. The Science continuation save and the layout checkpoint store it as one bit per cell (`ParkLayoutSnapshot.CellMapData.TpiUnowned`, Base64 of 2048 bytes, row order); the cell records then omit the unowned bit. Nothing reloads `hoardings.map` on a load, as in the original. A continuation or checkpoint written before this port carries no bit map: it would restore every square as owned, which the original never reaches, so it is refused (`ParkResumeSaveFile.RequireThemeParkIncLand`; the checkpoint asks to be saved again).

@@ -112,7 +112,8 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   water or arabian world marks every square but the NoModify ones unowned, opens the gate strip beside the entrance and clears its `hoardings.map` with the land loader
   `0x678B00` (x-major bytes, map border skipped). Paths, queues and objects are refused on unowned land, as the cell validator `0x67E320` refuses them; no fence is
   laid and the land is not drawn darker (Theme Park Inc's boundary drawing is not read). `Level.ApplyThemeParkIncExtent` grows the land by `extents/extent.NNN` for the
-  mission controller, and the build list hides what the catalogue's mission gate `0x57CA20` hides in mission 0 (the four special rides).
+  mission controller, and the build list applies the catalogue's gate `0x57CA20`: the four special rides are hidden in every mission, and the mission number (0 until the career
+  runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused.
 - **Guests** start with Theme Park Inc's own 24-row profile table, starting cash, exit counter and starting needs.
   The selected row supplies their excitement preference. The original prank code is saved separately from the
   Theme Park World flag but does not run any TPI prank actions yet. Existing guests in older saves keep their

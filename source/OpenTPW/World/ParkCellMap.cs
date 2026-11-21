@@ -728,6 +728,12 @@ public sealed partial class ParkCellMap
 	/// <summary>The park's fence and enclosed land (Buy Land); null for a map without one, where no cell is made unowned.</summary>
 	public ParkLand? Land { get; private set; }
 
+	/// <summary>
+	/// Whether the map holds Theme Park Inc's owned land (<see cref="ThemeParkIncLand"/>): set by the land's set-up and by a restore of its saved bit map, so a layout
+	/// snapshot keeps the unowned bits as one bit map (<see cref="ParkLayoutSnapshot.CellMapData.TpiUnowned"/>) whatever edition is selected when it is captured.
+	/// </summary>
+	public bool HasThemeParkIncLand { get; internal set; }
+
 	/// <summary>Replaces the land model (a purchase, a load); the cells' ownership flags are written separately.</summary>
 	public void SetLand( ParkLand? land )
 	{

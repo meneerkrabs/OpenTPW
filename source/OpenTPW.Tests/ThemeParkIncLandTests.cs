@@ -193,4 +193,39 @@ public class ThemeParkIncLandTests
 		// the research lab (1404, UsageInfo.ThinkingSpace 1) and the training room (1440, UsageInfo.TrainingRoom 1) are Facilities (Info.WhichUIType 5), which the slice's catalogue does not load
 		Assert.IsFalse( catalog.Entries.Any( entry => entry.InfoId is 1404 or 1440 ) );
 	}
+
+	[TestMethod]
+	public void AFencePostRefusesTheWholeFileBeforeAnyCellChanges()
+	{
+		var cells = Unowned();
+		cells.Tracks.Set( 60, 60, new TrackCell { Type = ParkCellTypes.Hoarding } );
+		var bytes = AllOnes();
+		bytes[5 * 128 + 9] = 0;
+		bytes[60 * 128 + 60] = 0;
+		Assert.ThrowsException<InvalidOperationException>( () => ThemeParkIncLand.ApplyLandFile( cells, bytes ) );
+		Assert.AreEqual( 0, ThemeParkIncLand.OwnedCount( cells ), "the cell read before the post stays unowned" );
+	}
+
+	[TestMethod]
+	public void TheLayoutKeepsTpiOwnershipAsOneBitMapAndRefusesSavesWithoutIt()
+	{
+		var cells = Unowned();
+		Assert.IsTrue( ThemeParkIncLand.ApplyLandFile( cells, Enumerable.Range( 0, ThemeParkIncLand.MapFileBytes ).Select( index => (byte)(index % 3 == 0 ? 0 : 1) ).ToArray() ) );
+		cells.SetFlags( 10, 10, cells.FlagsAt( 10, 10 ) | ParkCellFlags.NoModify );
+		var objects = new ParkObjects( null!, new SandboxParkGrid() );
+		Assert.IsNull( ParkLayoutSnapshot.CaptureSnapshot( cells, objects ).Cells.TpiUnowned, "a map without Theme Park Inc's land keeps the cell records' bits, whatever the edition" );
+		cells.HasThemeParkIncLand = true;
+		var snapshot = ParkLayoutSnapshot.CaptureSnapshot( cells, objects );
+		Assert.IsNotNull( snapshot.Cells.TpiUnowned );
+		Assert.IsNull( snapshot.Cells.Land );
+		Assert.AreEqual( 1, snapshot.Cells.Cells.Count, "only the NoModify cell is recorded; the unowned bit lives in the bit map" );
+		var restored = ParkLayoutSnapshot.RestoreCellMap( snapshot );
+		CollectionAssert.AreEqual( UnownedMask( cells ), UnownedMask( restored ) );
+		Assert.AreEqual( cells.FlagsAt( 10, 10 ), restored.FlagsAt( 10, 10 ) );
+		ParkResumeSaveFile.RequireThemeParkIncLand( snapshot );
+		var old = snapshot with { Cells = snapshot.Cells with { TpiUnowned = null } };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.RequireThemeParkIncLand( old ) ).Message, ParkResumeSaveFile.ThemeParkIncLandMissing );
+		Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( snapshot with { Cells = snapshot.Cells with { TpiUnowned = "AAAA" } } ), "a bit map of the wrong size is refused" );
+		Assert.IsTrue( restored.HasThemeParkIncLand, "a restored map keeps its land's encoding" );
+	}
 }

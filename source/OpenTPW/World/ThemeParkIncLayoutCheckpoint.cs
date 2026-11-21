@@ -29,6 +29,9 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 		if (Layout == null || Layout.Cells == null || Layout.Objects == null ||
 			Layout.ObjectScriptKey != new WorldSeed(Seed).ObjectScriptKey)
 			throw new InvalidDataException("The checkpoint layout or world seed is inconsistent.");
+		// a checkpoint written before Theme Park Inc's land was kept would restore every square as owned, which the original never reaches
+		if (Layout.Cells.TpiUnowned == null || Layout.Cells.Land != null)
+			throw new InvalidDataException("The checkpoint was saved before Theme Park Inc's owned land was kept and cannot be loaded; save the layout again.");
 		// Reuse the cell validator and reconstruction contract; no live map is changed.
 		_ = ParkLayoutSnapshot.RestoreCellMap(Layout);
 		if (Layout.NextSeed < 1 || Layout.NextSeed == int.MaxValue || Layout.NextAttractionId < 1 || Layout.NextAttractionId == int.MaxValue ||

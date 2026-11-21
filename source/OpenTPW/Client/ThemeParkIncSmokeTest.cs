@@ -293,6 +293,19 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			{
 				Require( error.Message.Contains( "unsupported world state", StringComparison.Ordinal ), "Science rejects land ownership during preflight" );
 			}
+			// the save keeps the owned land as one bit map; a save without it predates the land and is refused
+			Require( saved.Layout.Cells.TpiUnowned is { } unownedBits && saved.Layout.Cells.Cells.All( cell => (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0 )
+				&& Convert.FromBase64String( unownedBits ).Sum( bits => System.Numerics.BitOperations.PopCount( bits ) ) == 128 * 128 - ThemeParkIncLand.OwnedCount( live.Guests.Grid.Cells ),
+				"the Science save carries its unowned squares as a bit map" );
+			try
+			{
+				ParkResumeSaveFile.ValidateShape( saved with { Layout = saved.Layout with { Cells = saved.Layout.Cells with { TpiUnowned = null } } } );
+				throw new InvalidOperationException( "A Science save without its owned land was accepted." );
+			}
+			catch ( InvalidDataException error )
+			{
+				Require( error.Message.Contains( ParkResumeSaveFile.ThemeParkIncLandMissing, StringComparison.Ordinal ), "Science refuses a save without its owned land during preflight" );
+			}
 			File.WriteAllText( saves.Path, "{}" );
 			try
 			{

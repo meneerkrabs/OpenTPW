@@ -175,6 +175,38 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
+	public void ADemolishedRoomCancelsItsTraineeAtTheClickBeforeTheNextTurnsDraws()
+	{
+		// [BIN:TPI-EXE:0x637C40 thing destroy] the demolish destroys the room at the click (0x4D30F8 -> 0x660D80 -> 0x666DA0 -> 0x6674E1) and the dispatcher 0x436DD0 delivers message 0xA at once:
+		// the cancel's look for work draws from the world generator then, before the next world update's draws; only the thing's free waits for the turn's tail
+		(ParkEconomy Economy, ThemeParkIncStaffWorld World, ThemeParkIncStaffMember Member, long Turn) Trainee()
+		{
+			var economy = ScienceEconomy();
+			var world = new ThemeParkIncStaffWorld( Row( economy ) ) { Rooms = new TestRooms { Training = new ThemeParkIncRoom( 500, (2, 5) ) } };
+			var member = Hire( economy, world, (1, 5), experience: 20000 );
+			world.ChooseAbility( economy, member, 7, confirmed: false, economy.Turn );
+			var turn = economy.Turn;
+			for ( var step = 0; step < 200 && member.State == 7; step++ )
+				world.Update( economy, member, ++turn );
+			Assert.AreEqual( 8, member.State );
+			return (economy, world, member, turn);
+		}
+		var atClick = Trainee();
+		var before = atClick.Economy.World.State;
+		atClick.World.RoomDestroyed( atClick.Economy, ThemeParkIncRoomKind.Training, 500, atClick.Turn );
+		Assert.AreNotEqual( before, atClick.Economy.World.State, "the cancel drew at the destroy" );
+		Assert.AreEqual( 0, atClick.Member.LearningAbility );
+		atClick.World.Update( atClick.Economy, atClick.Member, atClick.Turn + 1 );
+
+		// the same park with the cancel held back to the turn's end draws in another order and ends elsewhere
+		var deferred = Trainee();
+		Assert.AreEqual( before, deferred.Economy.World.State, "the two parks are alike up to the click" );
+		deferred.World.Update( deferred.Economy, deferred.Member, deferred.Turn + 1 );
+		deferred.World.RoomDestroyed( deferred.Economy, ThemeParkIncRoomKind.Training, 500, deferred.Turn + 1 );
+		Assert.AreNotEqual( atClick.Economy.World.State, deferred.Economy.World.State, "the draw order decides the generator's state" );
+	}
+
+	[TestMethod]
 	public void AFailedRouteToTheTrainingRoomFallsBackToTheCellSteerOffThePaths()
 	{
 		// [BIN:TPI-EXE:0x628492 state 7 entry] [BIN:TPI-EXE:0x62EB10 staff route] [BIN:TPI-EXE:0x60B7F0 cell steer]

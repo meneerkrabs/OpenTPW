@@ -167,6 +167,23 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>
+	/// A staff room's thing destroyed (<c>0x637C40</c>): message 0x21 first (a research room's makes the lab clear both teams, <c>0x61DB90</c>), then the class's destroy broadcasts message 0xA
+	/// (<c>0x5DE780</c>), which cancels the trainees of a training room or sends the researchers out of a research room. Both reach their listeners at once, at the destroy.
+	/// </summary>
+	// [BIN:TPI-EXE:0x637CB9 message 0x21] the destroy's own message (vtable 0x93A3B8, type 0x21 at 0x436070) before the kind switch 0x637CD5; [BIN:TPI-EXE:0x5DE829 message 0xA] the attraction's destroy
+	// (vtable 0x93A304, type 0xA at 0x435840); [BIN:TPI-EXE:0x61DC20 lab message 0x21] a destroyed kind-3 thing with +0x43 & 2 runs 0x61DB90
+	public void RoomDestroyed( ParkEconomy economy, ThemeParkIncRoomKind kind, ushort thing, long turn )
+	{
+		if ( kind == ThemeParkIncRoomKind.Research )
+		{
+			economy.TpiResearch?.ResearchRoomRemoved();
+			ResearchRoomRemoved( economy, thing, turn );
+		}
+		else
+			TrainingRoomRemoved( economy, turn );
+	}
+
+	/// <summary>
 	/// A training room's thing removed (the staff message 0xA, <c>0x626638</c>): every member walking to a training room or training is cancelled (the walk's cancel does nothing, as the original's).
 	/// </summary>
 	// [BIN:TPI-EXE:0x626638 room removed] the staff message 0xA: a thing that is not the member's rest area (+0x248), of kind 3 with +0x43 & 4 (a training room), and a member in state 7 or 8 runs 0x62E7A0

@@ -23,11 +23,6 @@ public sealed partial class ParkEconomy
 		TpiMissions?.RemoveObstacle( thing );
 	}
 
-	/// <summary>Message 0x21 for a staff member's thing destroyed: the staff HQ releases his ability count and slot.</summary>
-	// [BIN:TPI-EXE:0x632520 staff destroyed] message 0x21 for a thing of kind 4, 5, 6, 8, 7 or 0x14 -> 0x634730
-	internal void ThemeParkIncStaffDestroyed( ThemeParkIncStaffMember member )
-	{
-		if ( TpiStaff is { } staff )
-			staff.Hq.Release( staff.Members, member );
-	}
+	// message 0x21 for a staff member's thing destroyed (the HQ's 0x632520 -> 0x634730, the lab's 0x61DAD0) has no sender in OpenTPW: no Theme Park Inc member leaves the park (the fire and
+	// the quit are not ported), so neither listener is modelled
 }

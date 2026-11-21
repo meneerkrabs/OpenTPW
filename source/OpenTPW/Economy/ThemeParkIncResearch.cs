@@ -276,26 +276,6 @@ public sealed class ThemeParkIncResearch
 	}
 
 	/// <summary>
-	/// Message 0x21 for a staff member's thing destroyed (<c>0x61DAD0</c>): a scientist leaves both teams; another member who consults on a slot is replaced by the pick.
-	/// </summary>
-	// [BIN:TPI-EXE:0x61DAD0 staff left] kind 8: the id cleared from both teams (+0x274 and the consultants untouched); another kind: each slot whose consultant is the id takes 0x61D970 for its project
-	public void StaffLeft( ThemeParkIncStaffMember member, IEnumerable<ThemeParkIncStaffMember> members )
-	{
-		var id = (ushort)member.ThingId;
-		if ( member.Role == ThemeParkIncStaffRole.Researcher )
-		{
-			foreach ( var team in teams )
-				for ( var index = 0; index < TeamSize; index++ )
-					if ( team[index] == id )
-						team[index] = 0;
-			return;
-		}
-		for ( var slot = 0; slot < Slots; slot++ )
-			if ( consultants[slot] == id && slotProjects[slot] >= 0 )
-				consultants[slot] = PickConsultant( projects[slotProjects[slot]], members );
-	}
-
-	/// <summary>
 	/// Message 0x21 for a research room's thing destroyed (<c>0x61DB90</c>): both availability bytes clear, every team member is no longer listed and both teams empty, whichever room went.
 	/// </summary>
 	// [BIN:TPI-EXE:0x61DB90 room removed] the word +0x74 = 0; every member of both teams 0x62E240(T, 0) (a researcher: +0x27E = +0x274 = 0 only); both teams cleared

@@ -98,26 +98,29 @@ public partial class Level
 		}
 	}
 
+	private bool tpiRoomsHooked;
+
 	/// <summary>Gives the Theme Park Inc staff world this level's rooms and tells it when a room goes.</summary>
 	private void AttachThemeParkIncRooms()
 	{
 		if ( TpiStaffWorld is not { } world )
 			return;
 		world.Rooms = new ThemeParkIncRooms( this );
-		// [BIN:TPI-EXE:0x637C40 thing destroy] the room thing's destroy broadcasts the staff message 0xA while the thing still stands; OpenTPW's object removal (ParkObjects.ObjectRemoving, the room still
-		// listed) is the seam, at the removal rather than at the turn's deferred destroy
+		// [BIN:TPI-EXE:0x637C40 thing destroy] the player's demolish runs at the click: the world click handler (0x4D30F8) calls the cell-op engine 0x660D80, whose demolish (0x6633CE -> 0x666DA0, the scrap
+		// value 0x5E75F0) destroys the thing at 0x6674E1; 0x637C40 broadcasts message 0x21 and runs the class's destroy (kind 3: 0x5DE780, message 0xA) through the dispatcher 0x436DD0, which calls every
+		// subscriber's handler at once (0x436EB5 -> 0x637970); only the thing's free waits for the turn's tail ("Removing thing %d from thing list", 0x649814). So the staff and the lab hear the room's
+		// removal at the click, between two world updates, as ParkObjects.ObjectRemoving does (the room still listed)
+		if ( tpiRoomsHooked )
+			return;
+		tpiRoomsHooked = true;
 		Objects.ObjectRemoving += item =>
 		{
-			if ( TpiStaffWorld is not { } staffWorld || Park?.Economy is not { } economy )
+			if ( TpiStaffWorld is not { } staffWorld || Park?.Economy is not { } economy || item.ThingId is not (> 0 and <= ushort.MaxValue) )
 				return;
-			if ( item.Entry.Settings.GetInt( "UsageInfo.TrainingRoom" ) != 0 )
-				staffWorld.TrainingRoomRemoved( economy, economy.Turn );
-			// [BIN:TPI-EXE:0x61DC20 lab message 0x21] a destroyed kind-3 thing with +0x43 & 2 (a research room) clears both teams (0x61DB90); the researchers whose room it is hear message 10
-			if ( item.Entry.Settings.GetInt( "UsageInfo.ThinkingSpace" ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue )
-			{
-				staffWorld.ResearchRoomRemoved( economy, (ushort)item.ThingId, economy.Turn );
-				economy.TpiResearch?.ResearchRoomRemoved();
-			}
+			var kind = item.Entry.Settings.GetInt( "UsageInfo.ThinkingSpace" ) != 0 ? ThemeParkIncRoomKind.Research
+				: item.Entry.Settings.GetInt( "UsageInfo.TrainingRoom" ) != 0 ? ThemeParkIncRoomKind.Training : (ThemeParkIncRoomKind?)null;
+			if ( kind is { } room )
+				staffWorld.RoomDestroyed( economy, room, (ushort)item.ThingId, economy.Turn );
 		};
 	}
 

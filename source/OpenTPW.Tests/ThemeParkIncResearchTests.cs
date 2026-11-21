@@ -252,7 +252,7 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 	[TestMethod]
 	public void ARemovedResearchRoomSendsItsResearcherOutAndClearsTheTeams()
 	{
-		// [BIN:TPI-EXE:0x61B570 researcher message] [BIN:TPI-EXE:0x61DB90 room removed]
+		// [BIN:TPI-EXE:0x637C40 thing destroy] [BIN:TPI-EXE:0x61B570 researcher message] [BIN:TPI-EXE:0x61DB90 room removed]
 		var (economy, research) = Seeded();
 		var world = new ThemeParkIncStaffWorld( Row( economy ) );
 		var rooms = new TestRooms { Research = new ThemeParkIncRoom( 600, (3, 5) ) };
@@ -263,8 +263,7 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		var turn = economy.Turn;
 		for ( var step = 0; step < 200 && member.State != ThemeParkIncResearch.Researching; step++ )
 			world.Update( economy, member, ++turn );
-		world.ResearchRoomRemoved( economy, 600, turn );
-		research.ResearchRoomRemoved();
+		world.RoomDestroyed( economy, ThemeParkIncRoomKind.Research, 600, turn );
 		Assert.AreEqual( (0, 0), (member.State, member.ResearchRoom) );
 		Assert.AreEqual( ((ushort)600, -1), rooms.Occupancy[^1] );
 		Assert.IsFalse( member.Listed );

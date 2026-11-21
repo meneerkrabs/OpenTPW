@@ -28,11 +28,29 @@ internal sealed partial class GameFlow
 		TearDown();
 		IncFrontEnd = new ThemeParkIncFrontEnd( Strings, new ThemeParkIncFrontEndHost
 		{
-			EnterWorld = zone => QueueLevel( zone, () => StartLevel( zone, original: true, developerPanels: false ) ),
+			EnterWorld = zone => QueueLevel( zone, () => EnterThemeParkIncZone( zone ) ),
 			ContinueScience = !OperatingSystem.IsBrowser() && File.Exists( IncScienceSavePath() ) ? QueueScienceContinuation : null,
 			Quit = Quit
 		}, UiFonts.CachedLoader( GameLanguage.Current ) );
 		Log.Trace( "Theme Park Inc front end: the Personnel File (experimental slice; Enter Game starts the chosen zone)." );
+	}
+
+	/// <summary>Enter Game: the zone's park starts with the player's career (the player file's, or a new one).</summary>
+	// [BIN:TPI-EXE:0x56AB40 enter game] the panel selects the player, which loads the player's global save, and changes to the zone
+	private void EnterThemeParkIncZone( string zone )
+	{
+		var frontEnd = IncFrontEnd;
+		ThemeParkIncCareer? career;
+		try { career = LoadThemeParkIncPlayerCareer( zone ); }
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException )
+		{
+			if ( frontEnd == null )
+				throw;
+			frontEnd.ShowLoadFailure( error.Message );
+			return;
+		}
+		using ( ParkEconomy.EnterThemeParkIncCareer( career ) )
+			StartLevel( zone, original: true, developerPanels: false );
 	}
 
 	private void QueueScienceContinuation()

@@ -8,6 +8,7 @@ internal sealed partial class GameFlow
 	internal void SaveThemeParkIncScience()
 	{
 		var level = RequireThemeParkIncScience();
+		WriteThemeParkIncPlayerFile( level );
 		var snapshot = level.CaptureResumeSnapshot( null, "Science", savedUtc: DateTimeOffset.UtcNow ) with
 		{
 			TpiHudSpeed = IncHud?.Speed ?? GameSpeed.Normal
@@ -32,12 +33,17 @@ internal sealed partial class GameFlow
 		var assets = ParkResumeAssetManifest.Capture( catalog, settings );
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, catalog, settings, economyCatalog, assets );
 		var economy = ParkSaveFile.Restore( snapshot.Economy, settings, economyCatalog );
+		// [BIN:TPI-EXE:0x7451E0 load] the load reads the player's global save before the zone's park file: the player file's career is the park's
+		if ( LoadThemeParkIncPlayerCareer( snapshot.Theme ) is { } career )
+			economy.AttachThemeParkIncCareer( career );
 		using var scene = new EntityConstructionScope();
 		var candidate = new Level( snapshot, economy, OnlineFolders ) { ShowDeveloperPanels = false };
 		var candidateHud = CreateThemeParkIncHud( candidate, snapshot.TpiHudSpeed!.Value );
 		candidate.SimulationTimeScale = candidateHud.TimeScale;
 		scene.Detach();
-		TearDown( applyPendingLanguage: false );
+		incReplacingPark = true;
+		try { TearDown( applyPendingLanguage: false ); }
+		finally { incReplacingPark = false; }
 		scene.Activate();
 		Level = ViewerLevel = candidate;
 		IncHud = candidateHud;

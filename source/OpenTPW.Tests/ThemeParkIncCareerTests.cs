@@ -386,6 +386,28 @@ public class ThemeParkIncCareerTests
 		}
 	}
 
+	/// <summary><c>OPENTPW_TPI_PATH</c>: a new session's options follow sound.sam and Config.sam's default entry; the shares are the reset's; the file a new career writes reads back complete.</summary>
+	[TestMethod]
+	public void ANewSessionTakesTheStartUpOptionsAndTheResetShares()
+	{
+		var files = TestCareerFiles.Shipped();
+		var session = ThemeParkIncSession.New( files.Read, "Theme Park Inc." );
+		var options = session.Options!;
+		Assert.AreEqual( (new ThemeParkIncVolume( true, 75 ), new ThemeParkIncVolume( true, 60 ), new ThemeParkIncVolume( true, 75 ), new ThemeParkIncVolume( true, 100 )),
+			(options.VolumeA, options.VolumeB, options.Speech, options.Movie) );
+		Assert.AreEqual( (true, true, true, true, false, true, false, true), (options.AdvisorOn, options.TutorialOn, options.TooltipsOn, options.ConfirmDeleteOn, options.RmbScrollOn,
+			options.RmbCancelOn, options.IsometricOn, options.AnimateMenus) );
+		Assert.AreEqual( (70, 70f, 200f, 10f, 1), (options.GameSpeed, options.ZoomMin, options.ZoomMax, options.FpsClip, options.MusicEnabled), "Config[1], the default entry" );
+		var shares = session.Shares!;
+		Assert.AreEqual( (false, -1, -1, "Theme Park Inc.", -1), (shares.SlotsPresent.Any( present => present ), shares.NumberOwned, shares.PercentCompanySharesOwned, shares.CompanyName, shares.CurrentValue) );
+		var career = new ThemeParkIncCareer( files, TestCareerFiles.ShippedFiringLines );
+		career.ChangeTheme( "science" );
+		var bytes = career.ToGlobalSave( session, 1, false ).Write();
+		var read = ThemeParkIncGlobalSave.Read( bytes );
+		Assert.AreEqual( (ThemeParkIncGlobalSaveOutcome.Complete, 17, 0), (read.Outcome, System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian( read.MapFlagsRaw ), read.AmbientTagCount) );
+		Assert.AreEqual( 18655 - 901 + 4 + 7 + 215, bytes.Length, "the corpus layout (four zones, 901 bytes) with the one science record instead" );
+	}
+
 	/// <summary>A session whose untraced sections are the new-session bytes the tests need (any well-formed bytes do: the career carries them through).</summary>
 	internal static ThemeParkIncGlobalSave NewSession() => new();
 }

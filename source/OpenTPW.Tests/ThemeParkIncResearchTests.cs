@@ -65,6 +65,15 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		Assert.IsTrue( research.IsResearched( 1400 ) && research.IsResearched( 1404 ), "the research and training rooms cost nothing to research" );
 		var world = Prebuilt();
 		Assert.IsFalse( world.Attractions.Any( attraction => attraction.InfoId is 1400 or 1404 ), "no prebuilt research or training room: the rooms' order is the player's building order" );
+		// every control record of the park file, in its order, and every catalogue object has one whose researched byte the lab answers
+		CollectionAssert.AreEqual( world.ObjectControls!.Controls.Select( control => new ThemeParkIncObjectResearch( control.Id, control.Researched, (int)control.ResearchLevel ) ).ToArray(),
+			research.Controls.ToArray() );
+		Assert.AreEqual( research.Controls.Count, research.Controls.Select( control => control.Id ).Distinct().Count(), "one control per object type" );
+		foreach ( var info in economy.Catalog.Objects )
+		{
+			Assert.IsTrue( world.ObjectControls.Find( info.InfoId ) is { } control, $"object {info.InfoId} has a control" );
+			Assert.AreEqual( world.ObjectControls.Find( info.InfoId )!.Value.Researched, research.IsResearched( info.InfoId ), $"object {info.InfoId}'s researched byte" );
+		}
 		Assert.IsTrue( research.Projects.Take( research.Count ).Where( project => project.Level > 0 ).All( project => project.CashPerBrainPoint == 1 ),
 			"the level projects took 1 after the dropped rand()" );
 		Assert.IsTrue( research.Projects.Take( research.Count ).Where( project => project.Level == 0 ).All( project => project.CashPerBrainPoint is 1 or 2 ), "rand() % 2 + 1" );
@@ -126,6 +135,97 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( 1431655808f, ThemeParkIncStaffMember.SingleQuotient( uint.MaxValue, 3 ) );
 		Assert.AreEqual( 0.5f, ThemeParkIncStaffMember.SingleQuotient( 1, 2 ) );
 		Assert.AreEqual( -0.25f, ThemeParkIncStaffMember.SingleQuotient( 1, -4 ) );
+	}
+
+	/// <summary>A placed researcher of the park's staff in a research room (state 24), listed in slot 0's team with <paramref name="project"/> and a consultant word when the project wants one.</summary>
+	private static ThemeParkIncStaffMember Researching( ParkEconomy economy, ThemeParkIncResearch research, int project )
+	{
+		var world = new ThemeParkIncStaffWorld( Row( economy ) ) { Rooms = new TestRooms() };
+		var member = HireResearcher( economy, world, (1, 5), experience: 30000 );
+		member.State = ThemeParkIncResearch.Researching;
+		research.SetProject( 0, project );
+		if ( ThemeParkIncResearch.RoleOf( research.Projects[project].StaffRqd ) != ThemeParkIncResearch.NoRole )
+			research.SetConsultant( 0, 1 );
+		Assert.IsTrue( research.SetTeam( 0, new[] { (ushort)member.ThingId }.Concat( new ushort[19] ).ToArray() ) );
+		return member;
+	}
+
+	[TestMethod]
+	public void TheEconomysLabUpdatePaysThroughTheLedgerAndItsCompletionTellsTheCareerAndAppendsTheNextLevel()
+	{
+		// [BIN:TPI-EXE:0x61E980 lab tick] [BIN:TPI-EXE:0x5C07B0 bank debit] [BIN:TPI-EXE:0x61DCF9 researched message] [BIN:TPI-EXE:0x74D740 researched object] [BIN:TPI-EXE:0x61DE15 level append]
+		var (economy, research) = Seeded();
+		var career = economy.TpiCareer!;
+		// a ride with a CDK card still flagged: the career's built-in table holds (0x4A6, 1, 1, 7500)
+		Assert.AreEqual( 1, career.Cards.First( card => card.Id == 0x4A6 ).Flag );
+		var project = Enumerable.Range( 0, research.Count ).First( index => research.Projects[index].ObjectId == 0x4A6 && research.Projects[index].Level == 0 );
+		research.Infos = new[] { new ThemeParkIncResearchInfo( 0x4A6, 0, 0, new[] { 0, 40, 0 }, new int[3] ) };
+		var member = Researching( economy, research, project );
+		var cost = research.Projects[project].Cost;
+		var cash = research.Projects[project].CashPerBrainPoint;
+		var points = ThemeParkIncResearch.ScientistPoints( economy.TpiStaff!.Settings.WorkDuration( member.Role, member.Experience, member.Motivation, member.Salary ), research.WorkLoad,
+			research.SpeedScaleDown, 0f );
+		long OtherCosts() => economy.Ledger.CurrentTotals.TryGetValue( LedgerCategory.OtherCosts, out var total ) ? total : 0;
+		var before = OtherCosts();
+		var count = research.Count;
+		var expected = 0L;
+		var done = 0f;
+		for ( var turn = 6L; !research.IsResearched( 0x4A6 ); turn += 6 )
+		{
+			var step = points + done <= cost ? points : cost - done;
+			done = step + done;
+			expected += (int)(long)(float)((double)cash * step);
+			economy.UpdateThemeParkIncResearch( turn );
+			Assert.IsTrue( turn < 100000, "the project finishes" );
+		}
+		Assert.AreEqual( expected, OtherCosts() - before, "each advance posts its cash to the ledger's other costs" );
+		Assert.AreEqual( 0, career.Cards.First( card => card.Id == 0x4A6 ).Flag, "message 0x11 told the career: the CDK entry's flag is cleared" );
+		Assert.AreEqual( count + 1, research.Count, "and the level-1 upgrade became a project" );
+		Assert.AreEqual( (0x4A6, 4, 1, 40f), ((int)research.Projects[count].ObjectId, research.Projects[count].Category, (int)research.Projects[count].Level, research.Projects[count].Cost) );
+		Assert.IsFalse( member.Listed, "the team is released" );
+	}
+
+	[TestMethod]
+	public void TheParkExpansionCompletedThroughTheEconomyPostsMessage0x23()
+	{
+		// [BIN:TPI-EXE:0x61DD86 obstacle researched] the economy's completion of a category-5 project: the HQ rebuilds and the controller marks the research complete
+		var (economy, research) = Seeded();
+		var career = economy.TpiCareer!;
+		Assert.IsTrue( career.CompleteMission().Advanced );
+		Assert.IsTrue( research.RegisterObstacle( career.HasObstacle, career.Mission.ObstacleType, 29, 1, 1, career.Mission.ObstacleResearchEffort, 0 ) );
+		research.Infos = new[] { new ThemeParkIncResearchInfo( career.Mission.ObstacleType, 0, 0, new int[3], new int[3] ) };
+		Researching( economy, research, research.Count - 1 );
+		for ( var turn = 6L; !economy.TpiMissions!.ObstacleResearchComplete; turn += 6 )
+		{
+			economy.UpdateThemeParkIncResearch( turn );
+			Assert.IsTrue( turn < 100000, "the project finishes" );
+		}
+		Assert.AreEqual( new ThemeParkIncHqSlot( 5, 10, 0 ), economy.TpiStaff!.Hq.Slots[0], "the HQ rebuilt miss01's slot" );
+	}
+
+	[TestMethod]
+	public void AHeadlessEconomyRestoredWithItsLabCompletesProjectsWithTheSavedTypeWords()
+	{
+		// a lab saved with its object types' research words completes in an economy no level runs; a lab without them waits ([EXT:headless-economy])
+		var (economy, research) = Seeded();
+		var project = Enumerable.Range( 0, research.Count ).First( index => research.Projects[index].ObjectId == 0x4A6 && research.Projects[index].Level == 0 );
+		research.Infos = new[] { new ThemeParkIncResearchInfo( 0x4A6, 0, 0, new[] { 0, 40, 0 }, new int[3], Group: 2 ) };
+		Researching( economy, research, project );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ), economy.Settings, economy.Catalog );
+		var lab = restored.TpiResearch!;
+		CollectionAssert.AreEqual( research.Infos.Select( info => (info.Id, info.Group) ).ToArray(), lab.Infos.Select( info => (info.Id, info.Group) ).ToArray() );
+		var count = lab.Count;
+		for ( var turn = 6L; !lab.IsResearched( 0x4A6 ); turn += 6 )
+		{
+			restored.UpdateThemeParkIncResearch( turn );
+			Assert.IsTrue( turn < 100000, "the project finishes" );
+		}
+		Assert.AreEqual( count + 1, lab.Count );
+
+		var (bare, bareLab) = Seeded();
+		Researching( bare, bareLab, project );
+		bare.UpdateThemeParkIncResearch( 6 );
+		Assert.AreEqual( 0f, bareLab.Projects[project].Done, "a lab without the type words does not tick" );
 	}
 
 	[TestMethod]

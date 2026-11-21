@@ -15,15 +15,21 @@ namespace OpenTPW;
 /// <param name="Done">+0x1C: the brain points done.</param>
 public readonly record struct ThemeParkIncLabProject( int StaffRqd, int StaffSA, int Category, uint Type, ushort ObjectId, byte Group, byte Level, float Cost, int CashPerBrainPoint, float Done );
 
-/// <summary>An object type's research words (object info): <c>Research.Category</c> (+0x254), <c>Research.LinkedWith</c> (+0x24C) and the three levels' <c>Upgrades[n].CostOfResearch</c> / <c>CashPerBrainPoint</c>.</summary>
-public sealed record ThemeParkIncResearchInfo( int Id, int Category, int LinkedWith, int[] CostOfResearch, int[] CashPerBrainPoint );
+/// <summary>
+/// An object type's research words (object info): <c>Research.Category</c> (+0x254), <c>Research.LinkedWith</c> (+0x24C), the three levels' <c>Upgrades[n].CostOfResearch</c> / <c>CashPerBrainPoint</c>
+/// and <c>Research.Group</c> (+0x250).
+/// </summary>
+public sealed record ThemeParkIncResearchInfo( int Id, int Category, int LinkedWith, int[] CostOfResearch, int[] CashPerBrainPoint, int Group = 0 );
 
 /// <summary>One object control's research words (the control manager <c>W+0x1E9618</c>, <c>0x5CFCF0</c>): researched (+0x10) and the researched upgrade level (+0x14).</summary>
 public sealed record ThemeParkIncObjectResearch( int Id, bool Researched, int Level );
 
-/// <summary>The saved research lab and object controls.</summary>
+/// <summary>
+/// The saved research lab and object controls, with the object types' research words the lab read (<see cref="ThemeParkIncResearch.Infos"/>), so that an economy restored without a level (the headless
+/// economy) completes its projects as the level's would.
+/// </summary>
 public sealed record ThemeParkIncResearchSnapshot( ThemeParkIncLabProject[] Projects, int Count, int[] SlotProjects, int[] Consultants, int[] Teams, byte[] Available,
-	int WorkLoad, uint[] Groups, byte[] HighestGroups, uint MostExpensive, bool LabActive, uint[] Tail, ThemeParkIncObjectResearch[] Controls );
+	int WorkLoad, uint[] Groups, byte[] HighestGroups, uint MostExpensive, bool LabActive, uint[] Tail, ThemeParkIncObjectResearch[] Controls, ThemeParkIncResearchInfo[] Infos );
 
 /// <summary>
 /// Theme Park Inc's research lab (thing class 14, <c>park+0x64EB20</c>; docs/reverse/TPI-STAFF.md §12.3) and the object controls' researched words it writes: two player-chosen project slots, a team of up to
@@ -472,12 +478,16 @@ public sealed class ThemeParkIncResearch
 
 	internal ThemeParkIncResearchSnapshot Capture() => new( (ThemeParkIncLabProject[])projects.Clone(), Count, (int[])slotProjects.Clone(), consultants.Select( id => (int)id ).ToArray(),
 		teams.SelectMany( team => team.Select( id => (int)id ) ).ToArray(), (byte[])available.Clone(), WorkLoad, (uint[])groups.Clone(), (byte[])highestGroups.Clone(), MostExpensive, LabActive,
-		(uint[])tail.Clone(), controls.ToArray() );
+		(uint[])tail.Clone(), controls.ToArray(), Infos.ToArray() );
 
 	internal static bool IsValid( ThemeParkIncResearchSnapshot? state ) => state == null || state.Projects is { Length: ProjectCapacity } && state.Count is >= 0 and <= ProjectCapacity
 		&& state.SlotProjects is { Length: Slots } slots && slots.All( slot => slot < state.Count ) && state.Consultants is { Length: Slots } && state.Teams is { Length: Slots * TeamSize }
 		&& state.Consultants.Concat( state.Teams ).All( id => id is >= 0 and <= ushort.MaxValue ) && state.Available is { Length: Slots } && state.Groups is { Length: Categories * 3 }
-		&& state.HighestGroups is { Length: Categories } && state.Tail is { Length: 4 } && state.Controls != null && state.Controls.All( control => control != null );
+		&& state.HighestGroups is { Length: Categories } && state.Tail is { Length: 4 } && state.Controls != null && state.Controls.All( control => control != null )
+		&& state.Projects.Take( state.Count ).All( project => project.Category is >= 0 and < Categories && project.Level < 3 && float.IsFinite( project.Cost ) && float.IsFinite( project.Done ) && project.Done >= 0f )
+		&& state.Controls.Select( control => control.Id ).Distinct().Count() == state.Controls.Length && state.Controls.All( control => control.Level is >= 0 and < 3 )
+		&& state.Infos != null && state.Infos.All( info => info is { CostOfResearch.Length: 3, CashPerBrainPoint.Length: 3 } )
+		&& state.Infos.Select( info => info.Id ).Distinct().Count() == state.Infos.Length;
 
 	internal void Restore( ThemeParkIncResearchSnapshot state )
 	{
@@ -501,5 +511,6 @@ public sealed class ThemeParkIncResearch
 		state.Tail.CopyTo( tail, 0 );
 		controls.Clear();
 		controls.AddRange( state.Controls );
+		Infos = state.Infos;
 	}
 }

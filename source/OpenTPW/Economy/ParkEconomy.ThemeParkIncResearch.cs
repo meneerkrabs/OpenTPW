@@ -8,9 +8,6 @@ public sealed partial class ParkEconomy
 	/// </summary>
 	public ThemeParkIncResearch? TpiResearch { get; private set; }
 
-	/// <summary>The research group (<c>Research.Group</c>, info <c>+0x250</c>) of an object type, for the obstacle's project; the level answers it, 0 without one.</summary>
-	internal Func<int, byte>? TpiResearchGroupOf { get; set; }
-
 	/// <summary>Takes a Theme Park Inc park file's research lab and object controls (the prebuilt Science park's).</summary>
 	// [BIN:TPI-EXE:0x64D21D lab load] the park file's lab thing (case 14) and the control table are loaded, not constructed: no fill runs
 	internal void SeedThemeParkIncResearch( ThemeParkIncResearchLab lab, ThemeParkIncObjectControls? controls )
@@ -35,6 +32,10 @@ public sealed partial class ParkEconomy
 	{
 		if ( TpiResearch is not { } research || TpiStaff is not { } staff )
 			return;
+		// [EXT:headless-economy] a level gives the lab its object types' research words before every world pass, and a saved lab keeps them; a lab without them (seeded into an economy no level runs,
+		// saved before its first update) could not complete a project (0x43C700 finds no info), so it waits for them instead of ticking
+		if ( research.Infos.Count == 0 )
+			return;
 		// [BIN:TPI-EXE:0x5C07B0 bank debit] each advance debits its points' cash through the bank, adding it to the analyser's money out (+0x1F808), also a debit of 0
 		research.Tick( turn, TpiMemberOfThing, staff.Settings, cash => Post( LedgerCategory.OtherCosts, cash ), OnThemeParkIncResearched );
 	}
@@ -58,8 +59,9 @@ public sealed partial class ParkEconomy
 		if ( TpiResearch is not { } research || TpiCareer is not { } career || TpiMissions is not { } missions || career.CurrentZone == null )
 			return;
 		var mission = career.Mission;
+		// the project's group is the obstacle type's info +0x250 (Research.Group); a lab without the type's words (a lab no level has given them) takes 0
 		research.RegisterObstacle( career.HasObstacle, mission.ObstacleType, TpiMissionWorld?.CurrentObstacle ?? 0, missions.ObstacleState(), ThemeParkIncViewedZone, mission.ObstacleResearchEffort,
-			TpiResearchGroupOf?.Invoke( mission.ObstacleType ) ?? 0 );
+			(byte)(research.Infos.FirstOrDefault( info => info.Id == mission.ObstacleType )?.Group ?? 0) );
 	}
 
 	/// <summary>The zone being viewed (<c>0xA06558 +0x14</c>): 0 arabian, 1 science, 2 water, 4 another.</summary>

@@ -136,6 +136,8 @@ public sealed partial class ThemeParkIncHud
 	/// <summary>A member's row activated: his ability list opens when the park has a training room and he stands in it.</summary>
 	private void OpenAbilities( ThemeParkIncStaffMember member )
 	{
+		// an OpenTPW interface guard, not a port: the original's choice (0x580550) tests for no room, and without one the walk to the training room reads thing 0's entrance word (0x639AA0 finds
+		// none, 0x628492 reads its +0x46); the text HUD refuses the choice with "Build a training room first" (TpiTrainingNoRoom) rather than walking to that cell
 		if ( !level.ThemeParkIncHasTrainingRoom )
 		{
 			PostMessage( T( OpenTpwText.TpiTrainingNoRoom ) );

@@ -18,19 +18,15 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Gives the park's research lab (also one a load put in place) this level's object types' research words and the obstacle's research group; called every tick, as the economy can be replaced.
+	/// Gives the park's research lab (also one a load put in place) this level's object types' research words; called every tick, as the economy can be replaced. A restored lab brings the words it
+	/// was saved with (the same files, which the save's asset manifest pins) and keeps them.
 	/// </summary>
 	private void AttachThemeParkIncResearchInfos()
 	{
-		if ( !IsThemeParkIncSlice || Park?.Economy is not { TpiResearch: { } research } economy || research.Infos.Count > 0 )
+		if ( !IsThemeParkIncSlice || Park?.Economy is not { TpiResearch: { } research } || research.Infos.Count > 0 )
 			return;
 		research.Infos = ThemeParkIncResearchInfos();
-		economy.TpiResearchGroupOf = GroupOf;
 	}
-
-	private Dictionary<int, byte>? researchGroups;
-
-	private byte GroupOf( int type ) => researchGroups != null && researchGroups.TryGetValue( type, out var group ) ? group : (byte)0;
 
 	/// <summary>
 	/// The research words of every object type of the zone (the type list <c>0xA09AC8</c>): the catalogue's objects and the obstacles (<c>levels/&lt;zone&gt;/obstacles</c>), a missing key read as 0 (the SAM
@@ -40,14 +36,10 @@ public partial class Level
 	private IReadOnlyList<ThemeParkIncResearchInfo> ThemeParkIncResearchInfos()
 	{
 		var infos = new List<ThemeParkIncResearchInfo>();
-		researchGroups = new Dictionary<int, byte>();
-		ThemeParkIncResearchInfo Info( int id, Func<string, int> value )
-		{
-			researchGroups[id] = (byte)value( "Research.Group" );
-			return new ThemeParkIncResearchInfo( id, value( "Research.Category" ), value( "Research.LinkedWith" ),
+		ThemeParkIncResearchInfo Info( int id, Func<string, int> value ) =>
+			new( id, value( "Research.Category" ), value( "Research.LinkedWith" ),
 				Enumerable.Range( 0, 3 ).Select( level => value( $"Upgrades[{level}].CostOfResearch" ) ).ToArray(),
-				Enumerable.Range( 0, 3 ).Select( level => value( $"Upgrades[{level}].CashPerBrainPoint" ) ).ToArray() );
-		}
+				Enumerable.Range( 0, 3 ).Select( level => value( $"Upgrades[{level}].CashPerBrainPoint" ) ).ToArray(), (byte)value( "Research.Group" ) );
 		var seen = new HashSet<int>();
 		foreach ( var entry in Objects.Catalog.Entries )
 			if ( seen.Add( entry.Settings.GetInt( "Info.Id" ) ) )

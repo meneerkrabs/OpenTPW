@@ -151,6 +151,8 @@ public sealed partial class ThemeParkIncHud
 
 	/// <summary>The team window's OK (<c>0x5725A0</c>): a team commits (<c>0x573CD0</c>: the project, the consultant, the team); no scientist asks 333 and, confirmed, cancels the project.</summary>
 	// [BIN:TPI-EXE:0x573CD0 team commit] pending > -1: 0x61EFA0(pending, slot), the consultant copy, 0x61EB80(list, slot); [BIN:TPI-EXE:0x573C00 empty team] 334/333, yes: 0x576DC0(slot)
+	// the panel's window procedure calls the lab's setters itself (0x573D67 -> 0x61EFA0, 0x573D9E -> 0x61EB80; the slot clear 0x61F560 from 0x575FE9, 0x576062, 0x576D4E and 0x576DD2), posting no
+	// message to the queue 0xA09728: the change lands at the click, between two world updates, which is where the HUD's click runs these calls too
 	private void CommitTeam( ThemeParkIncResearch research )
 	{
 		if ( pendingTeam.Count == 0 )

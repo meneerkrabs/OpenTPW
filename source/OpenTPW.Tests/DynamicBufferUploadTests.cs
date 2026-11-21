@@ -50,7 +50,7 @@ public class DynamicBufferUploadTests
 		Assert.IsNotNull( root, "the repository root" );
 		var sources = new[] { "OpenTPW", "OpenTPW.Common", "OpenTPW.ModKit" }.Select( name => Path.Combine( root!.FullName, "source", name ) );
 		var helper = Path.Combine( root.FullName, "source", "OpenTPW.Common", "Client", "DynamicBufferUpload.cs" );
-		var direct = new Regex( @"\.UpdateBuffer\s*(<[^>]*>\s*)?\(" );
+		var direct = new Regex( @"\bUpdateBuffer\b" ); // calls, generic calls and method groups (Action a = commands.UpdateBuffer) alike
 		var offenders = sources.SelectMany( directory => Directory.EnumerateFiles( directory, "*.cs", SearchOption.AllDirectories ) )
 			.Where( path => !path.Contains( $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}" ) && !path.Contains( $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}" ) )
 			.Where( path => !string.Equals( path, helper, StringComparison.Ordinal ) )

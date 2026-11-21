@@ -387,8 +387,9 @@ tests compare saves before/after load and after identical continuations byte for
   `ScrapPercent` the whole of `0xe2424` (the current level's row by exact 365-day years, 100 for an object nobody
   used, `ParkObjectState.TimesUsed` = 0, in its first 30 days; ORACLE.md F21, the same in tp.exe `0x4e2400`, X13).
 - `EconomyRules` (`Economy/EconomyRules.cs`) say which systems a `ParkEconomy` runs and whose money rules apply: `Full` is Theme Park World, `ThemeParkIncMoney` the
-  Theme Park Inc slice (no staff pool, wages, mechanics, ride wear, research gate, challenges or golden tickets; monthly running costs, the condemned-object scrap branch,
-  no Buy Land, no upgrade purchase), over `BalanceSettings.ForThemeParkInc` (docs/THEME-PARK-INC.md, "Theme Park Inc economy"). Every Theme Park World park runs `Full`, unchanged.
+  Theme Park Inc slice (none of Theme Park World's staff, wages, mechanics, ride wear, research gate, challenges or golden tickets; Theme Park Inc's own staff pool and
+  handymen, challenge system, and career with its golden tickets and missions run instead; monthly running costs, the condemned-object scrap branch, no Buy Land,
+  no upgrade purchase), over `BalanceSettings.ForThemeParkInc` (docs/THEME-PARK-INC.md, "Theme Park Inc economy"). Every Theme Park World park runs `Full`, unchanged.
 - `IParkClock` (`Tick`, `Date`, `Speed`) for the frontend and for the `YEAR/MONTH/DAY/HOUR` RSE opcodes.
 - `ParkEconomyRuntime` (in `Level.Park`, original levels only): created from `OriginalPark`, ticked
   on the level's 60 Hz `FixedStepClock`, logs `Park clock: …; balance $…` per game day.

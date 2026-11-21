@@ -145,7 +145,7 @@ When OpenTPW's save folder is inside the game folder, the file goes to the `save
 (`GameFlow.ThemeParkIncPlayerRoot`). A file above 4 MiB is refused unread; the retail files are about 18 KB. It is used as follows:
 - **Saving the Science park** writes it first, as `0x745720` writes the global save before the park files.
 - **Leaving a Theme Park Inc park** runs the full save (`0x6A47B0` → `0x744E10` → `0x745720`): the player file, then the Science continuation park save
-  (only the player file in a zone without an OpenTPW park slot). Nothing is saved when the park is lost, or when a load replaces the park.
+  (only the player file in a zone without an OpenTPW park slot). Nothing is saved when the park is lost, or when a load replaces the park (in OpenTPW: **Continue saved park** and **Load layout — new session**).
 - **Enter Game** builds the zone's park with its career (`0x56AB40`).
 - **Load A Game** takes the career from it after the park save (`0x7451E0`).
 

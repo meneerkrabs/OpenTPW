@@ -400,8 +400,9 @@ public partial class Level : IDisposable
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			yield return 0.15f;
 			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 86 of the
-			// balance keys the Theme Park World economy reads, so its worlds run the money only (Theme Park Inc's own keys: cash, loans, costs,
-			// the calendar, running costs) and not research or challenges; the staff hiring pool runs but staff cannot be hired yet (docs/THEME-PARK-INC.md, "Economy").
+			// balance keys the Theme Park World economy reads, so its worlds run Theme Park Inc's own systems instead: the money (cash, loans, costs, the calendar, running
+			// costs), its own staff (the hiring pool and hired handymen; the other roles are refused), its challenge system, the career and its missions, and no research
+			// (docs/THEME-PARK-INC.md, "Economy").
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy && resume == null )

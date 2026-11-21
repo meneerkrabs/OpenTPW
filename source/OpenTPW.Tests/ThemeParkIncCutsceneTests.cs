@@ -319,8 +319,8 @@ public class ThemeParkIncCutsceneTests
 		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
 		var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
 		node.Remove( "TpiCutscene" );
-		Assert.IsFalse( ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog ).TpiCutscene!.Flying,
-			"a save from before the flight continues with none" );
+		var older = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( node.ToJsonString() ) ) );
+		Assert.AreEqual( ParkSaveFile.CutsceneMissing, older.Message, "a save from before the flight (and the obstacles) is refused by its validation, before any asset comparison" );
 		Assert.IsFalse( ParkSaveFile.Serialize( new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 ) )
 			.Contains( "TpiCutscene", StringComparison.Ordinal ), "a Theme Park World save writes no cutscene" );
 

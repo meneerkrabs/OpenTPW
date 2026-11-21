@@ -60,12 +60,15 @@ public static class ParkSaveFile
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncCareerSnapshot? TpiCareer { get; init; }
 		/// <summary>
-		/// Theme Park Inc's mission controller (the <c>OBJH</c> thing's state and thing). Absent in Theme Park World saves and in Theme Park Inc saves from before the controller, which continue with it
-		/// idle.
+		/// Theme Park Inc's mission controller (the <c>OBJH</c> thing's state and thing). Required in a Theme Park Inc save; absent in Theme Park World saves. A Theme Park Inc save from before the
+		/// controller is refused (<see cref="MissionControllerMissing"/>).
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncMissionControllerSnapshot? TpiMissions { get; init; }
-		/// <summary>Theme Park Inc's cutscene thing (the <c>CUTS</c> thing's flight). Absent in Theme Park World saves and in Theme Park Inc saves from before the flight, which continue with none.</summary>
+		/// <summary>
+		/// Theme Park Inc's cutscene thing (the <c>CUTS</c> thing's flight). Required in a Theme Park Inc save; absent in Theme Park World saves. A Theme Park Inc save from before the flight (and the
+		/// obstacles) is refused (<see cref="CutsceneMissing"/>).
+		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncCutsceneSnapshot? TpiCutscene { get; init; }
 		public required ParkGameMode Mode { get; init; }
@@ -1040,6 +1043,14 @@ public static class ParkSaveFile
 	internal static long BusyTurnsOf( StaffMemberData member ) =>
 		member.BusyTurns ?? ((Math.Clamp( member.BusyTicks!.Value, -1_000_000_000_000, 1_000_000_000_000 ) * 360 + ParkCalendar.SecondsPerTurn - 1) / ParkCalendar.SecondsPerTurn );
 
+	/// <summary>The refusal of a Theme Park Inc park save from before the mission controller (<see cref="Data.TpiMissions"/>).</summary>
+	internal const string MissionControllerMissing = "This Theme Park Inc park was saved before OpenTPW kept the mission controller and cannot be continued; start a new game from the Personnel File.";
+
+	/// <summary>
+	/// The refusal of a Theme Park Inc park save from before the camera flight (<see cref="Data.TpiCutscene"/>): its world was built without the obstacles and the camera path, which the catalogue holds now.
+	/// </summary>
+	internal const string CutsceneMissing = "This Theme Park Inc park was saved before OpenTPW kept the obstacles and the camera flights and cannot be continued; start a new game from the Personnel File.";
+
 	private static void ValidateEdition( Data data )
 	{
 		if ( !Enum.IsDefined( data.Edition ) )
@@ -1064,8 +1075,15 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the player's career (missions, rank, golden tickets) and cannot be continued; start a new game from the Personnel File." );
 			if ( !ThemeParkIncCareer.IsValid( data.TpiCareer ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc career." );
+			// a loaded controller never starts its exit statistics (0x64D5B4), so a park save from before the controller could never meet its mission: it is refused, not continued
+			if ( data.TpiMissions == null )
+				throw new InvalidDataException( MissionControllerMissing );
 			if ( !ThemeParkIncMissionController.IsValid( data.TpiMissions ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc mission controller." );
+			// a park save from before the camera flight was written by a catalogue without the obstacles, which its world's objects and asset manifest do not hold: it is refused here, before the
+			// asset manifest is compared (ParkResumeSaveFile.RequireAssets would only name an asset the save does not expect)
+			if ( data.TpiCutscene == null )
+				throw new InvalidDataException( CutsceneMissing );
 			foreach ( var item in data.Objects )
 			{
 				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
@@ -1239,14 +1257,12 @@ public static class ParkSaveFile
 		}
 		if ( data.TpiCareer is { } career )
 			park.RestoreThemeParkIncCareer( career );
-		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1
+		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1; a Theme Park Inc save without the controller was refused (ValidateEdition)
 		if ( data.TpiMissions is { } missions )
 			park.TpiMissions?.Restore( missions );
-		else if ( park.TpiMissions != null )
-			// a loaded controller never starts its exit statistics (0x64D5B4), so a park save from before the controller could never meet its mission: it is refused, not continued
-			throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the mission controller and cannot be continued; start a new game from the Personnel File." );
-		// [BIN:TPI-EXE:0x5D0160 cutscene load] the saved thing of a flight; a save from before the flight continues with none
-		park.TpiCutscene?.Restore( data.TpiCutscene ?? new ThemeParkIncCutsceneSnapshot( 0 ) );
+		// [BIN:TPI-EXE:0x5D0160 cutscene load] the saved thing of a flight; a Theme Park Inc save from before the flight was refused (ValidateEdition)
+		if ( data.TpiCutscene is { } cutscene )
+			park.TpiCutscene?.Restore( cutscene );
 		if ( data.TpiStaff is { } staff )
 		{
 			if ( park.TpiStaff == null )

@@ -585,6 +585,22 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	/// (<c>UiScrollList</c> semantics). Keyboard activation is not used — the real mouse keeps hovering between the
 	/// injected frames and would take the focus off the list.
 	/// </summary>
+	private void ArmThroughList()
+	{
+		var list = (UiScrollList)Hud.Screen.Find( "buildList" )!;
+		Require( list.Visible, "the build list is open" );
+		list.Scroll( -100000 );
+		var rect = list.ScreenRect( Context.Canvas );
+		var scale = rect.Height / list.Bounds.Height;
+		var visible = list.VisibleRows;
+		var first = Math.Clamp( chosenIndex - visible + 1, 0, Math.Max( 0, list.Rows().Count - visible ) );
+		list.Scroll( first );
+		var row = new System.Numerics.Vector2( rect.X + rect.Width / 2, rect.Y + (list.Margin + (chosenIndex - first + 0.5f) * list.RowHeight) * scale );
+		Require( list.RowAt( Context.Canvas, row ) == chosenIndex, "the chosen item's row is on screen" );
+		Sub( "select the row", () => flow.InjectedInput = UiInput.Click( row ) );
+		Sub( "activate the row", () => flow.InjectedInput = UiInput.Click( row ) );
+	}
+
 	private ThemeParkIncStaffMember? hiredHandyman;
 	private long handymanDropTurn;
 	private int staffRow;
@@ -677,22 +693,6 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			if ( Environment.GetEnvironmentVariable( "OPENTPW_TPI_STAFF_CAPTURE" ) is { Length: > 0 } path )
 				WorldCapture.Write( path );
 		} );
-	}
-
-	private void ArmThroughList()
-	{
-		var list = (UiScrollList)Hud.Screen.Find( "buildList" )!;
-		Require( list.Visible, "the build list is open" );
-		list.Scroll( -100000 );
-		var rect = list.ScreenRect( Context.Canvas );
-		var scale = rect.Height / list.Bounds.Height;
-		var visible = list.VisibleRows;
-		var first = Math.Clamp( chosenIndex - visible + 1, 0, Math.Max( 0, list.Rows().Count - visible ) );
-		list.Scroll( first );
-		var row = new System.Numerics.Vector2( rect.X + rect.Width / 2, rect.Y + (list.Margin + (chosenIndex - first + 0.5f) * list.RowHeight) * scale );
-		Require( list.RowAt( Context.Canvas, row ) == chosenIndex, "the chosen item's row is on screen" );
-		Sub( "select the row", () => flow.InjectedInput = UiInput.Click( row ) );
-		Sub( "activate the row", () => flow.InjectedInput = UiInput.Click( row ) );
 	}
 
 	/// <summary>A site whose footprint is allowed at rotation 0 and whose entrance looks onto a free straight queue line.</summary>

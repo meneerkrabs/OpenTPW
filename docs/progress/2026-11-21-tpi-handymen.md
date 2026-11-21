@@ -9,7 +9,7 @@ A Theme Park Inc park now has its first working staff: the player hires a Cleane
 - **Sprites.** The handymen are drawn with Theme Park Inc's own handyman sprites (`esprites.wad`, `Generic\Handymen`), the look picked from the candidate's sprite draw as `0x6902F0` does, and they stand, walk and sweep as their states ask. Theme Park Inc's sprite templates were checked to be Theme Park World's programs under other numbers.
 - **Saves.** The Science continuation save keeps each placed member's thing and walk, and the members' cell-chain entries.
 
-Labels: the handymen walk with Theme Park World's walk, wander and speed step (`[EXT:tpi-twp-guest-rules]`, now approved for the staff's walk); Theme Park Inc's toilet wear and bin fill stay unported, so the handymen sweep litter only (`[EXT:tpi-no-maintenance-wear]`). No new approximation is added. Rest areas, strikes in the park, the wage negotiation, the other roles and the thought bubbles come in later packages (docs/reverse/TPI-STAFF.md §11).
+Labels: the handymen walk with Theme Park World's walk, wander and speed step (`[EXT:tpi-twp-guest-rules]`, now approved for the staff's walk); Theme Park Inc's toilet wear and bin fill stay unported, so the handymen sweep litter only (`[EXT:tpi-no-maintenance-wear]`). No new approximation is added. The rest-area finder finds none, exactly (no Theme Park Inc object is a rest area); strikes in the park, the wage negotiation, the other roles and the thought bubbles come in later packages (docs/reverse/TPI-STAFF.md §11).
 
 Verified with these checks:
 

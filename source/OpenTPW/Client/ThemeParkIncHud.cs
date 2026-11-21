@@ -363,6 +363,8 @@ public sealed partial class ThemeParkIncHud
 
 	private void OpenPauseMenu()
 	{
+		// the menu is a tool switch: a candidate in the hand goes back to the pool (0x6319E0(1)), so neither the menu's save nor a load finds him half placed
+		level.CancelTpiHire();
 		if ( Lost )
 		{
 			OpenLostMenu();

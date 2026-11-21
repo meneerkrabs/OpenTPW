@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -147,7 +148,7 @@ public class ThemeParkIncHandymanTests
 		if ( string.IsNullOrWhiteSpace( path ) || !Directory.Exists( path ) )
 			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to a Theme Park Inc installation or its Data folder." );
 		var data = Directory.EnumerateDirectories( path! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? path!;
-		previousLog = Log;
+		previousLog ??= Log;
 		Log = new();
 		FileSystem = new BaseFileSystem( data );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
@@ -404,5 +405,185 @@ public class ThemeParkIncHandymanTests
 		var saved = economy.TpiStaff!.Capture();
 		Assert.IsFalse( ThemeParkIncStaff.IsValid( saved with { Members = saved.Members.Select( item => item with { World = item.World! with { State = 0x11 } } ).ToArray() } ),
 			"a state this model does not run is refused" );
+	}
+
+	// ---- The rest-area finder and the hire on a level ----------------------------------------
+
+	[TestMethod]
+	public void NoThemeParkIncObjectIsARestArea()
+	{
+		// [BIN:TPI-EXE:0x62BA20 rest-area finder] its only thing test is the flag +0x42 bit 2, which the thing builder sets only from the type record's +0x1B0 (UsageInfo.ChillsYouOut, 0x5DB6E2):
+		// no object of the three worlds sets the key, so the finder answers none in every Theme Park Inc park and the handyman's "no rest area" is exact
+		_ = ScienceEconomy();
+		foreach ( var world in new[] { "science", "water", "arabian" } )
+		{
+			var objects = ObjectCatalog.Load( world ).Entries;
+			Assert.IsTrue( objects.Count > 0, world );
+			var resting = objects.Where( entry => entry.Settings.Values.Any( pair => pair.Key.Equals( "UsageInfo.ChillsYouOut", StringComparison.OrdinalIgnoreCase ) && pair.Value.Trim() != "0" ) ).Select( entry => entry.SettingsName ).ToArray();
+			Assert.AreEqual( 0, resting.Length, $"{world}: {string.Join( ", ", resting )}" );
+			Assert.IsFalse( EconomyObjectCatalog.Load( world, easy: false ).Objects.Any( info => info.ChillsYouOut ), world );
+		}
+	}
+
+	private static void Set( object target, string field, object? value ) =>
+		target.GetType().GetField( field, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
+
+	/// <summary>A level with only what the Theme Park Inc hire needs: the Science economy, a path row with its guests, the staff world and no hire in progress.</summary>
+	private Level HireLevel()
+	{
+		var economy = ScienceEconomy();
+		var grid = Row( economy );
+		var guests = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var runtime = (ParkEconomyRuntime)RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomyRuntime ) );
+		Set( runtime, "<Economy>k__BackingField", economy );
+		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		Set( level, "<Park>k__BackingField", runtime );
+		Set( level, "<Guests>k__BackingField", guests );
+		Set( level, "<CellTool>k__BackingField", new CellBuildTool() );
+		Set( level, "<TpiStaffWorld>k__BackingField", new ThemeParkIncStaffWorld( grid ) { Guests = guests } );
+		Set( level, "<TpiPlacingSlot>k__BackingField", -1 );
+		return level;
+	}
+
+	private static int HandymanSlot( ThemeParkIncStaff staff ) =>
+		Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Handyman );
+
+	[TestMethod]
+	public void ACancelledHireGivesTheCandidateBackAndClearsTheBeingPlacedByte()
+	{
+		var level = HireLevel();
+		var staff = level.Park!.Economy.TpiStaff!;
+		var slot = HandymanSlot( staff );
+		var candidate = staff.Slots[slot];
+		Assert.IsNull( level.BeginTpiHire( slot ) );
+		Assert.AreEqual( slot, level.TpiPlacingSlot );
+		Assert.IsTrue( staff.IsPlacing( slot ), "0x630D10 marks the slot as being placed" );
+		// [BIN:TPI-EXE:0x4D4E40 placement exit] a tool switch exits with placed 0: 0x6319E0(1) clears the byte and keeps the candidate
+		level.CancelTpiHire();
+		Assert.AreEqual( -1, level.TpiPlacingSlot );
+		Assert.IsFalse( staff.IsPlacing( slot ) );
+		Assert.AreSame( candidate, staff.Slots[slot], "the candidate stays in the pool" );
+		Assert.AreEqual( 0, staff.Members.Count );
+		Assert.IsFalse( staff.Capture().Placing.Any( placing => placing ), "no being-placed byte is saved" );
+		Assert.AreEqual( "role not ported", level.BeginTpiHire( Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index] is { Role: not ThemeParkIncStaffRole.Handyman } ) ) );
+		Assert.AreEqual( -1, level.TpiPlacingSlot, "a refused role starts no hire" );
+	}
+
+	[TestMethod]
+	public void ARefusedCellKeepsTheHandAndAnAcceptedOneHiresAndPlaces()
+	{
+		var level = HireLevel();
+		var staff = level.Park!.Economy.TpiStaff!;
+		var cells = level.Guests!.Grid.Cells;
+		var slot = HandymanSlot( staff );
+		Assert.IsNull( level.BeginTpiHire( slot ) );
+		// [BIN:TPI-EXE:0x4D4EB0 staff drop] the flag 0x40, then the type: 4 (a footprint) and 10 refuse, and the tool stays
+		cells.SetFlags( 3, 5, cells.FlagsAt( 3, 5 ) | ParkCellFlags.Unowned );
+		cells.SetType( 4, 5, 4 );
+		cells.SetType( 5, 5, 10 );
+		foreach ( var x in new[] { 3, 4, 5 } )
+		{
+			Assert.IsNull( level.DropTpiStaff( x, 5 ), $"cell ({x}, 5) refuses" );
+			Assert.AreEqual( slot, level.TpiPlacingSlot, "the candidate stays in the hand" );
+			Assert.IsTrue( staff.IsPlacing( slot ) );
+			Assert.AreEqual( 0, staff.Members.Count );
+		}
+		Assert.IsNull( level.DropTpiStaff( -1, 5 ), "outside the map" );
+		// no occupancy test: a guest's cell takes the drop
+		level.Guests.SpawnInPark( 7, 5 );
+		var member = level.DropTpiStaff( 7, 5 );
+		Assert.IsNotNull( member );
+		Assert.AreEqual( -1, level.TpiPlacingSlot );
+		Assert.IsFalse( staff.IsPlacing( slot ), "the being-placed byte is cleared" );
+		Assert.AreSame( member, staff.Members.Single() );
+		Assert.IsTrue( member!.Placed && level.Things.IsUsed( member.ThingId ) );
+		Assert.AreEqual( (7, 5), member.Navigation!.Cell );
+		Assert.IsNull( level.DropTpiStaff( 2, 5 ), "nothing in the hand any more" );
+	}
+
+	[TestMethod]
+	public void AHireInTheHandIsGivenBackBeforeASave()
+	{
+		var level = HireLevel();
+		var staff = level.Park!.Economy.TpiStaff!;
+		var slot = HandymanSlot( staff );
+		Assert.IsNull( level.BeginTpiHire( slot ) );
+		// both saves (Level.SavePark and the continuation's capture) end the staff tools first, as Theme Park World's placement does
+		level.PrepareStaffForSave();
+		Assert.AreEqual( -1, level.TpiPlacingSlot );
+		Assert.IsFalse( staff.IsPlacing( slot ), "no candidate is saved half placed" );
+		Assert.IsFalse( staff.Capture().Placing.Any( placing => placing ) );
+		Assert.IsNotNull( staff.Slots[slot] );
+	}
+
+	[TestMethod]
+	public void TheCellChainEntriesRoundTripMidWalkAmongGuests()
+	{
+		(ParkEconomy Economy, GuestPathGrid Grid, GuestSimulation Guests, ThemeParkIncStaffWorld World, ThemeParkIncStaffMember Member) Park()
+		{
+			var economy = ScienceEconomy();
+			var grid = Row( economy );
+			var guests = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+			// guests on the cells the walk crosses: the separation reads the cells' chains, guests and staff interleaved by their entry numbers
+			foreach ( var x in new[] { 3, 3, 4, 5, 5, 6 } )
+				guests.SpawnInPark( x, 5 );
+			var world = new ThemeParkIncStaffWorld( grid ) { Guests = guests };
+			PlaceLitter( economy, (6, 5) );
+			var member = Hire( economy, world, (2, 5), experience: economy.TpiStaff!.Settings.MaxExperience / 2 );
+			return (economy, grid, guests, world, member);
+		}
+		var reference = Park();
+		var saved = Park();
+		var turn = reference.Economy.Turn;
+		for ( var step = 0; step < 100 && (saved.Member.Navigation!.Cell == (2, 5) || step < 3); step++ )
+		{
+			turn++;
+			reference.World.Update( reference.Economy, reference.Member, turn );
+			saved.World.Update( saved.Economy, saved.Member, turn );
+		}
+		Assert.AreEqual( ThemeParkIncStaffWorld.ToLitter, saved.Member.State, "mid-walk" );
+		Assert.AreNotEqual( (2, 5), saved.Member.Navigation!.Cell, "he has entered another cell" );
+		// a guest enters his cell after him: the cell's chain then holds the guest above him, an order only his saved entry number keeps
+		var cell = saved.Member.Navigation.Cell;
+		reference.Guests.SpawnInPark( cell.X, cell.Y );
+		saved.Guests.SpawnInPark( cell.X, cell.Y );
+		var pairs = saved.World.CaptureChain( saved.Economy );
+		Assert.IsNotNull( pairs );
+		var thing = saved.Member.ThingId;
+		var serial = saved.Guests.StaffChain.Of( thing )!.Serial;
+		CollectionAssert.AreEqual( new[] { (long)thing, serial }, pairs!.Single() );
+		Assert.AreEqual( 0, saved.Member.CellSerial, "the chain holds the number, not the member" );
+		Assert.IsTrue( saved.Guests.Guests.Any( guest => guest.CellSerial > serial ), "the guest's entry is newer than his" );
+
+		// the economy through its save file, the chain through the continuation's pairs; the guests' restore has no staff entries
+		var directory = Directory.CreateTempSubdirectory( "opentpw-tpi-chain-" );
+		ParkEconomy restored;
+		try
+		{
+			var path = Path.Combine( directory.FullName, "science.json" );
+			ParkSaveFile.Save( path, saved.Economy );
+			restored = ParkSaveFile.Load( path );
+		}
+		finally
+		{
+			directory.Delete( recursive: true );
+		}
+		restored.Litter.Cells = saved.Grid.Cells;
+		restored.Litter.ThemeParkInc = true;
+		saved.Guests.StaffChain.Remove( thing );
+		var restoredWorld = new ThemeParkIncStaffWorld( saved.Grid ) { Guests = saved.Guests };
+		restoredWorld.RestoreChain( restored, pairs );
+		var member = restored.TpiStaff!.Members.Single();
+		Assert.AreEqual( serial, saved.Guests.StaffChain.Of( thing )!.Serial, "the entry number comes back, so the chain's order among the guests does" );
+		for ( var step = 0; step < 80; step++ )
+		{
+			turn++;
+			reference.World.Update( reference.Economy, reference.Member, turn );
+			restoredWorld.Update( restored, member, turn );
+			Assert.AreEqual( (reference.Member.Navigation!.X, reference.Member.Navigation.Y), (member.Navigation!.X, member.Navigation.Y), $"step {step}: the walk with its separation goes on exactly" );
+			Assert.AreEqual( reference.Guests.StaffChain.Of( thing )?.Serial, saved.Guests.StaffChain.Of( thing )?.Serial, $"step {step}: the chain entry" );
+		}
+		Assert.AreEqual( ParkSaveFile.Serialize( reference.Economy ), ParkSaveFile.Serialize( restored ), "both go on alike" );
+		Assert.AreEqual( LitterType.None, restored.Litter.TypeAt( 6, 5 ), "and the walk ended in the sweep" );
 	}
 }

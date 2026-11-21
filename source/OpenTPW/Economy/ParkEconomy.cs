@@ -132,8 +132,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 	public ThemeParkIncStaff? TpiStaff { get; private set; }
 
 	/// <summary>
-	/// The Theme Park Inc wage demands the day messages made since the HUD last took them (0x628CA0's type-0x19 message). The salary negotiation that answers them is not ported yet: the HUD
-	/// shows them as notes. Not saved (a notice, like the original's message bar).
+	/// The Theme Park Inc wage demands of the last day message (0x628CA0's type-0x19 message). The salary negotiation that answers them is not ported yet: the HUD takes them every frame
+	/// and shows them as notes. Each day message clears the list before it adds its own demands, so a run without the HUD (headless, the smoke) holds at most one day's demands instead of
+	/// a list that grows for ever. Not saved (a notice, like the original's message bar).
 	/// </summary>
 	internal List<ThemeParkIncStaff.WageDemand> TpiWageDemands { get; } = new();
 
@@ -552,7 +553,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [BIN:TPI-EXE:0x626624 staff day] the day message (0x0B, broadcast by the calendar 0x6084FA after the thing loop and the pool update) runs every member's daily routine 0x628CA0 (the experience
 		// gain and a wage demand on its day of the month) and then 0x62D1A0 (the day's counters cleared); it takes no draw, and the staff hear it in ascending handle order
 		if ( changes.HasFlag( CalendarChange.Day ) && TpiStaff != null )
+		{
+			// one day's demands at most: the HUD drains them every frame, a headless run never does
+			TpiWageDemands.Clear();
 			TpiWageDemands.AddRange( TpiStaff.EndDay( turn, stored.Day ) );
+		}
 		if ( changes.HasFlag( CalendarChange.Month ) )
 		{
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );

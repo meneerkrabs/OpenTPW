@@ -209,7 +209,7 @@ public partial class Level
 				throw new InvalidOperationException( $"{unbound.Entry.DisplayName} (attraction {unbound.Visitors.AttractionId}) has no economy binding, which a shared park cannot repair." );
 			RequireResumableCatalogueDefaults();
 			if ( !join )
-				StaffPlacement?.PrepareForSave();
+				PrepareStaffForSave();
 		}
 		// [EXT:online-coop-commands] an employee in a guest seat's hand is saved as its drop back to where it was picked up leaves it, in the economy's members and the staff world's actors
 		// alike, while the live park keeps it in hand (C4c); a join carries it as it is, with the hands

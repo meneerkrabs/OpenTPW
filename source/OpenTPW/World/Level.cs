@@ -1361,7 +1361,7 @@ public partial class Level : IDisposable
 	/// <summary>Writes the park economy and every random stream to an OpenTPW park save.</summary>
 	public void SavePark( string path )
 	{
-		StaffPlacement?.PrepareForSave();
+		PrepareStaffForSave();
 		Streams.SavePark( path );
 	}
 

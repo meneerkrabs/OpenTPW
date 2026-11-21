@@ -253,6 +253,17 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// Ends the staff tools before a save: Theme Park World's placement (<see cref="StaffPlacement.PrepareForSave"/>) and a Theme Park Inc candidate in the hand, who goes back to the
+	/// pool. The tools are not saved, so a saved being-placed byte would keep the candidate out of the pool after a load.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6319E0 placing flags] the placement tool's exit with placed 0 (0x6319E0(1)) clears the being-placed bytes and keeps the candidates
+	internal void PrepareStaffForSave()
+	{
+		StaffPlacement?.PrepareForSave();
+		CancelTpiHire();
+	}
+
+	/// <summary>
 	/// Drops the Theme Park Inc candidate being placed on cell (<paramref name="x"/>, <paramref name="y"/>): a valid cell makes the member (its thing, its start and its first search),
 	/// a refused one keeps the placement going. The member placed, or null when the cell refused it.
 	/// </summary>
@@ -262,7 +273,7 @@ public partial class Level
 	{
 		if ( TpiPlacingSlot < 0 || Park?.Economy is not { TpiStaff: { } staff } economy || TpiStaffWorld is not { } world || Guests == null )
 			return null;
-		if ( !ThemeParkIncStaffWorld.CanDrop( Guests.Grid.Cells, x, y, IsStaffDropBlocked ) )
+		if ( !ThemeParkIncStaffWorld.CanDrop( Guests.Grid.Cells, x, y ) )
 			return null;
 		var member = staff.EndHire( TpiPlacingSlot, placed: true );
 		TpiPlacingSlot = -1;

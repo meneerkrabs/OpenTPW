@@ -114,11 +114,13 @@ public sealed class ThemeParkIncStaffWorld
 	/// <summary>The members' voices of the last updates: the handyman's walking (0xA0) and idle (0xA1) voice events at a member's position. Presentation, taken by the audio.</summary>
 	public List<(int Event, float X, float Y)> Voices { get; } = new();
 
-	/// <summary>Whether a staff member may be dropped on the cell (the drop's tests: owned, no fence post or track record, of type 0, 1, 3 or 9, and not under an object).</summary>
-	// [BIN:TPI-EXE:0x4D4EB0 staff drop] the flag 0x40 (0x67ECA0), the fence post (0x67F920 -> 0x685710, kind 0x19), the track record (0x67F890 -> 0x6856D0, kinds 0xB, 0xD, 0x10, 0x12, 0x19) and
-	// the type (1, 3 or 9, or 0) in that order, as tp.exe's; the M gate before them (a type-4 cell holding a kind-3 thing reads [0x5DF6D0(thing) + 0x600]) and the second gate 0x4D2180 are not
-	// read: a type-4 cell is refused by the type test ([EXT:staff-drop-occupancy-refusal] the Theme Park Inc layout types no footprint cells, so the cells under an object refuse by occupancy)
-	public static bool CanDrop( ParkCellMap cells, int x, int y, Func<int, int, bool>? occupied ) => StaffPlacementRules.IsValidDropCell( cells, x, y, occupied );
+	/// <summary>Whether a staff member may be dropped on the cell (the drop's tests: owned, no fence post or track record, and of type 0, 1, 3 or 9); the drop has no occupancy test.</summary>
+	// [BIN:TPI-EXE:0x4D4EB0 staff drop] the flag 0x40 (0x67ECA0), the fence post (0x67F920 -> 0x685710, kind 0x19), the track record (0x67F890 -> 0x6856D0, kinds 0xB, 0xD, 0x10, 0x12, 0x19; a
+	// record of kind 0xC or 0x11 answers through its parent word +0x10) and the type (== 1 0x67F5B0, 3 or 9 0x67F5D0, == 0 0x67F6D0) in that order, as tp.exe's 0x46CC40; the fence kind is one of
+	// the track kinds, so StaffPlacementRules.IsValidDropCell without an occupancy callback is the same ladder; no occupancy or object list is read anywhere in 0x4D4EB0..0x4D4F94
+	// [BIN:TPI-EXE:0x4D1FC0 drop gate M] before the ladder, a type-4 cell holding a kind-3 thing gives M = its type record's +0x600 + 1 (0..3) or 5 (4, 5), 0 above 5; a nonzero M skips the ladder
+	// and the second gate 0x4D2180 ends the drop silently for M 1..5: a type-4 cell refuses either way (with or without the message), so the refusal set is the ladder's
+	public static bool CanDrop( ParkCellMap cells, int x, int y ) => StaffPlacementRules.IsValidDropCell( cells, x, y, occupied: null );
 
 	/// <summary>
 	/// A hired handyman dropped on <paramref name="cell"/>: its thing in the pool, the person's start (the world draw for the base speed, overwritten at once), the member's start
@@ -447,12 +449,14 @@ public sealed class ThemeParkIncStaffWorld
 
 	/// <summary>
 	/// The strike and rest gate (0x62BBA0) before every search: true when it set the member's state. A comfortable member's base speed follows his energy and his mood may show; a tired
-	/// one looks for a rest area (none: rest areas are not ported yet), may lose happiness and, while working, stops.
+	/// one looks for a rest area (none: no Theme Park Inc object is one), may lose happiness and, while working, stops.
 	/// </summary>
+	// [BIN:TPI-EXE:0x62BA20 rest-area finder] walks the thing list (W+0x1EAB88, next +0x14) for a thing with flag +0x42 bit 2 and +0x7C nonzero, the nearest by squared cell distance, the
+	// first on a tie; the only writer of that bit is the thing builder from the type record's +0x1B0 (UsageInfo.ChillsYouOut, 0x5DB6E2), and no Science, Water or Arabian object sets the key
+	// (ThemeParkIncHandymanTests.NoThemeParkIncObjectIsARestArea), so the finder answers none in every Theme Park Inc park and is exact as "none"; the walk to a rest area is unreachable
 	// [BIN:TPI-EXE:0x62BBA0 strike gate] the strike branch needs the role's strike flag (HQ +0x160 + 12 × code, 0x634210) and 0x64FA50 == 1: the role strikes only through the month's strike
 	// consideration, which a park does not run yet (strikes in the world are a later package), so no record is active and the branch is not taken
-	// [BIN:TPI-EXE:0x62BC88 rest branch] energy byte (ftol & 0xFF) at most RestLevel: the thought 0x18, the rest-area finder 0x62BA20 ("Staff member couldn't find a rest area"; the finder and the walk to a
-	// rest area are not read and not ported: it finds none), then a world draw whose low nibble 0 adds -HappyHitCosNoRestArea to happiness (0x60D0D0, clamped), then a working member (display 2) is set
+	// [BIN:TPI-EXE:0x62BC88 rest branch] energy byte (ftol & 0xFF) at most RestLevel: the thought 0x18, the rest-area finder 0x62BA20 ("Staff member couldn't find a rest area"), then a world draw whose low nibble 0 adds -HappyHitCosNoRestArea to happiness (0x60D0D0, clamped), then a working member (display 2) is set
 	// to 0 and the gate answers 1
 	// [BIN:TPI-EXE:0x62BD8D comfortable branch] energy byte above RestLevel: +0xD4 = lerp(exp, 0, MaxExperience, w, MaxSpeedDifference + w) with w = 140 at 100, else the word at 0x9CFB28 by the
 	// tens; happiness byte at most 10 asks for the thought 0x17, above 97 a world draw whose low nibble 0 asks for 0x16 (presentation)
@@ -481,7 +485,7 @@ public sealed class ThemeParkIncStaffWorld
 
 	/// <summary>Looking for work (0x62D810): the role's search, then a member with low motivation who is now working stops again.</summary>
 	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0; then a motivation byte below MotivationPercentToStrike / 2 (cltd, sub, sar: toward zero) with the display state 2 or 7 looks for a
-	// rest area (0x62BA20, not ported: none) and sets 0 (0x628180(0) at 0x62D94D)
+	// rest area (0x62BA20: none) and sets 0 (0x628180(0) at 0x62D94D)
 	private void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		Search( economy, member, turn );
@@ -492,7 +496,7 @@ public sealed class ThemeParkIncStaffWorld
 	/// <summary>The handyman's state setter (0x5D5630) and the common one it falls back to (0x628180).</summary>
 	// [BIN:TPI-EXE:0x5D5630 handyman state setter] 0x0F, 0x11, 0x13: 0x60B3F0(1) and template 0xF; 0x10, 0x12, 0x14: +0x5D4 = the turn and template 0x19; the others through 0x628180
 	// [BIN:TPI-EXE:0x628180 staff state setter] 0 (and 0x23): +0x23C = the turn after state 1, else 0, then 0x60B3F0(0) and template 3 (0x60B6E0); 1: the slack test 0x62D650 (energy byte below
-	// StaffSlackingEnergy looks for a rest area, 0x62BA20, not ported: none, so it answers false and no draw is taken), then template 0xF; the state is stored last (0x6285CD)
+	// StaffSlackingEnergy looks for a rest area, 0x62BA20: none, so it answers false and no draw is taken), then template 0xF; the state is stored last (0x6285CD)
 	internal void SetState( ParkEconomy economy, ThemeParkIncStaffMember member, int state, long turn )
 	{
 		switch ( state )

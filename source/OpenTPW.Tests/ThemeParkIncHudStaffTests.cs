@@ -49,6 +49,7 @@ public class ThemeParkIncHudStaffTests
 			slots[slot] = candidate;
 		typeof( ThemeParkIncStaff ).GetField( "slots", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( staff, slots );
 		typeof( ThemeParkIncStaff ).GetField( "members", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( staff, new List<ThemeParkIncStaffMember>() );
+		typeof( ThemeParkIncStaff ).GetField( "placing", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( staff, new bool[ThemeParkIncStaff.PoolSlots] );
 		return staff;
 	}
 
@@ -104,6 +105,23 @@ public class ThemeParkIncHudStaffTests
 		hud.ActivateStaffRow( 0 );
 		CollectionAssert.Contains( hud.Messages.ToArray(), "Only cleaners can be hired in this version." );
 		CollectionAssert.AreEqual( before, staff.Slots.ToArray(), "a refused role stays in the pool" );
+	}
+
+	[TestMethod]
+	public void ThePauseMenuGivesACandidateInTheHandBackToThePool()
+	{
+		// the menu's save must not find a hire half placed: opening the menu is a tool switch (0x6319E0(1), the placement tool's exit with placed 0)
+		var candidate = Candidate( 2, ThemeParkIncStaffRole.Handyman, 3, 900, 12 );
+		var staff = SyntheticStaff( (2, candidate) );
+		var hud = BuildHud( Strings(), staff );
+		var level = (Level)typeof( ThemeParkIncHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
+		((bool[])typeof( ThemeParkIncStaff ).GetField( "placing", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( staff )!)[2] = true;
+		Set( level, "TpiPlacingSlot", 2 );
+		typeof( ThemeParkIncHud ).GetMethod( "OpenPauseMenu", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( hud, null );
+		Assert.IsTrue( hud.MenuOpen, "the menu opened" );
+		Assert.AreEqual( -1, level.TpiPlacingSlot );
+		Assert.IsFalse( staff.IsPlacing( 2 ), "the being-placed byte is cleared" );
+		Assert.AreSame( candidate, staff.Slots[2], "the candidate stays in the pool" );
 	}
 
 	[TestMethod]

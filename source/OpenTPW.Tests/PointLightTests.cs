@@ -93,7 +93,7 @@ public class PointLightTests
 		Assert.AreEqual( 272 + 16 * 32, Unsafe.SizeOf<LitObjectUniformBuffer>() );
 		Assert.AreEqual( (uint)Unsafe.SizeOf<ObjectUniformBuffer>(), LitObjectUniformBuffer.UploadSize( 0 ), "no lights: the same bytes as before" );
 		Assert.AreEqual( 272u + 3u * 32u, LitObjectUniformBuffer.UploadSize( 3 ) );
-		Assert.IsTrue( LitObjectUniformBuffer.UploadSize( PointLightSet.MaxPerDraw ) <= 16 * 128, "inside the 2048-byte scratch buffer every material owns" );
+		Assert.IsTrue( LitObjectUniformBuffer.UploadSize( PointLightSet.MaxPerDraw ) <= Material.ScratchBufferBytes, "inside the 784-byte scratch buffer every material owns" );
 		// the light count sits in the padding after the light colour (offset 220), where a draw without lights has always had a zero
 		Assert.AreEqual( 220, (int)Marshal.OffsetOf<ObjectUniformBuffer>( nameof( ObjectUniformBuffer._padding1 ) ) );
 		Assert.AreEqual( 0f, new ObjectUniformBuffer().LightCount );

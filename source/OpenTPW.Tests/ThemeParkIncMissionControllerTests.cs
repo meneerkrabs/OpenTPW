@@ -352,6 +352,18 @@ public class ThemeParkIncMissionControllerTests
 	}
 
 	[TestMethod]
+	public void AnAttachedCareerKeepsTheParksControllerFields()
+	{
+		var economy = ThemeParkIncChallengeTests.Economy();
+		economy.TpiMissions!.RemoveObstacle( 12 );
+		var career = new ThemeParkIncCareer( new TestCareerFiles(), TestCareerFiles.ShippedFiringLines );
+		economy.AttachThemeParkIncCareer( career );
+		Assert.AreSame( career, economy.TpiMissions!.Career );
+		Assert.AreEqual( (ThemeParkIncMissionState.ObstacleRemoved, (ushort)12, true), (economy.TpiMissions.State, economy.TpiMissions.CutsceneObject, economy.TpiMissions.RegisterObstacleResearch),
+			"Load A Game: the player file's career replaces the park save's, the park's controller keeps its OBJH fields" );
+	}
+
+	[TestMethod]
 	public void TheEconomyRunsTheControllerAndRoutesThePromotion()
 	{
 		var economy = ThemeParkIncChallengeTests.Economy();

@@ -55,10 +55,15 @@ public sealed partial class ParkEconomy
 
 	/// <summary>
 	/// Rebuilds the controller for <paramref name="career"/> without starting its statistics: the career attached after the park was built (the player's, from the global or a park save) brings
-	/// its own statuses, as the original's global save load restores them over what the controller's constructor started.
+	/// its own statuses, as the original's global save load restores them over what the controller's constructor started. The controller is the park's thing: its own fields stay.
 	/// </summary>
-	private void AttachThemeParkIncMissions( ThemeParkIncCareer career ) =>
-		TpiMissions = new ThemeParkIncMissionController( career, new ThemeParkIncMissionHost( this ), Turn, startStatistics: false );
+	private void AttachThemeParkIncMissions( ThemeParkIncCareer career )
+	{
+		var attached = new ThemeParkIncMissionController( career, new ThemeParkIncMissionHost( this ), Turn, startStatistics: false );
+		if ( TpiMissions is { } park )
+			attached.TakeFields( park );
+		TpiMissions = attached;
+	}
 
 	/// <summary>The controller's thing update: once per world update pass, before the challenge system's (it is the newer thing), not in a lost park.</summary>
 	private void UpdateThemeParkIncMissions( long turn ) => TpiMissions!.Update( turn );

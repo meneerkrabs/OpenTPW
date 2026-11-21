@@ -421,6 +421,15 @@ public sealed class ThemeParkIncMissionController
 		return record.ParkNumber;
 	}
 
+	/// <summary>Takes the thing's fields of <paramref name="other"/> (the same park thing, now with another career).</summary>
+	internal void TakeFields( ThemeParkIncMissionController other )
+	{
+		State = other.State;
+		CutsceneObject = other.CutsceneObject;
+		RegisterObstacleResearch = other.RegisterObstacleResearch;
+		ObstacleResearchComplete = other.ObstacleResearchComplete;
+	}
+
 	internal ThemeParkIncMissionControllerSnapshot Capture() => new( (uint)State, CutsceneObject );
 
 	internal static bool IsValid( ThemeParkIncMissionControllerSnapshot? state ) => state == null || state.State <= (uint)ThemeParkIncMissionState.CutsceneObject;

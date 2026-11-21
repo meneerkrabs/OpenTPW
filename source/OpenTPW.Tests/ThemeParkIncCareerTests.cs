@@ -52,7 +52,7 @@ internal sealed class TestCareerFiles : IThemeParkIncCareerFiles
 	}
 
 	/// <summary>The shipped table: FiringLineForRank 255, 5, 5, 5, 5, 5 and the count 6.</summary>
-	public static readonly int[] ShippedFiringLines = { 255, 5, 5, 5, 5, 5, 6 };
+	public static readonly Func<int, int?> ShippedFiringLines = rank => rank is >= 0 and < 7 ? new[] { 255, 5, 5, 5, 5, 5, 6 }[rank] : null;
 }
 
 [TestClass]
@@ -247,7 +247,44 @@ public class ThemeParkIncCareerTests
 		Assert.AreEqual( (0, 255), (career.Rank, career.FiringLine) );
 		career.Promote( 6 );
 		Assert.AreEqual( (6, 255), (career.Rank, career.FiringLine), "rank 6 reads the count dword and does not lower the line" );
-		Assert.ThrowsException<ArgumentOutOfRangeException>( () => career.Promote( 7 ) );
+		career.FiringLine = 3;
+		Assert.IsFalse( career.Promote( 7 ), "a rank whose word is not read" );
+		Assert.AreEqual( (7, 3), (career.Rank, career.FiringLine), "sets the rank and leaves the line; it never throws" );
+		Assert.IsFalse( career.Promote( unchecked( (int)0x80000000 ) ) );
+	}
+
+	[TestMethod]
+	public void AMissionCounterOutsideTheRegionTableIsRefused()
+	{
+		var career = New();
+		var saved = career.Capture();
+		Assert.IsTrue( ThemeParkIncCareer.IsValid( saved with { MissionCounter = 23 } ) );
+		Assert.IsFalse( ThemeParkIncCareer.IsValid( saved with { MissionCounter = 24 } ) );
+		Assert.IsFalse( ThemeParkIncCareer.IsValid( saved with { MissionCounter = -1 } ) );
+		var save = career.ToGlobalSave( NewSession(), 1, false );
+		save.Mission = 24;
+		Assert.ThrowsException<InvalidDataException>( () => New().Load( ThemeParkIncGlobalSave.Read( save.Write() ), null ) );
+		save.Mission = 23;
+		var loaded = New();
+		Assert.AreEqual( ThemeParkIncGlobalSaveOutcome.Complete, loaded.Load( ThemeParkIncGlobalSave.Read( save.Write() ), null ) );
+		loaded.Advance();
+		Assert.AreEqual( 24, loaded.MissionCounter, "an advance past the table opens no region and does not throw" );
+	}
+
+	/// <summary><c>OPENTPW_TPI_PATH</c>: the Standard object binds the shipped files completely and the promotion reads past the firing line table into its next fields.</summary>
+	[TestMethod]
+	public void ThePromotionReadsTheStandardObjectPastTheFiringLineTable()
+	{
+		var files = TestCareerFiles.Shipped();
+		var global = new ThemeParkIncSamObject( ThemeParkIncStandard.Schema );
+		Assert.IsTrue( global.Load( files.Read( "/levels/Standard.sam" ), overlay: false ), "every line of the global Standard.sam binds" );
+		Assert.IsTrue( global.Load( files.Read( "/levels/science/Standard.sam" ), overlay: true ), "and the level's" );
+		var standard = ThemeParkIncStandard.Load( files.Read, "science" )!;
+		CollectionAssert.AreEqual( new int?[] { 255, 5, 5, 5, 5, 5, 6, 2, 4, 5 }, Enumerable.Range( 0, 10 ).Select( rank => ThemeParkIncStandard.FiringLineLimit( standard, rank ) ).ToArray(),
+			"the six limits, the count dword, then ChallengesInThisLevel[0..2] (Science's rows 2, 4, 5)" );
+		Assert.IsNull( ThemeParkIncStandard.FiringLineLimit( standard, 100000 ), "a word past the object is not read" );
+		Assert.AreEqual( ThemeParkIncStandard.FiringLineLimit( standard, -1 ), ThemeParkIncStandard.FiringLineLimit( standard, int.MaxValue ), "rank × 4 wraps in 32 bits" );
+		Assert.IsNotNull( ThemeParkIncStandard.FiringLineLimit( standard, -100 ), "a negative rank reads an earlier field of the object" );
 	}
 
 	[TestMethod]

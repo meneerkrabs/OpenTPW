@@ -202,8 +202,8 @@ public sealed partial class ParkEconomy
 				else
 					career.Promote( slot.PromoGiven );
 			}
-			// [EXT:headless-economy] a headless economy without the zone's global.sam has no current zone record to count in
-			if ( career.CurrentZone != null )
+			// [EXT:headless-economy] a headless economy (no Theme Park Inc files) has no current zone record to count in; a game's park always has one (EnterThemeParkIncZone)
+			if ( !economy.TpiHeadlessCareer )
 				career.CountChallengeWon( economy.TpiChallenges!.Slots.All( other => other.Type == 0 || other.Status == ThemeParkIncChallengeStatus.Won ) );
 			// [BIN:TPI-EXE:0x5C460A challenge won message] after the count the win posts message 0x26, which the mission controller only answers with its status broadcast
 			economy.TpiMissions?.ChallengeWon();

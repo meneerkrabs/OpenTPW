@@ -376,11 +376,13 @@ public sealed class ThemeParkIncMissionController
 
 	/// <summary>Message 0x25: a promotion to <paramref name="rank"/>.</summary>
 	// [BIN:TPI-EXE:0x5F10F7 promotion] logs "Promotion Message Received"; 0x74C450(the message's rank, dword +8); panel 0x1A4 (presentation)
-	public void Promotion( int rank )
+	/// <returns>False when the promotion's firing line word is one OpenTPW cannot read (<see cref="ThemeParkIncCareer.Promote"/>).</returns>
+	public bool Promotion( int rank )
 	{
 		Log?.Trace( "Promotion Message Received" );
-		career.Promote( rank );
+		var read = career.Promote( rank );
 		host.StatusChanged();
+		return read;
 	}
 
 	/// <summary>Message 0x26: a challenge was won; the controller has no case for it and only broadcasts its status.</summary>

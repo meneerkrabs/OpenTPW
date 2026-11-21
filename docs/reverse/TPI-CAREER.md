@@ -74,8 +74,10 @@ The career is 0x4740 bytes (constructor `0x74B490`, reset `0x74BB40`). OpenTPW k
 **Operations OpenTPW ports.**
 - **Advance (`0x74C1B0`).** The counter rises, the obstacle bytes and the statuses clear, the region the new counter names in table `0x9E907C` opens,
   and the next mission loads.
-- **Promotion (`0x74C450`).** The rank becomes `n`. The firing line rises to `FiringLineForRank[n].Limit` when it is below. The table sits in the
-  Standard.sam object at `0xA028F8`, with its count dword after it.
+- **Promotion (`0x74C450`).** The rank becomes `n`. The firing line rises to the word at `0xA028F8 + 4n` (32-bit, no bound) when it is below.
+  - That address is in the Standard.sam object `0xA01A60` (schema `0x996684`, 590 records), which OpenTPW binds from the files' bytes (`ThemeParkIncStandard`).
+  - Ranks 0 to 5 read `FiringLineForRank[n].Limit`, rank 6 its count dword, ranks 7 to 26 `ChallengesInThisLevel[n - 7].ChallengeType`, and so on through the object.
+  - A word outside the object or on a string pointer is not read (`[EXT:original-undefined-reads]`): the rank is still set and the line kept. Nothing throws.
 - **Tickets.** `0x74C890` adds; `0x74C8C0` spends only when there are enough.
 - **Abilities (`0x74C3C0`).** The obstacle staff with a number discover their ability.
 - **Zone records.**
@@ -140,11 +142,13 @@ The original's path is `0x777B80`: `<root>\save\users\<slot + 1><name>\<name>.GM
 OpenTPW has one player (`[EXT:tpi-front-end-one-player]`), so the file is `users\1New Player\New Player.GMS` in the save folder (user decision,
 2026-11-21). It is used as follows:
 - **Saving the Science park** writes it first, as `0x745720` writes the global save before the park files.
-- **Leaving a Theme Park Inc park** writes it (`0x6A47B0`).
+- **Leaving a Theme Park Inc park** runs the full save (`0x6A47B0` → `0x744E10` → `0x745720`): the player file, then the Science continuation park save
+  (only the player file in a zone without an OpenTPW park slot). Nothing is saved when the park is lost, or when a load replaces the park.
 - **Enter Game** builds the zone's park with its career (`0x56AB40`).
 - **Load A Game** takes the career from it after the park save (`0x7451E0`).
 
-A park save also carries the career. A Theme Park Inc park save from before the career is refused with a message (user decision, 2026-11-21).
+A park save also carries the career. A Theme Park Inc park save from before the career is refused with a message (user decision, 2026-11-21). A mission counter
+outside the region table (0 to 23) is refused in a park save and in a player file; an advance past the table opens no region.
 
 ## 4. Debug cheats
 

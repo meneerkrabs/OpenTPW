@@ -291,7 +291,8 @@ With `opentpw.cheats` on, a Theme Park Inc park's challenge panel shows both but
 - The tick is the mission controller's (`ThemeParkIncMissionController.CompleteMission`, [TPI-MISSIONS.md](reverse/TPI-MISSIONS.md)): the career's side, the new
   extent (`extents/extent.NNN` for the counter before the advance), the next obstacle and the new mission's exit statistics. The end-of-game sequence and
   message 0x2C are not posted `[EXT:tpi-capability-gates]`. Get Promoted goes through the controller's message 0x25 handler.
-- A promotion past rank 6 is refused: the original reads past the `FiringLineForRank` table there.
+- A promotion past rank 6 reads on past the `FiringLineForRank` table into the Standard object, as the original does ([TPI-CAREER.md](reverse/TPI-CAREER.md) §2).
+- A Theme Park World save that carries either cheat is refused.
 - A Theme Park Inc park takes no Theme Park World cheat, and a Theme Park World park takes neither of these two.
 
 An earlier research note named `0x538F30` as the Get Promoted dialog. That is the obstacle and ticket debug page. See

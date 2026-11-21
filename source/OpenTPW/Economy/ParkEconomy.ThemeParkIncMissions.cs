@@ -50,7 +50,7 @@ public sealed partial class ParkEconomy
 	{
 		// [EXT:headless-economy] a headless economy over settings without the zones' global.sam (tests and tools) has no zone records: its controller starts no statistics
 		if ( TpiCareer is { } career )
-			TpiMissions = new ThemeParkIncMissionController( career, new ThemeParkIncMissionHost( this ), Turn, startStatistics: career.CurrentZone != null );
+			TpiMissions = new ThemeParkIncMissionController( career, new ThemeParkIncMissionHost( this ), Turn, startStatistics: !TpiHeadlessCareer );
 	}
 
 	/// <summary>

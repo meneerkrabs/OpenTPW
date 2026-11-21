@@ -78,7 +78,7 @@ public sealed class ThemeParkIncCareer
 	};
 
 	private readonly IThemeParkIncCareerFiles files;
-	private readonly IReadOnlyList<int> firingLineForRank;
+	private readonly Func<int, int?> firingLineLimit;
 	private readonly ThemeParkIncCdkEntry[] cards = Enumerable.Repeat( ThemeParkIncCdkEntry.Empty, CardSlots ).ToArray();
 	private readonly byte[] abilities = new byte[AbilityCount];
 	private readonly int[] regions = new int[RegionCount];
@@ -89,13 +89,13 @@ public sealed class ThemeParkIncCareer
 	private readonly SortedDictionary<string, ThemeParkIncZoneRecord> zones = new( StringComparer.Ordinal );
 
 	/// <summary>
-	/// A new career (<c>0x74B490</c>, then the reset): <paramref name="firingLineForRank"/> is the Standard.sam table <c>FiringLineForRank[n].Limit</c> with its count dword after it
-	/// (<see cref="FiringLineTable"/>).
+	/// A new career (<c>0x74B490</c>, then the reset): <paramref name="firingLineLimit"/> answers the word the promotion reads for a rank (<see cref="ThemeParkIncStandard.FiringLineLimit"/>), or null
+	/// where OpenTPW cannot read it.
 	/// </summary>
-	public ThemeParkIncCareer( IThemeParkIncCareerFiles files, IReadOnlyList<int> firingLineForRank )
+	public ThemeParkIncCareer( IThemeParkIncCareerFiles files, Func<int, int?> firingLineLimit )
 	{
 		this.files = files ?? throw new ArgumentNullException( nameof( files ) );
-		this.firingLineForRank = firingLineForRank?.ToArray() ?? throw new ArgumentNullException( nameof( firingLineForRank ) );
+		this.firingLineLimit = firingLineLimit ?? throw new ArgumentNullException( nameof( firingLineLimit ) );
 		for ( var index = 0; index < ThemeParkIncGlobalSave.HistoryEntries; index++ )
 		{
 			var entry = index * ThemeParkIncGlobalSave.HistoryEntryBytes;
@@ -227,8 +227,8 @@ public sealed class ThemeParkIncCareer
 	public int AwardsHeld => awards.Count( award => award != 0 );
 
 	/// <summary>
-	/// The Standard.sam firing line table as the career reads it (<c>0xA028F8</c>): the six <c>FiringLineForRank[n].Limit</c> values the layered Standard.sam parse leaves (0 for a key no layer
-	/// sets) and the array's count dword after them (one past the highest index set).
+	/// The firing line table from OpenTPW's own reading of the layered Standard.sam keys: the six <c>FiringLineForRank[n].Limit</c> values (0 for a key no layer sets) and the count dword after them.
+	/// Used where the Standard files' bytes are not at hand (<see cref="BalanceSettings.ForThemeParkInc"/> over parsed settings); the game reads <see cref="ThemeParkIncStandard"/>.
 	/// </summary>
 	// [BIN:TPI-EXE:0x996684 Standard schema] FiringLineForRank[6].Limit sits at the Standard object's +0xE98 (0xA028F8) with its count dword at +0xEB0, the slot after the sixth element; the
 	// global file is parsed with the reset and the level's over it (0x6481FD), so a key neither sets is 0 and the count is one past the highest index any of them set
@@ -336,10 +336,9 @@ public sealed class ThemeParkIncCareer
 		ObstacleResearched = false;
 		ObstacleRemoved = false;
 		ClearStatuses();
-		// the table holds 24 dwords before string data; the completion tick never advances past the end-of-game mission 17, and a counter past the table is refused
-		if ( MissionCounter < 0 || MissionCounter >= RegionForMission.Count )
-			throw new InvalidOperationException( $"Mission counter {MissionCounter} is past the region table." );
-		if ( RegionForMission[MissionCounter] is var region and >= 0 )
+		// [EXT:original-undefined-reads] the table holds 24 dwords before string data, which a counter past it would read as a region: no region opens then (the completion tick stops at
+		// the end-of-game mission 17, and a loaded counter is refused outside 0 to 23)
+		if ( MissionCounter >= 0 && MissionCounter < RegionForMission.Count && RegionForMission[MissionCounter] is var region and >= 0 )
 			regions[region] = 1;
 		LoadMission();
 	}
@@ -369,20 +368,19 @@ public sealed class ThemeParkIncCareer
 	public bool HasObstacle => Mission.ObstacleType != 0 && Mission.NoResearch == 0;
 
 	/// <summary>
-	/// A promotion (<c>0x74C450</c>): the rank becomes <paramref name="rank"/> and the firing line rises to the rank's <c>FiringLineForRank</c> limit when it is below.
+	/// A promotion (<c>0x74C450</c>): the rank becomes <paramref name="rank"/> and the firing line rises to the word the promotion reads for it when it is below. False when that word is one
+	/// OpenTPW cannot read (the rank is still set); never throws.
 	/// </summary>
-	// [BIN:TPI-EXE:0x74C450 promotion] +0x1060 = rank; if +0 < 0xA028F8[rank] (signed) +0 = that limit; the table is read with no bound: rank 6 reads the count dword after it
-	public void Promote( int rank )
+	// [BIN:TPI-EXE:0x74C450 promotion] +0x1060 = rank first; then if +0 < [0xA028F8 + rank * 4] (signed, no bound) +0 = that word (ThemeParkIncStandard.FiringLineLimit)
+	public bool Promote( int rank )
 	{
-		if ( rank < 0 || rank >= firingLineForRank.Count )
-			throw new ArgumentOutOfRangeException( nameof( rank ), $"Rank {rank} reads past the firing line table OpenTPW holds (0 to {firingLineForRank.Count - 1})." );
 		Rank = rank;
-		if ( FiringLine < firingLineForRank[rank] )
-			FiringLine = firingLineForRank[rank];
+		if ( firingLineLimit( rank ) is not { } limit )
+			return false;
+		if ( FiringLine < limit )
+			FiringLine = limit;
+		return true;
 	}
-
-	/// <summary>The ranks the firing line table holds (0 to this minus 1), which <see cref="Promote"/> accepts.</summary>
-	public int RankCount => firingLineForRank.Count;
 
 	/// <summary>A challenge loss's firing line step (<c>0x5C4857</c>).</summary>
 	internal void LowerFiringLine() => FiringLine = unchecked( FiringLine - 1 );
@@ -525,8 +523,11 @@ public sealed class ThemeParkIncCareer
 		cards.SelectMany( card => new[] { card.Id, card.Level, card.Flag, card.Amount } ).ToArray(), MissionCounter, Rank, (byte[])abilities.Clone(), GoldenTickets, (int[])regions.Clone(),
 		ObstacleResearched, ObstacleRemoved, (int[])statuses.Clone(), GmiFlag, (byte[])history.Clone(), zones.Values.Select( zone => SnapshotOf( zone.Data ) ).ToArray(), CurrentZone?.Name );
 
+	/// <summary>Whether a mission counter is one OpenTPW takes from a save: inside the region table (0 to 23), which the advance reads.</summary>
+	public static bool IsValidMissionCounter( int counter ) => counter >= 0 && counter < RegionForMission.Count;
+
 	internal static bool IsValid( ThemeParkIncCareerSnapshot? state ) =>
-		state is { Flags.Length: 10, Awards.Length: 8, Cards.Length: CardSlots * 4, Abilities.Length: AbilityCount, Regions.Length: RegionCount, Statuses.Length: StatusCount * StatusWords,
+		state is { MissionCounter: var counter } && IsValidMissionCounter( counter ) && state is { Flags.Length: 10, Awards.Length: 8, Cards.Length: CardSlots * 4, Abilities.Length: AbilityCount, Regions.Length: RegionCount, Statuses.Length: StatusCount * StatusWords,
 			History.Length: HistoryBytes, Zones: not null }
 		&& state.Zones.All( zone => zone is { Name: not null, OneShot.Length: 6, OptionalFlags.Length: 4, OptionalValues.Length: 4, AwardFlags.Length: 8, AwardValues.Length: 8,
 			SignA.Length: ThemeParkIncZoneData.SignCharacters, SignB.Length: ThemeParkIncZoneData.SignCharacters } )
@@ -616,6 +617,9 @@ public sealed class ThemeParkIncCareer
 		CurrentZone = null;
 		if ( save.Version < ThemeParkIncGlobalSave.SupportedVersion )
 			return ThemeParkIncGlobalSaveOutcome.Failed;
+		// the original would load "Miss%02d.sam" of any counter and read the region table past its end on the next advance: a counter outside the table is refused
+		if ( !IsValidMissionCounter( save.Mission ) )
+			throw new InvalidDataException( $"The global save's mission counter {save.Mission} is outside 0 to {RegionForMission.Count - 1}." );
 		GoldenTickets = save.GoldenTickets;
 		save.Awards.CopyTo( awards, 0 );
 		for ( var index = 0; index < CardSlots; index++ )

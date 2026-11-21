@@ -649,7 +649,7 @@ public sealed partial class ThemeParkIncHud
 			if ( screen is { IsRemoved: false } )
 				Stack.RemoveWhere( item => ReferenceEquals( item, screen ) );
 			dismissed();
-		} );
+		}, RunLetterGoto );
 		Stack.Push( screen );
 	}
 

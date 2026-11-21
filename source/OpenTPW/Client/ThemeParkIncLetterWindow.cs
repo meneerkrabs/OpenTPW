@@ -18,8 +18,8 @@ internal static class ThemeParkIncLetterWindow
 	/// <summary>[BIN:TPI-EXE:0x518C30 letter date] UITEXT 956, the template "{0x29}.{0x2A}.{0x2B}" the date field is filled through.</summary>
 	public const int DateTemplate = 956;
 
-	/// <summary>The letter's own texts, resolved by the caller from the language's tables.</summary>
-	internal sealed record Letter( string Subject, string From, string To, string Date, string Body, int Picture );
+	/// <summary>The letter's own texts, resolved by the caller from the language's tables, and its go-to target (the record's <c>+0xE10</c> kind and <c>+0xE18</c> argument; kind 0 has none).</summary>
+	internal sealed record Letter( string Subject, string From, string To, string Date, string Body, int Picture, int GotoKind = 0, int GotoArgument = 0 );
 
 	/// <summary>
 	/// The texts of a notification letter: the subject, the sender row's name, the addressee, the date and the body with the sender's
@@ -37,9 +37,9 @@ internal static class ThemeParkIncLetterWindow
 
 	/// <summary>
 	/// The window over its layout table. <paramref name="dismiss"/> runs once, when the player closes the letter with its close, okay or
-	/// go-to button; help does nothing of its own.
+	/// go-to button; help does nothing of its own. The go-to button, enabled when the letter has a target, then runs <paramref name="goTo"/>.
 	/// </summary>
-	internal static UiScreen Create( Letter letter, UiStringTable strings, Action dismiss )
+	internal static UiScreen Create( Letter letter, UiStringTable strings, Action dismiss, Action<int, int>? goTo = null )
 	{
 		var table = ThemeParkIncLayoutTables.LetterWindow;
 		var screen = new UiScreen( ScreenName );
@@ -104,10 +104,11 @@ internal static class ThemeParkIncLetterWindow
 		} );
 		// [BIN:TPI-EXE:0x526960 letter buttons] a click on any control but help destroys the window and runs the letter's action; go-to (0xA808) is enabled only
 		// when the record's +0xE10 is set, which 0x5CD3A0 clears for every notification letter (0x526D6E)
+		// [BIN:TPI-EXE:0x526AA5 letter go-to] after the category's action the go-to button runs the record's target through 0x5511B0
 		Button( "close", 0xA804, Dismiss, enabled: true );
 		var okay = Button( "ok", 0xA805, Dismiss, enabled: true );
 		Button( "help", 0xA807, null, enabled: true );
-		Button( "goto", 0xA808, Dismiss, enabled: false );
+		Button( "goto", 0xA808, () => { Dismiss(); goTo?.Invoke( letter.GotoKind, letter.GotoArgument ); }, enabled: letter.GotoKind != 0 );
 		screen.Focus( okay );
 		return screen;
 

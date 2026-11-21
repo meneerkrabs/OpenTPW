@@ -70,4 +70,36 @@ public sealed partial class ThemeParkIncHud
 		button.Bounds = new UiRect( 2024 - 306, 256, 286, 110 );
 		button.Anchor = UiAnchor.TopRight;
 	}
+
+	/// <summary>Opens the "Objective Complete!" letter of completed mission <paramref name="completed"/>, dated <paramref name="date"/>.</summary>
+	internal void ShowObjectiveLetter( int completed, string date ) =>
+		ShowLetter( ThemeParkIncObjectiveLetter.Compose( completed, TextsOrLanguage, strings.Entry( ThemeParkIncText.NewPlayer ), date ), () => { } );
+
+	/// <summary>The letter's go-to (<c>0x5511B0</c>) for the kinds the objective letter uses.</summary>
+	// [BIN:TPI-EXE:0x5511B0 letter go-to] kind - 1 through the jump table 0x55155C: kind 2 finds the first attraction of type +0xE18 (0x647850) and, found, moves the camera to it (0x5033C0 with a
+	// per-type pair: 0x6A7 (0xFF, 0x32), 0x6A6 (0x3C, 0xF), 0xA8E (0x1E, 0), 0xA8F (0x37, 0x19), 0xE75 (0x32, 0xA), 0xE77 (0x14, 0x23), else (0, 0)); 0xB the challenges window
+	// (0x529960(+0xE18)); 0xC the mission window (0x55A7F0); 0x12 0xA59CC0 -> 0x521C90(+0xE18, 0)
+	internal void RunLetterGoto( int kind, int argument )
+	{
+		switch ( kind )
+		{
+			case ThemeParkIncObjectiveLetter.GotoMissionWindow:
+				OpenMissionWindow();
+				break;
+			case ThemeParkIncObjectiveLetter.GotoChallenges:
+				// the challenges window (table 0x9B54CC) is not built: the text HUD's challenge panel ([EXT:tpi-text-hud]) stands in for it, as for the mission window's tab
+				OpenChallengePanel();
+				break;
+			case ThemeParkIncObjectiveLetter.GotoThingOfType:
+				// the obstacles are not things of OpenTPW's world yet (TPI-MISSIONS §6), so 0x647850 finds none and the go-to does nothing, as the original's does for a type it does not find;
+				// the camera move 0x5033C0 is not ported
+				if ( level.Park?.Economy.TpiMissionWorld?.FindAttraction( argument ) is { } thing and not 0 )
+					Log.Trace( $"Theme Park Inc letter go-to: thing {thing} of type {argument}; the camera move 0x5033C0 is not ported." );
+				break;
+			default:
+				// kind 0x12's object 0xA59CC0 and its 0x521C90 are not read
+				Log.Trace( $"Theme Park Inc letter go-to kind {kind} ({argument}) is not ported." );
+				break;
+		}
+	}
 }

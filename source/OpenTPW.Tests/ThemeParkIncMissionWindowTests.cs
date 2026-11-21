@@ -380,6 +380,42 @@ public class ThemeParkIncMissionWindowTests
 		Assert.IsTrue( models.Get( "objectim" )!.Frames.Count >= 17, "the mission pictures go up to frame 16" );
 	}
 
+	[TestMethod]
+	public void TheObjectiveLetterNamesTheCompletedMissionAndItsGoToTarget()
+	{
+		var letter = ThemeParkIncObjectiveLetter.Compose( 4, new FakeTexts(), "Player", "1.2.2001" );
+		Assert.AreEqual( ("TagSystem168", "TagSystem173", "Player", "1.2.2001", 0), (letter.Subject, letter.From, letter.To, letter.Date, letter.Picture) );
+		Assert.AreEqual( "ObjectiveComplete4\nTagSystem173\nTagSystem174", letter.Body, "OBJECTIVE_COMPLETE of the completed mission and the signature" );
+		Assert.AreEqual( (0x12, 0), (letter.GotoKind, letter.GotoArgument) );
+		var expected = new[] { (2, 0x6A7), (0xC, 0), (0x12, 2), (0x12, 1), (0x12, 0), (2, 0xE75), (0xB, 0), (0x12, 1), (2, 0x6A6), (0xB, 0), (0x12, 2), (2, 0xA8F), (2, 0xA8E),
+			(0xB, 0), (0x12, 0), (2, 0xE77), (0xB, 0), (0xC, 0) };
+		CollectionAssert.AreEqual( expected, Enumerable.Range( 0, 18 ).Select( ThemeParkIncObjectiveLetter.Goto ).ToArray(), "the jump table 0x5CED9C, 17 and above the mission window" );
+
+		var strings = SyntheticStrings();
+		var dismissed = 0;
+		var target = (0, 0);
+		var stack = new UiScreenStack();
+		var screen = ThemeParkIncLetterWindow.Create( ThemeParkIncObjectiveLetter.Compose( 1, new FakeTexts(), "Player", "" ), strings, () => dismissed++, ( kind, argument ) => target = (kind, argument) );
+		stack.Push( screen );
+		Assert.IsTrue( screen.Find( "goto" )!.Enabled, "the objective letter has a go-to" );
+		Click( stack, FakeContext( strings ), "goto" );
+		Assert.AreEqual( (1, (0xC, 0)), (dismissed, target), "go-to closes the letter and opens the mission window" );
+		Assert.IsFalse( ThemeParkIncLetterWindow.Create( new ThemeParkIncLetterWindow.Letter( "", "", "", "", "", 0 ), strings, () => { } ).Find( "goto" )!.Enabled, "a notification letter has none" );
+	}
+
+	[TestMethod]
+	public void TheRetailObjectiveLetterIsMrMayburysInEnglish()
+	{
+		var data = UseTpiData();
+		var language = GameLanguage.Resolve( data, "English", null );
+		var strings = UiStringTable.Load( language );
+		var letter = ThemeParkIncObjectiveLetter.Compose( 0, ThemeParkIncTexts.For( strings, language ), "Player", "1.7.2000" );
+		Assert.AreEqual( ("Objective Complete!", "Mr Maybury"), (letter.Subject, letter.From) );
+		StringAssert.StartsWith( letter.Body, "It's good to see you're getting on with things here." );
+		StringAssert.EndsWith( letter.Body, "\nMr Maybury\nPresident, Theme Park Inc." );
+		Assert.AreEqual( (2, 0x6A7), (letter.GotoKind, letter.GotoArgument), "mission 0's letter leads to the lake (type 1703)" );
+	}
+
 	private string UseTpiData()
 	{
 		var path = Environment.GetEnvironmentVariable( "OPENTPW_TPI_PATH" );

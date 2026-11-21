@@ -196,7 +196,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			RidePricePerUse: kind == ParkObjectKind.Ride ? settings.GetInt( "UsageInfo.InitPricePerUse", 0, optional: true ) : 0,
 			// [BIN:TPI-EXE:0x5DB6AE thing flags] UsageInfo.HoldsLitter (+0x1A8) sets +0x42 bit 0x40 and Info.RunsContinuously (+0x6C) sets +0x43 bit 1 (0x5DB782); the type record keeps Info.IsSpecial at +0x5C
 			HoldsLitter: settings.GetInt( "UsageInfo.HoldsLitter", 0, optional: true ) != 0,
-			IsSpecial: settings.GetInt( "Info.IsSpecial", 0, optional: true ) != 0,
+			// [BIN:TPI-EXE:0x5E26FB special ride] the wear tick and the breakdown request (0x5E493B) test the type word +0x5C with cmpl $1: only the value 1 is special (only Theme Park Inc's rides read it)
+			IsSpecial: settings.GetInt( "Info.IsSpecial", 0, optional: true ) == 1,
 			RunsContinuously: settings.GetInt( "Info.RunsContinuously", 0, optional: true ) != 0,
 			// [BIN:TPI-EXE:0x9A2CC0 type record keys] the key table lays the record out four bytes a key (a count word after each array), which puts RideBreakDown.Imminent at +0x3C8 and
 			// RideBreakDown.WarnPlayer at +0x3CC (the AddOn keys that follow land at +0x3D0..+0x3D8, as their readers 0x4D63C0 and 0x594E19 take them); both are floats (key type 7)

@@ -114,6 +114,19 @@ public class ThemeParkIncMechanicTests
 	}
 
 	[TestMethod]
+	[DataRow( 0, false )]
+	[DataRow( 1, true )]
+	[DataRow( 2, false )]
+	[DataRow( -1, false )]
+	public void OnlyAnIsSpecialOfOneMakesARideSpecial( int value, bool special )
+	{
+		// [BIN:TPI-EXE:0x5E26FB special ride] the wear tick and the breakdown request (0x5E493B) compare the type word +0x5C with 1
+		var info = EconomyObjectCatalog.FromSettings( new SamSettings( new[] { SamDocument.Parse( $"Info.Id 1102\nInfo.IsSpecial {value}\nUpgrades[0].CostOfUpgrade 500\n", "ride.sam" ) } ),
+			ParkObjectKind.Ride, "/x" );
+		Assert.AreEqual( special, info.IsSpecial );
+	}
+
+	[TestMethod]
 	public void ANewObjectStartsAtItsWorkingLifeAsThePrebuiltSciencePark()
 	{
 		// [BIN:TPI-EXE:0x5DB53A object life] +0x58 = Info.WorkingLife, or 100.0 when 0; the prebuilt Science park's choosable attractions were saved at exactly that
@@ -225,6 +238,28 @@ public class ThemeParkIncMechanicTests
 		swing.IsOpen = false;
 		economy.UpdateRide( swing, 192 );
 		Assert.AreEqual( repair, swing.Repair );
+	}
+
+	[TestMethod]
+	public void TheWearTickTakesARideAsRunningWhileVarRunningIsAboveZero()
+	{
+		// [BIN:TPI-EXE:0x5E2602 wear tick running] testl, jg: a negative VAR_RUNNING is not running in Theme Park Inc; Theme Park World's bridge keeps its nonzero test (IsRunning)
+		var economy = ScienceEconomy();
+		economy.TryBuild( RobotSwing, out var swing );
+		var guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 );
+		var ride = new RideVisitorBridge( 1, "ride", RideVisitorKind.Ride, 4, 60, 10 );
+		var script = GuestTests.CreateShopScript( new VisitorRideScriptEffects( ride, UnimplementedRideScriptEffects.Instance ) );
+		ride.Attach( script, () => true );
+		guests.Register( ride );
+		var link = new GuestEconomyBridge( () => economy, guests );
+		link.Link( ride.AttractionId, swing!.Id );
+		foreach ( var (value, running) in new[] { (-1, false), (0, false), (1, true), (2, true) } )
+		{
+			script.Variables[script.GetVariableIndex( nameof( RideVariables.VAR_RUNNING ) )] = value;
+			Assert.IsTrue( link.TryGet( swing.Id, out var operation ) );
+			Assert.AreEqual( running, operation.Running, $"VAR_RUNNING {value}" );
+			Assert.AreEqual( value != 0, ride.IsRunning, $"Theme Park World's test of VAR_RUNNING {value}" );
+		}
 	}
 
 	[TestMethod]

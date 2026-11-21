@@ -71,7 +71,7 @@ public class ThemeParkIncCareerCheatsTests
 		Assert.AreEqual( (6, "6"), (career.Rank, outcomes.Last()) );
 		economy.QueueCheat( new CheatAction( CheatKind.GetPromoted ) );
 		NextTurn( economy );
-		Assert.AreEqual( (6, "unavailable"), (career.Rank, outcomes.Last()), "rank 7 reads past the table OpenTPW holds" );
+		Assert.AreEqual( (7, "7 (unread limit)", 6), (career.Rank, outcomes.Last(), career.FiringLine), "the test table answers no word for rank 7: the rank is set, the line kept (rank 6 raised it to the count dword, 6)" );
 	}
 
 	[TestMethod]

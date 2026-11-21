@@ -564,7 +564,7 @@ internal sealed partial class GameFlow : IDisposable
 	/// <param name="keepJoin">[EXT:online-coop-snapshot-join] The front end only rebuilds itself (a language change): a join held in it goes on. Every other teardown ends it.</param>
 	private void TearDown( bool applyPendingLanguage = true, bool keepAdvisorPreparation = false, bool keepJoin = false )
 	{
-		WriteThemeParkIncPlayerFileOnLeave();
+		SaveThemeParkIncOnLeave();
 		LeaveCoopSession( "The park was closed.", keepJoin );
 		RequireProgressSaved();
 		FlushRestartSnapshot();

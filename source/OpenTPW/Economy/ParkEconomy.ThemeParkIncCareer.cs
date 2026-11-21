@@ -45,7 +45,7 @@ public sealed partial class ParkEconomy
 	{
 		if ( !Rules.ThemeParkInc )
 			return;
-		var career = enteringCareer ?? new ThemeParkIncCareer( GameCareerFiles.Instance, Settings.ThemeParkIncFiringLines );
+		var career = enteringCareer ?? new ThemeParkIncCareer( GameCareerFiles.Instance, Settings.ThemeParkIncFiringLineLimit );
 		EnterThemeParkIncZone( career );
 		TpiCareer = career;
 	}
@@ -60,12 +60,21 @@ public sealed partial class ParkEconomy
 		TpiCareer = career;
 	}
 
-	// [BIN:TPI-EXE:0x42A360 set theme] the world's zone change calls the career's ChangeTheme (0x74F330) with the zone's name, which makes the zone's record the current one
-	// [EXT:headless-economy] a headless economy over settings without the zone's global.sam (tests and tools) leaves the career without a current zone
+	/// <summary>
+	/// [EXT:headless-economy] Whether the economy runs without Theme Park Inc's game files (tests and tools: no mission file in the file system), where the career has no current zone record.
+	/// </summary>
+	internal bool TpiHeadlessCareer { get; private set; }
+
+	// [BIN:TPI-EXE:0x42A360 set theme] the world's zone change calls the career's ChangeTheme (0x74F330) with the zone's name, which makes the zone's record the current one; with the game's
+	// files a zone whose global.sam does not load is refused here, at the park's construction or load
 	private void EnterThemeParkIncZone( ThemeParkIncCareer career )
 	{
-		if ( GameCareerFiles.Instance.Read( $"/levels/{Settings.Theme}/global.sam" ) != null )
-			career.ChangeTheme( Settings.Theme );
+		TpiHeadlessCareer = GameCareerFiles.Instance.Read( ThemeParkIncMission.PathOf( 0 ) ) == null;
+		if ( TpiHeadlessCareer )
+			return;
+		career.ChangeTheme( Settings.Theme );
+		if ( career.CurrentZone == null )
+			throw new InvalidDataException( $"The Theme Park Inc zone '{Settings.Theme}' has no record in the career: its global.sam does not load." );
 	}
 
 	/// <summary>
@@ -84,7 +93,7 @@ public sealed partial class ParkEconomy
 
 	/// <summary>
 	/// The Get Promoted cheat (<see cref="CheatKind.GetPromoted"/>): a promotion to the career's rank plus one, as the mission controller's handler of message 0x25 applies it. The outcome is the new
-	/// rank, or "unavailable" for a rank past the firing line table OpenTPW holds (the original reads on past it).
+	/// rank (with "unread limit" when the word it compares with is one OpenTPW cannot read).
 	/// </summary>
 	// [BIN:TPI-EXE:0x532A9E get promoted] button 0x186A2 ("Get Promoted", 0x9B79A8) reads the mission's Promotion.Number and the career's rank (0x5F0150), builds message 0x25 with the rank + 1
 	// (0x532AC0 incl, 0x4361C0) and posts it (0x436DD0); the controller's handler calls 0x74C450 with it (the panel 0x1A4 it opens is presentation)
@@ -92,9 +101,7 @@ public sealed partial class ParkEconomy
 	{
 		var career = TpiCareer!;
 		var rank = unchecked( career.Rank + 1 );
-		if ( rank < 0 || rank >= career.RankCount )
-			return "unavailable";
-		career.Promote( rank );
-		return rank.ToString( System.Globalization.CultureInfo.InvariantCulture );
+		var read = career.Promote( rank );
+		return rank.ToString( System.Globalization.CultureInfo.InvariantCulture ) + (read ? "" : " (unread limit)");
 	}
 }

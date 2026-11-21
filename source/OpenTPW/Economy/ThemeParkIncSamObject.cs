@@ -36,6 +36,7 @@ public sealed class ThemeParkIncSamObject
 	private readonly ThemeParkIncSamRecord[] schema;
 	private readonly Binding[] bindings;
 	private readonly int[] words;
+	private readonly HashSet<int> pointerSlots = new();
 
 	private readonly record struct Binding( int Slot, int Stride, int CountSlot );
 
@@ -47,8 +48,9 @@ public sealed class ThemeParkIncSamObject
 		if ( end < 0 )
 			throw new ArgumentException( "A SAM schema ends with an end record.", nameof( schema ) );
 		if ( this.schema.Take( end ).Any( record => record.Kind is not (ThemeParkIncSamKind.StructBegin or ThemeParkIncSamKind.StructEnd or ThemeParkIncSamKind.ArrayBegin
-			or ThemeParkIncSamKind.ArrayEnd or ThemeParkIncSamKind.Int or ThemeParkIncSamKind.NonNegativeInt or ThemeParkIncSamKind.IntRange) ) )
-			throw new NotSupportedException( "Only SAM schemas with integer leaves are ported." );
+			or ThemeParkIncSamKind.ArrayEnd or ThemeParkIncSamKind.Int or ThemeParkIncSamKind.NonNegativeInt or ThemeParkIncSamKind.IntRange or ThemeParkIncSamKind.Float
+			or ThemeParkIncSamKind.NonNegativeFloat or ThemeParkIncSamKind.String) ) )
+			throw new NotSupportedException( "Only SAM schemas with integer, float and string leaves are ported." );
 		bindings = new Binding[end];
 		var slot = 1;
 		var stride = 0;
@@ -92,6 +94,12 @@ public sealed class ThemeParkIncSamObject
 
 	internal void Set( int offset, int value ) => words[SlotOf( offset )] = value;
 
+	/// <summary>The object's size in bytes (the data base <c>+8</c> plus its slots).</summary>
+	public int Size => 8 + words.Length * 4;
+
+	/// <summary>Whether the word at <paramref name="offset"/> holds a string leaf's heap pointer in the original (a string was parsed into it), whose value OpenTPW does not have.</summary>
+	public bool HoldsPointer( int offset ) => pointerSlots.Contains( SlotOf( offset ) );
+
 	private int SlotOf( int offset )
 	{
 		if ( offset < 8 || offset % 4 != 0 || (offset - 8) / 4 >= words.Length )
@@ -109,12 +117,16 @@ public sealed class ThemeParkIncSamObject
 		for ( var index = 0; index < bindings.Length; index++ )
 		{
 			var record = schema[index];
-			if ( record.Kind is not (ThemeParkIncSamKind.Int or ThemeParkIncSamKind.NonNegativeInt or ThemeParkIncSamKind.IntRange) )
+			if ( record.Kind is not (ThemeParkIncSamKind.Int or ThemeParkIncSamKind.NonNegativeInt or ThemeParkIncSamKind.IntRange or ThemeParkIncSamKind.Float
+				or ThemeParkIncSamKind.NonNegativeFloat or ThemeParkIncSamKind.String) )
 				continue;
 			var binding = bindings[index];
 			var elements = binding.CountSlot < 0 ? 1 : CountOf( index );
 			for ( var element = 0; element < elements; element++ )
+			{
 				words[binding.Slot + binding.Stride * element] = record.Kind == ThemeParkIncSamKind.IntRange ? record.Minimum : 0;
+				pointerSlots.Remove( binding.Slot + binding.Stride * element );
+			}
 			if ( binding.CountSlot >= 0 )
 				words[binding.CountSlot] = 0;
 		}
@@ -246,16 +258,53 @@ public sealed class ThemeParkIncSamObject
 		{
 			if ( Resolve( groupName, field, isArray, arrayIndex ) is not { } leaf )
 				return false;
+			var kind = schema[leaf].Kind;
 			while ( IsSpace( buffer[position] ) )
 				position++;
 			var start = position;
-			if ( buffer[position] == (byte)'-' )
+			int value;
+			var floatValue = 0f;
+			if ( kind == ThemeParkIncSamKind.String )
+			{
+				// [BIN:TPI-EXE:0x41A036 SAM string] a quoted text up to the closing quote (a newline or NUL first is "String read error"); the original keeps a heap copy's pointer
+				if ( buffer[position] != (byte)'"' )
+					return false;
 				position++;
-			while ( IsDigit( buffer[position] ) )
+				while ( buffer[position] is not ((byte)'"' or (byte)'\n' or 0) )
+					position++;
+				if ( buffer[position] != (byte)'"' )
+					return false;
 				position++;
-			if ( !IsSpace( buffer[position] ) && buffer[position] != 0 )
-				return false;
-			var value = Atol( buffer, start );
+				value = 0;
+			}
+			else if ( kind is ThemeParkIncSamKind.Float or ThemeParkIncSamKind.NonNegativeFloat )
+			{
+				// [BIN:TPI-EXE:0x41A29E SAM float] an optional '-', then digits and dots while fewer than two dots were taken; white space or NUL must follow, two dots and more than 99
+				// bytes are refused; the text goes to atof (0x86F896) and is stored as a float
+				if ( buffer[position] == (byte)'-' )
+					position++;
+				var dots = 0;
+				while ( IsDigit( buffer[position] ) || buffer[position] == (byte)'.' && dots < 2 )
+				{
+					if ( buffer[position] == (byte)'.' )
+						dots++;
+					position++;
+				}
+				if ( !IsSpace( buffer[position] ) && buffer[position] != 0 || dots > 1 && buffer[position] != (byte)'.' || position - start > 99 )
+					return false;
+				floatValue = (float)Atof( buffer, start, position );
+				value = BitConverter.SingleToInt32Bits( floatValue );
+			}
+			else
+			{
+				if ( buffer[position] == (byte)'-' )
+					position++;
+				while ( IsDigit( buffer[position] ) )
+					position++;
+				if ( !IsSpace( buffer[position] ) && buffer[position] != 0 )
+					return false;
+				value = Atol( buffer, start );
+			}
 			var binding = bindings[leaf];
 			var slot = binding.Slot;
 			if ( isArray )
@@ -269,10 +318,14 @@ public sealed class ThemeParkIncSamObject
 					throw new InvalidDataException( $"SAM array index {arrayIndex} writes outside the object." );
 				slot = (int)target;
 			}
-			var kind = schema[leaf].Kind;
-			if ( kind == ThemeParkIncSamKind.NonNegativeInt && value < 0 || kind == ThemeParkIncSamKind.IntRange && (value < schema[leaf].Minimum || value >= schema[leaf].Maximum) )
+			if ( kind == ThemeParkIncSamKind.NonNegativeInt && value < 0 || kind == ThemeParkIncSamKind.IntRange && (value < schema[leaf].Minimum || value >= schema[leaf].Maximum)
+				|| kind == ThemeParkIncSamKind.NonNegativeFloat && floatValue < 0 )
 				return false;
 			words[slot] = value;
+			if ( kind == ThemeParkIncSamKind.String )
+				pointerSlots.Add( slot );
+			else
+				pointerSlots.Remove( slot );
 		}
 		return true;
 	}
@@ -314,6 +367,14 @@ public sealed class ThemeParkIncSamObject
 				return false;
 		}
 		return true;
+	}
+
+	// the validated text is an optional '-' and digits with at most one dot, which atof reads as a decimal (an empty mantissa is 0)
+	private static double Atof( byte[] buffer, int start, int end )
+	{
+		var text = System.Text.Encoding.ASCII.GetString( buffer, start, end - start );
+		return double.TryParse( text, System.Globalization.NumberStyles.AllowLeadingSign | System.Globalization.NumberStyles.AllowDecimalPoint,
+			System.Globalization.CultureInfo.InvariantCulture, out var parsed ) ? parsed : 0;
 	}
 
 	// [BIN:TPI-EXE:0x86F490 atol] white space, an optional sign, then decimal digits accumulated in a 32-bit long that wraps

@@ -503,8 +503,12 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			// Leave the saved park paused so the first frame can be compared with the capture.
 			snapshot = live.CaptureResumeSnapshot( null, "Science", savedUtc: DateTimeOffset.UtcNow ) with { TpiHudSpeed = GameSpeed.Paused };
 			flow.ShowThemeParkIncFrontEnd();
-			Require( flow.Level == null && flow.IncFrontEnd!.Screen.Find( "loadGame" ) is UiButton { Enabled: false },
-				"the Personnel File disables Load A Game when no slot exists" );
+			// [BIN:TPI-EXE:0x6A47B0 leave park] leaving the park runs the full save: the player file, then the Science slot
+			Require( flow.Level == null && File.Exists( personnelFileSaves.Path ) && File.Exists( GameFlow.ThemeParkIncPlayerFilePath() )
+				&& flow.IncFrontEnd!.Screen.Find( "loadGame" ) is UiButton { Enabled: true }, "leaving the park saves it, so Load A Game is enabled" );
+			File.Delete( personnelFileSaves.Path );
+			flow.ShowThemeParkIncFrontEnd();
+			Require( flow.IncFrontEnd!.Screen.Find( "loadGame" ) is UiButton { Enabled: false }, "the Personnel File disables Load A Game when no slot exists" );
 		} );
 		Do( "open the Personnel File with a corrupt slot", () =>
 		{

@@ -194,7 +194,10 @@ public sealed class BalanceSettings
 		Weather = ThemeParkIncWeatherSettings.Read( standard );
 		ThemeParkIncStaff = ThemeParkIncStaffSettings.Read( standard );
 		ThemeParkIncChallenges = ThemeParkIncChallengeSettings.Read( standard, challenges );
-		ThemeParkIncFiringLines = ThemeParkIncCareer.FiringLineTable( standard );
+		var table = ThemeParkIncCareer.FiringLineTable( standard );
+		// [EXT:headless-economy] settings built from parsed keys (tests and tools) answer the six limits and the count dword from those keys; LoadThemeParkInc replaces this with the
+		// Standard object bound from the files' bytes, which answers every rank as the original's read does
+		ThemeParkIncFiringLineLimit = rank => rank >= 0 && rank < table.Count ? table[rank] : null;
 		// inert placeholders: nothing reads them while staff, research and Theme Park World's challenges are refused
 		BaseWage = Array.Empty<int>();
 		RecuperationRate = HappinessRecuperationRate = Array.Empty<float>();
@@ -252,8 +255,8 @@ public sealed class BalanceSettings
 	public ThemeParkIncStaffSettings? ThemeParkIncStaff { get; }
 	/// <summary>Theme Park Inc's challenge settings and rows (null in Theme Park World and where the challenge keys or <c>Challenges.sam</c> are missing).</summary>
 	public ThemeParkIncChallengeSettings? ThemeParkIncChallenges { get; }
-	/// <summary>Theme Park Inc's <c>FiringLineForRank[n].Limit</c> table with its count dword after it (<see cref="ThemeParkIncCareer.FiringLineTable"/>); empty in Theme Park World.</summary>
-	public IReadOnlyList<int> ThemeParkIncFiringLines { get; } = Array.Empty<int>();
+	/// <summary>The word Theme Park Inc's promotion reads for a rank (<see cref="ThemeParkIncStandard.FiringLineLimit"/>), null where it is not read; null for every rank in Theme Park World.</summary>
+	public Func<int, int?> ThemeParkIncFiringLineLimit { get; private set; } = _ => null;
 	public EntryFeePerception EntryFee { get; }
 	public GoldenTicketSettings GoldenTickets { get; }
 	public ChallengeSchedule ChallengeTiming { get; }
@@ -352,7 +355,10 @@ public sealed class BalanceSettings
 		var layers = GetStandardLayers( theme, easy: false ).Select( path => SamDocument.Parse( FileSystem.ReadAllText( path ), path ) );
 		// [BIN:TPI-EXE:0x5C768A challenge rows] the challenge system parses data/challenges.sam itself when it loads its slots
 		var challenges = FileSystem.FileExists( "/Challenges.sam" ) ? new SamSettings( new[] { SamDocument.Parse( FileSystem.ReadAllText( "/Challenges.sam" ), "/Challenges.sam" ) } ) : null;
-		return ForThemeParkInc( new SamSettings( layers ), theme, challenges );
+		var settings = ForThemeParkInc( new SamSettings( layers ), theme, challenges );
+		if ( ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, theme ) is { } standard )
+			settings.ThemeParkIncFiringLineLimit = rank => ThemeParkIncStandard.FiringLineLimit( standard, rank );
+		return settings;
 	}
 
 	/// <summary>Whether the theme ships an easy-mode balance layer (only jungle in the available data).</summary>

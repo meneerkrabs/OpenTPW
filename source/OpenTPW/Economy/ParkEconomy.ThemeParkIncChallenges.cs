@@ -197,8 +197,8 @@ public sealed partial class ParkEconomy
 			economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Won ) );
 			if ( slot.PromoGiven != 0 )
 				career.Promote( slot.PromoGiven );
-			// [EXT:headless-economy] a headless economy without the zone's global.sam has no current zone record to count in
-			if ( career.CurrentZone != null )
+			// [EXT:headless-economy] a headless economy (no Theme Park Inc files) has no current zone record to count in; a game's park always has one (EnterThemeParkIncZone)
+			if ( !economy.TpiHeadlessCareer )
 				career.CountChallengeWon( economy.TpiChallenges!.Slots.All( other => other.Type == 0 || other.Status == ThemeParkIncChallengeStatus.Won ) );
 		}
 

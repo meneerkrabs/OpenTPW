@@ -503,9 +503,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// A guest placed without the arrival constructor's position draws is spread by a stable hash of its ID, not a world draw.
 		(guest.OffsetX, guest.OffsetY) = PlacementJitter( id );
 		// [BIN:TPI-EXE:0x60C712 guest base speed] a Theme Park Inc guest's base speed is the drawn word times its profile's SpeedMultiplier, truncated to a word
-		// [BIN:TPI-EXE:0x5BCD60 precision] the product is read at 53 bits, as the economy's other Theme Park Inc routines (equal at either precision for the retail words)
+		// [EXT:hardware-d3d-path] the game thread runs this after the Direct3D device started, which sets the x87 to 24-bit precision (SetCooperativeLevel 0x851/0x808 at
+		// 0x6BF33F/0x6BF5A8: DDSCL_FPUSETUP without FPUPRESERVE, as tp.exe's 0x563914/0x563B92); at 24 bits the product rounds to a single before the truncation, which
+		// gives one more than 53 bits for 20 of the 120 retail type and word pairs (60 x 0.95f is 56.9999993, a single 57.0f: 57, where 53 bits truncate to 56)
 		guest.BaseSpeed = Settings.TpiGuestStart is { } start
-			? ThemeParkIncGuestStart.ScaleBaseSpeed( (ushort)baseSpeed, start.Types[guest.Type].SpeedMultiplier, singlePrecision: false )
+			? ThemeParkIncGuestStart.ScaleBaseSpeed( (ushort)baseSpeed, start.Types[guest.Type].SpeedMultiplier, singlePrecision: true )
 			: baseSpeed;
 		// [EXT:smarter-guests] the birth id comes with the guest, before its first decision (the counter is the extension's, no draw)
 		if ( SmarterGuests is { } smarter )
@@ -544,7 +546,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var multiplier = start.Types[type].SpeedMultiplier;
 		foreach ( var word in GuestSpeed.BaseSpeeds )
 		{
-			if ( baseSpeed == ThemeParkIncGuestStart.ScaleBaseSpeed( word, multiplier, singlePrecision: false ) )
+			if ( baseSpeed == ThemeParkIncGuestStart.ScaleBaseSpeed( word, multiplier, singlePrecision: true ) )
 				return true;
 		}
 		return false;

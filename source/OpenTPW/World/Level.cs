@@ -710,6 +710,7 @@ public partial class Level : IDisposable
 			else
 			{
 				SetupThemeParkIncStaff();
+				SetupThemeParkIncRideEvents();
 				SeedThemeParkIncCurrentObstacle();
 				AttachThemeParkIncMissionWorld();
 			}
@@ -1031,6 +1032,27 @@ public partial class Level : IDisposable
 	}
 
 	/// <summary>
+	/// Wires a Theme Park Inc park's ride events (its park runs no gate, so <see cref="SetupParkGate"/> does not run): the economy's script writes reach the ride's script, a maintenance request
+	/// closes the ride and a mechanic's finished repair opens it through the repair tail.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5E3400 maintenance request] the request closes the ride itself (the open word +0x7C = 0, VAR_RIDECLOSED = 1 and the close model call); [BIN:TPI-EXE:0x5E2910 repair fully] the
+	// repair writes VAR_WORN and VAR_BREAKSTAT and runs the open and the closing tail 0x5E2C2E (OpenAfterThemeParkIncRepair); the wear tick 0x5E25B0 and the relief test 0x5E3990 write VAR_WORN
+	private void SetupThemeParkIncRideEvents()
+	{
+		if ( Park == null )
+			return;
+		Park.EventRaised += item =>
+		{
+			if ( item.Kind == ParkEventKind.RideScriptVariable && Enum.IsDefined( (RideVariables)item.InfoId ) )
+				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
+			else if ( item.Kind == ParkEventKind.RideRepaired )
+				OpenAfterThemeParkIncRepair( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.MaintenanceRequested )
+				CloseForUpgrade( item.InstanceId, upgrade: false );
+		};
+	}
+
+	/// <summary>
 	/// An installed upgrade replaces the ride's balloon sprite: level 1 or 2 hangs a new one over the ride's front cell, level 3 none (tp.exe 0x4DF8F0, <see cref="UpgradeBalloonRenderer"/>).
 	/// </summary>
 	private void HangUpgradeBalloon( int instance, int level )
@@ -1143,11 +1165,6 @@ public partial class Level : IDisposable
 	// [BIN:TPW-EXE:0x4df8f0 reopen tail] after a repair or an upgrade the ride opens (+0x68 = 1, script variable 6 = 0) whether or not its guard holds (it then logs "Opening non openable ride" five times), and a coaster (track type 3) failing 0x441970 closes again (+0x68 = 0, variable 6 = 1)
 	private void OpenAfterRepair( int instance )
 	{
-		if ( Park?.Economy.TpiStaff != null )
-		{
-			OpenAfterThemeParkIncRepair( instance );
-			return;
-		}
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )
 			return;
 		var coaster = runtime.Coaster != null;
@@ -1183,7 +1200,7 @@ public partial class Level : IDisposable
 		var record = EconomyStateOf( runtime );
 		var info = record != null && economy.Catalog.TryGet( record.InfoId, out var known ) ? known : null;
 		bool Running( int type ) => economy.TpiChallenges?.Slots.Any( slot => slot.Type == type && slot.Status == ThemeParkIncChallengeStatus.Running ) == true;
-		var mayOpen = (Gate?.MayOpen( runtime ) ?? true) && !(info?.SpecialIngredient == 1 && Running( 42 )) && economy.IsParkOpen && !runtime.WeatherCloses( weather );
+		var mayOpen = ParkGate.MayOpen( Guests, runtime, record ) && !(info?.SpecialIngredient == 1 && Running( 42 )) && economy.IsParkOpen && !runtime.WeatherCloses( weather );
 		if ( !mayOpen && !(info?.WhichUIType == 0 && Running( 46 )) )
 			runtime.Close();
 		runtime.CloseForWeatherAfterRepair( weather );

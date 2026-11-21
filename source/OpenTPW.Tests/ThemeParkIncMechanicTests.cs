@@ -347,6 +347,30 @@ public class ThemeParkIncMechanicTests
 	}
 
 	[TestMethod]
+	public void AWorldSaveFromBeforeTheRideWearIsRefusedBeforeItsAssetsAreLookedAt()
+	{
+		// user decision 2026-11-21: the world save's embedded economy is validated (ParkSaveFile.Validate) before the continuation's own state and the asset manifest, so a Science world
+		// save from before the mechanics and the ride wear gets the refusal, not an asset or shape complaint
+		var envelope = ParkResumeSaveFileTests.Envelope();
+		var economy = ScienceEconomy();
+		var current = envelope with { Theme = "science", Economy = ParkSaveFile.Capture( economy ) };
+		System.Text.Json.Nodes.JsonObject Save( bool rideWear )
+		{
+			var node = System.Text.Json.Nodes.JsonNode.Parse( ParkResumeJson.Serialize( current ) )!.AsObject();
+			if ( !rideWear )
+				node["Economy"]!.AsObject().Remove( "TpiRideWear" );
+			// an empty asset manifest, which the shape check refuses once it reaches the manifest
+			node["AssetHashes"] = new System.Text.Json.Nodes.JsonObject();
+			return node;
+		}
+		var refusal = Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( Save( rideWear: false ).ToJsonString() ) ) );
+		Assert.AreEqual( ParkSaveFile.ThemeParkIncRideWearMissing, refusal.Message );
+		Assert.AreNotEqual( ParkSaveFile.ThemeParkIncRideWearMissing,
+			Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( Save( rideWear: true ).ToJsonString() ) ) ).Message,
+			"a save with the ride wear goes on to the other checks" );
+	}
+
+	[TestMethod]
 	public void APlacedMechanicSurvivesASaveAndAnOlderSaveIsRefused()
 	{
 		var economy = ScienceEconomy();

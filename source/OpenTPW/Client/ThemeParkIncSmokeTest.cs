@@ -252,6 +252,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "cancel the tools", () => Click( Hud.Screen, "cancel" ) );
 		Wait( "tools down", 2 );
 		Do( "the tools are away", () => Require( !Level.IsRemovingObjects && !Level.CellTool.IsActive, "Cancel puts the remove tool away" ) );
+		PlanHandyman();
 		Do( "round-trip Science state", () =>
 		{
 			var live = Level;
@@ -584,6 +585,67 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	/// (<c>UiScrollList</c> semantics). Keyboard activation is not used — the real mouse keeps hovering between the
 	/// injected frames and would take the focus off the list.
 	/// </summary>
+	private ThemeParkIncStaffMember? hiredHandyman;
+	private long handymanDropTurn;
+	private int staffRow;
+
+	/// <summary>
+	/// The Theme Park Inc staff panel's hire: the first Cleaner (handyman) row is activated through the list, the hire is dropped on the first path cell the drop accepts, and the member's
+	/// thing is updated by the park's turns; the round trip that follows then carries him.
+	/// </summary>
+	private void PlanHandyman()
+	{
+		Do( "open the staff panel", () => Click( Hud.Screen, "staff" ) );
+		Wait( "staff panel opens", 2 );
+		Do( "choose a cleaner through the list", () =>
+		{
+			var staff = Level.Park!.Economy.TpiStaff;
+			Require( staff != null && Level.TpiStaffWorld != null, "the Theme Park Inc park has its staff and their world" );
+			var rows = Hud.StaffRows();
+			var candidates = staff!.Slots.Where( slot => slot != null ).ToList();
+			staffRow = candidates.FindIndex( candidate => candidate!.Role == ThemeParkIncStaffRole.Handyman );
+			Require( staffRow >= 0 && staffRow < rows.Count, "the pool lists a cleaner" );
+			var list = (UiScrollList)Hud.Screen.Find( "staffPanelList" )!;
+			Require( list.Visible, "the staff list is open" );
+			list.Scroll( -100000 );
+			var rect = list.ScreenRect( Context.Canvas );
+			var scale = rect.Height / list.Bounds.Height;
+			var first = Math.Clamp( staffRow - list.VisibleRows + 1, 0, Math.Max( 0, rows.Count - list.VisibleRows ) );
+			list.Scroll( first );
+			var row = new System.Numerics.Vector2( rect.X + rect.Width / 2, rect.Y + (list.Margin + (staffRow - first + 0.5f) * list.RowHeight) * scale );
+			Require( list.RowAt( Context.Canvas, row ) == staffRow, "the cleaner's row is on screen" );
+			Sub( "select the cleaner's row", () => flow.InjectedInput = UiInput.Click( row ) );
+			Sub( "activate the cleaner's row", () => flow.InjectedInput = UiInput.Click( row ) );
+		} );
+		Wait( "the hire starts", 2 );
+		Do( "the cleaner is in the hand", () =>
+		{
+			Require( Level.TpiPlacingSlot >= 0 && Level.Park!.Economy.TpiStaff!.IsPlacing( Level.TpiPlacingSlot ), "activating the cleaner's row starts his placement" );
+			Require( !Hud.Screen.Find( "staffPanelList" )!.Visible, "and closes the panel" );
+		} );
+		Do( "drop the cleaner on a linked path", () =>
+		{
+			var grid = Level.Guests!.Grid;
+			var before = Level.Park!.Economy.TpiStaff!.Members.Count;
+			handymanDropTurn = Level.Park.Economy.Turn;
+			for ( var y = 0; y < grid.CountY && hiredHandyman == null; y++ )
+				for ( var x = 0; x < grid.CountX && hiredHandyman == null; x++ )
+					if ( grid.IsWalkable( x, y ) && System.Numerics.BitOperations.PopCount( (uint)(grid.Cells.LinksAt( x, y ) & 0x55) ) >= 2 )
+						hiredHandyman = Level.DropTpiStaff( x, y );
+			Require( hiredHandyman != null && Level.Park.Economy.TpiStaff.Members.Count == before + 1, "the drop makes the member" );
+			Require( Level.TpiPlacingSlot < 0 && hiredHandyman!.Placed && Level.Things.IsUsed( hiredHandyman.ThingId ), "the member's thing is in the park's pool" );
+		} );
+		Wait( "the cleaner works", 150 );
+		Do( "the cleaner is updated by the park's turns", () =>
+		{
+			var member = hiredHandyman!;
+			Require( member.LastUpdateTurn > handymanDropTurn, $"the thing sweep updated the cleaner (last update {member.LastUpdateTurn}, dropped at {handymanDropTurn})" );
+			Require( member.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking or ThemeParkIncStaffWorld.ToLitter or ThemeParkIncStaffWorld.Sweeping, "in a handyman state" );
+			Require( float.IsFinite( member.Energy ) && member.Energy <= 100f, "with his meters" );
+			Log.Trace( $"Theme Park Inc slice smoke: cleaner {member.ThingId} in state {member.State:X} at {member.Navigation!.Cell}, energy {member.Energy}, last update turn {member.LastUpdateTurn}, walk original {member.Navigation.Original} arrived {member.Navigation.Arrived} target ({member.Navigation.TargetX >> 16}, {member.Navigation.TargetY >> 16}) links {Level.Guests!.Grid.Cells.LinksAt( member.Navigation.Cell.X, member.Navigation.Cell.Y ):X}; {Level.Park!.Economy.Litter.Count} litter item(s) in the park." );
+		} );
+	}
+
 	private void ArmThroughList()
 	{
 		var list = (UiScrollList)Hud.Screen.Find( "buildList" )!;

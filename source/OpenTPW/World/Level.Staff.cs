@@ -52,11 +52,6 @@ public partial class Level
 			if ( Park != null )
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
-		if ( Park.Economy.TpiStaff != null )
-		{
-			TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
-			StaffWorld.OtherChainIds = () => ThemeParkIncStaffWorld.ChainIds( Park?.Economy );
-		}
 		AttachStaffWorld();
 		AttachAdvisorProbes();
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, () => StaffWorld );
@@ -181,8 +176,19 @@ public partial class Level
 		Park.Economy.StaffWorld = StaffWorld;
 		// a load replaced the economy: its staff take the banks this level loaded, whose count reduces their stored sprite draws again
 		Park.Economy.Staff.AttachSpriteBanks( staffSpriteBanks );
+	}
+
+	/// <summary>
+	/// Theme Park Inc's staff in the park (a park whose economy holds Theme Park Inc's staff; Theme Park World's staff world is refused there with the staff capability): their world, the
+	/// members' things in the pool and on the cell chains of the members a continuation restored.
+	/// </summary>
+	private void SetupThemeParkIncStaff()
+	{
+		if ( Park?.Economy.TpiStaff == null || Guests == null )
+			return;
+		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
 		AdoptTpiStaffThings();
-		TpiStaffWorld?.SyncChain( Park.Economy );
+		// a continuation files its members with their saved entry numbers (Level.Resume, RestoreChain); the turn's sweep files any other placed member
 	}
 
 	/// <summary>

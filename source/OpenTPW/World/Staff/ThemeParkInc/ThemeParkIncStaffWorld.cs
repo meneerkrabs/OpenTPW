@@ -109,16 +109,42 @@ public sealed class ThemeParkIncStaffWorld
 		}
 	}
 
-	/// <summary>The thing ids of the placed members (the cell chains keep their entries).</summary>
-	public static IEnumerable<int> ChainIds( ParkEconomy? economy ) =>
-		economy?.TpiStaff?.Members.Where( member => member.Navigation != null ).Select( member => member.ThingId ) ?? Enumerable.Empty<int>();
-
+	/// <summary>
+	/// Files the member's thing on its cell's chain: it enters at the head when it first stands in the park or moves to another cell. While the chain holds it the member keeps no number
+	/// of its own (the chain's is the authority, <see cref="CaptureChain"/>), so the economy's state does not carry the chains' absolute counter.
+	/// </summary>
 	private void FollowChain( ThemeParkIncStaffMember member )
 	{
 		if ( Guests is not { } guests || member.Navigation == null )
 			return;
 		guests.StaffChain.Follow( member.ThingId, member.Navigation, member.CellSerial );
-		member.CellSerial = guests.StaffChain.Of( member.ThingId )?.Serial ?? member.CellSerial;
+		if ( guests.StaffChain.Of( member.ThingId ) != null )
+			member.CellSerial = 0;
+	}
+
+	/// <summary>The placed members' chain entries for a park save, as [thing id, entry number] pairs in member order; null when none is filed.</summary>
+	public long[][]? CaptureChain( ParkEconomy economy )
+	{
+		if ( Guests is not { } guests || economy.TpiStaff is not { } staff )
+			return null;
+		var pairs = staff.Members.Where( member => member.Navigation != null ).Select( member => guests.StaffChain.Of( member.ThingId ) is { } entry ? new[] { (long)member.ThingId, entry.Serial } : null )
+			.OfType<long[]>().ToArray();
+		return pairs.Length == 0 ? null : pairs;
+	}
+
+	/// <summary>Files the restored members' things on their cells' chains with their saved entry numbers (a park save's <see cref="CaptureChain"/>), oldest entry first.</summary>
+	public void RestoreChain( ParkEconomy economy, long[][] pairs )
+	{
+		if ( Guests is not { } guests || economy.TpiStaff is not { } staff )
+			return;
+		var serials = pairs.ToDictionary( pair => (int)pair[0], pair => pair[1] );
+		foreach ( var member in staff.Members.Where( member => member.Navigation != null && serials.ContainsKey( member.ThingId ) ).OrderBy( member => serials[member.ThingId] ) )
+		{
+			guests.StaffChain.Remove( member.ThingId );
+			guests.NoteCellSerial( serials[member.ThingId] );
+			member.CellSerial = serials[member.ThingId];
+			FollowChain( member );
+		}
 	}
 
 	/// <summary>
@@ -129,6 +155,7 @@ public sealed class ThemeParkIncStaffWorld
 	{
 		if ( member.Navigation == null || member.Role != ThemeParkIncStaffRole.Handyman || economy.TpiStaff is not { } staff )
 			return;
+		member.LastUpdateTurn = turn;
 		PreUpdate( economy, staff.Settings, member, turn );
 		Dispatch( economy, staff.Settings, member, turn );
 		var navigation = member.Navigation!;

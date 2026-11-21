@@ -429,7 +429,7 @@ internal static class ParkResumeSaveFile
 				"the saved Theme Park Inc weather delivery count is invalid" );
 		}
 		else
-			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null, "Theme Park World save contains Theme Park Inc continuation state" );
+			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null && snapshot.TpiStaffChain == null, "Theme Park World save contains Theme Park Inc continuation state" );
 		yield return true;
 		Require( snapshot.Layout != null, "the layout snapshot is missing" );
 		Require( snapshot.Guests != null, "the guest snapshot is missing" );
@@ -718,6 +718,13 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.ParkName is { } parkName )
 			Require( ParkNameLines.IsValidLine( parkName.Line1 ) && ParkNameLines.IsValidLine( parkName.Line2 ),
 				$"the park name lines are missing, longer than {ParkNameLines.MaximumLength} characters or hold control characters" );
+		if ( snapshot.TpiStaffChain is { } tpiChain )
+		{
+			var placed = snapshot.Economy.TpiStaff?.Members.Where( member => member?.World != null ).Select( member => member!.World!.ThingId ).ToHashSet() ?? new HashSet<int>();
+			var filed = new HashSet<long>();
+			Require( tpiChain.All( pair => pair is [var id, var serial] && id is >= 1 and <= ThingPool.Capacity && placed.Contains( (int)id ) && serial >= 1 && filed.Add( id ) ),
+				"the Theme Park Inc staff chain names a thing no placed member holds, or a bad entry number" );
+		}
 		if ( snapshot.Staff is { } staff )
 		{
 			Require( staff.Actors != null, "the staff-world snapshot has no actor list" );
@@ -799,6 +806,7 @@ internal static class ParkResumeSaveFile
 		{
 			RequireThing( objects.All( record => record!.ThingId == 0 ), "an object names a thing id but the save holds no thing pool" );
 			RequireThing( members.All( member => member.ThingId == 0 ), "a staff member names a thing id but the save holds no thing pool" );
+			RequireThing( snapshot.Economy.TpiStaff?.Members.All( member => member?.World == null ) != false, "a staff member names a thing id but the save holds no thing pool" );
 			return;
 		}
 		var problems = ThingPool.Problems( snapshot.Things );
@@ -823,6 +831,10 @@ internal static class ParkResumeSaveFile
 			Names( record!.ThingId, SaveThingModel.Attraction, record.X, record.Y );
 		foreach ( var member in members )
 			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), member.Id );
+		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: only the handyman is placed)
+		foreach ( var member in snapshot.Economy!.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>() )
+			if ( member?.World is { } world )
+				Names( world.ThingId, SaveThingModel.Handyman, member.Id );
 		if ( snapshot.Guests!.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
 			foreach ( var guest in snapshot.Guests.Guests! )
 				Names( guest!.Id, SaveThingModel.Guest, guest.Id );

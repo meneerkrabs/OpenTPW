@@ -419,6 +419,7 @@ public sealed partial class ThemeParkIncHud
 		try { action(); if (success != null) PostMessage(success); return true; }
 		catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
 		{
+			Log.Warning( $"Theme Park Inc save or load failed: {error.Message}" );
 			Stack.Push(UiDialogs.Message("layoutFailed", () => error.Message,
 				(() => T( OpenTpwText.Back ), () => Stack.Pop())));
 			return false;

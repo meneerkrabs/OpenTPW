@@ -704,6 +704,8 @@ public partial class Level : IDisposable
 			if ( GameEditions.Capabilities.Staff )
 				foreach ( var _ in SetupStaffSteps() )
 					yield return 0.95f;
+			else
+				SetupThemeParkIncStaff();
 			yield return 0.95f;
 			// [EXT:tpi-park-open] the Theme Park Inc park runs no gate commands: its gate script is not traced, so the economy neither drives nor closes the park door
 			if ( !GameEditions.IsThemeParkInc )

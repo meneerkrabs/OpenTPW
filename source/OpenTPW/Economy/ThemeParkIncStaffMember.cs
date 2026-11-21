@@ -210,6 +210,8 @@ public sealed class ThemeParkIncStaffMember
 	public long CellSerial { get; internal set; }
 	/// <summary>Whether the member stands in the park.</summary>
 	public bool Placed => Navigation != null;
+	/// <summary>The turn of the member's last thing update (bookkeeping for the smoke test and the HUD; not saved).</summary>
+	internal long LastUpdateTurn { get; set; } = -1;
 	/// <summary>The walk's speed caps the pre-update set this update (not saved: every update sets them before its walk).</summary>
 	internal int MaxSpeed, MaxForce;
 	/// <summary>Presentation: the point the member is drawn at, in cells.</summary>

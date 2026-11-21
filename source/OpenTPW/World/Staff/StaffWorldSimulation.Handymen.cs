@@ -543,14 +543,11 @@ public sealed partial class StaffWorldSimulation
 	/// <summary>The staff's lists of the cell chains: the guest simulation's when there is one, so that guests and staff share one entry counter.</summary>
 	private StaffCellChain Chain => (Guests as GuestSimulation)?.StaffChain ?? (ownChain ??= new StaffCellChain( () => ++ownSerial ));
 
-	/// <summary>The things of another staff world that share the cell chains (Theme Park Inc's members, <see cref="ThemeParkIncStaffWorld"/>); null: none.</summary>
-	internal Func<IEnumerable<int>>? OtherChainIds { get; set; }
-
 	/// <summary>Files every placed member's thing on its cell's chain, and takes off those of members that no longer exist (a fire, a replaced economy).</summary>
 	private void SyncChain()
 	{
 		var chain = Chain;
-		var current = new HashSet<int>( OtherChainIds?.Invoke() ?? Enumerable.Empty<int>() );
+		var current = new HashSet<int>();
 		foreach ( var member in members() )
 		{
 			current.Add( member.Id );

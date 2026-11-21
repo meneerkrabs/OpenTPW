@@ -1,3 +1,4 @@
+using OpenTPW.FrontEnd;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
 
@@ -46,8 +47,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	private long cashBeforePlace;
 	private (int X, int Y)[] pausedCells = Array.Empty<(int, int)>();
 	private int resumedAt;
+	private ScienceSmokeSaves? personnelFileSaves;
 
-	public ThemeParkIncSmokeTest( GameFlow flow )
+	public ThemeParkIncSmokeTest( GameFlow flow, string? restartPhase = null )
 	{
 		this.flow = flow;
 		flow.PersistSettings = false;
@@ -56,10 +58,13 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Console.Error.WriteLine( $"Theme Park Inc slice smoke test failed: timed out after {MaximumSeconds} s at frame {frame} (stuck at '{(steps.Count > 0 ? steps.First!.Value.Name : "end")}'); display {Render.Metrics}." );
 			Environment.Exit( 1 );
 		}, null, TimeSpan.FromSeconds( MaximumSeconds ), System.Threading.Timeout.InfiniteTimeSpan );
-		Plan();
+		if ( restartPhase == "restore" )
+			PlanColdRestore();
+		else
+			Plan( captureForRestart: restartPhase == "capture" );
 	}
 
-	private void Plan()
+	private void Plan( bool captureForRestart )
 	{
 		Wait( "slice starts", 10 );
 		Do( "the slice runs under its capability gates", () =>
@@ -73,6 +78,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( LabelText( "limits" ) == flow.Strings.Extra( OpenTpwText.TpiLimits ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote), "the HUD's limits line is the capability policy's note (in the selected language)" );
 			Require( Context.Batch.TextDraws.Any( draw => draw.Text == Hud.GuestsText() ), "the guest counter is drawn" );
 		} );
+		if ( flow.Level?.LevelName == "science" )
+			PlanPrecipitation();
 		Do( "open the build window", () => Click( Hud.Screen, "build" ) );
 		Wait( "build window opens", 2 );
 		Do( "choose a catalogue item", ChooseItem );
@@ -245,15 +252,308 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "cancel the tools", () => Click( Hud.Screen, "cancel" ) );
 		Wait( "tools down", 2 );
 		Do( "the tools are away", () => Require( !Level.IsRemovingObjects && !Level.CellTool.IsActive, "Cancel puts the remove tool away" ) );
+		Do( "round-trip Science state", () =>
+		{
+			var live = Level;
+			if ( live.LevelName != "science" ) return;
+			var expectedGuests = live.Guests!.ComputeStateHash();
+			var expectedEconomy = ParkSaveFile.Serialize( live.Park!.Economy );
+			using var saves = new ScienceSmokeSaves();
+			var liveHud = Hud;
+			((UiButton)liveHud.Screen.Find( "speed" )!).Activate();
+			Require( liveHud.Speed == GameSpeed.Fast, "the Science save starts with a non-default selected speed" );
+			((UiButton)liveHud.Screen.Find( "menu" )!).Activate();
+			((UiButton)liveHud.Stack.Top!.Find( "savePark" )!).Activate();
+			Require( File.Exists( saves.Path ), "the pause menu saves Science in the continuation slot" );
+			((UiButton)liveHud.Stack.Top.Find( "loadPark" )!).Activate();
+			Require( liveHud.Stack.Top?.Name == "confirmParkLoad", "continuing Science first asks for confirmation" );
+			((UiButton)liveHud.Stack.Top!.Find( "choice1" )!).Activate();
+			Require( ReferenceEquals( Level, live ) && liveHud.Stack.Top?.Name == "tpiMenu", "cancelling continuation leaves the live park and menu" );
+			var savedBytes = File.ReadAllBytes( saves.Path );
+			var saved = ParkResumeSaveFile.Deserialize( savedBytes );
+			var unsupportedLand = saved with
+			{
+				Layout = saved.Layout with
+				{
+					Cells = saved.Layout.Cells with
+					{
+						Land = new ParkLayoutSnapshot.LandData { PostAX = 0, PostAY = 0, PostBX = 0, PostBY = 0, Ring = new(), Unowned = "" }
+					}
+				}
+			};
+			try
+			{
+				ParkResumeSaveFile.ValidateShape( unsupportedLand );
+				throw new InvalidOperationException( "A Science save with land ownership was accepted." );
+			}
+			catch ( InvalidDataException error )
+			{
+				Require( error.Message.Contains( "unsupported world state", StringComparison.Ordinal ), "Science rejects land ownership during preflight" );
+			}
+			File.WriteAllText( saves.Path, "{}" );
+			try
+			{
+				flow.LoadThemeParkIncScience();
+				throw new InvalidOperationException( "A malformed Science save was accepted." );
+			}
+			catch ( InvalidDataException )
+			{
+				Require( ReferenceEquals( Level, live ) && live.Guests.ComputeStateHash() == expectedGuests,
+					"a malformed Science save leaves the running park unchanged" );
+			}
+			File.WriteAllBytes( saves.Path, savedBytes );
+			const int continuationTicks = 180;
+			live.RunTicks( continuationTicks );
+			var uninterruptedGuests = live.Guests.ComputeStateHash();
+			var uninterruptedEconomy = ParkSaveFile.Serialize( live.Park.Economy );
+			((UiButton)liveHud.Stack.Top!.Find( "loadPark" )!).Activate();
+			((UiButton)liveHud.Stack.Top!.Find( "choice0" )!).Activate();
+			var candidate = Level;
+			Require( !ReferenceEquals( live, candidate ) && flow.IncHud != null && flow.Hud == null, "continuation activates a new Science level and its TPI HUD" );
+			Require( Hud.Speed == GameSpeed.Fast && candidate.SimulationTimeScale == 2, "continuation keeps the selected speed, not the pause menu's temporary pause" );
+			Require( candidate.Guests!.ComputeStateHash() == expectedGuests, "the continued Science guests, queues and shared RNG match the live park" );
+			var restoredGuests = candidate.Guests.CaptureSnapshot().Guests;
+			Require( restoredGuests.Select( guest => (guest.Id, guest.KidSetDraw) ).SequenceEqual( saved.Guests.Guests.Select( guest => (guest.Id, guest.KidSetDraw) ) ),
+				"the continued Science guests retain their generation-specific sprite bank draws" );
+			Require( ParkSaveFile.Serialize( candidate.Park!.Economy ) == expectedEconomy, "the continued Science park keeps its economy and clock" );
+			var restoredLayout = ParkLayoutSnapshot.CaptureSnapshot( candidate.Guests.Grid.Cells, candidate.Objects );
+			Require( System.Text.Json.JsonSerializer.Serialize( restoredLayout.Cells ) == System.Text.Json.JsonSerializer.Serialize( saved.Layout.Cells ),
+				"the continued Science park keeps its exact cell links and routing stamps" );
+			var restoredScripts = candidate.Objects.ScriptWorld.CaptureSnapshot();
+			Require( System.Text.Json.JsonSerializer.Serialize( restoredScripts ) == System.Text.Json.JsonSerializer.Serialize( saved.Scripts ),
+				"the continued Science park keeps its ride script state" );
+			candidate.RunTicks( continuationTicks );
+			Require( candidate.Guests.ComputeStateHash() == uninterruptedGuests, "Science guest simulation continues as in the uninterrupted park" );
+			Require( ParkSaveFile.Serialize( candidate.Park.Economy ) == uninterruptedEconomy, "Science economy continues as in the uninterrupted park" );
+		} );
+		if ( flow.Level?.LevelName == "science" )
+			PlanPersonnelFileContinuation();
+		if ( !captureForRestart )
+			PlanLetter();
 		// The exit a player uses: the pause menu's Quit closes the window and ends the run.
 		Do( "open the pause menu", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
 		Wait( "menu opens", 2 );
 		Do( "quit through the menu", () =>
 		{
+			if ( Hud.Lost )
+			{
+				Require( Hud.Stack.Top?.Name == ThemeParkIncHud.LostMenuScreen, "the lost park's menu is open" );
+				completed = true;
+				Click( Hud.Stack.Top!, "quitGame" );
+				return;
+			}
 			Require( Hud.Stack.Top?.Name == "tpiMenu", "the pause menu is open" );
+			if ( captureForRestart )
+			{
+				Require( Hud.Speed == GameSpeed.Paused, "the restart fixture saves a paused park" );
+				((UiButton)Hud.Stack.Top!.Find( "savePark" )!).Activate();
+				Require( File.Exists( GameFlow.IncScienceSavePath() ), "the pause menu wrote the restart fixture" );
+				using var evidence = new BinaryWriter( new FileStream( RestartEvidencePath, FileMode.CreateNew ) );
+				evidence.Write( Level.Guests!.ComputeStateHash() );
+				evidence.Write( EconomyDigest( Level.Park!.Economy ) );
+			}
 			completed = true;
 			Click( Hud.Stack.Top!, "quit" );
 		} );
+	}
+
+	/// <summary>
+	/// The bank's "Game Over" letter: it opens the letter window over the HUD, and closing it with Okay loses the park
+	/// (docs/reverse/TPI-BANK-MAIL.md). Planned last, because the park is lost afterwards.
+	/// </summary>
+	private void PlanLetter()
+	{
+		Do( "post the bank's letter", () => Level.Park!.Economy.DebugPostThemeParkIncLetter( ThemeParkIncAdviceMail.RedSixMonths ) );
+		Wait( "the letter opens", 3 );
+		Do( "the letter window shows the letter", () =>
+		{
+			Require( Hud.LetterOpen && Hud.Stack.Top?.Name == ThemeParkIncLetterWindow.ScreenName, "the letter window stands over the HUD" );
+			var subject = ((UiLabel)Hud.Stack.Top!.Find( "subject" )!).Text();
+			var tags = GameLanguage.Current.LoadStrings( "TAG_SYSTEM.str" );
+			Require( subject.Length > 0 && subject == tags.Entries[ThemeParkIncAdviceMail.SubjectEntry], "the subject is TAG_SYSTEM.str entry 165" );
+			Require( ((UiLabel)Hud.Stack.Top!.Find( "body" )!).Text().StartsWith( tags.Entries[166], StringComparison.Ordinal ), "the body is the bank's letter" );
+			Require( Context.Batch.TextDraws.Any( draw => draw.Text == subject ), "the subject is drawn" );
+			Require( !Level.Park!.Economy.IsBankrupt, "an open letter has not lost the park yet" );
+		} );
+		Do( "close the letter", () => Click( Hud.Stack.Top!, "ok" ) );
+		Wait( "the letter closes", 3 );
+		Do( "closing the letter lost the park", () =>
+		{
+			Require( !Hud.LetterOpen, "the letter window is gone" );
+			Require( Level.Park!.Economy.IsBankrupt && Level.Park.Economy.ThemeParkIncLossReason == 0, "the bank's letter lost the park" );
+			Require( Hud.LossWindowOpen && Hud.Stack.Top?.Name == ThemeParkIncHud.LossWindowScreen, "the loss window opens" );
+			Require( Hud.LossCaption == flow.Strings.Entry( ThemeParkIncHud.BankruptCaption ) && Hud.LossCaption.Length > 0, "its caption is UITEXT 921" );
+			Require( Context.Batch.TextDraws.Any( draw => draw.Text == Hud.LossCaption ), "the caption is drawn" );
+		} );
+		Do( "leave the loss window with Escape", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "the overlay opens", 2 );
+		Do( "the hidden-HUD overlay keeps the caption", () =>
+		{
+			Require( Hud.LossOverlayOpen && Hud.Stack.Top?.Name == ThemeParkIncHud.LossOverlayScreen && Level.LossOverlayActive, "Escape leaves the window for the overlay" );
+			Require( Context.Batch.TextDraws.Any( draw => draw.Text == Hud.LossCaption ), "the caption stays" );
+		} );
+		Do( "open the lost park's menu", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "the menu opens", 2 );
+		Do( "the lost park's menu has its four lines and pauses nothing", () =>
+		{
+			var menu = Hud.Stack.Top;
+			Require( menu?.Name == ThemeParkIncHud.LostMenuScreen, "the overlay's Escape opens the lost park's menu" );
+			Require( new[] { "loadGame", "resumeGame", "selectNewPlayer", "quitGame" }.All( id => menu!.Find( id ) != null ), "Load Game, Resume Game, Select A New Player and Quit Game" );
+			Require( Hud.TimeScale == GameSpeedScale.Of( Hud.Speed ), "the lost park's menu does not pause the park" );
+		} );
+		Do( "resume from the lost park's menu", () => Click( Hud.Stack.Top!, "resumeGame" ) );
+		Wait( "the menu closes", 2 );
+		Do( "back on the overlay", () => Require( Hud.Stack.Top?.Name == ThemeParkIncHud.LossOverlayScreen, "Resume Game returns to the overlay" ) );
+	}
+
+	private void PlanPrecipitation()
+	{
+		ThemeParkIncWeatherSnapshot saved = default;
+		ThemeParkIncWeatherSpells Weather() => Level.Park!.Economy.TpiWeather!;
+		void SetWeather( int kind, int drops )
+		{
+			var spell = new WeatherSpell( 3, kind, 0, 3 );
+			Weather().Restore( new( spell, spell, false, 1, drops ) );
+		}
+
+		Do( "pause for precipitation readback", () => flow.InjectedInput = UiInput.Key( UiKeys.Pause ) );
+		Do( "present rain without advancing the world", () =>
+		{
+			Require( Hud.TimeScale == 0f && Level.Weather == null && Level.TpiPrecipitationRenderer != null
+				&& Entity.All.OfType<WeatherRenderer>().Count() == 1, "only the TPI precipitation renderer owns this park" );
+			saved = Weather().Capture();
+			SetWeather( 2, 600 );
+		} );
+		Wait( "rain renders", 2 );
+		Do( "verify rain and request snow", () =>
+		{
+			Require( Level.TpiPrecipitationRenderer is { DrawnDrops: > 0, DrawsSnow: false }, "rain submits streaks to the desktop renderer" );
+			SetWeather( 4, 600 );
+		} );
+		Wait( "snow renders", 2 );
+		Do( "verify snow and restore the initial spell", () =>
+		{
+			Require( Level.TpiPrecipitationRenderer is { DrawnDrops: > 0, DrawsSnow: true }, "snow submits flakes to the desktop renderer" );
+			Weather().Restore( saved );
+		} );
+		Wait( "the dry field renders", 2 );
+		Do( "verify dry weather and unpause", () =>
+		{
+			Require( Level.TpiPrecipitationRenderer is { DrawnDrops: 0 }, "dry weather submits no precipitation" );
+			flow.InjectedInput = UiInput.Key( UiKeys.Pause );
+		} );
+	}
+
+	private static string RestartEvidencePath => SaveFileSystem.GetAbsolutePath( "opentpw-tpi-restart.evidence" );
+
+	private static string EconomyDigest( ParkEconomy economy ) => Convert.ToHexString( System.Security.Cryptography.SHA256.HashData(
+		System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ) );
+
+	private void PlanColdRestore()
+	{
+		ulong expectedGuests;
+		string expectedEconomy;
+		using ( var evidence = new BinaryReader( File.OpenRead( RestartEvidencePath ) ) )
+		{
+			Require( evidence.BaseStream.Length == sizeof( ulong ) + 1 + 64, "the previous process wrote the restart evidence" );
+			expectedGuests = evidence.ReadUInt64();
+			expectedEconomy = evidence.ReadString();
+		}
+		var saved = ParkResumeSaveFile.Load( GameFlow.IncScienceSavePath() );
+		Do( "select Water on the freshly started Personnel File", () =>
+		{
+			Require( flow.Level == null && flow.IncFrontEnd != null, "the new process starts without a loaded park" );
+			Click( flow.IncFrontEnd!.Screen, "zone_water" );
+		} );
+		Do( "load Science from the previous process", () =>
+		{
+			Require( flow.IncFrontEnd!.Zone == "water", "Water is selected before continuing Science" );
+			Click( flow.IncFrontEnd.Screen, "loadGame" );
+		} );
+		Wait( "the park loads", 2 );
+		Do( "compare the new process with the saved park", () =>
+		{
+			Require( flow.IncFrontEnd == null && flow.Level is { LevelName: "science" } && flow.Hud == null && Hud.Speed == GameSpeed.Paused,
+				"the saved Science park is active and still paused" );
+			Require( Level.Guests!.ComputeStateHash() == expectedGuests && EconomyDigest( Level.Park!.Economy ) == expectedEconomy,
+				"the saved guests, queues, RNG, economy, clock and weather match the previous process" );
+			Require( Level.Guests.CaptureSnapshot().Guests.Select( guest => (guest.Id, guest.KidSetDraw) )
+				.SequenceEqual( saved.Guests.Guests.Select( guest => (guest.Id, guest.KidSetDraw) ) ),
+				"the guest sprite banks also survive the process restart" );
+			completed = true;
+			GameFlow.Quit();
+		} );
+	}
+
+	private void PlanPersonnelFileContinuation()
+	{
+		ThemeParkIncFrontEnd? personnelFile = null;
+		ParkResumeSnapshot? snapshot = null;
+		string? expectedEconomy = null;
+		ulong expectedGuests = 0;
+		Do( "open the Personnel File with no existing slot", () =>
+		{
+			personnelFileSaves = new ScienceSmokeSaves();
+			var live = Level;
+			expectedEconomy = ParkSaveFile.Serialize( live.Park!.Economy );
+			expectedGuests = live.Guests!.ComputeStateHash();
+			// Leave the saved park paused so the first frame can be compared with the capture.
+			snapshot = live.CaptureResumeSnapshot( null, "Science", savedUtc: DateTimeOffset.UtcNow ) with { TpiHudSpeed = GameSpeed.Paused };
+			flow.ShowThemeParkIncFrontEnd();
+			Require( flow.Level == null && flow.IncFrontEnd!.Screen.Find( "loadGame" ) is UiButton { Enabled: false },
+				"the Personnel File disables Load A Game when no slot exists" );
+		} );
+		Do( "open the Personnel File with a corrupt slot", () =>
+		{
+			File.WriteAllText( personnelFileSaves!.Path, "{}" );
+			flow.ShowThemeParkIncFrontEnd();
+			personnelFile = flow.IncFrontEnd!;
+			Click( personnelFile.Screen, "zone_water" );
+		} );
+		Do( "try to load the corrupt slot", () =>
+		{
+			Require( personnelFile!.Zone == "water", "Water is selected in the Personnel File" );
+			Click( personnelFile.Screen, "loadGame" );
+		} );
+		Wait( "corrupt slot is rejected", 2 );
+		Do( "dismiss the load error", () =>
+		{
+			Require( flow.Level == null && ReferenceEquals( flow.IncFrontEnd, personnelFile ) && personnelFile!.Stack.Top?.Name == "tpiLoadFailed",
+				"the corrupt slot leaves the Personnel File in place and shows a load error" );
+			Click( personnelFile!.Stack.Top!, "ok" );
+		} );
+		Do( "continue the saved Science park from the Personnel File", () =>
+		{
+			Require( personnelFile!.Stack.Top == personnelFile.Screen && personnelFile.Zone == "water", "dismissing the error returns to the same selected zone" );
+			ParkResumeSaveFile.Save( personnelFileSaves!.Path, snapshot! );
+			Click( personnelFile.Screen, "loadGame" );
+		} );
+		Wait( "the saved park loads", 2 );
+		Do( "verify the saved park loaded instead of the selected zone", () =>
+		{
+			Require( flow.IncFrontEnd == null && flow.Level is { LevelName: "science" } && flow.Hud == null && Hud.Speed == GameSpeed.Paused,
+				"Load A Game continues the paused Science park directly, regardless of the selected zone" );
+			Require( Level.Guests!.ComputeStateHash() == expectedGuests && ParkSaveFile.Serialize( Level.Park!.Economy ) == expectedEconomy,
+				"the Personnel File loads the saved guests, RNG, economy and clock rather than starting a fresh park" );
+			personnelFileSaves!.Dispose();
+			personnelFileSaves = null;
+		} );
+	}
+
+	private sealed class ScienceSmokeSaves : IDisposable
+	{
+		private readonly BaseFileSystem previous = SaveFileSystem;
+		private readonly string directory = Directory.CreateTempSubdirectory( "opentpw-tpi-resume-" ).FullName;
+
+		public ScienceSmokeSaves() => SaveFileSystem = new BaseFileSystem( directory );
+
+		public string Path => SaveFileSystem.GetAbsolutePath( "opentpw-tpi-science-world.json" );
+
+		public void Dispose()
+		{
+			SaveFileSystem = previous;
+			Directory.Delete( directory, recursive: true );
+		}
 	}
 
 	private IEnumerable<RideVM> FaultedScripts() =>
@@ -352,8 +652,17 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			.Take( 2 )
 			.ToArray();
 		Require( near.Length == 2, "find walkable path cells near the ride for the guests" );
-		Level.Guests.SpawnInPark( near[0].X, near[0].Y );
-		Level.Guests.SpawnInPark( near[1].X, near[1].Y );
+		// The fourth draw (after base speed, exit variation and within-group variant)
+		// gives retail generation rolls of 74 and 94 for these two starting states.
+		for ( var index = 0; index < near.Length; index++ )
+		{
+			Level.Guests.World.Reseed( index == 0 ? 8u : 5u );
+			var guest = Level.Guests.SpawnInPark( near[index].X, near[index].Y );
+			Require( Level.Guests.TpiGeneration( guest ) == index + 1, "the smoke spawns a parent and a grandparent" );
+			var body = Level.GuestRenderer!.SelectSprite( guest, System.Numerics.Vector3.UnitX, System.Numerics.Vector3.UnitY );
+			Require( body.Atlas >= 4 + index * 2 && body.Atlas < 6 + index * 2 && Level.RideHeadRenderer!.AtlasFor( guest ) == body.Atlas,
+				"the body and rider head select the same bank within the guest's generation" );
+		}
 	}
 
 	/// <summary>Whether a HUD message is the selected language's text for <paramref name="key"/> with its {0}, {1} ... filled in.</summary>
@@ -430,5 +739,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			throw new InvalidOperationException( $"Theme Park Inc slice smoke test: {step}." );
 	}
 
-	public void Dispose() => watchdog.Dispose();
+	public void Dispose()
+	{
+		watchdog.Dispose();
+		personnelFileSaves?.Dispose();
+	}
 }

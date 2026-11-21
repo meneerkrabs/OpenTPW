@@ -52,6 +52,7 @@ public sealed class GuestRenderer : Entity
 	public bool Visible { get; set; } = true;
 	/// <summary>Which guests this renderer draws (null: all): the kids' renderer leaves guests in costume to the costume renderer.</summary>
 	public Func<Guest, bool>? Draws { get; init; }
+	internal Func<Guest, int>? AtlasChooser { get; init; }
 	/// <summary>The swimmers' renderer: drawn after the pool water in the late group of <see cref="Level.SplitLate"/>, so the water, which writes no depth, does not blend over the sprites.</summary>
 	public bool DrawsAfterWater { get; init; }
 	/// <summary>Consumer selection for stateful ride bodies, whose category was copied at player creation. Ordinary walking retains Draws.</summary>
@@ -306,7 +307,7 @@ public sealed class GuestRenderer : Entity
 	private (int Atlas, int Frame, bool Mirror, int Slot, int Direction, float Rotation, int Step) SelectSpriteAndSlot( Guest guest, SVector3 cameraRight, SVector3 cameraForward, SVector3 cameraUp = default, BounceRiderPose? rider = null )
 	{
 		// [BIN:TPW-EXE:0x004FB19E guest sprite variant] the kid set is the guest's own draw at its creation (kept as Guest.KidSetDraw: a function of its thing id alone, not of its peep type, or the bank an original save holds) modulo the sets loaded, in the original's load order (KidSetLoad)
-		var atlasIndex = GuestAppearance.KidSet( guest, atlases.Count );
+		var atlasIndex = AtlasChooser?.Invoke( guest ) ?? GuestAppearance.KidSet( guest, atlases.Count );
 		var atlas = atlases[atlasIndex];
 		var rightFlat = SVector2.Normalize( new SVector2( cameraRight.X, cameraRight.Y ) + new SVector2( 1e-6f, 0 ) );
 		var forwardFlat = SVector2.Normalize( new SVector2( cameraForward.X, cameraForward.Y ) + new SVector2( 0, 1e-6f ) );

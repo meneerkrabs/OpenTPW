@@ -7,6 +7,8 @@ public sealed class ThemeParkIncFrontEndHost
 {
 	/// <summary>Starts the slice in a zone (<c>arabian</c>, <c>science</c> or <c>water</c>).</summary>
 	public Action<string> EnterWorld { get; init; } = _ => { };
+	/// <summary>Continues the desktop Science save, when a slot exists.</summary>
+	public Action? ContinueScience { get; init; }
 	/// <summary>Closes the window (the confirmed Quit Game).</summary>
 	public Action Quit { get; init; } = () => { };
 }
@@ -17,7 +19,7 @@ public sealed class ThemeParkIncFrontEndHost
 /// Theme Park Inc boots into its 3D intro world with front-end screens as overlays; phase 1 has a flat backdrop instead.
 /// Enter Game starts the slice in the zone chosen on the page (science, the original's default for a new player).
 /// </summary>
-// [EXT:tpi-front-end-phase1] the screen follows the Personnel File's table and strings, but it is an OpenTPW start screen with one player (no profiles, no saves, no 3D intro world, no sound); the original's behaviour behind Load A Game, Delete Player, the name box and the Coaster Design Kit is not reproduced
+// [EXT:tpi-front-end-phase1] the screen follows the Personnel File's table and strings, but it is an OpenTPW start screen with one player (no profiles, no 3D intro world, no sound). Load A Game resumes the local Science slot instead of opening the original save picker; Delete Player, the name box and the Coaster Design Kit are inactive.
 public sealed class ThemeParkIncFrontEnd
 {
 	/// <summary>The zones the chooser offers, in page order.</summary>
@@ -61,6 +63,8 @@ public sealed class ThemeParkIncFrontEnd
 
 	/// <summary>Enter Game: starts the slice in the chosen zone.</summary>
 	public void EnterGame() => host.EnterWorld( Zone );
+
+	internal void ShowLoadFailure( string message ) => Stack.Push( CreateConfirmation( "tpiLoadFailed", "", message, confirm: null ) );
 
 	/// <summary>Quit Game (or Escape): the quit confirmation over the page.</summary>
 	public void RequestQuit()
@@ -156,7 +160,7 @@ public sealed class ThemeParkIncFrontEnd
 		} );
 		// [BIN:TPI-EXE:0x56ab40 enter game] Enter Game (0xc754, filebut, UITEXT 34, help 287) saves the player and enters the player's world; Load A Game (0xc759, UITEXT 35, help 287) opens table 0x9ba364 and Delete Player (0xc755, UITEXT 33, help 288) asks first
 		var enter = FileButton( page, table, "enterGame", 0xC754, ThemeParkIncText.EnterGame, EnterGame, enabled: true );
-		FileButton( page, table, "loadGame", 0xC759, ThemeParkIncText.LoadGame, () => { }, enabled: false );
+		FileButton( page, table, "loadGame", 0xC759, ThemeParkIncText.LoadGame, () => host.ContinueScience?.Invoke(), enabled: host.ContinueScience != null );
 		FileButton( page, table, "deletePlayer", 0xC755, ThemeParkIncText.DeletePlayer, () => { }, enabled: false );
 		// [EXT:tpi-front-end-zone-chooser] the original reaches the zones through its campaign; a latched button per zone chooses the one Enter Game starts (science is the new player's default)
 		page.Add( new UiLabel
@@ -249,11 +253,16 @@ public sealed class ThemeParkIncFrontEnd
 	/// </summary>
 	private UiScreen CreateQuitConfirm()
 	{
+		var (caption, body) = UiDialogs.SplitCaption( strings.Entry( ThemeParkIncText.QuitConfirmation ) );
+		return CreateConfirmation( "tpiQuit", caption, body, host.Quit );
+	}
+
+	private UiScreen CreateConfirmation( string name, string caption, string body, Action? confirm )
+	{
 		var table = ThemeParkIncLayoutTables.QuitConfirm;
-		var dialog = new UiScreen( "tpiQuit" );
+		var dialog = new UiScreen( name );
 		var root = table.Root;
 		dialog.Add( new UiModelImage { Id = "window", Model = root.Model!, Bounds = root.Rect, Anchor = UiAnchor.Center } );
-		var (caption, body) = UiDialogs.SplitCaption( strings.Entry( ThemeParkIncText.QuitConfirmation ) );
 		var captionRect = table.Control( 0xEA64 ).Rect;
 		// [BIN:TPI-EXE:0x515fe0 title control] the quit caption is a title control too (set by 0x501d50 at 0x4f4902, box 0xea64): the copy alpha is 0xc8
 		dialog.Add( new UiLabel { Id = "caption", Text = () => caption, Font = TitleFont, Shadow = true, ShadowAlpha = UiBatch.TpiTitleCopyAlpha, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = captionRect, Anchor = UiAnchor.Center } );
@@ -261,16 +270,21 @@ public sealed class ThemeParkIncFrontEnd
 		// [EXT:tpi-front-end-phase1] the window's own text area is not traced: the question is centred below the caption and left of the buttons
 		var okay = table.Control( 0xEA62 );
 		var cancel = table.Control( 0xEA61 );
-		var bodyRect = new UiRect( root.Rect.X + 60, captionRect.Bottom + 30, cancel.Rect.X - 40 - (root.Rect.X + 60), root.Rect.Bottom - captionRect.Bottom - 90 );
+		// A load error has only the tick; keep wrapped error text clear of it without changing the quit layout.
+		var bodyLeft = root.Rect.X + 60;
+		var bodyRight = (confirm == null ? okay.Rect.X : cancel.Rect.X) - 40;
+		var bodyRect = new UiRect( bodyLeft, captionRect.Bottom + 30, bodyRight - bodyLeft, root.Rect.Bottom - captionRect.Bottom - 90 );
 		dialog.Add( new UiLabel { Id = "message", Text = () => body, Font = SmallFont, Align = UiAlign.Center, Wrap = true, Bounds = bodyRect, Anchor = UiAnchor.Center } );
 		// [BIN:TPI-EXE:0x568da1 quit call] the quit call passes the mode words 2 and 1: the table's first button 0xea61 becomes b_cancel (help 3, 0x4f4937) and the second 0xea62 b_okay (help 0, 0x4f493e), whose action 0x568e60 closes the game; the close button 0xea63 stays hidden for a two-button dialog
-		var cancelButton = dialog.Add( new UiButton { Id = "cancel", Model = "b_cancel", Help = strings.Help( ThemeParkIncText.HelpCancel ), Clicked = CloseQuit, Bounds = cancel.Rect, Anchor = UiAnchor.Center } );
-		dialog.Add( new UiButton { Id = "ok", Model = "b_okay", Help = strings.Help( ThemeParkIncText.HelpOk ), Clicked = () => { CloseQuit(); host.Quit(); }, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
-		dialog.Back = CloseQuit;
-		dialog.Focus( cancelButton );
+		UiButton? cancelButton = null;
+		if ( confirm != null )
+			cancelButton = dialog.Add( new UiButton { Id = "cancel", Model = "b_cancel", Help = strings.Help( ThemeParkIncText.HelpCancel ), Clicked = Close, Bounds = cancel.Rect, Anchor = UiAnchor.Center } );
+		var okayButton = dialog.Add( new UiButton { Id = "ok", Model = "b_okay", Help = strings.Help( ThemeParkIncText.HelpOk ), Clicked = () => { Close(); confirm?.Invoke(); }, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
+		dialog.Focus( cancelButton ?? okayButton );
+		dialog.Back = Close;
 		return dialog;
 
-		void CloseQuit()
+		void Close()
 		{
 			if ( dialog is { IsRemoved: false } && ReferenceEquals( Stack.Top, dialog ) )
 				Stack.Pop();

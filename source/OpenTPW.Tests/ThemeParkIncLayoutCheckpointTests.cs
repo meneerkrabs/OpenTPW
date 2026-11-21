@@ -324,8 +324,11 @@ public class ThemeParkIncLayoutCheckpointTests
 				}
 			});
 			typeof(ThemeParkIncHud).GetMethod("OpenPauseMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(hud, null);
+			Assert.AreEqual(0f, hud.TimeScale, "The pause menu freezes the park without changing the selected speed.");
+			Assert.AreEqual(GameSpeed.Normal, hud.Speed);
 			((UiButton)hud.Stack.Top!.Find("loadLayout")!).Clicked!();
 			Assert.AreEqual("confirmLayoutLoad", hud.Stack.Top!.Name);
+			Assert.AreEqual(0f, hud.TimeScale, "The confirmation keeps the park paused.");
 			var text = ((UiLabel)hud.Stack.Top.Find("message")!).Text();
 			StringAssert.Contains(text, "NEW experimental session");
 			StringAssert.Contains(text, "not a continuation");

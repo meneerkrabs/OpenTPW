@@ -37,7 +37,10 @@ public readonly record struct DecisionContext( GuestSettings Settings, long Park
 /// The park turn of the guest's latest complaint about its path (<see cref="PathDecision"/>), or -1 for none. Filled by the host only for a policy that <see cref="IGuestDecisions.UsesPathComfort"/>, else -1. Additive, phase 6.
 /// </param>
 public readonly record struct GuestView( int Id, ulong BirthId, int Type, float Happiness, float Thirst, float Hunger, float Toilet, float Nausea, int Money, int CellX, int CellY,
-	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory, long MealTurn = -1, long PlanTurns256 = -1, long ComplaintTurn = -1 );
+	IReadOnlyList<int> UsedHistory, IReadOnlyList<int> TemporaryHistory, long MealTurn = -1, long PlanTurns256 = -1, long ComplaintTurn = -1 )
+{
+	internal bool NativeTpiBirth { get; init; }
+}
 
 /// <summary>
 /// An attraction as the policy sees it, built by the host for one guest: every value the original score reads, precomputed. A policy that opts into

@@ -163,7 +163,9 @@ class TpiArrivalRingContract(unittest.TestCase):
         capture = method(level_resume, "internal ParkResumeSnapshot CaptureResumeSnapshotUnchecked( AutomaticAdvisor? advisor, string displayName, out Action validate, out IEnumerable<bool> validationSteps,")
         self.assertIn("CaptureResumeSnapshotParts(", capture)
         parts = method(level_resume, "private ParkResumeSnapshot CaptureResumeSnapshotParts(")
-        self.assertTrue(parts.lstrip().startswith("if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )"))
+        self.assertTrue(parts.lstrip().startswith("if ( IsReadOnlyVisit || OriginalPark == null || Park == null || Guests == null )"))
+        self.assertIn('GameEditions.IsThemeParkInc && (join || CoopRole != CoopRole.None || !Park.Economy.Rules.ThemeParkInc || LevelName != "science" || advisor != null)', parts)
+        self.assertLess(parts.index("advisor != null"), parts.index("RepairMissingEconomyBindings()"))
 
     def test_synthetic_empty_partial_full_and_every_wrapped_head(self):
         words = [-2147483648, -17, 0, 2147483647, -1]

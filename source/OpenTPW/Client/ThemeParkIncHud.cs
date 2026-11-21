@@ -13,6 +13,10 @@ public sealed class ThemeParkIncHudHost
 	public Action? SaveLayout { get; init; }
 	/// <summary>Replaces the world with a fresh experimental session after the HUD's explicit confirmation.</summary>
 	public Action? LoadLayout { get; init; }
+	public Action? SavePark { get; init; }
+	public Action? LoadPark { get; init; }
+	/// <summary>The lost park's Select A New Player: back to the Personnel File.</summary>
+	public Action? SelectNewPlayer { get; init; }
 }
 
 /// <summary>
@@ -23,10 +27,22 @@ public sealed class ThemeParkIncHudHost
 /// Building, path and queue interaction follows the traced Theme Park World tools (docs/PATHS.md) because they are what the slice runs.
 /// </summary>
 // [EXT:tpi-text-hud] the whole HUD is an OpenTPW text interface (an OpenTPW design decision for the experimental slice); no original Theme Park Inc interface behaviour is claimed
-public sealed class ThemeParkIncHud
+public sealed partial class ThemeParkIncHud
 {
 	/// <summary>Seconds a build/refusal message stays on screen (the TW HUD's message timing, UI-025).</summary>
 	public const float MessageSeconds = 8f;
+
+	/// <summary>The advice the advisor's queue or the bank's mail last played (null until then).</summary>
+	private string? advisorCaption;
+
+	/// <summary>
+	/// Shows a played advice's caption: a weather forecast's tag entry or the bank's red-month mail. The original keeps
+	/// the row with no auto-delete, so this line holds until the next one.
+	/// </summary>
+	internal void ShowAdvisorCaption( string text ) => advisorCaption = text;
+
+	/// <summary>The advice line as shown (tests).</summary>
+	internal string? AdvisorCaption => advisorCaption;
 
 	private readonly Level level;
 	private readonly UiStringTable strings;
@@ -49,8 +65,9 @@ public sealed class ThemeParkIncHud
 	private OriginalObject? selectedObject;
 	private bool retiredByLayoutLoad;
 
-	public ThemeParkIncHud( Level level, UiStringTable strings, ThemeParkIncHudHost host )
+	public ThemeParkIncHud( Level level, UiStringTable strings, ThemeParkIncHudHost host, GameSpeed initialSpeed = GameSpeed.Normal )
 	{
+		speed = initialSpeed;
 		this.level = level;
 		this.strings = strings;
 		this.host = host;
@@ -61,6 +78,9 @@ public sealed class ThemeParkIncHud
 		AddLabel( "money", MoneyText, new UiRect( 960, 196, 1000, 60 ) );
 		AddLabel( "selection", () => SelectedText, new UiRect( 24, 256, 1300, 60 ) );
 		AddLabel( "message", () => messages.Count > 0 ? messages[0].Text : "", new UiRect( 24, 316, 1300, 120 ) );
+		// [BIN:TPI-EXE:0x636880 mail insertion] A forecast tag's row carries no auto-delete duration (+0x14 = 0) and
+		// replaces nothing (+4 = 0x97), so it stays until the next forecast row is inserted ahead of it.
+		AddLabel( "forecast", () => advisorCaption ?? "", new UiRect( 24, 436, 1300, 120 ) );
 		BuildTopLine();
 		BuildWindow();
 		removeButton = ToolButton( "remove", () => T( OpenTpwText.TpiRemove ), T( OpenTpwText.TpiRemoveHelp ),
@@ -110,13 +130,17 @@ public sealed class ThemeParkIncHud
 		? strings.Object( index ) : entry.DisplayName;
 
 	public UiScreenStack Stack { get; } = new();
+	/// <summary>The UITEXT, help and theme tables the HUD reads.</summary>
+	internal UiStringTable Strings => strings;
 	/// <summary>The HUD screen itself (below every open menu on the same stack).</summary>
 	public UiScreen Screen => hud;
 	/// <summary>True while a menu stands on top of the HUD; the park's clicks wait then.</summary>
 	public bool MenuOpen => Stack.Screens.Count > 1;
 	/// <summary>The simulation speed the HUD's buttons chose (the game flow scales the level by it).</summary>
 	public GameSpeed Speed => speed;
-	public float TimeScale => GameSpeedScale.Of( speed );
+	// [BIN:TPI-EXE:0x42A17C lost pause lock] in the lost state a pause request does nothing, so the lost park's menus and screens run the park on
+	// [BIN:TPI-EXE:0x526CD0 letter window] the letter window's builder makes no pause request (0x42A170 is not among its calls): the park trades on while it is open
+	public float TimeScale => Stack.Screens.Skip( 1 ).Any( screen => screen.Name != ThemeParkIncLetterWindow.ScreenName ) && !Lost ? 0f : GameSpeedScale.Of( speed );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	public BuildCategory Category => category;
 
@@ -327,6 +351,11 @@ public sealed class ThemeParkIncHud
 
 	private void OpenPauseMenu()
 	{
+		if ( Lost )
+		{
+			OpenLostMenu();
+			return;
+		}
 		if ( MenuOpen )
 			return;
 		var menu = new UiScreen( "tpiMenu" );
@@ -356,7 +385,18 @@ public sealed class ThemeParkIncHud
 			MenuButton(menu, "saveLayout", T( OpenTpwText.TpiSaveLayout ), () => RunLayoutAction(host.SaveLayout, T( OpenTpwText.TpiLayoutSaved )), 1000);
 		if (host.LoadLayout != null)
 			MenuButton(menu, "loadLayout", T( OpenTpwText.TpiLoadLayout ), ConfirmLayoutLoad, 1120);
-		MenuButton( menu, "quit", T( OpenTpwText.TpiQuit ), host.Quit, host.SaveLayout == null && host.LoadLayout == null ? 1000 : 1240 );
+		var nextRow = host.SaveLayout == null && host.LoadLayout == null ? 1000 : 1240;
+		if ( host.SavePark != null )
+		{
+			MenuButton( menu, "savePark", T( OpenTpwText.TpiSaveScience ), () => RunLayoutAction( host.SavePark, T( OpenTpwText.ParkSaved ) ), nextRow );
+			nextRow += 110;
+		}
+		if ( host.LoadPark != null )
+		{
+			MenuButton( menu, "loadPark", T( OpenTpwText.ContinueSavedPark ), ConfirmParkLoad, nextRow );
+			nextRow += 110;
+		}
+		MenuButton( menu, "quit", T( OpenTpwText.TpiQuit ), host.Quit, nextRow );
 		menu.Back = () => Stack.Pop();
 		Stack.Push( menu );
 	}
@@ -371,6 +411,13 @@ public sealed class ThemeParkIncHud
 				(() => T( OpenTpwText.Back ), () => Stack.Pop())));
 			return false;
 		}
+	}
+
+	private void ConfirmParkLoad()
+	{
+		Stack.Push( UiDialogs.Message( "confirmParkLoad", () => T( OpenTpwText.TpiConfirmScienceLoad ),
+			(() => T( OpenTpwText.ContinueSavedPark ), () => { Stack.Pop(); retiredByLayoutLoad = RunLayoutAction( host.LoadPark!, null ); }),
+			(() => T( OpenTpwText.TpiCancel ), () => Stack.Pop()) ) );
 	}
 
 	private void ConfirmLayoutLoad()
@@ -405,6 +452,8 @@ public sealed class ThemeParkIncHud
 	/// <summary>One frame: menus first, then the park-view tools. Returns true when the pointer belongs to the HUD.</summary>
 	public bool Update( UiContext context, UiInput input )
 	{
+		if ( UpdateLossScene( context, input ) )
+			return true;
 		// The build window rides on the HUD screen, so a modal menu on top of it hides it (ModalOpen stops the camera keys).
 		SetBuildWindowVisible( buildOpen && !MenuOpen );
 		var overUi = Stack.Covers( context.Canvas, input.Mouse );
@@ -416,7 +465,8 @@ public sealed class ThemeParkIncHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		if ( !MenuOpen && input.Has( UiKeys.Pause ) )
+		// [BIN:TPI-EXE:0x42A27C lost pause toggle] the P key's toggle refuses to pause a lost park but still resumes one that was paused when it was lost
+		if ( !MenuOpen && input.Has( UiKeys.Pause ) && (!Lost || speed == GameSpeed.Paused) )
 			speed = speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
 		// The level's last action (builds, refusals) becomes a message here; the slice has no advisor to say it.
@@ -552,6 +602,25 @@ public sealed class ThemeParkIncHud
 	}
 
 	public void Draw( UiContext context ) => Stack.Draw( context );
+
+	/// <summary>The letter window is open.</summary>
+	public bool LetterOpen => Stack.Screens.Any( screen => screen.Name == ThemeParkIncLetterWindow.ScreenName );
+
+	/// <summary>
+	/// Opens the letter window over the HUD; <paramref name="dismissed"/> runs when the player closes it.
+	/// </summary>
+	// [BIN:TPI-EXE:0x636217 letter window] the tag system opens the window on every accepted notification (ids 6 to 8, 0x5CD060)
+	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
+	{
+		UiScreen? screen = null;
+		screen = ThemeParkIncLetterWindow.Create( letter, strings, () =>
+		{
+			if ( screen is { IsRemoved: false } )
+				Stack.RemoveWhere( item => ReferenceEquals( item, screen ) );
+			dismissed();
+		} );
+		Stack.Push( screen );
+	}
 
 	/// <summary>Clears the tool state the level keeps (called when the park is left).</summary>
 	public void Close()

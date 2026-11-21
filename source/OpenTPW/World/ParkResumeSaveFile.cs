@@ -393,8 +393,12 @@ internal static class ParkResumeSaveFile
 		ArgumentNullException.ThrowIfNull( snapshot );
 		Require( snapshot.Format == FormatName, $"the format is '{snapshot.Format}', not '{FormatName}'" );
 		Require( snapshot.Version == CurrentVersion, $"version {snapshot.Version} is not {CurrentVersion}" );
-		Require( snapshot.Theme != null && ObjectCatalog.Themes.Contains( snapshot.Theme, StringComparer.OrdinalIgnoreCase ),
-			$"theme '{snapshot.Theme}' is not a Theme Park World theme" );
+		var tpi = snapshot.Economy?.Edition == GameEdition.ThemeParkInc;
+		if ( tpi )
+			Require( snapshot.Theme == "science", "Theme Park Inc continuation requires Science" );
+		else
+			Require( snapshot.Theme != null && ObjectCatalog.Themes.Contains( snapshot.Theme, StringComparer.OrdinalIgnoreCase ),
+				$"theme '{snapshot.Theme}' is not a Theme Park World theme" );
 		Require( Enum.IsDefined( snapshot.StartKind ), $"start kind {snapshot.StartKind} is not defined" );
 		Require( !string.IsNullOrWhiteSpace( snapshot.DisplayName ), "the display name is empty" );
 		Require( snapshot.DisplayName!.Length <= ParkResumeSnapshot.MaximumDisplayNameLength,
@@ -415,6 +419,17 @@ internal static class ParkResumeSaveFile
 		Require( snapshot.Economy.Objects != null, "the economy holds no object list" );
 		Require( snapshot.Economy.Staff != null && snapshot.Economy.Staff.Members != null, "the economy holds no staff list" );
 		ValidateInner( () => ParkSaveFile.Validate( snapshot.Economy ), "embedded economy" );
+		if ( tpi )
+		{
+			Require( snapshot.StartKind == ParkStartKind.FullSimulation && snapshot.Staff == null && snapshot.Gate == null
+				&& snapshot.Advisor == null && snapshot.Weather == null && snapshot.Layout?.Cells?.Land == null,
+				"Theme Park Inc continuation contains unsupported world state" );
+			Require( snapshot.TpiHudSpeed is { } speed && Enum.IsDefined( speed ), "the saved Theme Park Inc HUD speed is invalid" );
+			Require( snapshot.TpiWeatherClosingsSeen is >= 0 && snapshot.TpiWeatherClosingsSeen <= (snapshot.Economy.TpiWeather?.SpellStarts ?? 0),
+				"the saved Theme Park Inc weather delivery count is invalid" );
+		}
+		else
+			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null, "Theme Park World save contains Theme Park Inc continuation state" );
 		yield return true;
 		Require( snapshot.Layout != null, "the layout snapshot is missing" );
 		Require( snapshot.Guests != null, "the guest snapshot is missing" );
@@ -914,6 +929,9 @@ internal static class ParkResumeSaveFile
 			Require( guest.State != GuestState.Gone, $"guest {guest.Id} is already gone; gone guests are removed at the end of their tick" );
 			Require( Enum.IsDefined( guest.Thought ), $"guest {guest.Id} thought {(int)guest.Thought} is not a guest thought" );
 			Require( guest.Type >= 0, $"guest {guest.Id} type {guest.Type} is negative" );
+			if ( guest.TpiPrankCode is { } tpiPrank )
+				Require( snapshot.Economy!.Edition == GameEdition.ThemeParkInc && guest.Type < ThemeParkIncGuestStartSettings.TypeCount
+					&& ThemeParkIncGuestStart.ValidPrankCode( tpiPrank ) && guest.PrankFlag == 0, $"guest {guest.Id} has an invalid Theme Park Inc birth profile" );
 			Require( double.IsFinite( guest.ExitLevel ) && Math.Truncate( guest.ExitLevel ) is >= int.MinValue and <= int.MaxValue,
 				$"guest {guest.Id} exit counter {guest.ExitLevel} does not fit the truncated counter" );
 			Require( guests.SchemaVersion == 1 || Math.Truncate( guest.ExitLevel ) == guest.ExitLevel,

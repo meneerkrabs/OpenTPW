@@ -319,7 +319,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	public Guest? Find( int id ) => byId.TryGetValue( id, out var guest ) ? guest : null;
 
-	public void Register( IRideVisitorBridge attraction )
+	public void Register( IRideVisitorBridge attraction ) => Register( attraction, repairLegacyQueueLinks: true );
+
+	internal void Register( IRideVisitorBridge attraction, bool repairLegacyQueueLinks )
 	{
 		if ( attractions.Contains( attraction ) )
 			return;
@@ -331,7 +333,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			winterShops++;
 		attractions.Sort( ( a, b ) => a.AttractionId.CompareTo( b.AttractionId ) );
 		// A queue from a save made before queue cells were linked gets the links the queue tool writes (QueuePaths.RebuildMissingLinks).
-		if ( attraction is RideVisitorBridge ride && ride.HasQueue )
+		if ( repairLegacyQueueLinks && attraction is RideVisitorBridge ride && ride.HasQueue )
 			QueuePaths.RebuildMissingLinks( Grid, ride );
 		attraction.RecomputeQueue( Grid );
 		seenQueueEdits[attraction.AttractionId] = attraction.QueueEditCount;
@@ -467,7 +469,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public int? KidSetCount { get; set; }
 
-	private uint ReduceKidDraw( uint raw ) => KidSetCount is > 0 and var count ? raw % (uint)count : raw;
+	internal int[]? TpiSpriteBankCounts { get; set; }
+
+	internal int TpiGeneration( Guest guest ) => guest.TpiPrankCode.HasValue ? Settings.TpiGuestStart!.Types[guest.Type].Generation : 0;
+
+	private uint ReduceKidDraw( uint raw, Guest? guest = null )
+	{
+		int? count = guest?.TpiPrankCode.HasValue == true ? TpiSpriteBankCounts?[TpiGeneration( guest )] : KidSetCount;
+		return count is > 0 ? raw % (uint)count.Value : raw;
+	}
 
 	private Guest? Create()
 	{
@@ -479,7 +489,44 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( id == 0 )
 			return null;
 		// [BIN:TPW-EXE:0x004F89E1 base speed draw] the thing base constructor 0x004F8940 draws first: R mod 5 (unsigned) indexes the speed table {60, 80, 100, 120, 140} (0x0075C7F8) for +0xC0
+		// [BIN:TPI-EXE:0x608FA4 base speed draw] TPI also draws once from the same five base speeds before selecting the profile.
 		var baseSpeed = GuestSpeed.BaseSpeeds[(int)random.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
+		var guest = Settings.TpiGuestStart is { } tpi ? CreateThemeParkIncGuest( id, tpi ) : CreateThemeParkWorldGuest( id );
+		// [BIN:TPW-EXE:0x004FAFDB arrival stamp] the person constructor stamps the world turn into +0x1D4.
+		guest.TimeInParkSeconds = 0;
+		guest.DisplayTimeInParkTurns = 0;
+		// [BIN:TPW-EXE:0x004FB19E guest reseed] [BIN:TPI-EXE:0x60C88A guest reseed] Both constructors
+		// reseed with the allocated ID and draw once for ordinary appearance (TPW 0x00541F70, TPI 0x6902F0).
+		random.Reseed( (ushort)id );
+		guest.KidSetDraw = ReduceKidDraw( random.NextWord() >> 2, guest );
+		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
+		// A guest placed without the arrival constructor's position draws is spread by a stable hash of its ID, not a world draw.
+		(guest.OffsetX, guest.OffsetY) = PlacementJitter( id );
+		guest.BaseSpeed = baseSpeed;
+		// [EXT:smarter-guests] the birth id comes with the guest, before its first decision (the counter is the extension's, no draw)
+		if ( SmarterGuests is { } smarter )
+			guest.BirthId = smarter.AllocateBirthId();
+		guests.Add( guest );
+		byId.Add( guest.Id, guest );
+		return guest;
+	}
+
+	private Guest CreateThemeParkIncGuest( int id, ThemeParkIncGuestStartSettings settings )
+	{
+		// [BIN:TPI-EXE:0x60C58F guest profile] The unforced constructor uses four profile draws,
+		// then five meter/prank draws at 0x60C734. Keep the code separate from TPW's prank actions.
+		var profile = settings.ReadProfile( random );
+		var meters = ThemeParkIncGuestStart.ReadMeters( profile.Generation, settings.PrankLikelihood, (ushort)id, random.NextWord );
+		return new Guest( id, profile.Type )
+		{
+			Money = profile.Money, ExitLevel = profile.ExitLevel, Happiness = meters.Happiness,
+			Thirst = meters.Thirst, Hunger = meters.Hunger, Toilet = meters.Toilet,
+			ToiletBonus = GuestSpeed.ToiletBonus, TpiPrankCode = meters.Prank
+		};
+	}
+
+	private Guest CreateThemeParkWorldGuest( int id )
+	{
 		// [BIN:STP-PPC:0x100E7644 guest constructor] the starting values come from GuestStart (ORACLE.md F25): eight draws in the constructor's order
 		// [BIN:TPW-EXE:0x004FAFF8 guest constructor draws] the person constructor 0x004FAEC0 takes the eight draws of GuestStart right after the base constructor's (0x004FAFF8, 0x004FB01F, 0x004FB046, 0x004FB085, 0x004FB0AB, 0x004FB0D1, 0x004FB109, 0x004FB114), all from the one world generator
 		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord(),
@@ -487,9 +534,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var guest = new Guest( id, start.Type );
 		// [BIN:TPW-EXE:0x004FB1C1 creation speed term] the person constructor stores the word 0x0075C7F2 (25) as the purpose speed +0xC2, which the needs phase (the toilet term) and the booth walk (state 2) overwrite
 		guest.ToiletBonus = GuestSpeed.ToiletBonus;
-		// [BIN:TPW-EXE:0x004FAFDB arrival stamp] the person constructor stamps the world turn into +0x1D4, the one write of the visitor's time in the park
-		guest.TimeInParkSeconds = 0;
-		guest.DisplayTimeInParkTurns = 0;
 		guest.PrankFlag = start.PrankFlag;
 		guest.Money = start.Money;
 		guest.Happiness = start.Happiness;
@@ -498,22 +542,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Toilet = start.Toilet;
 		guest.Nausea = start.Illness;
 		guest.ExitLevel = start.ExitLevel;
-		// [BIN:TPW-EXE:0x004FB19E guest reseed] the constructor then reseeds the world generator with the thing's id (zero-extended u16, through 0x0050B350), so everything the guest and the world draw after its creation starts from a state that depends on the id alone
-		random.Reseed( (ushort)guest.Id );
-		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's loaded bank count (0x00541F85, div esi) and 0x004FB1B5 stores the remainder as the guest's sprite bank +0x20: the guest keeps it reduced by the kid sets loaded (KidSetCount, the raw draw where unknown), and the renderers reduce it again by the count loaded now (0x004F93AA, KidSetLoad); the reseed makes the raw draw the one its thing id gives (GuestAppearance.RawKidDraw)
-		guest.KidSetDraw = ReduceKidDraw( random.NextWord() >> 2 );
-		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
-		// A guest placed without the arrival constructor's position draws (the park's own start cell, tests, imports) is spread by a stable hash of its id: OpenTPW's own placement
-		// jitter, not a draw of the world generator (presentation of the start; the original sets +0x18/+0x1A from the entrance draws of SpawnArrival)
-		var jitter = PlacementJitter( guest.Id );
-		guest.OffsetX = jitter.X;
-		guest.OffsetY = jitter.Y;
-		guest.BaseSpeed = baseSpeed;
-		// [EXT:smarter-guests] the birth id comes with the guest, before its first decision (the counter is the extension's, no draw)
-		if ( SmarterGuests is { } smarter )
-			guest.BirthId = smarter.AllocateBirthId();
-		guests.Add( guest );
-		byId.Add( guest.Id, guest );
 		return guest;
 	}
 
@@ -972,7 +1000,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
 			// [BIN:TPI-EXE:0x5BCD7A mode exit] the theme object (0xA06558, +0x14) answering 3, the Intro World, gives no group (IntroWorld, above); -1 becomes 3 at start-up (0x6A32D7), the default when no theme was chosen
-			// [APPROX:ARRIVAL-008] the weather state is rolled by the economy as 0x642770 does ([EXT:tpi-weather-spell-seed]); the weather thing 0x641420 has no per-turn update in this slice. Read 2026-11-09: the update 0x642230 (reached by the thing sweep through the type-15 case 0x637720) steps the drops from +0x44 towards the target +0x48 by SpeedOfChange 20 without any random draw; lightning and thunder hang off +0x50/+0x54/+0x58 and the strike point +0x5C..64 and take six world-LCG draws per strike, in a fixed order; and the field the register called the sky quality +0x74 is a sky-texture scroll angle in degrees (constructor 0x64149B sets 90.0, the spell nudges it by r-45 wrapped to 0..360), read once per frame by the sky renderer 0x687420, while the overcast scalar is +0x78
+			// [APPROX:ARRIVAL-008] TPI reads the spell kind for arrivals, not the drop count. The economy steps the count separately without RNG (0x642230); rendering, precipitation audio, lightning, thunder and the TPI sky remain separate work.
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
 			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );
@@ -2594,14 +2622,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		(guest.PreviousCellX, guest.PreviousCellY) = (guest.CellX, guest.CellY);
 		(guest.CellX, guest.CellY) = back;
-		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var preferred = Settings.PreferredExcitement( guest.Type, guest.TpiPrankCode.HasValue );
 		// the physical checks (open, not listed, room) are the bridge's; the excitement gate and the limit are the decision layer's, and the bridge appends the admitted guest
 		var result2 = attraction.CheckJoinRoom( guest.Id );
 		if ( result2 == QueueJoinResult.Joined )
 		{
 			var alternative = decisions.AlternativeLookAfterTurns( ContextNow(), ViewOf( guest ) ) >= 0 ? BestAlternativeWait256( guest, attraction.AttractionId ) : -1;
 			var admission = decisions.DecideAdmission( ContextNow(), ViewOf( guest ), new AdmissionView( ViewOf( attraction, guest ), attraction.StaticExcitementLevel,
-				attraction.JoinDifference( type.PreferredExcitement ), attraction.QueueLength, attraction.QueueLimit, alternative ) );
+				attraction.JoinDifference( preferred ), attraction.QueueLength, attraction.QueueLimit, alternative ) );
 			result2 = admission.Result;
 			if ( result2 is not (QueueJoinResult.Joined or QueueJoinResult.TooExciting or QueueJoinResult.NotExcitingEnough or QueueJoinResult.QueueTooLong) )
 				throw PolicyError( $"returned the admission result {result2}, which a queue join cannot end in" );
@@ -3115,8 +3143,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		var live = attraction.Sideshow;
 		var kind = attraction.Kind switch { RideVisitorKind.Sideshow => TpiPriceKind.Sideshow, RideVisitorKind.Shop => TpiPriceKind.Shop, _ => TpiPriceKind.Ride };
-		var preferred = Settings.TpiPreferredExcitement.Count > 0 ? Settings.TpiPreferredExcitement[Math.Min( guest.Type, Settings.TpiPreferredExcitement.Count - 1 )]
-			: Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )].PreferredExcitement;
+		var preferred = !guest.TpiPrankCode.HasValue && Settings.TpiPreferredExcitement.Count > 0
+			? Settings.TpiPreferredExcitement[Math.Min( guest.Type, Settings.TpiPreferredExcitement.Count - 1 )]
+			: Settings.PreferredExcitement( guest.Type, guest.TpiPrankCode.HasValue );
 		// [BIN:TPI-EXE:0x5E41D0 rating byte] the attraction's rating is the live excitement of the join gate (0x5E3DF0 is the twin of the Mac STP-PPC rating 0x100DFF70), 0 when the type's ExcitementLevel word is 0
 		var terms = new TpiPriceTerms( attraction.HasSideshowTerms ? live.PricePerUse : attraction.Price, kind, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.ExpectedPrice,
 			attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, attraction.RipOffOk, attraction.LiveExcitement & 0xFF, preferred,
@@ -3760,12 +3789,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x004FE1E0 use routine] followed in its order: the sideshow prize into the purse (0x004FE231), the outcome, the effects, the small-portion draws (0x004FE43C, 0x004FE48E), the appearance step and, for a won sideshow, the tail (0x004FE802..0x004FE8D9: happiness += trunc(medium step × log2(prize / price)) and one discarded world draw); the guest event records 8, 0x11 and 0x12 (0x0050C100) are read only by the debug dump 0x004FAA60 ([EXT:guest-event-ring])
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
-		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var preferred = Settings.PreferredExcitement( guest.Type, guest.TpiPrankCode.HasValue );
 		var before = guest.Happiness;
 		// [BIN:TPW-EXE:0x004FE231 sideshow prize] a won play (the lost ones skip this routine) puts the prize, the sideshow's cost of goods, into the guest's purse before the outcome
 		if ( ride.Kind == RideVisitorKind.Sideshow )
 			guest.Money = SideshowWin.Purse( guest.Money, ride.Sideshow.CostOfGoods );
-		(guest.Happiness, guest.Nausea) = RideOutcome.Apply( guest.Happiness, guest.Hunger, guest.Nausea, type.PreferredExcitement, ride.LiveExcitement,
+		(guest.Happiness, guest.Nausea) = RideOutcome.Apply( guest.Happiness, guest.Hunger, guest.Nausea, preferred, ride.LiveExcitement,
 			Settings.PerfectRide, Settings.GoodRide, Settings.OkRide, Settings.RideVomitDivisor );
 		// [BIN:TPW-EXE:0x004FDB66 sideshow thought] only a sideshow (thing kind 2) sets a thought at the end of a use: 5 after a win, 6 after a loss (0x004FDC25); rides and shops set none
 		if ( ride.Kind == RideVisitorKind.Sideshow )
@@ -3875,7 +3904,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				var variant = random.NextWord() >> 2;   // the sprite bank's variant (the guest's own on return, the costume's on putting one on)
 				// [BIN:TPW-EXE:0x004FE6AA costume return] the draw is written back to the bank +0x20 (0x004FE6B2): on return it is the kid set again, reduced by the loaded count; putting one on stores the costume bank, which the costume renderer reads (one set per theme)
 				if ( guest.InCostume )
-					guest.KidSetDraw = ReduceKidDraw( variant );
+					guest.KidSetDraw = ReduceKidDraw( variant, guest );
 				guest.InCostume = !guest.InCostume;
 				break;
 		}
@@ -4077,6 +4106,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Litter = guest.Litter,
 			BinId = guest.BinId,
 			PrankFlag = guest.PrankFlag,
+			TpiPrankCode = guest.TpiPrankCode,
 			ExitSide = guest.ExitSide,
 			BalloonLife = guest.BalloonLife,
 			HasBalloon = guest.HasBalloon,
@@ -4348,7 +4378,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} thought {(int)guest.Thought} is not a guest thought." );
 			if ( !Enum.IsDefined( guest.BubbleThought ) || guest.BubbleTurn < 0 || guest.BubbleTurn > LatestParkTurn( snapshot.TickCount ) )
 				Error( $"Guest {guest.Id} bubble {(int)guest.BubbleThought} at turn {guest.BubbleTurn} is not a thought bubble." );
-			if ( (uint)guest.Type >= (uint)typeCount )
+			if ( guest.TpiPrankCode.HasValue )
+			{
+				if ( Settings.TpiGuestStart is not { } tpi || (uint)guest.Type >= (uint)tpi.Types.Count
+					|| !ThemeParkIncGuestStart.ValidPrankCode( guest.TpiPrankCode.Value ) || guest.PrankFlag != 0 )
+					Error( $"Guest {guest.Id} has an invalid Theme Park Inc birth profile." );
+			}
+			else if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
 			if ( guest.KidSetDraw is < 0 or > uint.MaxValue )
 				Error( $"Guest {guest.Id} kid set draw {guest.KidSetDraw} is not an unsigned 32-bit number." );
@@ -4635,7 +4671,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x004F93AA saved sprite bank] a load writes the reduced bank back: a later save must keep it, not recover the earlier bank when more sets load.
 			// A costume guest's kid value is not its current sprite bank; returning the costume redraws and reduces it in ApplyAppearance.
 			if ( !guest.InCostume )
-				guest.KidSetDraw = ReduceKidDraw( guest.KidSetDraw );
+				guest.KidSetDraw = ReduceKidDraw( guest.KidSetDraw, guest );
 			if ( guest.Lane != null )
 				ConvertLegacyLane( guest );
 			if ( guestSnapshot.BodySprite == null )
@@ -4792,6 +4828,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Litter = snapshot.Litter;
 		guest.BinId = snapshot.BinId;
 		guest.PrankFlag = snapshot.PrankFlag;
+		guest.TpiPrankCode = snapshot.TpiPrankCode;
 		guest.ExitSide = snapshot.ExitSide;
 		guest.BalloonLife = snapshot.BalloonLife;
 		guest.HasBalloon = snapshot.HasBalloon;
@@ -4949,6 +4986,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( guest.Litter );
 			hash.Add( guest.BinId );
 			hash.Add( guest.PrankFlag );
+			if ( guest.TpiPrankCode is { } tpiPrank )
+				hash.Add( tpiPrank );
 			// a guard's drawn way out joins the digest only while a guest has one (every other park keeps its pins)
 			if ( guest.ExitSide is { } exitSide )
 				hash.Add( 0x45786974L + exitSide );
@@ -5075,6 +5114,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			AddFloat( guest.Litter );
 			Add( guest.BinId );
 			Add( guest.PrankFlag );
+			if ( guest.TpiPrankCode is { } tpiPrank )
+				Add( tpiPrank );
 			Add( guest.BalloonLife );
 			Add( guest.HasBalloon ? 1 : 0 );
 			Add( guest.InCostume ? 1 : 0 );

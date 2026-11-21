@@ -454,11 +454,12 @@ public sealed record ThemeParkIncParkAnalyser(
 public readonly record struct ThemeParkIncGuestMeters( float Happiness, float Thirst, float Hunger, float Toilet, float Illness, float Litter, float Meter1DC );
 
 /// <summary>
-/// The three single-precision meters of a staff member (the log names each <c>pv</c>): energy, happiness and motivation, the three the strike keys <c>EnergyPercentToStrike</c>,
-/// <c>HappyPercentToStrike</c> and <c>MotivationPercentToStrike</c> are about. Each is kept between 0 and 100 and saved as a float truncated to a byte. Which member is which is not settled:
-/// <see cref="Meter234"/> is the one the wage code (0x62cecb, 0x62cfa2) moves and the strike test (0x62d01e) compares with a threshold, which points at happiness.
+/// The three single-precision meters of a staff member (the log names each <c>pv</c>), each kept between 0 and 100 and saved as a float truncated to a byte:
+/// happiness (+0x230), motivation (+0x234) and energy (+0x238).
 /// </summary>
-public readonly record struct ThemeParkIncStaffMeters( float Meter230, float Meter234, float Meter238 );
+// [BIN:TPI-EXE:0x633740 staff meters] the strike test compares +0x238 with EnergyPercentToStrike ("fatigue", 0x63379F), +0x230 with HappyPercentToStrike ("unhappiness", 0x63381D)
+// and +0x234 with MotivationPercentToStrike ("lack of decent wages", 0x63389F); the wage code moves +0x234 (0x62cecb, 0x62cfa2)
+public readonly record struct ThemeParkIncStaffMeters( float Happiness, float Motivation, float Energy );
 
 /// <summary>
 /// A guest, staff member or gardener thing (models 1, 4 to 8 and 20): the body read through its traced layout. None of these is in the prebuilt save, so the layouts rest on the

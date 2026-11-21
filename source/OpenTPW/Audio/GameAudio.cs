@@ -763,6 +763,15 @@ public static class GameAudio
 		}
 	}
 
+	// [BIN:TPI-EXE:0x642F40 rain mode] Starts the weather thing's own flat ambient sentence 0x21;
+	// snow and dry modes stop it. [BIN:TPI-EXE:0x657200 rain level] A separate voice takes parameter 8
+	// from the precipitation count, including in snow, and stops at zero.
+	internal static void UpdateThemeParkIncPrecipitation( ThemeParkIncWeatherSpells weather )
+	{
+		SetWeatherRain( weather.FlatRainActive );
+		SetRain( weather.RainVolumeRequest );
+	}
+
 	/// <summary>The weather thing's own rain voice while it rains (<see cref="SetWeatherRain"/>).</summary>
 	public static SoundSentence? WeatherRain => weatherRain;
 

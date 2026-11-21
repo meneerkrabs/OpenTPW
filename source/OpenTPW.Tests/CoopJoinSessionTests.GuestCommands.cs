@@ -366,7 +366,7 @@ public partial class CoopJoinSessionTests
 		// the asset-free ride's script loads only after its placement asked it to take guests, so no ride placed in this fixture has its entrance and exit cells; the placed ride takes
 		// them as a ride with its assets does at its placement: here in the old park, then on the host's park and the new one (below), so its queue tool can follow
 		var takeGuests = typeof( Level ).GetMethod( "RegisterObjectWithGuests", BindingFlags.Instance | BindingFlags.NonPublic )!;
-		takeGuests.Invoke( guest.Level, new object[] { placedInOld } );
+		takeGuests.Invoke( guest.Level, new object[] { placedInOld, true } );
 		Assert.IsTrue( placedInOld.Visitors.HasCells );
 		StartResync( guest );
 		guest.Link.DropFrame = null;
@@ -378,7 +378,7 @@ public partial class CoopJoinSessionTests
 		{
 			peer.Enter();
 			var ride = peer.Level!.Objects.Objects.Single( item => !item.IsDeleted && ParkCommandCodec.EntryKey( item.Entry ) == ParkCommandCodec.EntryKey( entry ) );
-			takeGuests.Invoke( peer.Level, new object[] { ride } );
+			takeGuests.Invoke( peer.Level, new object[] { ride, true } );
 			Assert.IsTrue( ride.Visitors.HasCells );
 		}
 		var (_, frame) = HudOf( guest, NewParksEntry( guest, entry ) );

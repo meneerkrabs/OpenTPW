@@ -131,11 +131,11 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
-	public void SixMonthsInTheRedLeaveTheParkTradingInsteadOfLosingIt()
+	public void SixMonthsInTheRedLeaveTheParkTradingUntilTheLetterIsClosed()
 	{
 		// an object whose running cost outruns the cash: 50000 lasts two months, then the 30-day months in the red count to six.
-		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] the bank then builds CMsgEvent(2) and broadcasts it, which writes no state and opens no window: the lost state
-		// (4) belongs to the teardown 0x649E60 and the player's close is CMsgEvent(4), so a Theme Park Inc park keeps trading
+		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] the bank then builds CMsgEvent(2) and broadcasts it, which writes no state of its own: the lost state (4)
+		// follows only when the player closes the letter (0x526960 -> 0x649E92), so the park trades on until then
 		var economy = Economy( Ride( 1, 0, 20000 ) );
 		economy.RegisterExisting( 1 );
 		economy.OpenPark();
@@ -145,7 +145,7 @@ public class ThemeParkIncEconomyTests
 		Assert.IsTrue( economy.Balance < 0 );
 		Assert.IsFalse( economy.IsBankrupt );
 		economy.AdvanceMonths( 9 );
-		Assert.IsFalse( economy.IsBankrupt, "Theme Park Inc never enters the lost state" );
+		Assert.IsFalse( economy.IsBankrupt, "the bank's month alone does not lose the park" );
 		Assert.IsTrue( economy.IsParkOpen, "the bank's message closes nothing" );
 		CollectionAssert.Contains( events, ParkEventKind.BankruptcyMessage );
 		CollectionAssert.DoesNotContain( events, ParkEventKind.Bankrupt );
@@ -155,13 +155,109 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
-	public void AStoredLostStateIsNotRestoredForThemeParkInc()
+	public void TheSixthRedMonthPostsTheBanksMailThatMonth()
 	{
-		// a save written by an earlier build could carry Bankrupt; Theme Park Inc never has that state, so the park loads trading
+		// [BIN:TPI-EXE:0x5C091F red-month notification] the bank's six-months-in-the-red event becomes a type-25 notification that only
+		// the tag system consumes; [BIN:TPI-EXE:0x635D80 mail record] it builds advice 0x1A2 (response 749, speech 869, tag 0x5E, entry 166)
+		var economy = Economy( Ride( 1, 0, 20000 ) );
+		economy.RegisterExisting( 1 );
+		economy.OpenPark();
+		economy.AdvanceMonths( 3 );
+		Assert.IsTrue( economy.Balance < 0 );
+		Assert.IsNull( economy.TakeTpiMail(), "no mail before six months in the red" );
+		int? postedAtMonth = null;
+		for ( var month = 4; month <= 24 && postedAtMonth == null; month++ )
+		{
+			economy.AdvanceMonths( 1 );
+			if ( economy.TakeTpiMail() is not null )
+				postedAtMonth = month;
+		}
+		Assert.IsNotNull( postedAtMonth, "the bank posts a mail once the red months reach six" );
+		Assert.AreEqual( ParkEconomy.MonthsInRedForBankruptcy, economy.MonthsInRed, "on the month the red count reaches six" );
+		Assert.IsNull( economy.TakeTpiMail(), "the caller takes the mail once" );
+		economy.AdvanceMonths( 1 );
+		Assert.AreEqual( ThemeParkIncAdviceMail.RedSixMonths, economy.TakeTpiMail(), "a further red month posts it again, as the bank's event does" );
+		economy.LoseThemeParkIncPark( ThemeParkIncAdviceMail.RedSixMonths.LossReason );
+		economy.AdvanceMonths( 2 );
+		Assert.IsNull( economy.TakeTpiMail(), "a lost park (world state 4) gets no further letter" );
+		var tpw = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
+		Assert.IsNull( tpw.TakeTpiMail(), "Theme Park World has no such mail" );
+	}
+
+	[TestMethod]
+	public void OnlyAChallengesFirstLossShortensTheFiringLineAndAnEmptyLinePostsEveryLoss()
+	{
+		// [BIN:TPI-EXE:0x5C48DD lost-challenge notification] the challenge system posts notification id 7, which the tag system turns
+		// into advice 0x1A3 (response 750, speech 870, tag 0x5F, TAG_SYSTEM.str entry 167)
+		// [BIN:TPI-EXE:0x74BDD1 career firing line] the career starts with a firing line of 5; [BIN:TPI-EXE:0x5C4857 firing line countdown]
+		// only a challenge's first loss takes one off, and [BIN:TPI-EXE:0x5C48B6 firing line post] the mail follows any loss once none is left
+		// The slice refuses challenges (EconomyRules.ThemeParkIncMoney) because Theme Park Inc's data carries only balance keys, so this
+		// runs the TPI money park with the challenge system switched on to reach the wiring the ported challenge system will use.
+		var economy = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ),
+			ParkGameMode.FullSimulation, 7, new EconomyRules( Staff: false, Research: false, Challenges: true, ThemeParkInc: true ) );
+		economy.OpenPark();
+		var line = typeof( ParkEconomy ).GetField( "challengeFiringLine", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		Assert.AreEqual( 5, line.GetValue( economy ), "a new career's firing line" );
+		var indices = economy.Settings.Challenges.Keys.OrderBy( key => key ).ToArray();
+		Assert.IsTrue( indices.Length >= 3, "the test data carries three challenges" );
+		foreach ( var index in new[] { indices[0], indices[0], indices[0], indices[1], indices[2] } )
+		{
+			Lose( economy, index );
+			Assert.IsNull( economy.TakeTpiMail(), $"losing challenge {index} leaves a firing line of {line.GetValue( economy )}" );
+		}
+		Assert.AreEqual( 2, line.GetValue( economy ), "three challenges lost, the first of them three times, take three off" );
+		line.SetValue( economy, 1 );
+		Lose( economy, indices[0] );
+		Assert.AreEqual( 1, line.GetValue( economy ), "a challenge lost before takes nothing off" );
+		Assert.IsNull( economy.TakeTpiMail(), "and posts nothing while the line is positive" );
+		line.SetValue( economy, 0 );
+		Lose( economy, indices[1] );
+		Assert.AreEqual( ThemeParkIncAdviceMail.ChallengeLost, economy.TakeTpiMail(), "an empty line posts the firing letter" );
+		Lose( economy, indices[1] );
+		Assert.AreEqual( ThemeParkIncAdviceMail.ChallengeLost, economy.TakeTpiMail(), "and posts it on every further loss" );
+		Assert.IsNull( economy.TakeTpiMail(), "the caller takes each mail once" );
+
+		static void Lose( ParkEconomy economy, int index )
+		{
+			var current = typeof( ParkObjectives ).GetProperty( nameof( ParkObjectives.Current ) )!;
+			current.GetSetMethod( nonPublic: true )!.Invoke( economy.Objectives, new object?[] { new ActiveChallenge( index, 0, true, 0, 0, 0 ) } );
+			Assert.IsNotNull( current.GetValue( economy.Objectives ), $"challenge {index} stands" );
+			economy.UpdateChallenges( 1 );
+			Assert.IsNull( current.GetValue( economy.Objectives ), $"challenge {index} is lost" );
+		}
+	}
+
+	[TestMethod]
+	public void AStoredLostStateIsRestoredAndCaptionedAsABankruptcy()
+	{
+		// [BIN:TPI-EXE:0x64C2EC lost state load] the world state is saved and loaded, the loss reason is not, so the reloaded caption is
+		// "BANKRUPT!" (0x50B1DE) whatever lost the park
 		var economy = Economy( Ride( 1, 0, 20000 ) );
 		economy.RestoreState( 0, GameSpeed.Normal, true, 20, true, 6, Array.Empty<LitterCell>(), 0, 1, 0,
 			Array.Empty<ParkObjectState>(), Array.Empty<LoanAccount>(), Array.Empty<int>(), Array.Empty<long>() );
-		Assert.IsFalse( economy.IsBankrupt, "Theme Park Inc has no lost state to restore" );
+		Assert.IsTrue( economy.IsBankrupt, "the lost state is restored" );
+		Assert.AreEqual( 0, economy.ThemeParkIncLossReason, "with the bank's reason" );
+	}
+
+	[TestMethod]
+	public void ClosingALetterLosesTheParkWithItsReason()
+	{
+		// [BIN:TPI-EXE:0x649E92 game over] the letter window's procedure calls 0x649E60 with 0 for the bank's letter (category 0x5E) and 1 for the
+		// firing letter (0x5F); a second close changes nothing
+		var economy = Economy( Ride( 1, 0, 20000 ) );
+		economy.OpenPark();
+		var events = new List<ParkEventKind>();
+		economy.EventRaised += item => events.Add( item.Kind );
+		Assert.AreEqual( -1, economy.ThemeParkIncLossReason );
+		economy.LoseThemeParkIncPark( ThemeParkIncAdviceMail.ChallengeLost.LossReason );
+		Assert.IsTrue( economy.IsBankrupt );
+		Assert.AreEqual( 1, economy.ThemeParkIncLossReason, "the firing letter's reason" );
+		economy.LoseThemeParkIncPark( ThemeParkIncAdviceMail.RedSixMonths.LossReason );
+		Assert.AreEqual( 1, economy.ThemeParkIncLossReason, "the park is lost once" );
+		Assert.AreEqual( 1, events.Count( kind => kind == ParkEventKind.Bankrupt ) );
+		var tpw = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
+		tpw.LoseThemeParkIncPark( 0 );
+		Assert.IsFalse( tpw.IsBankrupt, "Theme Park World has no letter loss" );
 	}
 
 	[TestMethod]
@@ -181,6 +277,82 @@ public class ThemeParkIncEconomyTests
 		var costs = events.IndexOf( ParkEventKind.RunningCostsPaid, bank );
 		Assert.IsTrue( costs > bank, "the bank's message comes first in a month end that has both" );
 		Assert.IsFalse( events.Skip( bank ).TakeWhile( kind => kind != ParkEventKind.MonthEnded ).Count( kind => kind == ParkEventKind.RunningCostsPaid ) == 0, "the same month still debits the objects" );
+	}
+
+	[TestMethod]
+	public void TheYearEndReportsTheBankAfterDecemberPostingsAndBeforeTheReset()
+	{
+		var economy = Economy( Ride( 1, 0, 60 ) );
+		economy.RegisterExisting( 1 );
+		var loan = economy.TakeLoan( 0 );
+		economy.AdvanceMonths( 11 );
+		economy.RestoreBankWords( true, economy.LastBalance, economy.TurnEnteredRed, batchCredit: 250 );
+		var decemberOpening = economy.Balance;
+		var profitBeforeTheClose = economy.Ledger.ProfitThisYear;
+		var interest = LoanMath.InstalmentInterest( loan.MonthlyRepayment, loan.Months, loan.OriginalAmount );
+		var observed = new List<(ParkEvent Event, long BankProfit)>();
+		economy.EventRaised += item => observed.Add( (item, economy.Ledger.ProfitThisYear) );
+
+		economy.AdvanceMonths( 1 );
+
+		var expectedProfit = profitBeforeTheClose + 250 - interest - 60;
+		var expectedBalance = decemberOpening + 250 - loan.MonthlyRepayment - 60;
+		var report = observed.Single( entry => entry.Event.Kind == ParkEventKind.YearEnded );
+		Assert.AreEqual( expectedProfit, report.Event.Amount );
+		Assert.AreEqual( expectedProfit, report.BankProfit, "the bank has not cleared the year yet" );
+		Assert.AreEqual( expectedBalance, economy.Balance );
+		Assert.AreEqual( $"balance ${expectedBalance}", report.Event.Detail );
+		Assert.AreEqual( decemberOpening, economy.Ledger.History[^1].ClosingBalance, "the analyser still closes before the bank" );
+		Assert.AreEqual( 0L, economy.Ledger.ProfitThisYear, "the bank clears its accumulator for the new year" );
+	}
+
+	[TestMethod]
+	public void TheHostEconomySnapshotKeepsBookedCostsAndTheEditionAcrossTheNextMonth()
+	{
+		var ride = Ride( 1, 0, 60 );
+		var economy = Economy( ride );
+		var item = economy.RegisterExisting( 1 );
+		economy.TakeLoan( 0 );
+		economy.AdvanceDays( 20 );
+		item.PendingMonthlyCosts = 350;
+		item.ScriptCondition = 6;
+		item.CheapPriceRing.Today = 5;
+		item.CheapPriceRing.Roll();
+		item.ExpensivePriceRing.Today = 3;
+		item.DeclinedRing.Today = 9;
+		var json = ParkSaveFile.Serialize( economy );
+		var data = ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) );
+		Assert.AreEqual( GameEdition.ThemeParkInc, data.Edition );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkSaveFile.Restore( data, EconomyTestData.Settings(), economy.Catalog ) );
+		var restored = ParkSaveFile.Restore( data, economy.Settings, economy.Catalog );
+		Assert.AreEqual( EconomyRules.ThemeParkIncMoney, restored.Rules );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
+
+		economy.AdvanceMonths( 1 );
+		restored.AdvanceMonths( 1 );
+
+		Assert.AreEqual( 410L, restored.Objects.Single().CostsLastMonth, "running costs and the pending costs are paid together" );
+		Assert.AreEqual( 0L, restored.Objects.Single().PendingMonthlyCosts );
+		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( "negative price count" )]
+	[DataRow( "oversized pending costs" )]
+	[DataRow( "missing edition" )]
+	public void TheHostEconomySnapshotRejectsInvalidThemeParkIncState( string mutation )
+	{
+		var economy = Economy( Ride( 1, 0, 60 ) );
+		economy.RegisterExisting( 1 );
+		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
+		var item = json["Objects"]![0]!;
+		switch ( mutation )
+		{
+			case "negative price count": item["TpiPriceRings"]![0]!["Today"] = -1; break;
+			case "oversized pending costs": item["PendingMonthlyCosts"] = long.MaxValue; break;
+			case "missing edition": json.Remove( "Edition" ); break;
+		}
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json.ToJsonString() ) ) );
 	}
 
 	[TestMethod]

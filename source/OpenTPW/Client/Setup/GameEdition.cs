@@ -136,8 +136,8 @@ public sealed record EditionCapabilities
 		ParkSaves = false,
 		Sharing = false,
 		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar); "
-			+ "no staff, research, challenges, advisor, missions, Global Master Save, "
-			+ "COS files, park saves or sharing, and no Theme Park Inc in-game interface (only its Personnel File start screen); "
+			+ "no staff, research, challenges, advisor apart from the weather forecasts, missions, Global Master Save, "
+			+ "COS files, native park saves or sharing, and no Theme Park Inc in-game interface (only its Personnel File start screen); "
 			+ "none of it is checked against the original game"
 	};
 }
@@ -281,8 +281,13 @@ public static class GameEditions
 	};
 
 	/// <summary>True when <paramref name="args"/> start the Personnel File: no world and no option outside <see cref="FrontEndStartOptions"/>.</summary>
-	private static bool IsFrontEndStart( string[] args ) =>
-		!args.Contains( "--load-original-level" ) && args.Where( argument => argument.StartsWith( "--" ) ).All( argument => FrontEndStartOptions.Contains( argument ) );
+	private static bool IsFrontEndStart( string[] args )
+	{
+		var restart = Array.IndexOf( args, "--debug-tpi-restart-smoke" );
+		var restoring = restart >= 0 && restart + 1 < args.Length && args[restart + 1] == "restore" && args.Contains( "--front-end" );
+		return !args.Contains( "--load-original-level" ) && args.Where( argument => argument.StartsWith( "--" ) ).All( argument => FrontEndStartOptions.Contains( argument )
+			|| restoring && argument == "--debug-tpi-restart-smoke" );
+	}
 
 	/// <summary>
 	/// Why a start on Theme Park Inc data is refused, or null when it is the experimental slice (<c>--load-original-level</c> with a
@@ -311,5 +316,5 @@ public static class GameEditions
 	/// <summary>One line for the start-up log: what the slice is and that it is not checked against the original game.</summary>
 	// [EXT:tpi-capability-gates] the slice's stated limits are OpenTPW's honest capability gates (a scope decision), not traced Theme Park Inc behaviour
 	public static string SliceNotice => "experimental Theme Park Inc slice: world, building, guests and money only; "
-		+ "no staff, research, challenges, advisor, missions, Global Master Save, COS or Theme Park Inc in-game interface; original behaviour is not verified.";
+		+ "no staff, research, challenges, advisor apart from the weather forecasts, missions, Global Master Save, COS or Theme Park Inc in-game interface; original behaviour is not verified.";
 }

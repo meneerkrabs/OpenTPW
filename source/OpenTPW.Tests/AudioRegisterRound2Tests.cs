@@ -345,6 +345,72 @@ public class AudioRegisterRound2Tests
 	}
 
 	[TestMethod]
+	public void ThemeParkIncRainUsesSeparateModeAndDropCountVoices()
+	{
+		Use( "Ambient", Category( (0x21, 0x606, 4) ) );
+		var weather = new ThemeParkIncWeatherSpells( new ThemeParkIncWeatherSettings(
+			new int[16], new int[3], 0, (0, 40), (0, 40), (0, 40), (0, 40), (0, 40), DropSpeed: 20, MaxRaindrops: 600 ) );
+		var rain = new WeatherSpell( 3, 2, 0, 3 );
+		weather.Restore( new( rain, rain, false, 1, 0 ) );
+		GameAudio.UpdateThemeParkIncPrecipitation( weather );
+		var flat = GameAudio.WeatherRain;
+		Assert.IsNotNull( flat );
+		Assert.IsNull( GameAudio.RainVoice, "the flat voice can start before the first drop step" );
+
+		weather.OnTurn( () => 0u );
+		GameAudio.UpdateThemeParkIncPrecipitation( weather );
+		var scaled = GameAudio.RainVoice;
+		Assert.IsNotNull( scaled );
+		Assert.AreNotSame( flat, scaled );
+		Assert.AreEqual( 3, scaled.Parameter );
+		Assert.AreEqual( 0, flat.Parameter );
+		var snow = rain with { Kind = 4 };
+		weather.Restore( new( snow, snow, false, 2, 40 ) );
+		GameAudio.UpdateThemeParkIncPrecipitation( weather );
+		Assert.IsTrue( flat.IsStopped );
+		Assert.IsNull( GameAudio.WeatherRain );
+		Assert.AreSame( scaled, GameAudio.RainVoice );
+		Assert.AreEqual( 6, scaled.Parameter, "The level voice keeps following the drop count in snow." );
+
+		var dry = rain with { Kind = 0 };
+		weather.Restore( new( dry, dry, false, 3, 0 ) );
+		GameAudio.UpdateThemeParkIncPrecipitation( weather );
+		Assert.IsTrue( scaled.IsStopped );
+		Assert.IsNull( GameAudio.RainVoice );
+	}
+
+	[TestMethod]
+	public void ThemeParkIncZeroTargetStopsFlatRainUntilTheNextSpellEvenAfterLoad()
+	{
+		Use( "Ambient", Category( (0x21, 0x606, 4) ) );
+		var settings = new ThemeParkIncWeatherSettings(
+			new int[16], new int[3], 0, (0, 40), (0, 40), (0, 40), (0, 40), (0, 40), DropSpeed: 20, MaxRaindrops: 600 );
+		var weather = new ThemeParkIncWeatherSpells( settings );
+		var stoppedRain = new WeatherSpell( 3, 2, 40, 3 );
+		var nextRain = new WeatherSpell( 6, 2, 0, 3 );
+		weather.Restore( new( stoppedRain, nextRain, true, 1, 0 ) );
+		GameAudio.UpdateThemeParkIncPrecipitation( weather );
+		var flat = GameAudio.WeatherRain;
+		Assert.IsNotNull( flat );
+		weather.OnTurn( () => 0u );
+		GameAudio.UpdateThemeParkIncPrecipitation( weather );
+		Assert.IsTrue( flat.IsStopped );
+		Assert.IsNull( GameAudio.WeatherRain );
+		Assert.AreEqual( 2, weather.State, "Stopping the mode does not change the spell kind read by arrivals." );
+
+		var saved = ParkResumeJson.Deserialize<ThemeParkIncWeatherSnapshot>( ParkResumeJson.Serialize( weather.Capture() ) );
+		var resumed = new ThemeParkIncWeatherSpells( settings );
+		resumed.Restore( saved );
+		GameAudio.UpdateThemeParkIncPrecipitation( resumed );
+		Assert.IsNull( GameAudio.WeatherRain );
+		Assert.ThrowsException<InvalidDataException>( () => resumed.Restore( saved with { Active = nextRain } ) );
+		Assert.AreEqual( saved, resumed.Capture(), "A rejected stop must not change the active spell." );
+		resumed.OnMonth( 6, 1, _ => 0 );
+		GameAudio.UpdateThemeParkIncPrecipitation( resumed );
+		Assert.IsNotNull( GameAudio.WeatherRain );
+	}
+
+	[TestMethod]
 	public void TheLevelRainLevelContinuesWhileSnowFallsAndTheWeatherIsNotRaining()
 	{
 		var snowy = new ParkWeather( new SamSettings( new[] { SamDocument.Parse( "WeatherEffects.QualityForSnowLow\t0\nWeatherEffects.QualityForSnowHigh\t100\nWeatherEffects.QualityForRainLow\t-1\nWeatherEffects.QualityForRainHigh\t-1\nWeatherEffects.MaxRaindrops\t600\nWeather.SpeedOfChange\t20\n", "test" ) } ), 3, 10, 10 );

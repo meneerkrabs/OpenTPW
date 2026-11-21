@@ -383,10 +383,10 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void ThemeParkIncNeverEntersTheLostState()
+	public void TheBanksMonthAloneDoesNotLoseAThemeParkIncPark()
 	{
-		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] six months in the red build CMsgEvent(2) and broadcast it, with no state write, no window and no asset;
-		// the lost state 4 is the teardown's (0x649E94), so a Theme Park Inc park keeps trading and keeps its gate open
+		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] six months in the red build CMsgEvent(2) and broadcast it, with no state write of the bank's own;
+		// the lost state 4 follows only when the player closes the letter it leads to (0x649E92), so until then the park trades and keeps its gate open
 		var park = new ParkEconomy( EconomyTestData.Settings( 100 ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
 		var events = new List<ParkEvent>();
 		park.EventRaised += events.Add;
@@ -395,7 +395,7 @@ public class ParkEconomyTests
 		park.OpenPark();
 		park.AdvanceMonths( 8 );
 		Assert.IsTrue( park.MonthsInRed >= ParkEconomy.MonthsInRedForBankruptcy, "the rule's own count is reached" );
-		Assert.IsFalse( park.IsBankrupt, "Theme Park Inc never enters the lost state" );
+		Assert.IsFalse( park.IsBankrupt, "the bank's month alone does not lose the park" );
 		Assert.IsTrue( park.IsParkOpen, "the bank's message closes nothing" );
 		Assert.IsTrue( events.Any( item => item.Kind == ParkEventKind.BankruptcyMessage ), "the bank's message is raised" );
 		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.Bankrupt ), "no loss event" );

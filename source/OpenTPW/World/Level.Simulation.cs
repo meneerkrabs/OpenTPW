@@ -241,10 +241,18 @@ public partial class Level
 			(rideBodyPoses ??= new FlatRideBounceRiders( Objects ) { GroundOf = WalkerGroundOf }).Prepare( Guests );
 	}
 
-	/// <summary>The weather's step: the thing sweep's weather update (0x00512880), and on every other tick the first call that starts it.</summary>
+	private void StepWeatherThing( ParkEconomy economy )
+	{
+		if ( economy.Rules.ThemeParkInc )
+			economy.TpiWeather?.OnTurn( economy.World.NextWord );
+		else
+			AdvanceWeather();
+	}
+
+	/// <summary>The Theme Park World weather's step: the thing sweep's weather update (0x00512880), and on every other tick the first call that starts it.</summary>
 	private void AdvanceWeather()
 	{
-		// [EXT:tpi-viewer] Theme Park Inc's weather is not traced (its states and keys differ from the Theme Park World weather this class ports), so a Theme Park Inc park has none
+		// Theme Park Inc's drop state runs in StepWeatherThing; do not start the Theme Park World weather or renderer for it.
 		if ( Park == null || Guests == null || Park.Economy.Rules.ThemeParkInc )
 			return;
 		Weather ??= new ParkWeather( Park.Economy.Settings.Standard, Seed.WeatherStream, Guests.Grid.Cells.Width, Guests.Grid.Cells.Height, FeatureGates.WinterWeather, FeatureGates.WinterAlways );
@@ -341,7 +349,7 @@ public partial class Level
 					// [BIN:TPW-EXE:0x0050B360 thing update] type 0xF is the weather's update 0x00512880, type 0x13 the challenge system's 0x004D1E90
 					case SaveThingModel.Weather when !weatherDone:
 						weatherDone = true;
-						AdvanceWeather();
+						StepWeatherThing( economy );
 						break;
 					case SaveThingModel.ChallengeSystem when !challengesDone:
 						challengesDone = true;
@@ -361,7 +369,7 @@ public partial class Level
 				if ( !visitedStates.Contains( instance ) && economy.TryGetObject( instance, out var state ) )
 					economy.UpdateRide( state, turn );
 			if ( !weatherDone )
-				AdvanceWeather();
+				StepWeatherThing( economy );
 			if ( !challengesDone )
 				economy.UpdateChallenges( turn );
 			if ( world != null )

@@ -95,8 +95,10 @@ public sealed class Guest
 
 	/// <summary>Positive id; this is the value ride scripts see in VAR_LETMEON/VAR_LETMEOFF.</summary>
 	public int Id { get; }
-	/// <summary>Index into the .sam PeepTypes and the kid sprite set.</summary>
+	/// <summary>Index into the birth profile's .sam PeepTypes table.</summary>
 	public int Type { get; }
+	/// <summary>TPI's native prank code (including zero); null for TPW and legacy TPI births.</summary>
+	internal int? TpiPrankCode { get; set; }
 	public GuestState State { get; internal set; }
 	/// <summary>Persistent body presentation. Ordinary walker rendering still uses DrawDistanceWalked.</summary>
 	public VisitorSpriteState BodySprite { get; } = new();

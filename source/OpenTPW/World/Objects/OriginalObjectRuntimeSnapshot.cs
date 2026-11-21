@@ -47,6 +47,9 @@ public sealed record OriginalObjectRuntimeSnapshot
 	public required bool Stopped { get; init; }
 	/// <summary>Last tick's VAR_RUNNING edge detector (drives <see cref="OriginalObjectRuntime.CompletedCycles"/>).</summary>
 	public required bool WasRunning { get; init; }
+	/// <summary>Theme Park Inc reopens a ride at a spell change only if weather closed it.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+	public bool ClosedDueToWeather { get; init; }
 	public required int CompletedCycles { get; init; }
 	public required int AnimationsPlayed { get; init; }
 	/// <summary>(animation, variant) requests without a matching member, as "a/v".</summary>

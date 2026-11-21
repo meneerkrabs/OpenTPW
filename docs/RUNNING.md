@@ -211,22 +211,30 @@ bash scripts/run.sh --game-path '/path/to/Theme Park Inc' --load-original-level 
 
 Runs a Theme Park Inc world (`arabian`, `science` or `water`) as the experimental playable slice: the
 world in 3D with the park camera, an OpenTPW text HUD (build window, remove/rotate tools, speed
-control, pause menu on Esc) and guests under the ported Theme Park World guest rules — building is
-charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-PARK-INC.md#theme-park-inc-economy-money-only)), and the slice runs no staff, research, challenges, advisor, saves or Theme Park Inc interface. P pauses
+control, pause menu on Esc), with Theme Park Inc guest profiles and three generations of sprite art. Guests still use the shared Theme Park World movement and update rules where TPI behavior has not been ported. Building is
+charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-PARK-INC.md#theme-park-inc-economy-money-only)), and the slice runs no staff, research, challenges or original Theme Park Inc in-game interface, and no advisor apart from the weather forecasts and the bank's letter. Desktop Science supports [OpenTPW continuation saves](PARK-SAVES.md#experimental-science-continuation-on-desktop), not native TPI saves. P pauses
 the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
 hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
 Without a world (`--front-end`, or no mode option at all) the same data opens the slice's
 [Personnel File start screen](THEME-PARK-INC.md#theme-park-inc-front-end): Enter Game starts science, and a zone
-chooser offers Polar Zone and Arabian Nights. Theme Park Inc data given to any other start (a Theme Park World level,
+chooser offers Polar Zone and Arabian Nights. On desktop, **Load A Game** resumes the local Science slot without starting a new park. Theme Park Inc data given to any other start (a Theme Park World level,
 `--sandbox`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
 `--visit-park`, `--front-end` together with a world) is refused with a message that points here. The explicit world command above works in every package; the desktop edition chooser (`--setup`) has been part of the releases since v0.8.0, and the browser offers explicit experimental
 TPI world selection. See the [static TPI launch guide](https://opentpw.io/theme-park-inc.html) for
 build availability, setup steps and limitations. Adding
 `--tpi-smoke-test` (best on `science`) drives the slice's whole HUD user flow with injected input —
-build window, place, queue tool, Escape ordering, pause and the pause menu's Quit — and fails loudly
-if any of it breaks; on Theme Park World data it is refused. See
+build window, place, queue tool, Escape ordering, pause and the pause menu's Quit. In Science it also
+checks saving, pause-menu continuation and the Personnel File's **Load A Game**. It ends with the bank's "Game Over" letter: the letter window opens and closing it loses the park. The smoke is refused
+on Theme Park World data. See
 [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for what works.
+
+To verify Science continuation across a process restart, use the same fresh, dedicated `OPENTPW_SAVE_DIR`
+for both runs, with `OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1` for an automated run. Run Science with `--load-original-level science --debug-tpi-restart-smoke capture`, then
+start a second process with `--front-end --debug-tpi-restart-smoke restore` and the same game data. The first
+process saves a played, paused park and exits. The second selects Water, clicks **Load A Game** in the
+Personnel File and checks that the saved Science state matches the first process. The smoke leaves its save
+and evidence in the dedicated folder; do not point it at your normal save folder.
 
 Extracting the CD: the data sits in the InstallShield cabinets `data1.cab`/`data2.cab` on the retail CD.
 With [unshield](https://github.com/twogood/unshield) (`brew install unshield`):

@@ -152,8 +152,9 @@ public partial class Level
 			ride.Runtime.RestoreTour( entry );
 			restored.Add( entry.AttractionId );
 		}
+		// A current Theme Park Inc continuation records all live controllers. Absence means the script has not created one (or has released it), not a legacy save.
 		// [EXT:online-coop-snapshot-join] a join's tour rides are the host's live ones: one between its script's TOUR 2 and TOUR 1 has no controller, and gets none here
-		if ( joinRestore != null )
+		if ( joinRestore != null || Park?.Economy.Rules.ThemeParkInc == true )
 			return;
 		foreach ( var ride in rides )
 		{

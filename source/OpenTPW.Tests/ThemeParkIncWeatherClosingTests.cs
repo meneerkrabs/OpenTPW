@@ -25,7 +25,8 @@ public class ThemeParkIncWeatherClosingTests
 			File.WriteAllBytes( Path.Combine( root, "model.MD2" ), bytes );
 			File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
 			// [BIN:TPI-EXE:0x5DEE1F weather closing] ClosedDuringRain (type word +0x104) is 1; the other spells are not named
-			var runtime = new OriginalObjectRuntime( CheatsRideVehicleTests.SyntheticRide( root, 1100, "rain", "WeatherModifier.ClosedDuringRain 1\n" ), seed: 1, open: true );
+			var entry = CheatsRideVehicleTests.SyntheticRide( root, 1100, "rain", "WeatherModifier.ClosedDuringRain 1\n" );
+			var runtime = new OriginalObjectRuntime( entry, seed: 1, open: true );
 			Assert.IsTrue( runtime.IsOpen );
 			runtime.ApplyWeatherClosing( 0 );
 			runtime.ApplyWeatherClosing( 1 );
@@ -33,6 +34,13 @@ public class ThemeParkIncWeatherClosingTests
 			runtime.ApplyWeatherClosing( 2 );
 			Assert.IsFalse( runtime.IsOpen, "rain (2) closes it" );
 			Assert.IsTrue( runtime.ClosedDueToWeather );
+			var saved = System.Text.Json.JsonSerializer.Deserialize<OriginalObjectRuntimeSnapshot>( System.Text.Json.JsonSerializer.Serialize( runtime.CaptureSnapshot() ) )!;
+			var restored = OriginalObjectRuntime.CreateForRestore( entry, new RideScriptWorld(), seed: 1, open: false, runtime.AttractionId );
+			Assert.AreEqual( 0, restored.RestoreSnapshot( saved ).Count );
+			Assert.IsFalse( restored.IsOpen );
+			Assert.IsTrue( restored.ClosedDueToWeather );
+			restored.ApplyWeatherClosing( 3 );
+			Assert.IsTrue( restored.IsOpen, "the restored weather flag lets the next spell reopen the ride" );
 			runtime.ApplyWeatherClosing( 2 );
 			Assert.IsFalse( runtime.IsOpen );
 			runtime.ApplyWeatherClosing( 3 );

@@ -160,8 +160,8 @@ public static class SmarterGuestsRules
 	{
 		if ( attraction.Kind != RideVisitorKind.Ride || attraction.SameTypeAsLastUsed || guest.UsedHistory.Contains( attraction.Id ) || guest.TemporaryHistory.Contains( attraction.Id ) )
 			return false;
-		var type = context.Settings.Types[Math.Min( guest.Type, context.Settings.Types.Count - 1 )];
-		return AttractionScore.ExcitementMatch( type.PreferredExcitement, attraction.LiveExcitement ) > 10;
+		var preferred = context.Settings.PreferredExcitement( guest.Type, guest.NativeTpiBirth );
+		return AttractionScore.ExcitementMatch( preferred, attraction.LiveExcitement ) > 10;
 	}
 
 	/// <summary>Whether the expected wait of a guest joining the back of this queue is above its patience (no estimate: it is not).</summary>

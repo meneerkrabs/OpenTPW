@@ -54,9 +54,35 @@ the rest reports skips; nothing fails. CI has neither.
 
 `moon_oracle.py` runs the sky object draw `0x5860D0` with its point transform `0x578D20` and sprite rotation `0x591430` on a synthetic sky object and prints the four corner offsets for a few camera rolls; `SkyTests` pins them (finding X41).
 
+## Theme Park Inc guest profile
+
+`tpi_guest_profile_oracle.py` runs the profile fragment at `0x60C58F` through `0x60C711` and the subsequent meter and prank fragment up to `0x60C830`, including the original world generator at `0x6493E0`. It uses synthetic guest and settings records and does not execute the rest of the constructor. It also checks the appearance reseed and the base-speed conversion at `0x60C712`. That conversion multiplies by the selected profile's binary32 coefficient and truncates; some retail inputs differ at x87 control words `0x7F` and `0x27F`/`0x37F` (for example, speed 60 × `0.95f` gives 57 or 56). The original changes DirectDraw cooperative level with `DDSCL_FPUSETUP` at `0x6BF33F` and `0x6BF5A8`, then calls Direct3D device creation at `0x6D62AD`. This is not a capture of the active control word on a particular device. Check the 25 fixtures with `--check source/OpenTPW.Tests/ThemeParkIncGuestStartTests.cs`.
+
+## Theme Park Inc precipitation
+
+`tpi_precipitation_oracle.py` runs the drop update at `0x642230` up to the lightning branch and the drop target calculation at the start of `0x642A80`. The update executes the renderer count setter and mode-2 reset on synthetic records. It records the raw volume request rather than playing audio. The spell-start replay also records mode and fall speed. Separate fragments verify the wind angle and force passed to the renderer (`0x642C9B onward`) and the normalized fall vector at `0x6EA9A0` under two x87 precision settings. Check the 40 fixtures with `--check source/OpenTPW.Tests/ThemeParkIncPrecipitationTests.cs`.
+
+## Theme Park Inc advisor weather forecasts
+
+`tpi_advisor_forecast_oracle.py` checks the four forecast descriptors in the identified TPI executable (`OPENTPW_TPI_EXE`). It runs the descriptor initializer at `0x729530`, the forecast response slice at `0x70F59E`, 28 score lookups across the mode word, the game-object flags and the animation word, the 72 class admissions of the eligibility matrix at `0x71BDC0`, caption formatter handoffs, seven admission cases for rain at `0x718820`, and five playback ticks at `0x718190`. It also reads the bank's three red-month advice rows (`0x1A1`–`0x1A3`), their response rows built at `0x7104A0` and the tag-94 caption entry. History and clock values are synthetic; the playback replay captures speech and tag submissions instead of sending them to the actual systems. The oracle does not launch the game, render text or play audio. See [the forecast trace](../../../docs/reverse/TPI-ADVISOR-FORECAST.md) and [the bank mail trace](../../../docs/reverse/TPI-BANK-MAIL.md).
+
+From the repository root, with Unicorn installed in the selected Python environment:
+
+```bash
+python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/oracle_x86"); runpy.run_module("tpi_advisor_forecast_oracle", run_name="__main__")'
+```
+
+## Theme Park Inc lightning and thunder
+
+`tpi_storm_timer_oracle.py` checks the storm timer branch at `0x6422FE` and strike geometry at `0x642550`. The timer replay supplies synthetic strike coordinates and captures strike, thunder and RNG calls; the geometry replay supplies four draws and compares coordinate bits at x87 control words `0x7F` and `0x27F`. Neither replay claims to identify the live device precision. Verify the fixtures with `--check source/OpenTPW.Tests/ThemeParkIncStormTests.cs`.
+
 ## Theme Park Inc's shop cost of goods (round 10, package K)
 
 `tpi_goods_cost_oracle.py` runs the routine `0x5E6260` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with a synthetic thing and type record on random inputs and compares it with the formula `ThemeParkIncGoodsCost` ports (400 cases at the control words `0x27F` and `0x7F`, no mismatch).
+
+`tpi_staff_formula_oracle.py` runs Theme Park Inc's staff interpolation helper `0x62C900`, its expected wage `0x62CD30`, its work duration `0x62E4C0`, its wage review `0x62CDA0` (with a scripted `rand()`), the step `0x62B3E0`, rest `0x62A1C0` and daily experience gain `0x629650` (a synthetic staff thing, with the settings words it reads written into the image) on random inputs and compares them with the formulas `ThemeParkIncStaffSettings` and `ThemeParkIncStaffMember` port (2,000 cases each, no mismatch); `--golden` prints native cases for the C# tests.
+
+`tpi_staff_candidate_oracle.py` runs Theme Park Inc's staff candidate constructor `0x6302C0` with the real expected wage and name draw, the settings words it reads written into the image and its outside calls stubbed (scripted world and `rand()` words, name-taken answers), and compares the record with the port `ThemeParkIncStaffCandidates.Generate` reads (500 cases over the six roles, random agency rows and keys, no mismatch); `--golden` prints native cases.
 
 ## Theme Park Inc's weather spell roll (round 10, package K)
 

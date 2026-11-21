@@ -1,0 +1,17 @@
+## Theme Park Inc: the staff economy model (November 21, 2026)
+
+Theme Park Inc's staff are not Theme Park World's graded staff with new numbers. They have experience instead of grades, a salary they negotiate, an agency, three meters (happiness `+0x230`, motivation `+0x234`, energy `+0x238`), a sixth role (the gardener, kind 0x14, which borrows the handyman's pool keys) and their own strike rules. The static trace is in `docs/reverse/TPI-STAFF.md`. This change ports the economy side of it as a model, checked against the executable, without the staff walking in the park yet.
+
+- `ThemeParkIncStaffSettings` reads every staff key of `Standard.sam`, including the `StaffAgencies` rows, and ports the helpers it needs: the interpolation `0x62C900` (an empty range divides by zero, as the executable's `idiv` does), the expected wage `0x62CD30` and the experience-driven work duration `0x62E4C0`.
+- `ThemeParkIncStaffCandidates.Generate` is the candidate constructor `0x6302C0`, which draws the agency, look, experience, wage, name and timeout in the executable's order.
+- `ThemeParkIncStaff` keeps the 32-slot hiring pool. It ports the opening pool `0x631F30` and the update `0x631B40`: expiry after four times a candidate's timeout, a refill after four times `TimeBetweenStaffUpdates`, the `MaxInPark` flags `0x631490` and the minimum top-up `0x631690`, which stops after a pass that adds nothing instead of looping forever. Name checks compare texts (`0x631A30`), and hiring holds the candidate while it is placed (`0x630D10`, `0x6319E0`).
+- `ThemeParkIncStaffMember` ports:
+  - the wage review `0x62CDA0` and the salary setter `0x62D160`;
+  - the day counters `0x628050`, the daily experience gain `0x629650` and the counter reset `0x62D1A0`;
+  - the step cost `0x62B3E0`, the rest `0x62A1C0` and the tired test `0x62B3B0`.
+- The month message pays each member its salary and then reviews it (`0x6265DE`). The day message adds the experience and lets a member demand its shortfall on its demand day (`0x628CA0`). The demand is type 0xA for a grieved role in a park younger than `MinMonthsForStrike`, else 0xB, and there is at most one demand per 30 game days across all staff (`0xAA07F4`). Both messages reach the staff in ascending thing-handle order, because the broadcaster keeps an ordered set per message (`0x436E97`).
+- The strike rules port the grievance `0x633740` (energy, happiness or motivation below its threshold with at least `MinStaffOfTypeForStrike` of the role) and the month's escalation `0x6330B0`.
+
+The executable draws the candidate's agency and the wage-demand day with the C runtime's clock-seeded `rand()`. With the user's approval on 2026-11-21, both draws come from the park's world generator (`[EXT:tpi-staff-crt-rand]`).
+
+Verified: `tpi_staff_formula_oracle.py` runs the lerp, expected wage, work duration, wage review, step, rest and experience gain natively on 2,000 random cases each with no mismatch, and `tpi_staff_candidate_oracle.py` runs the candidate constructor on 500 cases with no mismatch. The 28 `ThemeParkIncStaffTests` pin the retail keys, the formulas, the pool order, hiring, strikes, payday order and the wage demands against `OPENTPW_TPI_PATH`. Still to come: the role state machines in the park, training, the wage negotiation dialog, the hire list, saving the pool, and lifting the slice's refusal of Theme Park Inc staff. The original game was not launched, and no binary, data or disassembly is included.

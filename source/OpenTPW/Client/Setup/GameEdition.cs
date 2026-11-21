@@ -137,7 +137,7 @@ public sealed record EditionCapabilities
 		PersonnelFileFrontEnd = true,
 		ParkSaves = false,
 		Sharing = false,
-		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar) plus the challenges OpenTPW can measure; "
+		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar) plus the challenge system, whose offers wait for the missions OpenTPW does not run yet; "
 			+ "no staff apart from cleaners, research, other challenges, advisor apart from the weather forecasts, missions, Global Master Save, "
 			+ "COS files, native park saves or sharing, and no Theme Park Inc in-game interface (only its Personnel File start screen); "
 			+ "none of it is checked against the original game"

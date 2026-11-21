@@ -589,7 +589,7 @@ public sealed class ObjectCatalog
 		// [BIN:TPI-EXE:0x6B0780 script variable setter] Theme Park Inc's bounds-checked setter of a script variable (thunk 0x4028EC) has 89 call sites: the attraction constructor's writes at a new thing (0x5DB7F1..0x5DB88A:
 		// a litter bin's variables 3, 11 and 12 and a plant's 2, 5 and 14 from Standard.sam, ThemeParkIncConstructionWords, written by ParkObjects in a Theme Park Inc world), its duration and closing writes
 		// (0x5DB99D, 0x5DBBF4), the camera flight (0x5D0619, 0x5D0938), the ride view's entry (0x5E5BD5), the open, repair, queue, plant, staff and visitor handlers
-		// [BIN:TPW-EXE:0x55A0B0 script variable setter] Theme Park World's setter has 45 direct call sites and its constructor (0x4DB07D) writes only the duration (0x4DB633) and the closing (0x4DB779): it sets the
+		// [BIN:TPW-EXE:0x55A0B0 script variable setter] Theme Park World's setter has 45 direct call sites and its constructor (0x4DB090) writes only the duration (0x4DB633) and the closing (0x4DB779): it sets the
 		// litter flag (0x4DB3FB) but writes no bin variable, and has no watering flag, so a Theme Park Inc object a mod brings into a Theme Park World park keeps those variables at 0 (RIDES-045, retired). A guest's
 		// litter still arms a bin's first variable by name (Level.SetBinTrigger), which is Theme Park World's rule
 		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)

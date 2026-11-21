@@ -21,7 +21,7 @@
   November 10 that nothing calls it (RIDES-045's retirement) missed the thunk. Among them the attraction constructor (`0x5DB7D5`..`0x5DB88F`) sets a new litter
   bin's `VAR_CAPACITY`, `VAR_DIRTY` and `VAR_FIRERISK` from `Standard.sam`'s `LitterBin` words (20, 15, 5) and a plant's `VAR_TIMEOUT`, `VAR_TEST` and
   `VAR_SCALE` from its `Vegetation` words and 1000. A new object in a Theme Park Inc world now takes them (`ThemeParkIncConstructionWords`). Theme Park World's
-  constructor (`0x4DB07D`) writes none of them, so RIDES-045's retirement stands for Theme Park World with the corrected reason (docs/OBJECTS.md).
+  constructor (`0x4DB090`) writes none of them, so RIDES-045's retirement stands for Theme Park World with the corrected reason (docs/OBJECTS.md).
 - **Review fixes.** A Science save or layout checkpoint from before the obstacles is refused with the start-again message (the park save's validation, before the
   asset comparison; the checkpoint format is version 4 and refuses version 3). The pause key stays reachable under a flight, as the original's key binding
   "pause" (`0x42F420`) is dispatched past the input window, so a flight started while paused waits for it instead of locking the game. A flight of thing 0, whose
@@ -29,7 +29,7 @@
   flight leaves the walk camera too (`0x50B4E0`), and the asset manifest no longer pins terrain.wad's unused `dlake.MD2`.
 
 Not ported yet: the plants' script (`0x5DE61A` loads `vegetation.rse` for a thing that needs watering; OpenTPW gives a plant no script, so its construction
-writes have nothing to land on), the facilities folder (litter bins and the other facilities are not in the catalogue yet), the placement in a world built without the prebuilt (the object-info order `0x647BF0` walks is not read, so Water and Arabian build no
+writes have nothing to land on), the facilities folder (litter bins and the other facilities are not in the catalogue yet), the construction words on objects restored from a layout checkpoint (which starts a fresh session but restores its objects without the constructor's writes), the placement in a world built without the prebuilt (the object-info order `0x647BF0` walks is not read, so Water and Arabian build no
 obstacles or camera path), the pick and cursor help over obstacle cells, the tile refresh of type 8, the flight's fog range and camera words, the
 advice classes admitted during a flight, and the 1750 gate's zone switch (recorded for the zone package). The mission window and its Proceed are a
 separate package; completion in play still needs it.

@@ -469,7 +469,7 @@ public sealed class ParkObjects
 
 	/// <summary>
 	/// The end of a new object's construction in a Theme Park Inc world: its litter bin or plant script variables take the Standard words (<see cref="ThemeParkIncConstructionWords.Apply"/>). Theme Park
-	/// World's constructor (tp.exe <c>0x4DB07D</c>) writes none of them, so a Theme Park World park, and a Theme Park Inc object a mod brings into one, keeps them at 0. A restored or imported object keeps its
+	/// World's constructor (tp.exe <c>0x4DB090</c>) writes none of them, so a Theme Park World park, and a Theme Park Inc object a mod brings into one, keeps them at 0. A restored or imported object keeps its
 	/// variables as its load gives them.
 	/// </summary>
 	private OriginalObject Constructed( OriginalObject item )

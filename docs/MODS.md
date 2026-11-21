@@ -637,7 +637,7 @@ What the engine does with such an object (all `[EXT:cross-edition-objects]` unle
   trigger sets the script variable at index 0 (as the original does), which Theme Park Inc's bin calls `VAR_USE`. Variables only Theme
   Park Inc's own engine writes stay 0, as Theme Park World's engine leaves them: Theme Park Inc's attraction constructor sets a new litter
   bin's `VAR_CAPACITY`, `VAR_DIRTY` and `VAR_FIRERISK` and a plant's `VAR_TIMEOUT`, `VAR_TEST` and `VAR_SCALE` from its `Standard.sam`
-  (`0x5DB7D5`), which OpenTPW does in a Theme Park Inc park only, while Theme Park World's constructor (`0x4DB07D`) writes none of them
+  (`0x5DB7D5`), which OpenTPW does in a Theme Park Inc park only, while Theme Park World's constructor (`0x4DB090`) writes none of them
   (RIDES-045, retired; docs/OBJECTS.md).
 - **Saves.** The extension and the mod are recorded in a park save with their versions and content digests, the asset manifest pins the
   install's members the park uses (`mod:community.tpi-rides:/levels/arabian/rides/tbounce/...`), and loading without them (or with another

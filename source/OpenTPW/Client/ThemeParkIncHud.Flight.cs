@@ -20,7 +20,7 @@ public sealed partial class ThemeParkIncHud
 			return false;
 		if ( input.Has( UiKeys.Back ) || input.RightReleased )
 			cutscene.RequestSkip();
-		// [BIN:TPI-EXE:0x42F420 pause binding] the key bindings are dispatched past the input window, as "menu" (0x42FCD0) is: "pause" (the table entry at 0x9A8410, beside "menu" at 0x9A88C8) calls the
+		// [BIN:TPI-EXE:0x42F420 pause binding] the key bindings are dispatched past the input window, as "menu" (0x42FCD0) is: "pause" (the table entry at 0x9A8410 in the "system" group 0x9A8408; "menu" is at 0x9A88C8 in a later group) calls the
 		// world's toggle 0x42A270(1), which pauses the park clock (0x41BBF0 sets 0xA03BC0's +0x30) whatever rate the flight set (0x41C000 writes +0x20 only); a flight started while paused waits for it
 		TogglePause( input );
 		if ( Camera.Mode is ParkCameraMode camera )

@@ -106,7 +106,8 @@ public sealed class ThemeParkIncCutscene
 		}
 		// [BIN:TPI-EXE:0x648DF0 thing table] slot 0 of the thing table 0xAA18B0 is never a thing (the reset clears its pointer and the free list starts at slot 1), and 0x5D0400 has no refusal for it:
 		// with thing 0 it stores 0xA9D230 = 0, which no update ends (0x5D02F0 tests it), reads the null slot (0x5D0448) and faults in 0x5E5B20 (thing +0x16)
-		// [EXT:original-undefined-reads] OpenTPW refuses a flight of thing 0 as it refuses a second flight: nothing changes and no input window opens
+		// [EXT:original-undefined-reads] OpenTPW refuses a flight of thing 0 as it refuses a second flight: nothing changes and no input window opens (a mission controller that asked for it
+		// keeps waiting for message 0x29, so that mission cannot complete)
 		if ( thing == 0 )
 			return false;
 		Skippable = false;

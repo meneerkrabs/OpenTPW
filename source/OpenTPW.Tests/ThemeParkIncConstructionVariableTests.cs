@@ -83,7 +83,7 @@ public class ThemeParkIncConstructionVariableTests
 		var placed = Objects( entry ).Add( entry, 3, 3, 0 );
 		var variables = placed.Runtime.Script!.Variables;
 		Assert.AreEqual( (20, 15, 5), (variables[3], variables[11], variables[12]), "a new Theme Park Inc object takes the Standard words at its construction" );
-		// Theme Park World's constructor (tp.exe 0x4DB07D) sets the flag (0x4DB3FB) but writes nothing for it: the same bin in a Theme Park World park keeps 0
+		// Theme Park World's constructor (tp.exe 0x4DB090) sets the flag (0x4DB3FB) but writes nothing for it: the same bin in a Theme Park World park keeps 0
 		GameEditions.Select( GameEdition.ThemeParkWorld );
 		var world = Objects( entry ).Add( entry, 3, 3, 0 );
 		Assert.AreEqual( (0, 0, 0), (world.Runtime.Script!.Variables[3], world.Runtime.Script.Variables[11], world.Runtime.Script.Variables[12]) );

@@ -709,6 +709,7 @@ public partial class Level : IDisposable
 			else
 			{
 				SetupThemeParkIncStaff();
+				SeedThemeParkIncCurrentObstacle();
 				AttachThemeParkIncMissionWorld();
 			}
 			yield return 0.95f;
@@ -924,7 +925,7 @@ public partial class Level : IDisposable
 	internal int ThemeParkIncMissionNumber => Park?.Economy.TpiCareer?.Mission.Number ?? 0;
 
 	/// <summary>Whether the current mission's obstacle research is done: the mission controller's obstacle state (<c>0x5F01D0</c>) is 2; false without a controller.</summary>
-	internal bool ThemeParkIncObstacleResearchDone => Park?.Economy.TpiMissions is { } missions && missions.ObstacleState() == 2;
+	internal bool ThemeParkIncObstacleResearchDone => Park?.Economy.TpiMissions is { Career.CurrentZone: not null } missions && missions.ObstacleState() == 2;
 
 	/// <summary>
 	/// Theme Park Inc's mission land growth for the mission controller: applies <c>extents/extent.NNN</c> for <paramref name="index"/> (the mission counter before it advances)

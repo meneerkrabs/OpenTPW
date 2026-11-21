@@ -435,12 +435,13 @@ internal static class ParkResumeSaveFile
 				&& snapshot.Advisor == null && snapshot.Weather == null && snapshot.Layout?.Cells?.Land == null,
 				"Theme Park Inc continuation contains unsupported world state" );
 			Require( snapshot.TpiHudSpeed is { } speed && Enum.IsDefined( speed ), "the saved Theme Park Inc HUD speed is invalid" );
+			Require( snapshot.TpiCurrentObstacle is null or (>= 0 and <= ushort.MaxValue), "the saved Theme Park Inc current obstacle is not a thing id" );
 			RequireThemeParkIncLand( snapshot.Layout );
 			Require( snapshot.TpiWeatherClosingsSeen is >= 0 && snapshot.TpiWeatherClosingsSeen <= (snapshot.Economy.TpiWeather?.SpellStarts ?? 0),
 				"the saved Theme Park Inc weather delivery count is invalid" );
 		}
 		else
-			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null && snapshot.TpiStaffChain == null && snapshot.Layout?.Cells?.TpiUnowned == null,
+			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null && snapshot.TpiStaffChain == null && snapshot.TpiCurrentObstacle == null && snapshot.Layout?.Cells?.TpiUnowned == null,
 				"Theme Park World save contains Theme Park Inc continuation state" );
 		yield return true;
 		Require( snapshot.Layout != null, "the layout snapshot is missing" );

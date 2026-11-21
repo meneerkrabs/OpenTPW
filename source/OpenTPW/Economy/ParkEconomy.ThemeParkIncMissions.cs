@@ -36,13 +36,23 @@ public sealed partial class ParkEconomy
 	internal int TpiMissionRevision { get; private set; }
 
 	/// <summary>
-	/// The "Objective Complete!" letters the controller has posted (the index of the completed mission, <c>OBJECTIVE_COMPLETE.str</c>), since the HUD last took them. Not saved: the career's
-	/// <c>+0x20</c> byte records that the letter went out.
+	/// The latest <see cref="MaxTpiMissionNotices"/> "Objective Complete!" letters the controller has posted (the index of the completed mission, <c>OBJECTIVE_COMPLETE.str</c>); their window is
+	/// not built, so nothing takes them. Not saved: the career's <c>+0x20</c> byte records that the letter went out.
 	/// </summary>
 	internal List<int> TpiObjectiveLetters { get; } = new();
 
-	/// <summary>The camera flights the controller asked for, since the HUD last took them (the cutscene thing is not ported: nothing plays them). Not saved.</summary>
+	/// <summary>The latest <see cref="MaxTpiMissionNotices"/> camera flights the controller asked for (the cutscene thing is not ported: nothing plays them). Not saved.</summary>
 	internal List<ThemeParkIncCameraRequest> TpiCameraRequests { get; } = new();
+
+	/// <summary>The letters and camera requests kept.</summary>
+	internal const int MaxTpiMissionNotices = 32;
+
+	private static void AddTpiMissionNotice<T>( List<T> list, T notice )
+	{
+		if ( list.Count >= MaxTpiMissionNotices )
+			list.RemoveAt( 0 );
+		list.Add( notice );
+	}
 
 	// [BIN:TPI-EXE:0x648633 controller thing] the new-world init builds the mission controller after the challenge system (0x6485A9) and stores its id at park+0x1EAB6C; its constructor reads the
 	// career and the park (InitExitStatistics)
@@ -54,8 +64,8 @@ public sealed partial class ParkEconomy
 	}
 
 	/// <summary>
-	/// Rebuilds the controller for <paramref name="career"/> without starting its statistics: the career attached after the park was built (the player's, from the global or a park save) brings
-	/// its own statuses, as the original's global save load restores them over what the controller's constructor started. The controller is the park's thing: its own fields stay.
+	/// Rebuilds the controller for <paramref name="career"/> without starting its statistics: the career attached after the park was built (Load A Game's player file, which the original reads
+	/// before the park file, 0x7451E0) brings its own statuses, and a loaded controller is never constructed (0x64D5B4). The controller is the park's thing: its own fields stay.
 	/// </summary>
 	private void AttachThemeParkIncMissions( ThemeParkIncCareer career )
 	{
@@ -124,7 +134,7 @@ public sealed partial class ParkEconomy
 
 		public void PlayCamera( ThemeParkIncCameraRequest request )
 		{
-			economy.TpiCameraRequests.Add( request );
+			AddTpiMissionNotice( economy.TpiCameraRequests, request );
 			economy.TpiMissionWorld?.PlayCamera( request );
 		}
 
@@ -135,7 +145,7 @@ public sealed partial class ParkEconomy
 		{
 		}
 
-		public void PostObjectiveLetter( int completed ) => economy.TpiObjectiveLetters.Add( completed );
+		public void PostObjectiveLetter( int completed ) => AddTpiMissionNotice( economy.TpiObjectiveLetters, completed );
 
 		public void StatusChanged() => economy.TpiMissionRevision++;
 

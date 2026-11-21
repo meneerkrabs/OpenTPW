@@ -77,6 +77,14 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( LabelText( "title" ) == flow.Strings.Extra( OpenTpwText.TpiTitle ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "title" ).Contains( "EXPERIMENTAL", StringComparison.Ordinal )), "the HUD names the experiment on screen, in the selected language" );
 			Require( LabelText( "limits" ) == flow.Strings.Extra( OpenTpwText.TpiLimits ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote), "the HUD's limits line is the capability policy's note (in the selected language)" );
 			Require( Context.Batch.TextDraws.Any( draw => draw.Text == Hud.GuestsText() ), "the guest counter is drawn" );
+			if ( level.LevelName == "science" && level.OriginalPark.Save?.ThemeParkIncWorld is { } prebuilt )
+			{
+				var economy = level.Park!.Economy;
+				Require( economy.TpiMissions != null && economy.TpiMissionWorld != null, "the mission controller runs with the level as its world" );
+				Require( economy.TpiCareer!.StatusWord( 0, 1 ) == 8 && economy.TpiCareer.StatusWord( 0, 0 ) == 1, "miss00's guest statistic has started" );
+				Require( level.ThemeParkIncCurrentObstacle == prebuilt.Variables.CurrentObstacle && prebuilt.FindAttraction( level.ThemeParkIncCurrentObstacle )?.InfoId == 1700,
+					"the current obstacle is the prebuilt's 1700 gate" );
+			}
 		} );
 		if ( flow.Level?.LevelName == "science" )
 			PlanPrecipitation();
@@ -332,6 +340,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( restoredGuests.Select( guest => (guest.Id, guest.KidSetDraw) ).SequenceEqual( saved.Guests.Guests.Select( guest => (guest.Id, guest.KidSetDraw) ) ),
 				"the continued Science guests retain their generation-specific sprite bank draws" );
 			Require( ParkSaveFile.Serialize( candidate.Park!.Economy ) == expectedEconomy, "the continued Science park keeps its economy and clock" );
+			Require( saved.TpiCurrentObstacle is > 0 && candidate.ThemeParkIncCurrentObstacle == live.ThemeParkIncCurrentObstacle, "the continued Science park keeps its current obstacle" );
 			var restoredLayout = ParkLayoutSnapshot.CaptureSnapshot( candidate.Guests.Grid.Cells, candidate.Objects );
 			Require( System.Text.Json.JsonSerializer.Serialize( restoredLayout.Cells ) == System.Text.Json.JsonSerializer.Serialize( saved.Layout.Cells ),
 				"the continued Science park keeps its exact cell links and routing stamps" );

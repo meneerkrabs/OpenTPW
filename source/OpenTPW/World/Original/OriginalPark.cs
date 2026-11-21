@@ -58,7 +58,7 @@ public sealed class OriginalPark
 		yield return null;
 		var model = new ModelFile( $"/levels/{levelName}/terrain/base.MD2" );
 		yield return null;
-		// [EXT:tpi-lake-drained] Theme Park Inc's lake is mission obstacle 1703 (lake.MD2, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (dlake.MD2); this viewer runs no missions, so it always draws dlake.MD2 and ignores the obstacle state: there is no mission state to follow, and the no-CD Game.exe holds no lake, dlake or obstacle string
+		// [EXT:tpi-lake-drained] Theme Park Inc's lake is mission obstacle 1703 (lake.MD2, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (dlake.MD2); the level builds no obstacle things yet (docs/reverse/TPI-MISSIONS.md §6: the prebuilt's obstacle records are skipped and 1703 has none), so there is no 1703 or 1704 object to draw and the level always draws terrain.wad's dlake.MD2
 		var lakePath = FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
 		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
 		var catalog = new Dictionary<int, OriginalObjectInfo>();

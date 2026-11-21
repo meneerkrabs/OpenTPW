@@ -96,6 +96,12 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public long[][]? TpiStaffChain { get; init; }
+	/// <summary>
+	/// The Theme Park Inc world variable <c>CurrentObstacle</c> (<c>park+0x1EAB6E</c>, saved by the World writer <c>0x641060</c>): the mission's obstacle thing, 0 for none. Null in Theme Park World saves and
+	/// in Theme Park Inc continuations from before the mission controller, which continue with none.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public int? TpiCurrentObstacle { get; init; }
 	/// <summary>The park gate's turn observation, or null when the park had no gate.</summary>
 	public ParkGate.ParkGateSnapshot? Gate { get; init; }
 	/// <summary>The park's name (the gate's two sign lines), or null when the park had none; saves from before the part carry none.</summary>

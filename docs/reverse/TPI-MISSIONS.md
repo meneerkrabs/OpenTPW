@@ -20,10 +20,13 @@ because the newer thing is visited first.
 | `+0x1B` | the obstacle's research is complete (message 0x23) | no; the load clears it |
 
 - **Constructor (`0x5EEDD0`).** State and thing 0, `+0x1A = 1`, `+0x1B = 0`; it subscribes to 0x23, 0x24, 0x25, 0x26 and 0x29 and, unless the game is finished,
-  starts the exit statistics. A park built for a career taken from a save (`AttachThemeParkIncCareer`) keeps the career's statuses, as the original's
-  global save load overwrites what the constructor started.
-- **Load (`0x5F03C0`).** The two saved fields, then `+0x1B = 0` and `+0x1A = 1`. The Science continuation save keeps them (`ParkSaveFile.Data.TpiMissions`); a save
-  from before the controller continues with it idle.
+  starts the exit statistics. It runs only when a new world is built (Enter Game), with the player's career.
+- **Load (`0x5F03C0`).** The park loader does not construct a loaded controller: `0x64D5B4` allocates it (`0x638120`), runs the thing base (`0x637210`) and the load,
+  which reads the two saved fields and sets `+0x1B = 0` and `+0x1A = 1`. Load A Game reads the global save before the park file (`0x7451E0`), so the statuses are the
+  player file's. OpenTPW's restore builds the economy first (its controller starts statistics on a new career), then restores the career and the controller over it,
+  and `AttachThemeParkIncCareer` swaps in the player file's career while the controller keeps its fields; both end in the original's state. The Science continuation
+  save keeps the fields (`ParkSaveFile.Data.TpiMissions`) and the current obstacle (`ParkResumeSnapshot.TpiCurrentObstacle`); a save from before the controller
+  continues with it idle and no current obstacle.
 
 ## 2. Exit statistics
 
@@ -42,16 +45,18 @@ mission's tech level: for `TechLevel.Theme` 0 to 2 the zone record's `+0` rises 
 | 1 | `cash − loans > 0` | `value >= TargetValue` |
 | 2 | `cash − loans` (bank `+0x14` less `0x5C1300`, 32 bits) | same |
 | 3 | challenges won in zones 0 to 2 (`+0xF0` of each record) | same |
-| 4 | the analyser's monthly profit (`0x5B9880`) | `value >= (TargetValue + 100) × baseline / 100` |
+| 4 | last month's takings: admission, shops, sideshows, rides, facilities (`0x5B9880`) | `value >= (TargetValue + 100) × baseline / 100` |
 | 5 | guests in the park (`0x5B2060(4)`) | same as 4 |
 | 6 | park awards held (`0x74C860`) | `value >= TargetValue` |
 | 7 | shares owned, percent | same |
 | 8 | guests in the park | same |
 
 `0x5B2060(4)` counts the guests on a cell of type 0, 1, 3, 9 or 10, Theme Park World's census. `0x5C1300` sums `(term − repaid) × instalment` over the bought
-loan records. OpenTPW measures types 1, 2, 3, 5 and 8 from its park. Type 4 reads five monthly rings of the park analyser that OpenTPW does not keep,
-type 6 awards that no ported code writes, type 7 the share system: those three are never stored or decided (`[EXT:tpi-capability-gates]`), and a type-4
-status is not started. Of the shipped missions only miss17 needs one (awards and shares), so it cannot be completed. No shipped mission sets a
+loan records. OpenTPW measures types 1, 2, 3, 5 and 8 from its park. Type 4 sums the newest closed month of five analyser rings (`+0x20148` to `+0x20A88`, stride
+`0x250`): the admission, shop, sideshow, ride and facility takings, so last month's revenue, not its profit (`research/tpi-campaign/r8-research-training-awards-shares.md`
+§5). The first three are Theme Park World's gate, shop and sideshow rows moved by `+0x268`, which OpenTPW's ledger keeps; but the ledger books ride and facility
+takings among the other income, without rows of their own, and a ring with no closed month adds `0x10(%esp)`, the pushed `ecx`, which is the analyser's own address. Type 6 reads awards that no ported code writes, type 7 the share system. Those three are never stored or decided
+(`[EXT:tpi-capability-gates]`), and a type-4 status is not started. Of the shipped missions only miss17 needs one (awards and shares), so it cannot be completed. No shipped mission sets a
 `TargetTime`, so no shipped mission can fail.
 
 ## 3. Requirements and completion

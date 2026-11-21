@@ -173,7 +173,7 @@ file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` ho
 (`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
 cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
 shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
-viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the viewer runs no missions; `lake.MD2` and the animations are
+viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the level builds no obstacle things yet, so there is no 1703 or 1704 object to draw; `lake.MD2` and the animations are
 ignored). That was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
 "New Science Drained Lake Obstacle", and `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10
 ("Water Drainage"); so `dlake` is the drained lake, not a finished one, and which one a park shows is data-driven (the exe holds no
@@ -280,12 +280,13 @@ Since November 21, 2026 a Theme Park Inc park runs the executable's mission cont
 [TPI-MISSIONS.md](reverse/TPI-MISSIONS.md)). It starts the mission's exit statistics in the viewed zone, tests them once a game day on every fourth world tick, and
 answers the obstacle, promotion and camera messages. Its completion tick spends the tickets, grows the land by the mission's extent, opens a theme, advances the
 career, finds the next obstacle and starts the new mission's statistics; the build list's mission gate reads the career's mission number. Types 1, 2, 3, 5 and 8
-are measured from the park; 4 (monthly profit), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
+are measured from the park; 4 (last month's takings, whose ride and facility rows OpenTPW's ledger does not keep), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
 Science continuation save.
 
-What does not run yet: the camera flight, whose end is the only sender of the completion message 0x29, so the slice offers no Proceed control and miss00 cannot
-be completed in play (the tests deliver 0x29 themselves); the obstacles as world things and their opening (their types are read from the zones' `obstacles`
-archives); the mission window, the objective letter's window, the research that registers an obstacle project, and the staff HQ's obstacle slots.
+**No mission completes in play, except through the cheats extension's Skip Mission.** Nothing calls OnMissionComplete: there is no mission window or Proceed
+control, and its camera flight, whose end is the only sender of the completion message 0x29, is not ported (the tests deliver 0x29 themselves). An obstacle
+mission would also need the research (message 0x23) and the staff HQ's obstacle slots, neither of which OpenTPW runs. What does not run yet besides: the obstacles as world things and their opening (their types are read from the zones' `obstacles`
+archives), and the objective letter's window.
 
 ### Prebuilt science save
 

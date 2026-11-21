@@ -274,6 +274,7 @@ public partial class Level
 			SnowCover = CaptureSnowCover(),
 			Staff = StaffWorld?.CaptureSnapshot(),
 			TpiStaffChain = TpiStaffWorld?.CaptureChain( Park.Economy ),
+			TpiCurrentObstacle = Park.Economy.Rules.ThemeParkInc ? ThemeParkIncCurrentObstacle : null,
 			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
 			// [BIN:TPW-EXE:0x48EE50 tube saved] optional: null (left out of the file) while the tube is empty, so such saves keep their bytes; a join snapshot carries none (the host's messages are not the joiner's, as for the advisor)
 			MessageTube = join ? null : MessageTubeCaptured?.Invoke(),
@@ -382,6 +383,9 @@ public partial class Level
 				(StaffWorld ?? throw new InvalidDataException( "The saved staff world is unavailable." )).RestoreSnapshot( snapshot.Staff );
 			if ( snapshot.TpiStaffChain != null && Park != null )
 				(TpiStaffWorld ?? throw new InvalidDataException( "The saved Theme Park Inc staff world is unavailable." )).RestoreChain( Park.Economy, snapshot.TpiStaffChain );
+			// [BIN:TPI-EXE:0x64BC00 World loader] the World variables carry CurrentObstacle; a continuation from before the controller kept none
+			if ( IsThemeParkIncSlice )
+				ThemeParkIncCurrentObstacle = (ushort)(snapshot.TpiCurrentObstacle ?? 0);
 		}
 		yield return true;
 		using ( LoadProfile.Measure( "resume-coasters" ) )

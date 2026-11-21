@@ -15,6 +15,14 @@ public partial class Level
 	private void OpenThemeParkIncObstacle( ushort thing ) =>
 		throw new InvalidOperationException( $"Thing {thing} is no Theme Park Inc obstacle of this level." );
 
+	/// <summary>A park built from a Theme Park Inc save (the prebuilt Science park) takes its World variable <c>CurrentObstacle</c>; a continuation restores its own later.</summary>
+	// [BIN:TPI-EXE:0x64BC00 World loader] CurrentObstacle is one of the World variables a park file carries (the prebuilt's names its 1700 gate)
+	private void SeedThemeParkIncCurrentObstacle()
+	{
+		if ( IsThemeParkIncSlice && resumeState == null && OriginalPark?.Save?.ThemeParkIncWorld is { } world )
+			ThemeParkIncCurrentObstacle = world.Variables.CurrentObstacle;
+	}
+
 	/// <summary>Gives the park's economy (also one a load put in place) this level as the world of its Theme Park Inc mission controller.</summary>
 	private void AttachThemeParkIncMissionWorld()
 	{

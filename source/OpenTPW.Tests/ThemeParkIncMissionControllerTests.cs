@@ -99,7 +99,7 @@ public class ThemeParkIncMissionControllerTests
 
 		var (unmeasured, _, _) = Controller( Statistic( 0, 4, 10 ) + Statistic( 1, 6, 6 ) + Statistic( 2, 7, 51 ) + Statistic( 3, 9, 1 ), host );
 		CollectionAssert.AreEqual( new int?[] { null, null, null, 0, 0 }, Enumerable.Range( 0, 5 ).Select( unmeasured.Measure ).ToArray(),
-			"4 (monthly profit), 6 (awards) and 7 (shares) are not measurable; any other type measures 0" );
+			"4 (last month's takings), 6 (awards) and 7 (shares) are not measurable; any other type measures 0" );
 	}
 
 	[TestMethod]

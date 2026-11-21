@@ -158,6 +158,42 @@ public class ThemeParkIncMechanicTests
 		Assert.AreEqual( expected, BitConverter.SingleToUInt32Bits( ParkEconomy.ThemeParkIncWearAmount( info, info.Upgrades[0], new RideOperation( true, riders, speed ) ) ) );
 	}
 
+	/// <summary>
+	/// The oracle's native wear tick 0x5E25B0 at the 24-bit control word (tpi_ride_wear_oracle.py --golden, 400 cases): the ride's speed, riders and type, its repair and life singles
+	/// before and after, and whether VAR_WORN was written. The first ten cases, then the first repair clamped at 0, the first life clamped at 0, the first worn ride and the first
+	/// wearing special ride (the life kept).
+	/// </summary>
+	[TestMethod]
+	[DataRow( 162, 0, 1, 162, 0, 52, 2, 0x42C80000u, 0x42C80000u, false, 0x42C80000u, 0x42C80000u, false )]
+	[DataRow( 59, 5, 5, 100, 0, 60, 1, 0x40A66666u, 0x408DD45Fu, true, 0x408C4DD2u, 0x408DD45Fu, true )] // worn, special
+	[DataRow( 0, 24, 24, 100, 6, 29, 9, 0x411FD70Au, 0x42200000u, true, 0x40A147ADu, 0x42200000u, false )]
+	[DataRow( 100, 0, 11, 100, 7, 60, 6, 0x42C80000u, 0x42200000u, false, 0x42C80000u, 0x42200000u, false )]
+	[DataRow( 146, 0, 24, 100, 0, 147, 6, 0x414BDFC6u, 0x42200000u, false, 0x414BDFC6u, 0x42200000u, false )]
+	[DataRow( 29, 0, 12, 100, 4, 60, 6, 0x3E99999Au, 0x42200000u, false, 0x3E99999Au, 0x42200000u, true )] // no riders: no wear, but the byte 0 is below WarnPlayer
+	[DataRow( 100, 5, 2, 100, 2, 13, 1, 0x411FD70Au, 0x42200000u, false, 0x410FD70Au, 0x421FEB85u, false )]
+	[DataRow( 0, 1, 5, 22, 1, 60, 2, 0x40A66666u, 0x3C23D70Au, false, 0x409A3D70u, 0x3B1D4952u, true )]
+	[DataRow( 75, 0, 8, 40, 2, 60, 4, 0x3E99999Au, 0x3C23D70Au, false, 0x3E99999Au, 0x3C23D70Au, true )]
+	[DataRow( 0, -1, 8, 85, 1, 125, 6, 0x42954747u, 0x3C23D70Au, false, 0x42941414u, 0x00000000u, false )] // life clamp
+	[DataRow( 27, 1, 2, 109, 4, 27, 9, 0x40A66666u, 0x42B30914u, false, 0x00000000u, 0x42B2D141u, true )] // repair clamp
+	public void TheWearTickIsTheExecutables( int speed, int riders, int maxCapacity, int maxSpeed, int redCapacity, int redSpeed, int wearRate, uint repair, uint life, bool special,
+		uint expectedRepair, uint expectedLife, bool expectedWorn )
+	{
+		var economy = ScienceEconomy();
+		var operations = new Operations();
+		economy.RideOperations = operations;
+		economy.TryBuild( RobotSwing, out var item );
+		// the oracle's type record: RideBreakDown.Imminent 10 and WarnPlayer 5, Info.IsSpecial at +0x5C
+		var info = Ride( maxCapacity, maxSpeed, redCapacity, redSpeed, wearRate ) with { IsSpecial = special, BreakdownImminent = 10f, BreakdownWarnPlayer = 5f };
+		item!.Repair = BitConverter.UInt32BitsToSingle( repair );
+		item.LifeGauge = BitConverter.UInt32BitsToSingle( life );
+		item.ScriptHosted = true;
+		operations.Rides[item.Id] = new RideOperation( true, riders, speed );
+		var worn = false;
+		economy.EventRaised += raised => worn |= raised.Kind == ParkEventKind.RideScriptVariable && raised.InstanceId == item.Id && raised.InfoId == (int)RideVariables.VAR_WORN && raised.Amount == 1;
+		economy.WearThemeParkInc( item, info, 64 );
+		Assert.AreEqual( (expectedRepair, expectedLife, expectedWorn), (BitConverter.SingleToUInt32Bits( (float)item.Repair ), BitConverter.SingleToUInt32Bits( (float)item.LifeGauge ), worn ) );
+	}
+
 	[TestMethod]
 	public void TheWearTickRunsEverySixtyFourthTurnAndASpecialRideKeepsItsLife()
 	{

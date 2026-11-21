@@ -68,7 +68,7 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x5E26A6 wear gauges] +0x54 = clamp(+0x54 - wear); unless the type's +0x5C (Info.IsSpecial) is 1, +0x58 = clamp(+0x58 - 0.02f × wear) (0x5E26FB..0x5E273C); then the repair
 	// byte below the type's +0x3CC (RideBreakDown.WarnPlayer) writes VAR_WORN = 1 (0x5E2761), and below +0x3C8 (RideBreakDown.Imminent) with the byte plus the wear not below it posts advice 0x40
 	// [EXT:tpi-capability-gates] the advice 0x40 (0x71A930 -> 0x718820) is not posted: Theme Park Inc's advisor queue carries the forecasts only (the advisor's other messages); it draws nothing
-	private void WearThemeParkInc( ParkObjectState item, EconomyObjectInfo info, long turn )
+	internal void WearThemeParkInc( ParkObjectState item, EconomyObjectInfo info, long turn )
 	{
 		if ( info.Upgrades.Count == 0 )
 			return;

@@ -146,6 +146,7 @@ def main(cases: int, golden: bool) -> int:
     bad = {24: 0, 53: 0}
     seen = {'worn': 0, 'advice': 0, 'red': 0}
     lines = []
+    tick_kinds: set = set()
     for index in range(cases):
         for precision, control in ((24, 0x7F), (53, 0x27F)):
             sandbox.reset()
@@ -202,8 +203,15 @@ def main(cases: int, golden: bool) -> int:
                 bad[precision] += 1
                 if precision == 24:
                     print(f'tick(repair {repair!r}, life {life!r}, wear {wear!r}, special {special}): native {native_tick}, port {port_tick}')
-            elif golden and precision == 24 and index < 10:
-                lines.append(f'tick repair {repair!r} life {life!r} riders {riders} wear {wear!r} special {special} -> repair {native_tick[0]!r} life {native_tick[1]!r} worn {native_tick[2]} advice {native_tick[3]}')
+            elif golden and precision == 24:
+                # the first ten ticks, then the first of each kind the tests pin: the repair or the life clamped at 0, a byte below WarnPlayer (VAR_WORN) and a special ride
+                kinds = [kind for kind, hit in (('repair clamp', native_tick[0] == 0.0 and repair > 0.0), ('life clamp', native_tick[1] == 0.0 and life > 0.0),
+                                                ('worn', native_tick[2]), ('special', special and wear > 0.0)) if hit and kind not in tick_kinds]
+                if index < 10 or kinds:
+                    tick_kinds.update(kinds)
+                    lines.append(f'tick speed {speed} riders {riders} maxcap {max_capacity} maxspeed {max_speed} redcap {red_capacity} redspeed {red_speed} rate {wear_rate} '
+                                 f'repair {bits(repair):#010x} life {bits(life):#010x} special {special} -> repair {bits(native_tick[0]):#010x} life {bits(native_tick[1]):#010x} '
+                                 f'worn {native_tick[2]} advice {native_tick[3]}{" (" + ", ".join(kinds) + ")" if kinds else ""}')
             # the repair timer: the setter 0x5DA150(0x16) on a mechanic whose ride is thing 3
             sandbox.reset()
             state.update(writes=[], advice=False, scratch=sandbox.alloc(0x100))

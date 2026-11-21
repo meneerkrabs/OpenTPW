@@ -39,7 +39,7 @@ public partial class Level
 	{
 		public int? TypeOf( ushort thing ) => level.ThemeParkIncThing( thing )?.Entry.InfoId;
 
-		// [APPROX:RIDES-040] the replacement is a fixed item (Info.DontApplyOffset 1, like every obstacle) and is drawn from the sentinel anchor (0, 0) as the prebuilt's fixed scene records are
+		// RIDES-040 (tagged at ParkObjects' restore of the fixed scene records): the replacement is a fixed item (Info.DontApplyOffset 1, like every obstacle) and is drawn from the sentinel anchor (0, 0) as the prebuilt's fixed scene records are
 		public void Place( int type ) => level.Objects.Add( level.Objects.Catalog.Find( type )
 			?? throw new InvalidDataException( $"An obstacle is replaced with type {type}, which no object archive of {level.LevelName} declares." ), 0, 0, 0 );
 

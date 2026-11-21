@@ -66,6 +66,12 @@ public sealed class ParkLitter
 	/// <summary>True in an online visit: the original's game type 1 drops no litter (tp.exe <c>0x004D93B0</c> returns at once).</summary>
 	public bool Disabled { get; set; }
 
+	/// <summary>
+	/// Theme Park Inc's litter (TPI Game.exe <c>0x5D8C80</c>): the drop reseeds and draws as Theme Park World's, but the sprite lies 3 to 6 tenths into the cell
+	/// (<see cref="ThemeParkIncSpriteOffset(WorldRng, int, int)"/>) rather than 1 to 9.
+	/// </summary>
+	public bool ThemeParkInc { get; set; }
+
 	/// <summary>The park's world generator (the economy's), which a drop reseeds and draws from; null: the litter draws nothing (a standalone litter map).</summary>
 	public Func<WorldRng>? World { get; set; }
 
@@ -94,8 +100,14 @@ public sealed class ParkLitter
 			return false;
 		var index = Index( x, y );
 		// [BIN:TPW-EXE:0x004D94E2 litter sprite offset] the placed item's sprite takes the world generator reseeded with the cell id and two draws (0x004D94F8, 0x004D953F): the park's one generator keeps the state they leave
+		// [BIN:TPI-EXE:0x5D8DCF littering cell] Theme Park Inc's drop reseeds with the cell word and takes its two draws alike (0x5D8E14, 0x5D8E42), after the record's type test (+0x30, 0x5D8CC2)
 		if ( World?.Invoke() is { } generator )
-			SpriteOffset( generator, x, y );
+		{
+			if ( ThemeParkInc )
+				ThemeParkIncSpriteOffset( generator, x, y );
+			else
+				SpriteOffset( generator, x, y );
+		}
 		Spread( x, y, type, add: true );
 		types[index] = (byte)type;
 		collectors[index] = 0;
@@ -273,6 +285,20 @@ public sealed class ParkLitter
 
 	/// <summary>The sprite offset of a cell as a pure function of the cell (a generator of its own is reseeded).</summary>
 	public static (int X, int Z) SpriteOffset( int x, int y ) => SpriteOffset( new WorldRng( 0 ), x, y );
+
+	/// <summary>
+	/// Theme Park Inc's sprite offset in tenths of a cell (3..6 each way): the same reseed by the cell id and two draws as <see cref="SpriteOffset(WorldRng, int, int)"/>, each
+	/// draw's low two bits placing the sprite at <c>((d &amp; 3) − 2) × 0.1 + 0.5</c> of the cell.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D8E14 litter sprite offset] x = cell + ((draw & 3) - 2.0) * 0.1f + 0.5 (0x93AD1C 2.0, 0x93AA74 0.1, 0x93AA78 0.5), then y from the second draw (0x5D8E42)
+	public static (int X, int Z) ThemeParkIncSpriteOffset( WorldRng world, int x, int y )
+	{
+		world.Reseed( CellId( x, y ) );
+		return (3 + (int)(world.NextWord() & 3), 3 + (int)(world.NextWord() & 3));
+	}
+
+	/// <summary>The sprite offset this park's litter lies at (<see cref="ThemeParkInc"/>'s rule or Theme Park World's), a pure function of the cell.</summary>
+	public (int X, int Z) SpriteOffsetOf( int x, int y ) => ThemeParkInc ? ThemeParkIncSpriteOffset( new WorldRng( 0 ), x, y ) : SpriteOffset( x, y );
 
 	/// <summary>
 	/// The point in a littered cell a handyman walks to, in 1/256 of a cell: the job search reseeds the world generator with the cell id and

@@ -11,6 +11,10 @@ public partial class Level
 	public PatrolAreaTool? PatrolTool { get; private set; }
 	/// <summary>Draws the placed staff and the tool's dangling sprite.</summary>
 	public StaffRenderer? StaffRenderer { get; private set; }
+	/// <summary>Theme Park Inc's staff in the park (null outside a Theme Park Inc park with its staff economy).</summary>
+	public ThemeParkIncStaffWorld? TpiStaffWorld { get; private set; }
+	/// <summary>The pool slot whose Theme Park Inc candidate the player is placing; -1 for none.</summary>
+	public int TpiPlacingSlot { get; private set; } = -1;
 
 	// kept beside its steps for the tests that call it by reflection (FrameBatchingTests, RestartParkSnapshotTests and others)
 	private void SetupStaff()
@@ -48,6 +52,11 @@ public partial class Level
 			if ( Park != null )
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
+		if ( Park.Economy.TpiStaff != null )
+		{
+			TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
+			StaffWorld.OtherChainIds = () => ThemeParkIncStaffWorld.ChainIds( Park?.Economy );
+		}
 		AttachStaffWorld();
 		AttachAdvisorProbes();
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, () => StaffWorld );
@@ -172,6 +181,79 @@ public partial class Level
 		Park.Economy.StaffWorld = StaffWorld;
 		// a load replaced the economy: its staff take the banks this level loaded, whose count reduces their stored sprite draws again
 		Park.Economy.Staff.AttachSpriteBanks( staffSpriteBanks );
+		AdoptTpiStaffThings();
+		TpiStaffWorld?.SyncChain( Park.Economy );
+	}
+
+	/// <summary>
+	/// The Theme Park Inc members' things in the level's pool: a placed member keeps the slot its save holds (taken now when the pool does not hold it yet).
+	/// </summary>
+	/// <exception cref="InvalidDataException">A member's thing id is held by a thing of another kind.</exception>
+	private void AdoptTpiStaffThings()
+	{
+		if ( Park?.Economy.TpiStaff is not { } staff )
+			return;
+		foreach ( var member in staff.Members )
+		{
+			if ( member.Navigation == null )
+				continue;
+			if ( Things.IsUsed( member.ThingId ) ? Things.ModelOf( member.ThingId ) != SaveThingModel.Handyman : !Things.Occupy( member.ThingId, SaveThingModel.Handyman ) )
+				throw new InvalidDataException( $"Theme Park Inc staff member {member.Id}'s thing id {member.ThingId} is not a handyman slot of the thing pool." );
+		}
+	}
+
+	/// <summary>
+	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman goes to the hand until a drop or a cancel; the other roles are
+	/// refused. Null when the hire starts, else the refusal's reason.
+	/// </summary>
+	// [BIN:TPI-EXE:0x630D10 hire] the slot is marked as being placed and the park maximum check runs; the placement tool 0x93B61C then holds the candidate (its enter 0x4D4C20 makes the dangling sprite)
+	// [EXT:tpi-capability-gates] only the handyman is ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
+	public string? BeginTpiHire( int slot )
+	{
+		if ( Park?.Economy.TpiStaff is not { } staff )
+			return "unavailable";
+		if ( slot < 0 || slot >= ThemeParkIncStaff.PoolSlots || staff.Slots[slot] is not { } candidate )
+			return "no candidate";
+		if ( candidate.Role != ThemeParkIncStaffRole.Handyman )
+			return "role not ported";
+		if ( TpiStaffWorld == null )
+			return "unavailable";
+		CancelTpiHire();
+		EndBuildTools();
+		if ( !staff.BeginHire( slot ) )
+			return "no candidate";
+		TpiPlacingSlot = slot;
+		return null;
+	}
+
+	/// <summary>Cancels the Theme Park Inc placement in progress: the candidate goes back to the pool.</summary>
+	// [BIN:TPI-EXE:0x4D4E40 placement exit] a tool switch exits the placement tool with placed 0: 0x6319E0(1) clears the being-placed byte and keeps the candidate
+	public void CancelTpiHire()
+	{
+		if ( TpiPlacingSlot < 0 )
+			return;
+		Park?.Economy.TpiStaff?.EndHire( TpiPlacingSlot, placed: false );
+		TpiPlacingSlot = -1;
+	}
+
+	/// <summary>
+	/// Drops the Theme Park Inc candidate being placed on cell (<paramref name="x"/>, <paramref name="y"/>): a valid cell makes the member (its thing, its start and its first search),
+	/// a refused one keeps the placement going. The member placed, or null when the cell refused it.
+	/// </summary>
+	// [BIN:TPI-EXE:0x4D4EB0 staff drop] a refused cell prints "Cannot place staff member here" and the tool stays; a valid one constructs the member (ThemeParkIncStaffWorld.Construct), sets placed and
+	// switches the tool, whose exit runs 0x6319E0(0): the candidate leaves the pool
+	public ThemeParkIncStaffMember? DropTpiStaff( int x, int y )
+	{
+		if ( TpiPlacingSlot < 0 || Park?.Economy is not { TpiStaff: { } staff } economy || TpiStaffWorld is not { } world || Guests == null )
+			return null;
+		if ( !ThemeParkIncStaffWorld.CanDrop( Guests.Grid.Cells, x, y, IsStaffDropBlocked ) )
+			return null;
+		var member = staff.EndHire( TpiPlacingSlot, placed: true );
+		TpiPlacingSlot = -1;
+		if ( member == null )
+			return null;
+		world.Construct( economy, member, (x, y), Things );
+		return member;
 	}
 
 	/// <summary>The staff sprites this level loaded (null until it did, and in a level without an original park).</summary>

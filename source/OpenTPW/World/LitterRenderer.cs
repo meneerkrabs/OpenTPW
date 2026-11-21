@@ -86,9 +86,10 @@ public sealed class LitterRenderer : Entity
 
 	/// <summary>The sprite's position in the original's world units (ten per cell): the cell's corner plus the 1..9 tenths the cell id's two draws give.</summary>
 	// [BIN:TPW-EXE:0x004D94E2 litter sprite offset] x = column × 10 + (first draw % 9) + 1 and z = row × 10 + (second draw % 9) + 1, handed to the sprite by 0x00475480 with height 0 (the placement takes the ground height there, 0x00542010 through 0x004527F0)
-	public static (int X, int Z) Anchor( int cellX, int cellY )
+	// [BIN:TPI-EXE:0x5D8E14 litter sprite offset] Theme Park Inc's litter (themeParkInc) lies 3 to 6 tenths into the cell (ParkLitter.ThemeParkIncSpriteOffset)
+	public static (int X, int Z) Anchor( int cellX, int cellY, bool themeParkInc = false )
 	{
-		var (offsetX, offsetZ) = ParkLitter.SpriteOffset( cellX, cellY );
+		var (offsetX, offsetZ) = themeParkInc ? ParkLitter.ThemeParkIncSpriteOffset( new WorldRng( 0 ), cellX, cellY ) : ParkLitter.SpriteOffset( cellX, cellY );
 		return (cellX * 10 + offsetX, cellY * 10 + offsetZ);
 	}
 
@@ -96,9 +97,9 @@ public sealed class LitterRenderer : Entity
 	/// The four corners of a litter sprite's quad in engine space, in the order top left, top right, bottom right, bottom left: the flat quad of
 	/// <see cref="SpriteScale.FlatEdges"/> around the anchor, <see cref="SpriteScale.FlatLift"/> above the ground height there.
 	/// </summary>
-	public static (SVector3 TopLeft, SVector3 TopRight, SVector3 BottomRight, SVector3 BottomLeft) Corners( ModelHeightfield field, int cellX, int cellY, GuestAtlasFrame frame )
+	public static (SVector3 TopLeft, SVector3 TopRight, SVector3 BottomRight, SVector3 BottomLeft) Corners( ModelHeightfield field, int cellX, int cellY, GuestAtlasFrame frame, bool themeParkInc = false )
 	{
-		var (x, z) = Anchor( cellX, cellY );
+		var (x, z) = Anchor( cellX, cellY, themeParkInc );
 		var anchor = GuestRenderer.CellToEngine( field, x / field.CellSizeX, z / field.CellSizeZ, SpriteScale.FlatLift );
 		var (left, right, top, bottom) = SpriteScale.FlatEdges( frame );
 		SVector3 At( float dx, float dz ) => anchor + new SVector3( dx * ObjectPlacement.ModelScale, dz * ObjectPlacement.ModelScale, 0f );
@@ -138,7 +139,7 @@ public sealed class LitterRenderer : Entity
 				Array.Resize( ref vertices, Math.Max( 64 * VerticesPerSprite, vertices.Length * 2 ) );
 			var index = atlas.GetFrame( Slot( type ), 0, 0 );
 			var frame = atlas.Frames[index];
-			var (topLeft, topRight, bottomRight, bottomLeft) = Corners( field, x, y, frame );
+			var (topLeft, topRight, bottomRight, bottomLeft) = Corners( field, x, y, frame, litter?.ThemeParkInc == true );
 			var u0 = frame.X / (float)atlas.Width;
 			var u1 = (frame.X + frame.Width) / (float)atlas.Width;
 			var v0 = frame.Y / (float)atlas.Height;

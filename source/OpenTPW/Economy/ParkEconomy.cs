@@ -132,6 +132,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 	public ThemeParkIncStaff? TpiStaff { get; private set; }
 
 	/// <summary>
+	/// The Theme Park Inc wage demands the day messages made since the HUD last took them (0x628CA0's type-0x19 message). The salary negotiation that answers them is not ported yet: the HUD
+	/// shows them as notes. Not saved (a notice, like the original's message bar).
+	/// </summary>
+	internal List<ThemeParkIncStaff.WageDemand> TpiWageDemands { get; } = new();
+
+	/// <summary>
 	/// A Theme Park Inc staff name's identity for the pool's name test, which compares the texts of the per-language <c>*_NAMES.str</c> tables. No retail language holds a
 	/// text twice across the six tables (ThemeParkIncLanguageTests), so the role and index decide the test exactly and the economy needs no strings.
 	/// </summary>
@@ -543,6 +549,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 			EndObjectDay();
 		if ( changes.HasFlag( CalendarChange.Day ) )
 			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
+		// [BIN:TPI-EXE:0x626624 staff day] the day message (0x0B, broadcast by the calendar 0x6084FA after the thing loop and the pool update) runs every member's daily routine 0x628CA0 (the experience
+		// gain and a wage demand on its day of the month) and then 0x62D1A0 (the day's counters cleared); it takes no draw, and the staff hear it in ascending handle order
+		if ( changes.HasFlag( CalendarChange.Day ) && TpiStaff != null )
+			TpiWageDemands.AddRange( TpiStaff.EndDay( turn, stored.Day ) );
 		if ( changes.HasFlag( CalendarChange.Month ) )
 		{
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
@@ -1594,6 +1604,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// the objects' month messages come after the bank's (thing ids: bank 9, attractions 14 and up in the prebuilt park): each object debits its running cost and its month's booked costs, then rolls its month
 			PayRunningCosts();
 			RollObjectMonths();
+			// [BIN:TPI-EXE:0x6265DE staff payday] each member's month message debits its salary through the bank (0x64EBE0 -> 0x5C07B0: the balance, the red stamp and the wage total, with the
+			// bank's withdrawals flag) and then reviews its wage (0x62CDA0, whose demand day draws); the members hear it in ascending handle order (ThemeParkIncStaff.PayMonth). The objects' and the
+			// members' handlers interleave by thing id in the original; both only debit within the same turn, so their order changes neither the balance, the totals, the red stamp (set at
+			// whichever debit first crosses 0, the same turn) nor the reviews' draws
+			TpiStaff?.PayMonth( ( _, salary ) => Post( LedgerCategory.StaffCosts, salary ), World );
 		}
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
 		var closed = analyserClosed ?? CloseAnalyserMonth( nextMonthIndex );

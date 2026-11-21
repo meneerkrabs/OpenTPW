@@ -110,7 +110,7 @@ public sealed class ThemeParkIncStaffMember
 	// on strike +0x298, researching +0x294, training +0x290; picked up and the others count nothing
 	public void CountTick( DisplayState state )
 	{
-		if ( state is not DisplayState.PickedUp )
+		if ( state is not DisplayState.PickedUp && (int)state != 6 )
 			dayCounters[(int)state]++;
 	}
 
@@ -174,9 +174,83 @@ public sealed class ThemeParkIncStaffMember
 		return ((int)Energy & 0xFF) == 100;
 	}
 
+	/// <summary>Adds <paramref name="delta"/> to happiness, clamped to 0..100.</summary>
+	// [BIN:TPI-EXE:0x60D0D0 meter add] field = clamp(field + delta, 0, 100), the x87 sum compared and stored as a single
+	internal void AddHappiness( float delta ) => Happiness = Clamp( (double)delta + Happiness );
+
 	/// <summary>Whether the member is too tired to go on: its energy byte below RestLevel.</summary>
 	// [BIN:TPI-EXE:0x62B3B0 tired] (u8)trunc(energy) < RestLevel, signed
 	public bool Tired( ThemeParkIncStaffSettings settings ) => ((int)Energy & 0xFF) < settings.RestLevel;
+
+	/// <summary>The member's thing id in the park's thing pool (the handle the litter claim and the message order use); 0 until it is placed.</summary>
+	public int ThingId { get; internal set; }
+	/// <summary>The state word (+0x1B4): 0 idle, 1 walking (patrol), 0x0F to litter, 0x10 sweeping (ThemeParkIncStaffWorld).</summary>
+	public int State { get; internal set; }
+	/// <summary>The idle stamp (+0x23C): the turn an idle spell after a walk began, else 0.</summary>
+	public long IdleStamp { get; internal set; }
+	/// <summary>The work stamp (+0x5D4): the turn the sweep began.</summary>
+	public long WorkStamp { get; internal set; }
+	/// <summary>The litter target (+0x5D8) as a cell word (y × 128 + x + 1); 0 for none.</summary>
+	public int LitterCell { get; internal set; }
+	/// <summary>The base speed word (+0xD4).</summary>
+	public int BaseSpeed { get; internal set; }
+	/// <summary>The speed bonus word (+0xD6): 25 on the walk to a job, else 0.</summary>
+	public int SpeedBonus { get; internal set; }
+	/// <summary>The decaying speed boost word (+0xD8).</summary>
+	public ushort Boost { get; internal set; }
+	/// <summary>The smoothed speed (+0xDC) the walk's caps follow.</summary>
+	public float SmoothedSpeed { get; internal set; }
+	/// <summary>The patrol rectangle (+0x24C..+0x258, cells, inclusive): the whole map until a patrol area is set.</summary>
+	public (int X0, int Y0, int X1, int Y1) PatrolArea { get; internal set; } = (0, 0, 0x7F, 0x7F);
+	/// <summary>The sprite template the member last queued on its sprite source (+0x20, through 0x5D0F90); presentation.</summary>
+	public int Template { get; internal set; }
+	/// <summary>The member's walk; null until it is placed.</summary>
+	public GuestNavigation? Navigation { get; internal set; }
+	/// <summary>The entry number the member's thing holds on its cell's chain (WALK-003); 0 while the chain holds it.</summary>
+	public long CellSerial { get; internal set; }
+	/// <summary>Whether the member stands in the park.</summary>
+	public bool Placed => Navigation != null;
+	/// <summary>The walk's speed caps the pre-update set this update (not saved: every update sets them before its walk).</summary>
+	internal int MaxSpeed, MaxForce;
+	/// <summary>Presentation: the point the member is drawn at, in cells.</summary>
+	public float DrawX { get; internal set; }
+	public float DrawY { get; internal set; }
+
+	/// <summary>The member's thing for a save; null before it is placed.</summary>
+	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld() => Navigation is not { } navigation ? null : new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost,
+		SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial );
+
+	/// <summary>The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10.</summary>
+	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role == ThemeParkIncStaffRole.Handyman && state is 0 or 1 or 0x0F or 0x10;
+
+	/// <summary>Whether a saved thing can be this model's: a ported state, a thing id of the pool, a cell word of the map, a valid walk.</summary>
+	internal static bool IsValidWorld( ThemeParkIncStaffRole role, ThemeParkIncStaffWorldSnapshot? world ) => world == null || IsPortedState( role, world.State )
+		&& world.ThingId is >= 1 and <= ThingPool.Capacity && world.LitterCell is >= 0 and <= ParkLitter.MapSize * ParkLitter.MapSize && world.BaseSpeed is >= 0 and <= ushort.MaxValue
+		&& world.SpeedBonus is >= 0 and <= ushort.MaxValue && world.Boost is >= 0 and <= ushort.MaxValue && float.IsFinite( world.SmoothedSpeed ) && world.IdleStamp >= 0 && world.WorkStamp >= 0
+		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && world.CellSerial >= 0
+		&& world.Navigation is { IsValid: true };
+
+	/// <summary>Restores the saved thing (a valid one, <see cref="IsValidWorld"/>), or leaves the member unplaced.</summary>
+	internal void RestoreWorld( ThemeParkIncStaffWorldSnapshot? world )
+	{
+		if ( world == null )
+			return;
+		ThingId = world.ThingId;
+		State = world.State;
+		IdleStamp = world.IdleStamp;
+		WorkStamp = world.WorkStamp;
+		LitterCell = world.LitterCell;
+		BaseSpeed = world.BaseSpeed;
+		SpeedBonus = world.SpeedBonus;
+		Boost = (ushort)world.Boost;
+		SmoothedSpeed = world.SmoothedSpeed;
+		PatrolArea = (world.PatrolArea[0], world.PatrolArea[1], world.PatrolArea[2], world.PatrolArea[3]);
+		Template = world.Template;
+		Navigation = world.Navigation!.Restore();
+		CellSerial = world.CellSerial;
+		DrawX = Navigation.X / (float)Fixed16.One;
+		DrawY = Navigation.Y / (float)Fixed16.One;
+	}
 
 	/// <summary>Sets the salary (at least MinWage) and reviews the wage when it changed.</summary>
 	// [BIN:TPI-EXE:0x62D160 salary setter] the new salary is clamped to MinWage and the wage review runs only when the salary changed

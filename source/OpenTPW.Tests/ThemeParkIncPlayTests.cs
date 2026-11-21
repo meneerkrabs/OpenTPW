@@ -496,7 +496,7 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
-	public void ThePlacementFlowDebitsThePriceExactlyOnceAndALongRunDropsNoLitter()
+	public void ThePlacementFlowDebitsThePriceExactlyOnceAndALongRunDropsLitterForTheHandymen()
 	{
 		UseTpiData();
 		var park = new SlicePark( "science", arrivalTimeBetween: 2, withMoney: true );
@@ -516,7 +516,9 @@ public class ThemeParkIncPlayTests
 		runtime.LinkAttraction( placed!.Visitors, entry.InfoId );
 		Assert.AreEqual( before - info.PurchaseCost, economy.Balance, "exactly one debit of the purchase price, linking included" );
 		Assert.AreEqual( info.PurchaseCost, bought!.TotalSpent );
-		// a long run of guests: no litter drops, as no handyman would ever sweep it (Facilities, the toilets' directory, is not in the slice's catalogue; the toilet wear is a synthetic test)
+		// a long run of guests: the litter is on, as the park's handymen sweep it (ThemeParkIncHandymanTests), and no toilet wears (Facilities, the toilets' directory, is not in the slice's catalogue;
+		// the toilet wear is a synthetic test, and Theme Park Inc's own toilet wear is unported: [EXT:tpi-no-maintenance-wear])
+		Assert.IsFalse( economy.Litter.Disabled, "the guests drop litter in a park with Theme Park Inc staff" );
 		var cashAfterBuilds = economy.Balance;
 		for ( var step = 0; step < 15 * 60 * FixedStepClock.TicksPerSecond; step++ )
 		{
@@ -525,7 +527,6 @@ public class ThemeParkIncPlayTests
 		}
 		Assert.IsTrue( park.Guests.GetStatistics().InPark > 0, "guests came" );
 		Assert.IsFalse( economy.Objects.Any( item => ParkEconomy.IsDirtyToilet( item ) && economy.Catalog.TryGet( item.InfoId, out var relief ) && relief.ProvidesRelief ), "no toilet is dirty" );
-		Assert.AreEqual( 0, economy.LitterItems, "no litter drops" );
 		Assert.IsFalse( economy.IsBankrupt );
 		Assert.IsTrue( economy.Balance > cashAfterBuilds - 100000, "the run only earned and paid running costs" );
 	}

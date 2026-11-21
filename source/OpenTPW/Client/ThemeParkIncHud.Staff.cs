@@ -34,6 +34,9 @@ public sealed partial class ThemeParkIncHud
 			Id = "staffPanelList",
 			Rows = StaffRows,
 			RowHeight = 52,
+			RowActivated = ActivateStaffRow,
+			// [EXT:tpi-text-hud] the text HUD's staff list clicks like its buttons; no original Theme Park Inc hire list is claimed
+			ClicksOnActivate = true,
 			Visible = false,
 			Bounds = new UiRect( 244, 380, 1560, 1000 ),
 			Anchor = UiAnchor.TopLeft
@@ -50,16 +53,23 @@ public sealed partial class ThemeParkIncHud
 		} );
 	}
 
-	/// <summary>The pool's candidates in slot order, then (under a heading) the hired members, as listed rows; read only.</summary>
+	/// <summary>The pool slots of the listed candidate rows, in row order (the rows <see cref="StaffRows"/> listed last).</summary>
+	private readonly List<int> staffRowSlots = new();
+
+	/// <summary>The pool's candidates in slot order, then (under a heading) the hired members, as listed rows; activating a candidate's row hires it.</summary>
 	internal IReadOnlyList<string> StaffRows()
 	{
+		staffRowSlots.Clear();
 		if ( level.Park?.Economy.TpiStaff is not { } staff )
 			return Array.Empty<string>();
 		var rows = new List<string>();
-		foreach ( var candidate in staff.Slots )
+		for ( var slot = 0; slot < staff.Slots.Count; slot++ )
 		{
-			if ( candidate != null )
+			if ( staff.Slots[slot] is { } candidate )
+			{
 				rows.Add( StaffRow( candidate.Role, candidate.NameIndex, candidate.Experience, candidate.Wage ) );
+				staffRowSlots.Add( slot );
+			}
 		}
 		if ( staff.Members.Count > 0 )
 		{
@@ -76,6 +86,62 @@ public sealed partial class ThemeParkIncHud
 	// index, to the string lookup 0x8934A0, so the NameIndex is the table index
 	private string StaffRow( ThemeParkIncStaffRole role, int nameIndex, int experience, int wage ) => string.Format( T( OpenTpwText.TpiStaffRow ),
 		strings.StaffType( (int)role ), strings.StaffName( (int)role, nameIndex ), experience, wage.ToString( "N0" ) );
+
+	/// <summary>A candidate's row activated: a cleaner (handyman) goes to the hand for placing, another role is refused with a note.</summary>
+	internal void ActivateStaffRow( int index )
+	{
+		StaffRows();
+		if ( index < 0 || index >= staffRowSlots.Count )
+			return;
+		var refusal = level.BeginTpiHire( staffRowSlots[index] );
+		if ( refusal == null )
+		{
+			CloseStaffPanel();
+			DisarmBuild();
+			PostMessage( T( OpenTpwText.TpiStaffPlaceHint ) );
+		}
+		else if ( refusal == "role not ported" )
+		{
+			PostMessage( T( OpenTpwText.TpiStaffRoleRefused ) );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+		}
+	}
+
+	/// <summary>
+	/// The staff placement's HUD side while a hire is in the hand: a park click drops it (a refused cell keeps it in the hand with a note), a right click cancels it. True when the click is
+	/// the placement's.
+	/// </summary>
+	private bool UpdateStaffPlacement( UiInput input, bool inPark )
+	{
+		if ( level.TpiPlacingSlot < 0 || MenuOpen )
+			return false;
+		if ( input.RightPressed && GameOptions.Current.RmbCancel )
+		{
+			level.CancelTpiHire();
+			PostMessage( T( OpenTpwText.TpiToolsPutAway ) );
+			return true;
+		}
+		if ( !inPark || !input.LeftPressed )
+			return false;
+		if ( level.DropTpiStaff( cursorX, cursorY ) is { } member )
+			PostMessage( string.Format( T( OpenTpwText.TpiStaffRow ), strings.StaffType( (int)member.Role ), strings.StaffName( (int)member.Role, member.NameIndex ), member.Experience, member.Salary.ToString( "N0" ) ) );
+		else
+		{
+			PostMessage( T( OpenTpwText.TpiStaffCannotPlace ) );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+		}
+		return toolPress = true;
+	}
+
+	/// <summary>The wage demands of the day, as notes (the negotiation is not ported yet).</summary>
+	private void ShowWageDemands()
+	{
+		if ( level.Park?.Economy is not { } economy || economy.TpiWageDemands.Count == 0 )
+			return;
+		foreach ( var demand in economy.TpiWageDemands )
+			PostMessage( string.Format( T( OpenTpwText.TpiStaffWageDemand ), strings.StaffName( (int)demand.Member.Role, demand.Member.NameIndex ), demand.Shortfall.ToString( "N0" ) ) );
+		economy.TpiWageDemands.Clear();
+	}
 
 	private void ToggleStaffPanel()
 	{

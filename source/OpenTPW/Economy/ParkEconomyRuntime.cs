@@ -276,8 +276,10 @@ public sealed class ParkEconomyRuntime
 	private void AttachLitter( GuestSimulation guests )
 	{
 		Economy.Litter.Cells = guests.Grid.Cells;
-		// [EXT:tpi-no-maintenance-wear] a park without staff drops no litter either: no handyman would ever sweep it
-		Economy.Litter.Disabled = guests.OnlineVisit || !Economy.Rules.Staff;
+		// [EXT:tpi-no-maintenance-wear] a park without staff drops no litter either: no handyman would ever sweep it; a Theme Park Inc park with its staff (ParkEconomy.TpiStaff) drops it, as its
+		// handymen sweep it (ThemeParkIncStaffWorld), and its toilets still wear nothing (TPI toilet wear and loo cleaning are unported)
+		Economy.Litter.Disabled = guests.OnlineVisit || !Economy.Rules.Staff && Economy.TpiStaff == null;
+		Economy.Litter.ThemeParkInc = Economy.Rules.ThemeParkInc;
 		Economy.OnlineVisit = guests.OnlineVisit;
 	}
 }

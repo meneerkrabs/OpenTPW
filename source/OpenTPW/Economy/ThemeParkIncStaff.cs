@@ -1,8 +1,18 @@
+using System.Text.Json.Serialization;
+
 namespace OpenTPW;
 
-/// <summary>A saved Theme Park Inc staff member: its economy state and the day counters the experience gain reads.</summary>
+/// <summary>A saved Theme Park Inc staff member: its economy state, the day counters the experience gain reads and, once placed, its thing in the park (absent: never placed).</summary>
 public sealed record ThemeParkIncStaffMemberSnapshot( int Id, ThemeParkIncStaffRole Role, int NameIndex, uint SpriteDraw, int Experience, int Salary, int Agency,
-	float Happiness, float Motivation, float Energy, int WageShortfall, int WageDemandDay, uint[] DayCounters );
+	float Happiness, float Motivation, float Energy, int WageShortfall, int WageDemandDay, uint[] DayCounters,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ThemeParkIncStaffWorldSnapshot? World = null );
+
+/// <summary>
+/// A placed Theme Park Inc staff member's thing as saved: its thing id, state word (+0x1B4), idle stamp (+0x23C), work stamp (+0x5D4), litter target (+0x5D8, a cell word), speed words
+/// (+0xD4 base, +0xD6 bonus, +0xD8 boost) and smoothed speed (+0xDC), patrol rectangle (+0x24C..+0x258), the sprite template it last queued (+0x20), its walk and its cell-chain entry number.
+/// </summary>
+public sealed record ThemeParkIncStaffWorldSnapshot( int ThingId, int State, long IdleStamp, long WorkStamp, int LitterCell, int BaseSpeed, int SpeedBonus, int Boost, float SmoothedSpeed,
+	int[] PatrolArea, int Template, ParkSaveFile.NavigationData? Navigation, long CellSerial );
 
 /// <summary>
 /// The saved Theme Park Inc staff: the 32 pool slots with their being-placed bytes, the members in list order, the park-maximum flags and hired counts of the last
@@ -351,10 +361,10 @@ public sealed class ThemeParkIncStaff
 	/// <summary>The game day of the last wage demand (0xAA07F4, one for all staff); 0 means none, so a demand on day 0 does not block the next.</summary>
 	public uint LastWageDemandDay { get; internal set; }
 
-	/// <summary>The members in the order the message broadcaster reaches them: ascending thing handle (here the hire order).</summary>
+	/// <summary>The members in the order the message broadcaster reaches them: ascending thing handle (a member without a thing, in an economy without a park, by its hire order).</summary>
 	// [BIN:TPI-EXE:0x436E97 message order] the broadcaster 0xA09728 keeps a set per message type keyed by the thing handle and walks it in order, so the staff take the day and month
 	// messages in ascending handle order
-	private IEnumerable<ThemeParkIncStaffMember> InHandleOrder => members.OrderBy( member => member.Id );
+	private IEnumerable<ThemeParkIncStaffMember> InHandleOrder => members.OrderBy( member => member.ThingId ).ThenBy( member => member.Id );
 
 	/// <summary>The month message: every member is paid its salary, then its wage is reviewed.</summary>
 	// [BIN:TPI-EXE:0x6265DE staff payday] message 0x0C: the member's own salary (+0x214) goes to the bank's debit (0x64EBE0 -> 0x5C07B0) and the park's wage total (+0x1FA58),
@@ -398,7 +408,7 @@ public sealed class ThemeParkIncStaff
 	internal ThemeParkIncStaffSnapshot Capture() => new(
 		(ThemeParkIncHireCandidate?[])slots.Clone(), (bool[])placing.Clone(),
 		members.Select( member => new ThemeParkIncStaffMemberSnapshot( member.Id, member.Role, member.NameIndex, member.SpriteDraw, member.Experience, member.Salary,
-			member.Agency, member.Happiness, member.Motivation, member.Energy, member.WageShortfall, member.WageDemandDay, member.CaptureDayCounters() ) ).ToArray(),
+			member.Agency, member.Happiness, member.Motivation, member.Energy, member.WageShortfall, member.WageDemandDay, member.CaptureDayCounters(), member.CaptureWorld() ) ).ToArray(),
 		(bool[])atParkMaximum.Clone(), (int[])hired.Clone(), PoolStamp, openingPoolMade, NextId, (StrikeRecord[])strikes.Clone(), StrikeForced, LastWageDemandDay );
 
 	/// <summary>Whether a saved staff snapshot can come from this model: the array sizes, known roles, ids below the next id and unique.</summary>
@@ -417,7 +427,8 @@ public sealed class ThemeParkIncStaff
 		}
 		return state.Strikes.All( strike => strike != null )
 			&& state.Members.All( member => member != null && Enum.IsDefined( member.Role ) && member.Id >= 1 && member.Id < state.NextId && ids.Add( member.Id )
-				&& member.DayCounters is { Length: 9 } );
+				&& member.DayCounters is { Length: 9 } && ThemeParkIncStaffMember.IsValidWorld( member.Role, member.World ) )
+			&& state.Members.Where( member => member.World != null ).Select( member => member.World!.ThingId ).Distinct().Count() == state.Members.Count( member => member.World != null );
 	}
 
 	/// <summary>Restores a saved staff state (a valid snapshot, see <see cref="IsValid"/>).</summary>
@@ -442,6 +453,7 @@ public sealed class ThemeParkIncStaff
 				WageDemandDay = saved.WageDemandDay
 			};
 			member.RestoreDayCounters( saved.DayCounters );
+			member.RestoreWorld( saved.World );
 			members.Add( member );
 		}
 		PoolStamp = state.PoolStamp;

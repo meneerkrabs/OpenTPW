@@ -1069,9 +1069,11 @@ public static class ParkSaveFile
 				&& cell.Collector >= 0 && littered.Add( (cell.X, cell.Y) ), $"litter at ({cell.X}, {cell.Y})" );
 		// A claim belongs to a handyman: in a world his own search takes it again (the original keeps a claim after a failed walk); without one he
 		// must be sweeping it, or nothing would end the claim.
+		// A Theme Park Inc claim holds the claimant's thing id (TPI Game.exe 0x5D8FE0), which a placed member holds: his search takes it again too.
 		foreach ( var cell in data.Litter.Where( cell => cell.Collector != 0 ) )
 			Require( data.Staff.Members.Any( member => member.Id == cell.Collector && member.Type == StaffType.Handyman
-				&& (member.WorldState != null || member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y) ),
+				&& (member.WorldState != null || member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y) )
+				|| data.TpiStaff?.Members.Any( member => member.Role == ThemeParkIncStaffRole.Handyman && member.World?.ThingId == cell.Collector ) == true,
 				$"litter at ({cell.X}, {cell.Y}) claimed by staff {cell.Collector}, who does not sweep it" );
 		Require( data.Ledger.MonthIndex == ParkCalendar.MonthIndex( data.Tick ), "ledger month matches the clock" );
 		Require( data.Ledger.History.Count <= ParkLedger.MaximumHistoryMonths && data.MonthlyAdmissions.Count <= ParkLedger.MaximumHistoryMonths, "history length" );

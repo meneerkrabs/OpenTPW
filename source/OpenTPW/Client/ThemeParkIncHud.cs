@@ -103,7 +103,9 @@ public sealed partial class ThemeParkIncHud
 		// [BIN:TPW-EXE:0x40C180 Escape in a tool] Escape ends a tool (installs the default park mode, SetMode(0)) and is consumed; only an Escape with no tool on reaches the pause menu row (0x748378, 0x40C4D0)
 		hud.Back = () =>
 		{
-			if ( level.CellTool.IsActive )
+			if ( level.TpiPlacingSlot >= 0 )
+				level.CancelTpiHire();
+			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else if ( level.BuildEntry != null )
 				DisarmBuild();
@@ -334,6 +336,7 @@ public sealed partial class ThemeParkIncHud
 
 	private void ArmBuild( ObjectCatalogEntry entry )
 	{
+		level.CancelTpiHire();
 		level.BuildEntry = entry;
 		armedEntry = entry;
 		level.IsRemovingObjects = false;
@@ -350,6 +353,7 @@ public sealed partial class ThemeParkIncHud
 
 	private void DisarmAll()
 	{
+		level.CancelTpiHire();
 		DisarmBuild();
 		level.IsRemovingObjects = false;
 		level.CellTool.Cancel();
@@ -489,7 +493,8 @@ public sealed partial class ThemeParkIncHud
 		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
-		var toolClick = UpdateCellTool( context, input, inPark );
+		ShowWageDemands();
+		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );
 		// [BIN:TPW-EXE:0x4879D0 object click] the click selects the owner of the hovered cell, the cell of the cursor ray's nearest hit on the terrain or an object's model (0x45bf90, ObjectRayPick),
 		// as the Theme Park World park click does (ParkHud)
@@ -520,7 +525,7 @@ public sealed partial class ThemeParkIncHud
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark )
 	{
 		var tool = level.CellTool;
-		if ( MenuOpen || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
+		if ( MenuOpen || level.TpiPlacingSlot >= 0 || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );

@@ -68,7 +68,7 @@ public partial class Material : Asset
 
 	/// <summary>
 	/// The per-draw uniform buffer's size: the largest block a draw uploads, the lit block with every point light (<see cref="LitObjectUniformBuffer"/>, 272 + 16 x 32 = 784
-	/// bytes), which is also the largest uniform block a shader declares (test, pool-deck and pool-basin; the others declare the 272-byte block). On Direct3D 11 a
+	/// bytes), which is also the largest uniform block a shader declares (test, pool-deck and pool-basin; the others declare 236 to 272 bytes). On Direct3D 11 a
 	/// partial write is widened to the whole buffer (DynamicBufferUpload), so a buffer no larger than that keeps the per-draw write small.
 	/// </summary>
 	internal const uint ScratchBufferBytes = 784;
@@ -224,6 +224,7 @@ public partial class Material : Asset
 	/// </summary>
 	internal void Set( string name, ref LitObjectUniformBuffer value, int lightCount )
 	{
+		System.Diagnostics.Debug.Assert( lightCount >= 0 && lightCount <= PointLightSet.MaxPerDraw, "PointLightSet.Select caps a draw's lights at MaxPerDraw" );
 		value.Base.LightCount = lightCount;
 		lastBlock = null;
 		Render.UpdateUniform( ScratchBuffer, ref value, LitObjectUniformBuffer.UploadSize( lightCount ) );

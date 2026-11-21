@@ -60,7 +60,7 @@ and the cross-compilers agree on this layout: a vec3 followed by a float packs, 
 **Backends.** The lit shaders are `test.shader`, `pool-deck.shader` and `pool-basin.shader` (`Material.ReceivesPointLights`); the others (`sprite`, `particle`, `3d`, `unlit`, `water`, `pool-water`,
 `weather`, `advisor`, UI) do not read the lights and never carry them. Desktop shaders are compiled through Veldrid.SPIRV to Metal, Vulkan, Direct3D and OpenGL; the browser's GLES 3.00 versions are
 precompiled into `content/shaders/web` (regenerate with `OPENTPW_NATIVE_SHADER_TESTS=1 OPENTPW_WRITE_WEB_SHADERS=1 dotnet test --filter WebShaderTests`), and the browser's buffer binding is the whole
-2,048-byte scratch buffer, which is larger than the 784-byte block. The pool water (`pool-water.shader`) keeps the padding slot for its wave phase and is not lit; the guests, staff and
+scratch buffer, 784 bytes, exactly the lit block (`Material.ScratchBufferBytes`). The pool water (`pool-water.shader`) keeps the padding slot for its wave phase and is not lit; the guests, staff and
 particles are pre-rendered sprites or unlit billboards (as in the original) and take no light.
 
 **No lights, no change.** A draw without lights takes the same code path as before the lights existed: the same shader source apart from a branch on `g_flLightCount > 0.5` that adds nothing, the same 272-byte

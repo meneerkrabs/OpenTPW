@@ -31,7 +31,9 @@ public class MaterialScratchBufferTests
 		var largest = 0u;
 		foreach ( var path in Directory.EnumerateFiles( Path.Combine( directory.FullName, "content", "shaders" ), "*.shader", SearchOption.AllDirectories ) )
 		{
-			foreach ( Match block in Regex.Matches( File.ReadAllText( path ), @"uniform\s+\w+\s*\{(.*?)\}", RegexOptions.Singleline ) )
+			// comments go first, so a brace or a semicolon inside one cannot end a block or a member early
+			var source = Regex.Replace( Regex.Replace( File.ReadAllText( path ), @"/\*.*?\*/", "", RegexOptions.Singleline ), @"//[^\n]*", "" );
+			foreach ( Match block in Regex.Matches( source, @"uniform\s+\w+\s*\{(.*?)\}", RegexOptions.Singleline ) )
 			{
 				blocks++;
 				var size = Std140Size( block.Groups[1].Value, path );

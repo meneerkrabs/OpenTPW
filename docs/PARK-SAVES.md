@@ -3,10 +3,10 @@
 ## Experimental Theme Park Inc layout checkpoints
 
 The TPI experimental HUD's pause menu has **Save layout checkpoint** and **Load layout — new session**.
-These use a separate application-owned format (`opentpw-tpi-layout`, version 2, `.tpilayout`), one slot
+These use a separate application-owned format (`opentpw-tpi-layout`, version 3, `.tpilayout`), one slot
 per theme in the existing save folder: `opentpw-science.tpilayout`, for example. They do not use the
-TPW world-save picker or write native TPWS/TPWI/GMS/GMI/COS files. Native TPI saves, campaign,
-economy, staff and sharing remain unsupported.
+TPW world-save picker or write native TPWS/TPWI/GMS/GMI/COS files, and they hold no economy, staff, career or
+campaign state (the Science continuation below keeps those).
 
 A checkpoint records every typed cell and placed catalog object, its anchor/rotation/open flag,
 creation seed and attraction ID, the ID/seed allocators and world seed. Load explicitly confirms
@@ -14,8 +14,8 @@ replacing the current world and starting a **new experimental session**: guests,
 membership, script instruction/variable/animation progress, fixed-step clock and audio restart.
 The saved queue geometry remains. Camera, speed and menu focus start fresh. This is layout
 persistence, never continuation or original TPI parity (an OpenTPW extension, `EXT:tpi-layout-checkpoint`). Prototype and coaster layouts
-are refused instead of losing their state. Version 2 keeps Theme Park Inc's owned land as one bit per cell. A version 1 checkpoint,
-written before the owned land was kept (before PR #978), is refused with a message that asks for the layout to be saved again: it
+are refused instead of losing their state. Version 3 keeps Theme Park Inc's owned land as one bit per cell. A version 1 or version 2 checkpoint,
+written before the owned land was kept (before PR #978), is refused with a message that names its version and asks for the layout to be saved again: it
 would restore every square as owned, which the original never reaches. The file and the running park are left untouched.
 
 The format uses the existing trusted simulation-asset manifest without constructing TPW economy
@@ -41,9 +41,9 @@ In a solo Theme Park Inc Science park, the pause menu offers **Save Science park
 
 **Older Science saves are refused.** A Science save written by a build from before any of these parts was kept cannot be continued: the staff hiring pool (PR #974; this covers saves from the builds of PR #970), the challenge system (PR #977), the owned land (PR #978), the player's career (PR #979), and the mission controller with its current obstacle (PR #980). The game shows a message that asks the player to start again (from the Personnel File for a new game), and it leaves both the save file and the running park untouched. Such a save cannot be continued exactly. The hiring pool draws from the same world generator as the rest of the park, so a pool rebuilt on load would change every later draw. The other parts hold state the old save does not record and that cannot be rebuilt from it: a new challenge system, a map with every square owned, a new career, or a mission controller that never started its statistics would not be the park that was saved. Layout checkpoints written before the owned land was kept are refused the same way (see the checkpoint section above).
 
-Saving also writes the player file `opentpw-tpi/users/1New Player/New Player.GMS` (the career as the original's Global Master Save), and Load A Game takes the career from that file ([TPI-CAREER.md](reverse/TPI-CAREER.md)). The player file lives in OpenTPW's own save folder: `OPENTPW_SAVE_DIR` when it is set; otherwise, when OpenTPW's save folder is inside the game folder (the original Theme Park Inc's own `save` folder), the `save` folder in OpenTPW's configuration folder. OpenTPW never writes into the original's `save\users` folder, where the original keeps its players' files. A player file larger than 4 MiB is refused unread. Leaving a park (quitting to the Personnel File or loading another park) saves as the original's leave does: the player file and, in Science, the Science slot, which the leave overwrites without asking. Closing the window does not save.
+Saving also writes the player file `opentpw-tpi/users/1New Player/New Player.GMS` (the career as the original's Global Master Save), and Load A Game takes the career from that file ([TPI-CAREER.md](reverse/TPI-CAREER.md)). The player file lives in the `opentpw-tpi` folder of OpenTPW's own save folder (`OPENTPW_SAVE_DIR` when it is set, else the configuration's save folder). When that save folder is inside the game folder, which is where the original Theme Park Inc keeps its own `save` folder, the player file goes to `<config>/save/opentpw-tpi/` in OpenTPW's configuration folder instead; the test applies to `OPENTPW_SAVE_DIR` too, and symbolic links in either path are resolved first. OpenTPW never writes into the original's `save\users` folder, where the original keeps its players' files. A player file larger than 4 MiB is refused unread. Leaving a park by quitting to the Personnel File saves as the original's leave does: the player file and, in Science, the Science slot, which the leave overwrites without asking. Nothing is saved when **Continue saved park** or **Load layout — new session** replaces the park, as the original saves nothing when a load replaces it ([TPI-CAREER.md](reverse/TPI-CAREER.md) §3.4), and closing the window does not save.
 
-OpenTPW validates the save and its assets before replacing the current park. Modes and state that the slice does not support remain unavailable. This does not import or write native Theme Park Inc saves, enable autosave or sharing, or provide continuation in Arabian, Water or the browser.
+OpenTPW validates the save and its assets before replacing the current park. Modes and state that the slice does not support remain unavailable. Apart from the player file, this does not import or write native Theme Park Inc saves (no native park files, no `.GMI`), save on a timer, enable sharing, or provide continuation in Arabian, Water or the browser.
 
 The remainder of this document describes Theme Park World continuation saves.
 

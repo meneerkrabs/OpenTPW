@@ -11,9 +11,44 @@ public partial class Level
 	/// <summary>The zone's obstacle types (<c>levels/&lt;zone&gt;/obstacles</c>), read on first use.</summary>
 	internal IReadOnlyDictionary<int, ThemeParkIncObstacleType> ThemeParkIncObstacleTypes => tpiObstacleTypes ??= OpenTPW.ThemeParkIncObstacleTypes.Load( FileSystem, LevelName );
 
-	/// <summary>Opens the obstacle thing <paramref name="thing"/> (<c>0x5E8BD0</c>): the level holds no obstacle things yet, so no thing can be named.</summary>
-	private void OpenThemeParkIncObstacle( ushort thing ) =>
-		throw new InvalidOperationException( $"Thing {thing} is no Theme Park Inc obstacle of this level." );
+	/// <summary>
+	/// Opens the obstacle thing <paramref name="thing"/> as the controller's camera end does: the park camera's target goes to the obstacle (<c>0x466050</c>), then its opening (<c>0x5E8BD0</c>,
+	/// <see cref="ThemeParkIncObstacles.OpenThing"/>).
+	/// </summary>
+	// [BIN:TPI-EXE:0x466050 camera target] x = ((cell - 1) & 0x7F) * 10 + w * 5 and y = ((cell - 1) >> 7) * 10 + w * 5 into 0xA14480/0xA14488, the cell being the thing's +0x44 (the anchor the placement constructs it at)
+	// and w the width of its type's Info.Shape (+0x1C, [0]) for both axes; nothing for thing 0
+	private void OpenThemeParkIncObstacle( ushort thing )
+	{
+		if ( Guests?.Grid.Cells is not { } cells )
+			throw new InvalidOperationException( "A Theme Park Inc obstacle opens only in a world with its cells." );
+		if ( ThemeParkIncThing( thing ) is { } item && ThemeParkIncObstacleTypes.TryGetValue( item.Entry.InfoId, out var type )
+			&& Camera.Mode is ParkCameraMode camera && OriginalPark?.Heightfield is { } heightfield )
+		{
+			var anchor = ThemeParkIncObstacles.AnchorWord( type ) - 1;
+			var half = (type.Shape?.Width ?? 0) * 0.5f;
+			var target = GuestRenderer.CellToEngine( heightfield, (anchor & 0x7F) + half, (anchor >> 7) + half );
+			camera.Focus( new Vector3( target.X, target.Y, target.Z ) );
+		}
+		ThemeParkIncObstacles.OpenThing( cells, ThemeParkIncObstacleTypes, tpiObstacleThings ??= new ThemeParkIncObstacleThings( this ), thing );
+	}
+
+	private ThemeParkIncObstacleThings? tpiObstacleThings;
+
+	/// <summary>The level's objects as the obstacle code's things.</summary>
+	private sealed class ThemeParkIncObstacleThings( Level level ) : IThemeParkIncObstacleThings
+	{
+		public int? TypeOf( ushort thing ) => level.ThemeParkIncThing( thing )?.Entry.InfoId;
+
+		// [APPROX:RIDES-040] the replacement is a fixed item (Info.DontApplyOffset 1, like every obstacle) and is drawn from the sentinel anchor (0, 0) as the prebuilt's fixed scene records are
+		public void Place( int type ) => level.Objects.Add( level.Objects.Catalog.Find( type )
+			?? throw new InvalidDataException( $"An obstacle is replaced with type {type}, which no object archive of {level.LevelName} declares." ), 0, 0, 0 );
+
+		public void Destroy( ushort thing )
+		{
+			if ( level.ThemeParkIncThing( thing ) is { } item )
+				level.Objects.Remove( item );
+		}
+	}
 
 	/// <summary>A park built from a Theme Park Inc save (the prebuilt Science park) takes its World variable <c>CurrentObstacle</c>; a continuation restores its own later.</summary>
 	// [BIN:TPI-EXE:0x64BC00 World loader] CurrentObstacle is one of the World variables a park file carries (the prebuilt's names its 1700 gate)

@@ -84,6 +84,10 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 				Require( economy.TpiCareer!.StatusWord( 0, 1 ) == 8 && economy.TpiCareer.StatusWord( 0, 0 ) == 1, "miss00's guest statistic has started" );
 				Require( level.ThemeParkIncCurrentObstacle == prebuilt.Variables.CurrentObstacle && prebuilt.FindAttraction( level.ThemeParkIncCurrentObstacle )?.InfoId == 1700,
 					"the current obstacle is the prebuilt's 1700 gate" );
+				Require( level.Objects.Objects.Any( item => item.ThingId == level.ThemeParkIncCurrentObstacle && item.Entry.InfoId == 1700 )
+					&& new[] { 1702, 1701, 1703, 1750, 1798 }.All( type => level.Objects.Objects.Any( item => item.Entry.InfoId == type && item.ThingId == prebuilt.Attractions.Single( attraction => attraction.InfoId == type ).Id ) ),
+					"the obstacles and the camera path are things of the world with their saved ids" );
+				Require( level.Guests?.Grid.Cells is { } obstacleCells && obstacleCells.ObstacleFlagAt( 41, 48 ) && obstacleCells.RawTypeAt( 41, 48 ) == 8, "the 1700 gate's footprint is a hole with the obstacle flag" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )

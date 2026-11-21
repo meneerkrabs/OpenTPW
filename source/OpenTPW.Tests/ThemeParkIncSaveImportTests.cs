@@ -137,8 +137,10 @@ public class ThemeParkIncSaveImportTests
 			Assert.AreEqual( 23, all.Length );
 			Assert.IsTrue( park.PlacedObjects.All( item => catalog.Find( item.Record.InfoId ) != null ) );
 			Assert.IsTrue( park.UnresolvedObjects.All( item => catalog.Find( item.InfoId ) != null ) );
+			// the five fixed items at the sentinel cell are the obstacles and the camera path of levels/science/obstacles
+			Assert.IsTrue( park.FixedItems.All( item => catalog.Find( item.InfoId ) != null ) );
 			CollectionAssert.AreEqual( new[] { 1702, 1701, 1700, 1750, 1798 },
-				park.FixedItems.Where( item => catalog.Find( item.InfoId ) == null ).Select( item => item.InfoId ).ToArray() );
+				park.FixedItems.Where( item => catalog.Find( item.InfoId )!.Category == ObjectCategory.Obstacle ).Select( item => item.InfoId ).ToArray() );
 			CollectionAssert.AreEqual( new[] { 1601, 103, 104 },
 				park.FixedItems.Where( item => item.X != 0 || item.Y != 0 ).Select( item => item.InfoId ).ToArray() );
 			var incomplete = park.UnresolvedObjects.Single();

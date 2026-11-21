@@ -11,11 +11,11 @@ public readonly record struct OriginalObjectInfo( int InfoId, string Name, strin
 public sealed class OriginalPark
 {
 	public const string SaveFileName = "Easymode.TPWI";
-	private static readonly string[] ObjectDirectories = { "rides", "shops", "sideshow", "features", "upgrades" };
+	private static readonly string[] ObjectDirectories = { "rides", "shops", "sideshow", "features", "upgrades", "obstacles" };
 	private static readonly System.Text.RegularExpressions.Regex InfoIdPattern = new( @"^\s*Info\.Id\s+(\d+)", System.Text.RegularExpressions.RegexOptions.Multiline );
 	private static readonly System.Text.RegularExpressions.Regex InfoNamePattern = new( "^\\s*Info\\.Name\\s+\"([^\"\\r\\n]*)\"", System.Text.RegularExpressions.RegexOptions.Multiline );
 
-	/// <summary>The finished lake of a Theme Park Inc world; it fills the heightfield holes that <c>base.MD2</c> leaves open.</summary>
+	/// <summary>The name of the lake model <c>terrain.wad</c> of Theme Park Inc's Science world holds; the level draws the lake as its obstacle objects instead (<see cref="LakeModel"/>).</summary>
 	public const string LakeModelName = "dlake.MD2";
 
 	private OriginalPark( string levelName, MapFile map, ModelFile terrainModel, ModelFile? lakeModel, OriginalParkImport? save, IReadOnlyDictionary<int, OriginalObjectInfo> catalog )
@@ -32,7 +32,7 @@ public sealed class OriginalPark
 	public string LevelName { get; }
 	public MapFile Map { get; }
 	public ModelFile TerrainModel { get; }
-	/// <summary>Theme Park Inc's <c>dlake.MD2</c> (lake surface and bed), or null: Theme Park World has no lake model.</summary>
+	/// <summary>A <c>terrain/dlake.MD2</c> of a level without an <c>obstacles</c> folder, or null: Theme Park World has no lake model, and Theme Park Inc's lake is the obstacle 1703 (or 1704 once drained).</summary>
 	public ModelFile? LakeModel { get; }
 	public ModelHeightfield Heightfield { get; }
 	public OriginalParkImport? Save { get; }
@@ -58,8 +58,11 @@ public sealed class OriginalPark
 		yield return null;
 		var model = new ModelFile( $"/levels/{levelName}/terrain/base.MD2" );
 		yield return null;
-		// [EXT:tpi-lake-drained] Theme Park Inc's lake is mission obstacle 1703 (lake.MD2, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (dlake.MD2); the level builds no obstacle things yet (docs/reverse/TPI-MISSIONS.md §6: the prebuilt's obstacle records are skipped and 1703 has none), so there is no 1703 or 1704 object to draw and the level always draws terrain.wad's dlake.MD2
-		var lakePath = FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
+		// [BIN:TPI-EXE:0x647BF0 obstacle placement] Theme Park Inc's lake is the mission obstacle 1703 (obstacles/lake.wad, lake.MD2) and after its opening 1704 (obstacles/dlake.wad, dlake.MD2), objects
+		// of the world (docs/reverse/TPI-MISSIONS.md §6); terrain.wad's own dlake.MD2 is another file (119,268 bytes against the obstacle's 139,256), and no code of the executable names a lake
+		// model, so a level with an obstacles folder draws its lake as those objects only
+		var lakePath = GameEditions.IsThemeParkInc && FileSystem.DirectoryExists( $"/levels/{levelName}/obstacles" ) ? null
+			: FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
 		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
 		var catalog = new Dictionary<int, OriginalObjectInfo>();
 		using ( LoadProfile.Measure( "object-catalog" ) )
@@ -98,12 +101,9 @@ public sealed class OriginalPark
 			using var reader = new SaveReader( stream );
 			var payload = reader.ReadFile();
 			save = tpiPrebuilt ? OriginalParkImport.ImportThemeParkInc( payload, map ) : ImportOriginalSave( levelName, payload, map );
+			// [DATA:PreBuilt/prebuilt.TPWS:SYSG] the five science scene records at the sentinel cell (0, 0) (1702, 1701, 1700, 1750, 1798) are the obstacles and the camera path of levels/science/obstacles
 			foreach ( var item in save.PlacedObjects.Select( item => item.Record ).Concat( save.FixedItems ).Concat( save.UnresolvedObjects ) )
 			{
-				// [DATA:PreBuilt/prebuilt.TPWS:SYSG] Five science scene records have no archive and use the sentinel cell (0, 0).
-				if ( tpiPrebuilt && item.IsFixedItem && item.X == 0 && item.Y == 0
-					&& item.InfoId is 1702 or 1701 or 1700 or 1750 or 1798 )
-					continue;
 				if ( !catalog.ContainsKey( item.InfoId ) )
 					throw new InvalidDataException( $"Original save object {item.Index} has Info.Id {item.InfoId}, which no {levelName} object archive declares." );
 			}

@@ -173,15 +173,16 @@ file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` ho
 (`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
 cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
 shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
-viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the level builds no obstacle things yet, so there is no 1703 or 1704 object to draw; `lake.MD2` and the animations are
-ignored). That was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
+level draws none of them now: the lake is the obstacle object 1703 (`obstacles/lake.wad`), which covers the holes, and after mission 1's
+opening its replacement 1704 (`obstacles/dlake.wad`, a different `dlake.MD2` from `terrain.wad`'s); no code of the executable names a
+lake model ([TPI-MISSIONS.md](reverse/TPI-MISSIONS.md) §6). Drawing `terrain.wad`'s `dlake.MD2` was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
 "New Science Drained Lake Obstacle", and `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10
 ("Water Drainage"); so `dlake` is the drained lake, not a finished one, and which one a park shows is data-driven (the exe holds no
-"lake" string). Open: six of its bed textures (`bed04`, `bed06`, `bed07`, `bed09`,
-`bed10`, `bed12`) are in no archive of the supplied data, so the lake's bank is drawn white. `arabian`
+"lake" string). (`terrain.wad`'s `dlake.MD2` names six bed textures, `bed04`, `bed06`, `bed07`, `bed09`,
+`bed10` and `bed12`, that no archive of the supplied data holds; the obstacle models do not need them.) `arabian`
 has 29 more open cells in two mountain pits that no mesh covers (`4an_newenv.MD2`/`3an_newenv.MD2`,
 variants of the environment, do not either); they show the clear colour. The `*_newenv.MD2` files,
-`lake.MD2`, `lake01_alpha.fsh` (a separate water alpha image) and the `proc_tex` set are not used.
+`terrain.wad`'s lake files, `lake01_alpha.fsh` (a separate water alpha image) and the `proc_tex` set are not used.
 
 **Other open spots.** Each world has 8 to 16 heightfield ground cells textured `trans01` (only a `.tga`, in
 `Sharetex.wad`); they draw as black quadrilaterals (visible in `water` as small black patches in the
@@ -193,7 +194,7 @@ The slice's own scope decisions are OpenTPW design decisions, not approximations
 the Theme Park World guest rules over Theme Park Inc data, the capability gates and the Theme Park World tool flow (`[EXT:tpi-*]` at their sites; TPI-900 to
 TPI-904 are retired).
 
-**Approximations and open questions.** (The `0x2D` palette and the drained lake are extensions now: `[EXT:fsh-0x2d-palette]`, `[EXT:tpi-lake-drained]`.)
+**Approximations and open questions.** (The `0x2D` palette is an extension now: `[EXT:fsh-0x2d-palette]`; the lake is the obstacle object.)
 RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
 drawn as 0, 0), RIDES-040 (zero-coordinate fixed
 scene records). Open: how the original game transforms the zero-coordinate scene records and

@@ -118,14 +118,30 @@ obstacle has a map offset; the bridge has (1, 1).
 `X` 5, `,` 30, `=` 32, `%` 33 (leave untouched), the entrances and exits as in Theme Park World, `D`/`>`/`<` 23, `O` and `I` 27. A space takes no column, a
 row ends at the widest row's width with zeros, 40 rows or 40 cells per row is the limit, and the rows are stored bottom first.
 
-**Not ported yet** (work package 6):
+**Things of the world.** The prebuilt Science park's obstacle records are fixed items at the sentinel cell, and the lake 1703 is the one attraction thing without a
+scene record; the catalogue now reads each zone's `obstacles` folder (`ObjectCategory.Obstacle`, a fixed item: `Info.DontApplyOffset 1`), so the level builds
+1702, 1701, 1700, 1750 and 1798 from their records and 1703 from its thing, each with its model, its script and its saved thing id (27 to 32; a loaded park
+keeps its things' ids, and the World variable `CurrentObstacle` names thing 29, the 1700 gate). They are drawn from the sentinel anchor like every Theme
+Park Inc fixed scene record (`[APPROX:RIDES-040]`).
 
-- The obstacles as things of the world: the prebuilt Science park's obstacle records are fixed-item records at the sentinel cell, which OpenTPW skips, and
-  1703 has no scene record. They are not built, drawn or saved, so `0x647850` finds none in a level.
-- The opening `0x5E8BD0`: for an obstacle without `GateTo`, each `AfterShape` cell at `(ShapeOffsetY + row) × 128 + 1 + ShapeOffsetX + column` clears the
-  map record's dword `+0x24`, and a cell other than `%` is set to type 0, then its value (`0x67AD00`), then `0x67FB80` and `0x67CDC0`; a cell on the map border
-  becomes type 5. Then `ReplaceWithID` places its type at its own shape offset (`0x5DB1B0`), or without one `DeleteAfterUse` decides whether the thing goes.
-  OpenTPW's cell map has no `+0x24` word and the Theme Park Inc meaning of `0x67AD00`, `0x67FB80` and `0x67CDC0` is not read.
-- The placement in a new world (`0x647BF0`), which writes `Shape` and sets `+0x24 = 1`.
-- The lake: the level still draws `dlake.MD2` from `terrain.wad` (`[EXT:tpi-lake-drained]`), not the 1703 object.
-- The 1750 zone switch at the camera's end, and `GateTo` travel.
+**Cells (`0x647BF0`, `0x5E8BD0`).** A map square's dword `+0x24` is the obstacle cell flag: the placement sets it with the type and the owner word, the opening
+clears it, and only the pick `0x666BE0` and the cursor help at `0x504A0C` read it (the cell types do the blocking: `H` is type 8, a terrain hole; `X` type 5,
+blocked land). A Theme Park Inc map cell is saved with 56 bytes, Theme Park World's 52 and this dword; in the prebuilt it is 1 on exactly the obstacle
+footprints' non-zero cells. OpenTPW's cell map keeps it as `ParkCellMap.ObstacleFlagAt` (never set on a Theme Park World map) and a layout snapshot as
+`TpiObstacles`. The level takes the prebuilt's obstacle cells (type, owner word, flag) as saved; `ThemeParkIncObstacles.Place` ports the placement rule:
+every `Info.Shape` cell other than `%` at `(ShapeOffsetX + column, ShapeOffsetY + row)` is set to type 0, then its value, and a non-zero one gets the
+flag and the owner word of the anchor `(MapOffsetY + ShapeOffsetY) × 128 + 1 + MapOffsetX + ShapeOffsetX`; over the Science level map it writes the
+prebuilt's saved obstacle cells exactly. The square writer `0x67CB70` changes only the type word (Theme Park World's clears the owner word, the links and
+the placement counter with type 0) and counts a placement when the same non-zero type is written again. The opening (`ThemeParkIncObstacles.Open`) is the
+order of `0x5E8BD0` above; the 1703 lake's `ReplaceWithID` places 1704 without cells of its own and destroys the lake, `DeleteAfterUse` destroys, and an
+obstacle with neither stays. Before the opening the park camera's target goes to the obstacle (`0x466050`: the anchor cell plus half the shape's width on
+both axes).
+
+**Not ported yet:**
+
+- The placement in a new world: the order in which `0x647BF0` walks the object infos (the info list `+0x0..+0x528`, filled in registration order) is not read,
+  and the thing ids of a new world depend on it, so a world without the prebuilt (Water, Arabian) builds no obstacle and no camera path. The rule itself
+  is ported and tested.
+- The tile refresh `0x67FB80` (type 8 draws no ground); the level's heightfield already leaves the lake's holes, which 1703's and 1704's models cover.
+- The pick and the cursor help over the obstacle cells, the obstacle refresh `0x648C90`, the particle effects 81/77, and the gates' travel (`GateTo`) and the
+  1750 gate's zone switch at its camera's end (a later package).

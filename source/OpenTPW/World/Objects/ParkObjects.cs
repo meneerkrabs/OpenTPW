@@ -766,8 +766,9 @@ public sealed class ParkObjects
 				continue;
 			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; the thing records of the six that have an archive carry the fixed-item default position (128, 128) and angle 0 (the five without an archive carry real positions, but nothing to draw), so no transform field is left unread in the save — evidence needed: how the original places a local-coordinate fixed model at its anchor (a thing's position bytes are decoded as (cell + fraction / 256) x 10 only by the camera-target setters 0x503490 and 0x5A1100 of the no-CD Theme Park Inc exe, no model placement reads them there)
 			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)
-			var thingId = Things != null && save.FindAttraction( record ) is { } thing && Things.IsUsed( thing.Id ) && Things.ModelOf( thing.Id ) == SaveThingModel.Attraction
-				&& objects.All( other => other.ThingId != thing.Id ) ? thing.Id : 0;
+			var thingId = Things == null ? 0 : save.ThemeParkIncWorld != null
+				? save.FindThemeParkIncAttraction( record ) is { } attraction ? SavedThingId( attraction.Id ) : 0
+				: save.FindAttraction( record ) is { } thing ? SavedThingId( thing.Id ) : 0;
 			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, seeds[record] ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
 			// [BIN:TPW-EXE:0x004647A0 hoarding load] the RideSystem record's flag word +0x1C bits 0..6 and its +0x22 dword are the thing's hoarding flags and level (docs/OBJECTS.md, "Hoarding")
 			if ( save.RideSystem?.Records.FirstOrDefault( scene => scene.Offset == record.Offset ) is { } scene )
@@ -784,7 +785,32 @@ public sealed class ParkObjects
 			count++;
 			yield return (count, (index + 1) / (float)records.Count);
 		}
+		// [DATA:PreBuilt/prebuilt.TPWS:SYSG] the lake obstacle (1703, thing 30) is an attraction thing without a scene record (OriginalParkImport.UnrecordedThemeParkIncAttractions): it is the thing of the
+		// World chain with its own id, a fixed item (Info.DontApplyOffset 1) like the obstacles the records name, so it is placed at the same sentinel anchor (0, 0)
+		foreach ( var attraction in save.UnrecordedThemeParkIncAttractions )
+		{
+			var entry = Catalog.Find( attraction.InfoId );
+			if ( !IsImportedObject( entry ) )
+				continue;
+			var thingId = Things != null ? SavedThingId( attraction.Id ) : 0;
+			Register( new OriginalObject( entry, ComputePlacement( entry, 0, 0, 0 ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			count++;
+		}
 		yield return (count, 1);
+	}
+
+	/// <summary>
+	/// The thing id an imported object keeps: its saved attraction thing's id when the pool holds the saved chain there (a Theme Park World save), or, in a Theme Park Inc park whose pool is a new
+	/// world's, when that slot is still free; else 0 (the next free slot).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D6D40 park loader] a loaded Theme Park Inc park keeps its things' ids: the World variables name them (CurrentObstacle names the prebuilt's 1700 gate, thing 29)
+	private int SavedThingId( int saved )
+	{
+		if ( Things == null || objects.Any( other => other.ThingId == saved ) )
+			return 0;
+		if ( Things.IsUsed( saved ) )
+			return Things.ModelOf( saved ) == SaveThingModel.Attraction ? saved : 0;
+		return GameEditions.IsThemeParkInc && saved is >= 1 and <= ThingPool.Capacity ? saved : 0;
 	}
 
 	/// <summary>Gives the imported objects' scripts the ids, list order and pass counter of an original save's RSSE block (<see cref="SavedScriptImport"/>, DET-013); returns the report lines.</summary>

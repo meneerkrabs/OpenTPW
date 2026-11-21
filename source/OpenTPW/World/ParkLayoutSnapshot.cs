@@ -91,6 +91,13 @@ public static class ParkLayoutSnapshot
 		/// </summary>
 		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 		public string? TpiUnowned { get; init; }
+		/// <summary>
+		/// A Theme Park Inc map's obstacle cells (<see cref="ParkCellMap.ObstacleFlagAt"/>, map square <c>+0x24</c>), as a bit map like <see cref="TpiUnowned"/>; null when no cell has the flag.
+		/// </summary>
+		// [DATA:PreBuilt/prebuilt.TPWS:cell grid] a Theme Park Inc map cell is saved with 56 bytes (0x5D6D40), four more than Theme Park World's; their last dword is 1 on exactly the obstacle footprints' cells
+		// whose shape value is not 0 (ThemeParkIncObstacles.ImportSavedCells), the flag +0x24 the placement writes
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public string? TpiObstacles { get; init; }
 	}
 
 	/// <summary>The land of a park: the fence's gate posts and ring, and the unowned cells as a row-major bit map.</summary>
@@ -231,7 +238,7 @@ public static class ParkLayoutSnapshot
 		var stamps = cells.CaptureBlockStamps();
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, QueuePassSchemaVersion = cells.HasQueuePassResidues ? 1 : 0, QueuePassResidues = cells.HasQueuePassResidues ? cells.CaptureQueuePassResidues().ToList() : null, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ), TpiUnowned = tpiLand ? Convert.ToBase64String( UnownedBits( cells ) ) : null },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, QueuePassSchemaVersion = cells.HasQueuePassResidues ? 1 : 0, QueuePassResidues = cells.HasQueuePassResidues ? cells.CaptureQueuePassResidues().ToList() : null, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ), TpiUnowned = tpiLand ? Convert.ToBase64String( UnownedBits( cells ) ) : null, TpiObstacles = cells.HasObstacleFlags ? Convert.ToBase64String( ObstacleBits( cells ) ) : null },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
@@ -253,6 +260,16 @@ public static class ParkLayoutSnapshot
 					bits[index >> 3] |= (byte)(1 << (index & 7));
 			}
 		}
+		return bits;
+	}
+
+	private static byte[] ObstacleBits( ParkCellMap cells )
+	{
+		var bits = new byte[(cells.Width * cells.Height + 7) / 8];
+		for ( var y = 0; y < cells.Height; y++ )
+			for ( var x = 0; x < cells.Width; x++ )
+				if ( cells.ObstacleFlagAt( x, y ) )
+					bits[(y * cells.Width + x) >> 3] |= (byte)(1 << ((y * cells.Width + x) & 7));
 		return bits;
 	}
 
@@ -448,6 +465,11 @@ public static class ParkLayoutSnapshot
 			Require( cells.Land == null, "the cell map carries both a land record and Theme Park Inc ownership bits" );
 			ReadUnownedBits( tpiUnowned, cells.Width, cells.Height );
 		}
+		if ( cells.TpiObstacles is { } tpiObstacles )
+		{
+			Require( cells.TpiUnowned != null, "the cell map carries Theme Park Inc obstacle cells but no Theme Park Inc land" );
+			ReadUnownedBits( tpiObstacles, cells.Width, cells.Height );
+		}
 	}
 
 	/// <summary>Sets <see cref="ParkCellFlags.Unowned"/> on every cell whose bit is set in <paramref name="unowned"/> (row order).</summary>
@@ -538,6 +560,13 @@ public static class ParkLayoutSnapshot
 		{
 			SetUnowned( cells, ReadUnownedBits( tpiUnowned, cells.Width, cells.Height ) );
 			cells.HasThemeParkIncLand = true;
+			if ( snapshot.Cells.TpiObstacles is { } tpiObstacles )
+			{
+				var bits = ReadUnownedBits( tpiObstacles, cells.Width, cells.Height );
+				for ( var index = 0; index < cells.Width * cells.Height; index++ )
+					if ( (bits[index >> 3] & (1 << (index & 7))) != 0 )
+						cells.SetObstacleFlag( index % cells.Width, index / cells.Width, true );
+			}
 		}
 		else
 			newLand?.Invoke( cells );

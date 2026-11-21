@@ -645,8 +645,11 @@ public sealed partial class ThemeParkIncHud
 	/// Opens the letter window over the HUD; <paramref name="dismissed"/> runs when the player closes it.
 	/// </summary>
 	// [BIN:TPI-EXE:0x636217 letter window] the tag system opens the window on every accepted notification (ids 6 to 8, 0x5CD060)
+	// [BIN:TPI-EXE:0x526CF1 letter closes the HUD's window] the letter's builder 0x526CD0 calls 0x5013C0 first, which sends message 5 to the window registered at 0xA568BC: an open mission
+	// window closes, as a mission window opening closes a letter
 	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
 	{
+		CloseMissionWindow();
 		UiScreen? screen = null;
 		var closed = false;
 		Action close = null!;

@@ -101,6 +101,18 @@ public class ThemeParkIncHudMissionTests
 	}
 
 	[TestMethod]
+	public void ALetterOpeningOverTheMissionWindowClosesIt()
+	{
+		// the letter's builder sends message 5 to the HUD's window first (0x526CD0 -> 0x5013C0), the same slot the mission window holds
+		var hud = BuildHud( Career( zone: true ) );
+		Assert.IsTrue( hud.OpenMissionWindow() );
+		hud.ShowLetter( new ThemeParkIncLetterWindow.Letter( "Subject", "From", "To", "Date", "Body", 0 ), () => { } );
+		Assert.IsFalse( hud.MissionWindowOpen, "the letter closed the mission window" );
+		Assert.IsTrue( hud.LetterOpen );
+		Assert.AreEqual( 2, hud.Stack.Screens.Count, "the HUD and the letter" );
+	}
+
+	[TestMethod]
 	public void ACareerWithoutAZoneOpensNoMissionWindow()
 	{
 		var hud = BuildHud( Career( zone: false ) );

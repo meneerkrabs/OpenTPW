@@ -160,7 +160,7 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   (`0x529960`), which is not built: the text HUD's challenge panel stands in for it.
 - **Openers.** The key table's Objectives row (`0x9A8A14`: O, no modifier, `0x42F020`, not in game mode 3), the HUD buttons (`0x54AC0F`, `0x54F7C1`), a click on the
   `ObstacleOpened` thing (`0x5068C3`), the challenges window's Objectives tab (`0x52A60F`), a letter's go-to kind 0xC (`0x551461`) and, three flight updates after a
-  zone-arrival (mode 2) camera flight, the first briefing (`0x5D0369`). OpenTPW has the key, the text HUD's button and the letter go-to; the flight is ported
+  zone-arrival (mode 2) camera flight, the first briefing (`0x5D0369`). OpenTPW has the key and the text HUD's button. The letter go-to is ported but not reachable in play yet, because the slice files no letters without the tag tube; the flight is ported
   separately.
 - **Not ported:** the body's scroll text (`0x52C4C0`; the body shows from its top, as at every opening, and the slider does not move it), the interface sounds
   (`0x1B6`, `0x277`), the per-mission advisor panel (`0x5F16C0`, `0x93E3E0[counter]`) and the advisor panel `0x1FA` on closing.

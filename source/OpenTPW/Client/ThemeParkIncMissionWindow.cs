@@ -203,11 +203,11 @@ internal sealed class ThemeParkIncMissionWindow
 		}
 		if ( world.Missions.ObstacleState() == 2 )
 			session.StaffListBuilt = true;
-		// [BIN:TPI-EXE:0x55B16E page toggle] the b_updown 0xCEC69 says UITEXT 988 on the briefing and 989 on the details, centred in font slot 7 with the colour (0xFA, 0xFA, 0xFA, 0xFF);
-		// its toggle state is the details page (0x85B402(page == 1, 1))
+		// [BIN:TPI-EXE:0x55B16E page toggle] the b_updown 0xCEC69 says UITEXT 988 on the briefing and 989 on the details, centred in font slot 7; its toggle state is the details page
+		// (0x85B402(page == 1, 1)); the colour call (0xFA, 0xFA, 0xFA) at 0x55AD21 styles the first text object, which 0x55B1D6 replaces (0x84B2DE) with no colour call: the class default, white
 		var toggle = Button( "page", table.Control( 0xCEC69 ), TogglePage, enabled: true );
 		toggle.Selected = () => Page == 1;
-		TextOn( "pageText", table.Control( 0xCEC69 ), () => strings.Entry( Page == 0 ? ToDetails : ToBriefing ), new RgbaByte( 0xFA, 0xFA, 0xFA, 0xFF ) );
+		TextOn( "pageText", table.Control( 0xCEC69 ), () => strings.Entry( Page == 0 ? ToDetails : ToBriefing ), white );
 		// [BIN:TPI-EXE:0x55B236 proceed] the b_ltoggle10 0xCEC68 says UITEXT 82, centred in font slot 7 with the colour (0xC8, 0xC8, 0xDC, 0xFF)
 		// [BIN:TPI-EXE:0x55B5BA proceed sparkle] when the requirements are met the builder starts a screen particle burst at the button (0x500B70 -> 0x7BACC0), which OpenTPW's interface does not draw
 		var proceed = proceedButton = Button( "proceed", table.Control( 0xCEC68 ), Proceed, enabled: false );
@@ -241,7 +241,7 @@ internal sealed class ThemeParkIncMissionWindow
 	/// The window's timer and tick (<c>0x55BA70</c> messages 0x10, 0x15 and 0x1E): four seconds after the window opens the session's refresh flag is set, and from then on every tick
 	/// refreshes the window; when the obstacle reaches state 2 and the staff list was never set up, the window is built again instead, on its briefing page.
 	/// </summary>
-	// [BIN:TPI-EXE:0x55BAB1 mission timer] message 0x10 arms timer 0x80080 for 0xFA0 ms (0x84D0A9); its expiry (message 0x15, id 0x80080) sets 0xA61814 = 1
+	// [BIN:TPI-EXE:0x55BAB1 mission timer] message 0x15 (table 0x55BF24/0x55BF08) arms timer 0x80080 for 0xFA0 ms (0x84D0A9); its expiry, message 0x10 with id 0x80080 (0x55BAF6), sets 0xA61814 = 1
 	// [BIN:TPI-EXE:0x55BBD0 mission tick] message 0x1E with 0xA61814 set: obstacle state 2 and 0xA61818 == 0 closes the window and builds it again (0x55A7F0); else the refresh 0x55C190
 	internal void Tick( float delta )
 	{
@@ -252,16 +252,14 @@ internal sealed class ThemeParkIncMissionWindow
 				session.RefreshArmed = true;
 			return;
 		}
-		if ( !session.StaffListBuilt && world.Missions.ObstacleState() == 2 )
-		{
-			Rebuilt?.Invoke();
+		// a refused rebuild (a lost park opens no window) keeps this window refreshing rather than frozen
+		if ( !session.StaffListBuilt && world.Missions.ObstacleState() == 2 && Rebuilt?.Invoke() == true )
 			return;
-		}
 		Refresh();
 	}
 
-	/// <summary>Raised when the tick builds the window again (the HUD replaces the screen).</summary>
-	public Action? Rebuilt { get; set; }
+	/// <summary>Raised when the tick builds the window again (the HUD replaces the screen); false when the HUD refused to build it.</summary>
+	public Func<bool>? Rebuilt { get; set; }
 
 	/// <summary>The refresh <c>0x55C190</c>: the page's texts, the obstacle group and Proceed's state.</summary>
 	// [BIN:TPI-EXE:0x55C190 mission refresh] page 0: hide 0xCEC63, the briefing 0x55D520; page 1 in obstacle state 2: show 0xCEC63, the body text "" and the obstacle lines 0x55D1B0; page 1 otherwise:

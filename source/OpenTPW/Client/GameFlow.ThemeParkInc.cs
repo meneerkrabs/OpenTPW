@@ -85,6 +85,10 @@ internal sealed partial class GameFlow
 		SelectNewPlayer = ShowThemeParkIncFrontEnd
 	}, speed );
 
+	/// <summary>The slice's simulation time scale: a flight's clock rate while one is on (0 while the park is paused), else the HUD's speed.</summary>
+	internal static float ThemeParkIncTimeScale( double? flightRate, GameSpeed speed, float hudScale ) =>
+		flightRate is { } rate ? speed == GameSpeed.Paused ? 0f : (float)rate : hudScale;
+
 	/// <summary>
 	/// One frame of the slice: the experimental HUD takes input, the level runs at its selected speed,
 	/// and crowd and precipitation audio follow the current park, as does the weather forecast's speech. Staff voices remain unavailable.
@@ -96,8 +100,9 @@ internal sealed partial class GameFlow
 		// A confirmed layout load can replace the world inside HUD input; do not tick the retired level.
 		if (!ReferenceEquals(Level, level)) return;
 		level.UiCapturesMouse = captured;
-		// [BIN:TPI-EXE:0x5D053C flight clock] a camera flight sets the park clock's rate to its mode's (1.0, 0.7 in mode 1) until its end restores the speed word's rate (0x41C000 sets the rate only); OpenTPW's pause speed keeps the park paused
-		level.SimulationTimeScale = level.Park?.Economy.TpiCutscene?.ClockRate is { } rate ? hud.Speed == GameSpeed.Paused ? 0f : (float)rate : hud.TimeScale;
+		// [BIN:TPI-EXE:0x5D053C flight clock] a camera flight sets the park clock's rate to its mode's (1.0, 0.7 in mode 1) until its end restores the speed word's rate; 0x41C000 writes the rate (+0x20)
+		// only, and the pause is the clock's own flag (+0x30, 0x41BBF0), so a paused park stays paused under a flight until the pause key (reachable during the flight, ThemeParkIncHud.UpdateFlight) resumes it
+		level.SimulationTimeScale = ThemeParkIncTimeScale( level.Park?.Economy.TpiCutscene?.ClockRate, hud.Speed, hud.TimeScale );
 		level.Update();
 		GameAudio.Update( level.Guests?.GetStatistics().InPark ?? 0 );
 		if ( level.Park?.Economy.TpiWeather is { } weather )

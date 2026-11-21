@@ -88,7 +88,7 @@ public sealed class ThemeParkIncCutscene
 	public Func<int>? ViewedZone { get; set; }
 
 	/// <summary>
-	/// Plays the flight of <paramref name="thing"/> (<c>0x5D0400</c>): refused while another plays; else the thing becomes the flight's, the camera goes on its seat 1, the clock runs at the mode's rate,
+	/// Plays the flight of <paramref name="thing"/> (<c>0x5D0400</c>): refused while another plays and for thing 0 (no thing); else the thing becomes the flight's, the camera goes on its seat 1, the clock runs at the mode's rate,
 	/// the input window opens and the thing's script variable 0 becomes <paramref name="trigger"/>.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5D0400 cutscene play] [0xA9D230] != 0: logs "Attempt to play anim when one is already playing! Haroogha Haroogha" and returns false; else 0xA9D255 = 0xA9D254 = 0 and 0xA9D258 = 0, the cursor
@@ -104,6 +104,11 @@ public sealed class ThemeParkIncCutscene
 			Log?.Trace( "Attempt to play anim when one is already playing! Haroogha Haroogha" );
 			return false;
 		}
+		// [BIN:TPI-EXE:0x648DF0 thing table] slot 0 of the thing table 0xAA18B0 is never a thing (the reset clears its pointer and the free list starts at slot 1), and 0x5D0400 has no refusal for it:
+		// with thing 0 it stores 0xA9D230 = 0, which no update ends (0x5D02F0 tests it), reads the null slot (0x5D0448) and faults in 0x5E5B20 (thing +0x16)
+		// [EXT:original-undefined-reads] OpenTPW refuses a flight of thing 0 as it refuses a second flight: nothing changes and no input window opens
+		if ( thing == 0 )
+			return false;
 		Skippable = false;
 		SkipPending = false;
 		WindowCountdown = 0;

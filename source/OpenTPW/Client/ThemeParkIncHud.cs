@@ -465,6 +465,14 @@ public sealed partial class ThemeParkIncHud
 	private static UiButton MenuButton( UiScreen menu, string id, string text, Action clicked, float top ) =>
 		MenuButton( menu, id, () => text, clicked, top );
 
+	/// <summary>The binding "pause" (the P key): pauses a running park or resumes a paused one.</summary>
+	// [BIN:TPI-EXE:0x42A27C lost pause toggle] the P key's toggle refuses to pause a lost park but still resumes one that was paused when it was lost
+	private void TogglePause( UiInput input )
+	{
+		if ( input.Has( UiKeys.Pause ) && (!Lost || speed == GameSpeed.Paused) )
+			speed = speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
+	}
+
 	internal void PostMessage( string text )
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
@@ -493,9 +501,8 @@ public sealed partial class ThemeParkIncHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		// [BIN:TPI-EXE:0x42A27C lost pause toggle] the P key's toggle refuses to pause a lost park but still resumes one that was paused when it was lost
-		if ( !MenuOpen && input.Has( UiKeys.Pause ) && (!Lost || speed == GameSpeed.Paused) )
-			speed = speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
+		if ( !MenuOpen )
+			TogglePause( input );
 
 		// The level's last action (builds, refusals) becomes a message here; the slice has no advisor to say it.
 		if ( level.LastActionMessage != lastLevelMessage )

@@ -507,6 +507,7 @@ public sealed partial class ThemeParkIncHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		ShowWageDemands();
+		ShowTrainingNotices();
 		ShowChallengeNotices();
 		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );

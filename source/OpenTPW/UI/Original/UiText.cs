@@ -21,11 +21,13 @@ public sealed class UiStringTable
 	private readonly string[] staffTypes;
 	private readonly string[][] staffNames;
 	private readonly string[] challengeTitles;
+	private readonly string[] abilities;
 
 	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null,
 		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null, StringFile? kidStates = null, string[]? thoughtNames = null,
-		StringTemplate[]? helpTemplates = null, string[]? staffTypes = null, string[][]? staffNames = null, string[]? challengeTitles = null )
+		StringTemplate[]? helpTemplates = null, string[]? staffTypes = null, string[][]? staffNames = null, string[]? challengeTitles = null, string[]? abilities = null )
 	{
+		this.abilities = abilities ?? Array.Empty<string>();
 		this.challengeTitles = challengeTitles ?? Array.Empty<string>();
 		this.staffTypes = staffTypes ?? Array.Empty<string>();
 		this.staffNames = staffNames ?? Array.Empty<string[]>();
@@ -51,7 +53,7 @@ public sealed class UiStringTable
 			language.LoadStrings( "LOANNAMES.str" ).Entries, uiText.Templates, OptionalStrings( language, "INGREDIENT.str" ),
 			OptionalFile( language, "KIDSTATES.str" ), OptionalStrings( language, "THOUGHTS.str" ), helpText.Templates,
 			OptionalStrings( language, "STAFF_TYPES.str" ), StaffNameFiles.Select( name => OptionalStrings( language, name ) ?? Array.Empty<string>() ).ToArray(),
-			OptionalStrings( language, "CHALLENGE_TITLES.str" ) );
+			OptionalStrings( language, "CHALLENGE_TITLES.str" ), OptionalStrings( language, "ABILITIES.str" ) );
 	}
 
 	/// <summary>Theme Park Inc's per-role name tables, in the staff role order (handyman, mechanic, entertainer, guard, researcher, gardener).</summary>
@@ -90,6 +92,8 @@ public sealed class UiStringTable
 	// [BIN:TPI-EXE:0x5C63E0 challenge title] the slot's title text is the string lookup 0x8934A0 of table [0xA0D65C] at the slot's mScriptIndex (+0x50); that table is mChallengeTitles,
 	// registered as CHALLENGE_TITLES::TableID (0x3F7) at +0x774 of the text object 0xA0CEE8 (0x4474A8)
 	public string ChallengeTitle( int scriptIndex ) => Get( challengeTitles, scriptIndex );
+	/// <summary>Theme Park Inc's <c>ABILITIES.str</c>: a staff ability's name (0 "None", 1 Ride Upgrading .. 14 Logging); empty when the table is not loaded.</summary>
+	public string Ability( int ability ) => Get( abilities, ability );
 	public string Theme( int index ) => Get( themeNames, index );
 	public string Object( int index ) => Get( objectNames, index );
 	public string Lender( int index ) => Get( lenderNames, index );

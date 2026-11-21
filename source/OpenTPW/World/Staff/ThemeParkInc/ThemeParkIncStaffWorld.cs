@@ -13,7 +13,7 @@ namespace OpenTPW;
 /// [EXT:tpi-no-maintenance-wear] (user-approved 2026-11-21) Theme Park Inc's toilet wear and the bins' fill are unported, so the loo finder 0x5D6230 and the bin finder 0x5D5F10 find nothing
 /// to clean: the handymen sweep litter only (states 0x11 to 0x14 are not entered).
 /// </remarks>
-public sealed class ThemeParkIncStaffWorld
+public sealed partial class ThemeParkIncStaffWorld
 {
 	/// <summary>The handyman's states this world runs (the state word +0x1B4).</summary>
 	public const int Idle = 0, Walking = 1, ToLitter = 0x0F, Sweeping = 0x10;
@@ -455,7 +455,8 @@ public sealed class ThemeParkIncStaffWorld
 		(member.SmoothedSpeed, member.Boost, member.MaxSpeed, member.MaxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, member.Boost );
 		// [BIN:TPI-EXE:0x5D1080 sprite requests] 0x60BC90 then applies the wrapper's pending template (+0xC, through the table 0x9CDA94, 0x4E49A0) and interval (+0x10, 0x4E42B0), clearing each, as tp.exe's
 		// 0x004D4190; a member restored from a save (whose sprite is not saved) gets a source in his state's template first
-		if ( member.Sprite.Source == null )
+		// a member in the training room has no sprite source (0x5D1050 at state 8's entry) until the finish or the cancel makes it again
+		if ( member.Sprite.Source == null && !Hidden( member ) )
 			member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( member.Template ), SpriteClockMilliseconds, SpriteBanks );
 		member.Sprite.ApplyPending( StaffType.Handyman, VariantOf( member, SpriteBanks ), SpriteBanks );
 		member.CountTick( (ThemeParkIncStaffMember.DisplayState)Category( member.State ) );
@@ -464,6 +465,9 @@ public sealed class ThemeParkIncStaffWorld
 		if ( member.State == Idle && due && FindLitter( economy, settings, member ) != 0 )
 			Search( economy, member, turn );
 	}
+
+	/// <summary>Whether the member is inside a room without a sprite source: training (state 8 and its suspended 0x25).</summary>
+	internal static bool Hidden( ThemeParkIncStaffMember member ) => member.State is ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended;
 
 	/// <summary>The handyman's search period and idle wait: trunc((1 − experience / MaxExperience) × 50).</summary>
 	public static int SearchPeriod( int experience, int maxExperience ) => unchecked( (int)(long)((1.0 - (double)(uint)experience / maxExperience) * 50.0f) );
@@ -513,6 +517,14 @@ public sealed class ThemeParkIncStaffWorld
 				break;
 			case Sweeping:
 				UpdateSweeping( economy, settings, member, turn );
+				break;
+			// [BIN:TPI-EXE:0x5D588E common states] the handyman's table sends 4..0x0E to the common handler 0x6287A0 (byte table 0x628B10, jump table 0x628ADC): 7 -> 0x62A7C0, 8 -> 0x62AA50; above 0x14
+			// (0x25, 0x26) the common handler has no case
+			case ThemeParkIncTraining.ToTrainingRoom:
+				UpdateToTrainingRoom( economy, settings, member, turn );
+				break;
+			case ThemeParkIncTraining.Training:
+				UpdateTraining( economy, settings, member, turn );
 				break;
 		}
 	}
@@ -698,6 +710,12 @@ public sealed class ThemeParkIncStaffWorld
 				break;
 			case Walking:
 				RequestTemplate( member, WalkTemplate );
+				break;
+			case ThemeParkIncTraining.ToTrainingRoom:
+				EnterToTrainingRoom( member );
+				break;
+			case ThemeParkIncTraining.Training:
+				EnterTraining( economy, member, turn );
 				break;
 			default:
 				throw new InvalidOperationException( $"Theme Park Inc staff state {state} is not ported." );

@@ -187,6 +187,7 @@ public partial class Level
 		if ( Park?.Economy.TpiStaff == null || Guests == null )
 			return;
 		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
+		AttachThemeParkIncRooms();
 		AdoptTpiStaffThings();
 		// the members' sprites: Theme Park Inc's esprites.wad holds the handymen's bank under the folder Theme Park World's loader reads (Generic\Handymen, Spr_ha), found by name
 		if ( OriginalPark != null )

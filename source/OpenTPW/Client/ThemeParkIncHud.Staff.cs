@@ -53,31 +53,127 @@ public sealed partial class ThemeParkIncHud
 		} );
 	}
 
-	/// <summary>The pool slots of the listed candidate rows, in row order (the rows <see cref="StaffRows"/> listed last).</summary>
-	private readonly List<int> staffRowSlots = new();
+	/// <summary>What activating each listed row does, in row order (the rows <see cref="StaffRows"/> listed last); null for an inert row.</summary>
+	private readonly List<Action?> staffRowActions = new();
 
-	/// <summary>The pool's candidates in slot order, then (under a heading) the hired members, as listed rows; activating a candidate's row hires it.</summary>
+	/// <summary>The hired member whose "Select Ability To Learn" list the panel shows, null for the pool and the members.</summary>
+	private ThemeParkIncStaffMember? trainingMember;
+
+	/// <summary>The ability whose retraining the player was asked to confirm (choosing it again confirms), -1 for none.</summary>
+	private int retrainAbility = -1;
+
+	/// <summary>
+	/// The pool's candidates in slot order, then (under a heading) the hired members, as listed rows; activating a candidate's row hires it, a member's row opens his ability list. With a member's list
+	/// open: the abilities he may learn, the full room's or the role's line, and a row back.
+	/// </summary>
 	internal IReadOnlyList<string> StaffRows()
 	{
-		staffRowSlots.Clear();
+		staffRowActions.Clear();
 		if ( level.Park?.Economy.TpiStaff is not { } staff )
 			return Array.Empty<string>();
 		var rows = new List<string>();
+		void Row( string text, Action? action )
+		{
+			rows.Add( text );
+			staffRowActions.Add( action );
+		}
+		if ( trainingMember is { } member && staff.Members.Contains( member ) )
+		{
+			AbilityRows( staff, member, Row );
+			return rows;
+		}
+		trainingMember = null;
 		for ( var slot = 0; slot < staff.Slots.Count; slot++ )
 		{
 			if ( staff.Slots[slot] is { } candidate )
 			{
-				rows.Add( StaffRow( candidate.Role, candidate.NameIndex, candidate.Experience, candidate.Wage ) );
-				staffRowSlots.Add( slot );
+				var hire = slot;
+				Row( StaffRow( candidate.Role, candidate.NameIndex, candidate.Experience, candidate.Wage ), () => Hire( hire ) );
 			}
 		}
 		if ( staff.Members.Count > 0 )
 		{
-			rows.Add( T( OpenTpwText.TpiStaffMembersHeading ) );
-			foreach ( var member in staff.Members )
-				rows.Add( StaffRow( member.Role, member.NameIndex, member.Experience, member.Salary ) );
+			Row( T( OpenTpwText.TpiStaffMembersHeading ), null );
+			foreach ( var hired in staff.Members )
+				Row( StaffRow( hired.Role, hired.NameIndex, hired.Experience, hired.Salary ) + AbilitySuffix( hired ), () => OpenAbilities( hired ) );
 		}
 		return rows;
+	}
+
+	/// <summary>A member's trained ability after his row (ABILITIES.str), nothing for none.</summary>
+	private string AbilitySuffix( ThemeParkIncStaffMember member ) => member.Ability == 0 ? "" : $" - {strings.Ability( member.Ability )}";
+
+	/// <summary>
+	/// The "Select Ability To Learn" list of a member (0x580860): its title, then the room-full line (713) or the abilities he may learn (0x639B20) or the role's line (707..712), and a row back.
+	/// </summary>
+	// [EXT:tpi-text-hud] the text HUD lists the panel's rows; the original's panel window and its confirmation dialog (715) are not built: choosing the same ability twice confirms a retraining
+	private void AbilityRows( ThemeParkIncStaff staff, ThemeParkIncStaffMember member, Action<string, Action?> row )
+	{
+		row( $"{strings.Entry( ThemeParkIncTraining.SelectAbilityText )}: {strings.StaffName( (int)member.Role, member.NameIndex )}", null );
+		var discovered = level.Park?.Economy.TpiCareer?.Abilities ?? (IReadOnlyList<byte>)Array.Empty<byte>();
+		if ( ThemeParkIncTraining.RoomFull( staff.Members ) )
+			row( strings.Entry( ThemeParkIncTraining.RoomFullText ), null );
+		else
+		{
+			var any = false;
+			foreach ( var ability in ThemeParkIncTraining.Learnable( member, discovered ) )
+			{
+				any = true;
+				row( strings.Ability( ability ), () => ChooseAbility( member, ability ) );
+			}
+			if ( !any )
+				row( strings.Entry( ThemeParkIncTraining.NothingToLearnText( member.Role ) ), null );
+		}
+		row( T( OpenTpwText.TpiClose ), () => trainingMember = null );
+	}
+
+	/// <summary>A member's row activated: his ability list opens when the park has a training room and he stands in it.</summary>
+	private void OpenAbilities( ThemeParkIncStaffMember member )
+	{
+		if ( !level.ThemeParkIncHasTrainingRoom )
+		{
+			PostMessage( T( OpenTpwText.TpiTrainingNoRoom ) );
+			return;
+		}
+		if ( member.Placed )
+		{
+			trainingMember = member;
+			retrainAbility = -1;
+		}
+	}
+
+	/// <summary>An ability row activated (0x580550): already trained refuses, retraining asks to be chosen again, else the member walks to the training room.</summary>
+	private void ChooseAbility( ThemeParkIncStaffMember member, int ability )
+	{
+		switch ( level.ChooseThemeParkIncAbility( member, ability, confirmed: retrainAbility == ability ) )
+		{
+			case ThemeParkIncTrainingChoice.AlreadyTrained:
+				PostMessage( strings.Entry( ThemeParkIncTraining.AlreadyTrainedText ) );
+				GameAudio.PlayUi( GameAudio.ErrorEvent );
+				break;
+			case ThemeParkIncTrainingChoice.NeedsConfirmation:
+				retrainAbility = ability;
+				PostMessage( string.Format( T( OpenTpwText.TpiTrainingRetrain ), strings.StaffName( (int)member.Role, member.NameIndex ), strings.Ability( member.Ability ) ) );
+				break;
+			case ThemeParkIncTrainingChoice.Started:
+				trainingMember = null;
+				retrainAbility = -1;
+				break;
+			default:
+				PostMessage( T( OpenTpwText.TpiTrainingNoRoom ) );
+				break;
+		}
+	}
+
+	/// <summary>The training notices of the staff world, as notes (the advisor's lines 0x175 and 0x1C9).</summary>
+	private void ShowTrainingNotices()
+	{
+		if ( level.TpiStaffWorld is not { TrainingNotices.Count: > 0 } world )
+			return;
+		foreach ( var notice in world.TrainingNotices )
+			PostMessage( string.Format( T( notice.Finished ? OpenTpwText.TpiTrainingFinished : OpenTpwText.TpiTrainingCancelled ),
+				strings.StaffName( (int)notice.Member.Role, notice.Member.NameIndex ), strings.Ability( notice.Ability ) ) );
+		world.TrainingNotices.Clear();
 	}
 
 	// STAFF_TYPES.str holds each role's singular and plural name as consecutive entries (Cleaner, Cleaners, Engineer, Engineers, Entertainer, Entertainers, Guard, Guards,
@@ -87,13 +183,18 @@ public sealed partial class ThemeParkIncHud
 	private string StaffRow( ThemeParkIncStaffRole role, int nameIndex, int experience, int wage ) => string.Format( T( OpenTpwText.TpiStaffRow ),
 		strings.StaffType( (int)role ), strings.StaffName( (int)role, nameIndex ), experience, wage.ToString( "N0" ) );
 
-	/// <summary>A candidate's row activated: a cleaner (handyman) goes to the hand for placing, another role is refused with a note.</summary>
+	/// <summary>A listed row activated (see <see cref="StaffRows"/>).</summary>
 	internal void ActivateStaffRow( int index )
 	{
 		StaffRows();
-		if ( index < 0 || index >= staffRowSlots.Count )
-			return;
-		var refusal = level.BeginTpiHire( staffRowSlots[index] );
+		if ( index >= 0 && index < staffRowActions.Count )
+			staffRowActions[index]?.Invoke();
+	}
+
+	/// <summary>A candidate's row activated: a cleaner (handyman) goes to the hand for placing, another role is refused with a note.</summary>
+	private void Hire( int slot )
+	{
+		var refusal = level.BeginTpiHire( slot );
 		if ( refusal == null )
 		{
 			CloseStaffPanel();
@@ -160,6 +261,7 @@ public sealed partial class ThemeParkIncHud
 	private void CloseStaffPanel()
 	{
 		staffOpen = false;
+		trainingMember = null;
 		SetStaffPanelVisible( false );
 	}
 

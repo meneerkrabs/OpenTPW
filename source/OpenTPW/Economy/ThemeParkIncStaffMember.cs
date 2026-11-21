@@ -194,7 +194,7 @@ public sealed class ThemeParkIncStaffMember
 
 	/// <summary>The member's thing id in the park's thing pool (the handle the litter claim and the message order use); 0 until it is placed.</summary>
 	public int ThingId { get; internal set; }
-	/// <summary>The state word (+0x1B4): 0 idle, 1 walking (patrol), 0x0F to litter, 0x10 sweeping (ThemeParkIncStaffWorld).</summary>
+	/// <summary>The state word (+0x1B4): 0 idle, 1 walking (patrol), 0x0F to litter, 0x10 sweeping, 7 to the training room, 8 training (ThemeParkIncStaffWorld).</summary>
 	public int State { get; internal set; }
 	/// <summary>The idle stamp (+0x23C): the turn an idle spell after a walk began, else 0.</summary>
 	public long IdleStamp { get; internal set; }
@@ -243,8 +243,9 @@ public sealed class ThemeParkIncStaffMember
 	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld() => Navigation is not { } navigation ? null : new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost,
 		SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial );
 
-	/// <summary>The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10.</summary>
-	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role == ThemeParkIncStaffRole.Handyman && state is 0 or 1 or 0x0F or 0x10;
+	/// <summary>The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10 and the training states 7, 8, 0x25 and 0x26.</summary>
+	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role == ThemeParkIncStaffRole.Handyman
+		&& state is 0 or 1 or 0x0F or 0x10 or ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended or ThemeParkIncTraining.ToTrainingRoomSuspended;
 
 	/// <summary>Whether a saved thing can be this model's: a ported state, a thing id of the pool, a cell word of the map, a valid walk.</summary>
 	internal static bool IsValidWorld( ThemeParkIncStaffRole role, ThemeParkIncStaffWorldSnapshot? world ) => world == null || IsPortedState( role, world.State )

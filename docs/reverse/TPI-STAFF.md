@@ -327,3 +327,29 @@ is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0
 
 Message delivery: the queue `0xA09728` reaches its listeners in ascending handle order; OpenTPW calls the listeners at the post (`ParkEconomy.ThemeParkIncObstacleResearched`, `ThemeParkIncObstacleRemoved`),
 the HQ before the mission controller.
+
+### 12.2 Training and abilities
+
+`ThemeParkIncTraining` (rules) and `ThemeParkIncStaffWorld.Training.cs` (states 7 and 8 of a placed member) port Theme Park Inc's training, which replaces Theme Park World's budget split:
+
+- **Abilities** (`ABILITIES.str`, member `+0x218`, one at a time): compatibility `0x62B6C0` is mechanic 1–6, handyman 7–8, guard 9, gardener 10–14, entertainers and scientists none. A member may learn an
+  ability (`0x639B20`) when the career discovered it (`+0x1064`; 1, 7 and 9 at a reset, the obstacle research adds the mission's), his role takes it and he has **10000** experience (hard-coded; the
+  drop path alone also tests `MinExperienceForTraining`).
+- **Choosing** (`0x580550`, the "Select Ability To Learn" panel `0x580860`): the panel lists every learnable ability, or UITEXT 713 when three members are in states 7, 8, 0x25 or 0x26 (`0x639F40`), or the
+  role's line 707–712. The member's own ability refuses (714); another one asks for the retraining confirmation (715); then `+0x22C` = the choice and state 7, even from state 8.
+- **The drop path** (`0x629B20` on a training room's cell) hard-codes ability 2, so only a mechanic who may learn Construction trains by a drop; any other drop falls through to the normal drop.
+  OpenTPW's drop (handymen only) therefore never trains, as the original's.
+- **Training room**: the first thing of the object list `park+0x1EAB88` whose flag word has 0x400 (`UsageInfo.TrainingRoom`, set by the attraction builder `0x5DB79A`); one room serves every trainee.
+- **State 7** (entry `0x628492`, tick `0x62A7C0`): a walk to the centre of the room's entrance cell (`+0x46`) with the speed bonus 25; arrived, the room's script variable 0 rises, state 8 and
+  message **0x2A** (the HQ releases his old ability, §12.1); stuck, every update costs `HappyHitCosRoomInaccessible` (the CRT `rand()` there picks only a thought, not drawn).
+- **State 8** (entry `0x62852A`, tick `0x62AA50`): the sprite source is deleted; `+0x220 = +0x22C` and the progress 0 (experience ≥ 10000); `+0x224 += SkillIncrement` (10) each update; at
+  `ProgessUpperLimit` (3000: **300 updates**) the ability is learnt, the advisor's line 0x175, the finish `0x62AB90` (message **0x2B**, the letter of kind 0xC, the room's variable 0 falls, the sprite
+  again, state 0), motivation 100, `TrainingExtraExperience` (5000) and then `StaffAgencies[agency].TrainingExperienceGainModifier` percent of the new experience, capped at MaxExperience, and a look
+  for work. No wage change.
+- **Cancel** `0x62E7A0` (the staff message 0xA for a removed training room, or state 8 entered with nothing chosen): nothing for a member learning nothing; else the ability in training is dropped,
+  the room's variable 0 falls, a member in the room is shown again, the advisor's line 0x1C9, the letter of kind 0xD, state 0 and a look for work.
+- **What abilities unlock**: Ride Upgrading (1) for upgrades, Firefighting (7) for burning bins, First Aid (9), the HQ's mission slots, ride activation (UITEXT 985) and research consultants. Of these
+  only the HQ slots and the consultants (§12.3) are ported; the others belong to unported role work.
+- **HUD** (`[EXT:tpi-text-hud]`): a hired member's row in the staff panel opens his ability list (with a training room in the park); choosing the same ability twice confirms a retraining; the
+  advisor's lines show as notes.
+- Not ported: the training-room panel's three slots (`0xA6C128`) and its suspend/resume (states 0x25/0x26, `0x62B960`), which only it sets.

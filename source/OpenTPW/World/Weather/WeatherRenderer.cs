@@ -219,7 +219,7 @@ public sealed class WeatherRenderer : Entity
 		var stride = Vertex.SizeInBytes;
 		vertexBuffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( (uint)MaximumVertices * stride, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 		var commandList = global::Global.Render.CommandList;
-		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)vertexCount * stride );
+		DynamicBufferUpload.Update( commandList, vertexBuffer, ref vertices[0], (uint)vertexCount * stride );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 
 		// every vertex is already in clip space (see WeatherProjection and weather.shader), so both draw with identity matrices

@@ -63,6 +63,39 @@ public class ImGuiOverlayRendererTests
 		}
 	}
 
+	/// <summary>
+	/// The renderer's own key map is the only one (the editor's copy is gone): it fills the ImGuiKey values the repository's ImGui.NET 1.87 reads,
+	/// so the editing keys reach an ImGui text field in the game's overlay and in the setup wizard alike.
+	/// </summary>
+	[TestMethod]
+	public void TheRendererFillsTheKeyMapAtTheIndicesImGuiReads()
+	{
+		using var device = CreateDevice();
+		var previousContext = ImGui.GetCurrentContext();
+		using var colour = device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( Size, Size, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.RenderTarget ) );
+		using var framebuffer = device.ResourceFactory.CreateFramebuffer( new FramebufferDescription( null, colour ) );
+		ImGuiOverlayRenderer? renderer = null;
+		try
+		{
+			renderer = new ImGuiOverlayRenderer( device, framebuffer.OutputDescription, (int)Size, (int)Size );
+			var io = ImGui.GetIO();
+			Assert.IsTrue( (int)ImGuiKey.Tab >= 512, "ImGui.NET 1.87 numbers its named keys from 512" );
+			foreach ( var (imguiKey, key) in new[] { (ImGuiKey.Tab, Key.Tab), (ImGuiKey.LeftArrow, Key.Left), (ImGuiKey.Backspace, Key.BackSpace),
+				(ImGuiKey.Enter, Key.Enter), (ImGuiKey.Escape, Key.Escape), (ImGuiKey.A, Key.A), (ImGuiKey.Z, Key.Z) } )
+				Assert.AreEqual( (int)key, io.KeyMap[(int)imguiKey], imguiKey.ToString() );
+		}
+		finally
+		{
+			if ( renderer != null )
+			{
+				renderer.Dispose();
+				ImGui.DestroyContext( ImGui.GetCurrentContext() );
+			}
+			if ( previousContext != IntPtr.Zero )
+				ImGui.SetCurrentContext( previousContext );
+		}
+	}
+
 	private static ((int R, int G, int B) Centre, (int R, int G, int B) Band) Frame( GraphicsDevice device, ImGuiOverlayRenderer renderer, CommandList commands,
 		Framebuffer framebuffer, Veldrid.Texture colour, Veldrid.Texture staging, uint centre, uint band )
 	{

@@ -1,0 +1,5 @@
+## One ImGui key map (November 21, 2026)
+
+Since #971 the ImGui overlay renderer (`ImGuiOverlayRenderer.SetOpenTKKeyMappings`) fills `io.KeyMap` at the `ImGuiKey` values ImGui.NET 1.87 reads, when it creates the ImGui context. The developer editor, created right after it on the same context (`Renderer`, then `new Editor`), then wrote the same 19 entries again in `Editor.InitIO` (`Editor.SetKeyMappings`). The copy is gone, so the renderer's map is the only one, for the game's overlay and the setup wizard alike.
+
+No behaviour change: the entries and the context are the same, and nothing touches the key map between the two writes; `InitIO` only sets the config flags and loads the ini settings. `ImGuiOverlayRendererTests.TheRendererFillsTheKeyMapAtTheIndicesImGuiReads` now pins the renderer's map at the 1.87 indices (Direct3D 11 on Windows CI, Metal here). Verified: the ImGui overlay and buffer-upload tests (7 passed on Metal), the browser build with and without the determinism pins, and the five native smokes.

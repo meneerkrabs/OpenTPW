@@ -502,7 +502,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
 		// A guest placed without the arrival constructor's position draws is spread by a stable hash of its ID, not a world draw.
 		(guest.OffsetX, guest.OffsetY) = PlacementJitter( id );
-		guest.BaseSpeed = baseSpeed;
+		// [BIN:TPI-EXE:0x60C712 guest base speed] a Theme Park Inc guest's base speed is the drawn word times its profile's SpeedMultiplier, truncated to a word
+		// [EXT:hardware-d3d-path] the game thread runs this after the Direct3D device started, which sets the x87 to 24-bit precision (SetCooperativeLevel 0x851/0x808 at
+		// 0x6BF33F/0x6BF5A8: DDSCL_FPUSETUP without FPUPRESERVE, as tp.exe's 0x563914/0x563B92); at 24 bits the product rounds to a single before the truncation, which
+		// gives one more than 53 bits for 20 of the 120 retail type and word pairs (60 x 0.95f is 56.9999993, a single 57.0f: 57, where 53 bits truncate to 56)
+		guest.BaseSpeed = Settings.TpiGuestStart is { } start
+			? ThemeParkIncGuestStart.ScaleBaseSpeed( (ushort)baseSpeed, start.Types[guest.Type].SpeedMultiplier, singlePrecision: true )
+			: baseSpeed;
 		// [EXT:smarter-guests] the birth id comes with the guest, before its first decision (the counter is the extension's, no draw)
 		if ( SmarterGuests is { } smarter )
 			guest.BirthId = smarter.AllocateBirthId();
@@ -511,6 +517,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return guest;
 	}
 
+	// [EXT:tpi-twp-guest-rules] the constructor's profile, meters, base speed and appearance are Theme Park Inc's; the guest then walks, decides and animates by the shared
+	// Theme Park World update wherever Theme Park Inc's has not been ported
 	private Guest CreateThemeParkIncGuest( int id, ThemeParkIncGuestStartSettings settings )
 	{
 		// [BIN:TPI-EXE:0x60C58F guest profile] The unforced constructor uses four profile draws,
@@ -523,6 +531,25 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Thirst = meters.Thirst, Hunger = meters.Hunger, Toilet = meters.Toilet,
 			ToiletBonus = GuestSpeed.ToiletBonus, TpiPrankCode = meters.Prank
 		};
+	}
+
+	/// <summary>
+	/// Whether a guest's base speed is one its birth can give: a walk speed, or for a Theme Park Inc guest also a walk speed scaled by its profile's multiplier
+	/// (a Science save from before the scale was applied holds the unscaled word, which its guests keep).
+	/// </summary>
+	private bool IsBirthBaseSpeed( int baseSpeed, int type, bool themeParkInc )
+	{
+		if ( baseSpeed is >= 60 and <= 140 )
+			return true;
+		if ( !themeParkInc || Settings.TpiGuestStart is not { } start || type < 0 || type >= start.Types.Count )
+			return false;
+		var multiplier = start.Types[type].SpeedMultiplier;
+		foreach ( var word in GuestSpeed.BaseSpeeds )
+		{
+			if ( baseSpeed == ThemeParkIncGuestStart.ScaleBaseSpeed( word, multiplier, singlePrecision: true ) )
+				return true;
+		}
+		return false;
 	}
 
 	private Guest CreateThemeParkWorldGuest( int id )
@@ -4636,7 +4663,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
 		foreach ( var problem in navigation.Problems( guest.Id, Grid.InBounds ) )
 			error( char.ToUpperInvariant( problem[0] ) + problem[1..] + "." );
-		if ( guest.BaseSpeed is < 60 or > 140 )
+		// [BIN:TPI-EXE:0x60C712 guest base speed] a Theme Park Inc guest's base speed is a walk speed scaled by its profile's SpeedMultiplier
+		if ( !IsBirthBaseSpeed( guest.BaseSpeed, guest.Type, guest.TpiPrankCode.HasValue ) )
 			error( $"Guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds." );
 		if ( guest.MaxSpeed is < GuestSpeed.Floor or > GuestSpeed.VelocityBound )
 			error( $"Guest {guest.Id} max speed {guest.MaxSpeed} is outside the speed setter's range." );

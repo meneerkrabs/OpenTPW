@@ -2,7 +2,7 @@
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified Theme Park Inc no-CD Game.exe (OPENTPW_TPI_EXE, SHA-256 pinned) are needed, nothing here is shipped.
 Three routines run natively: the interpolation helper 0x62C900 (cdecl: low, high, x, a, b), the expected wage 0x62CD30 (cdecl: experience, top wage; it reads
-AllStaffConstants.MaxExperience at 0xA02260) and the work duration 0x62E4C0 (thiscall on a staff thing: the kind byte +2, experience +0x210, salary +0x214 and the
+AllStaffConstants.MaxExperience at 0xA02260) and the work duration 0x62E4C0 (thiscall on a staff thing: the kind byte +2, experience +0x210, pay +0x214 and the
 motivation single +0x234; it reads MaxExperience, MotivationFactor at 0xA02290 and the role pairs at 0xA022D0..0xA0233C, which the oracle writes). The x87
 truncation _ftol 0x86FAB0 runs for real. `--golden` prints a few native cases for the C# tests instead of the mismatch count.
 
@@ -67,13 +67,13 @@ def wage(experience: int, top: int, max_experience: int) -> int:
     return 10 if w < 10 else w
 
 
-def duration(kind: int, experience: int, motivation: float, salary: int, pair: tuple[int, int], max_experience: int, factor: int) -> int:
+def duration(kind: int, experience: int, motivation: float, pay: int, pair: tuple[int, int], max_experience: int, factor: int) -> int:
     low, high = pair
     inverse = PAIRS[kind][2]
     e = signed(experience - (100 - (int(motivation) & 0xFF)) * factor)
     if e <= 0:
         e = 1
-    if (salary & MASK) < 10:
+    if (pay & MASK) < 10:
         return 200 if inverse else 1
     if not inverse:
         return high if e > max_experience else lerp(e, 0, max_experience, low, high)
@@ -91,18 +91,18 @@ def clamp(total: float) -> float:
     return 100.0 if total > 100.0 else 0.0 if total < 0.0 else single(total)
 
 
-def review(kind, experience, salary, agency_row, happiness, motivation, unhappy, happy, lowest, max_experience, top, rand_value):
+def review(kind, experience, pay, agency_row, happiness, motivation, unhappy, happy, lowest, max_experience, top, rand_value):
     """ThemeParkIncStaffMember.ReviewWage: (happiness, motivation, shortfall, demand day or None when unchanged)."""
     gain, loss, initial_wage = agency_row
     expected = signed(wage(experience, top, max_experience) + initial_wage)
     demand = None
-    if salary < expected:
+    if pay < expected:
         x = unhappy
         if loss != 0 and x != 0:
             x = signed(x * (loss + 1))
         motivation = clamp(float(-div0(x, 2)) + motivation)
         happiness = clamp(float(x) * -0.25 + happiness)
-        shortfall = signed(expected - salary)
+        shortfall = signed(expected - pay)
     else:
         shortfall = 0
         demand = 0
@@ -198,16 +198,16 @@ def main(cases: int, golden: bool) -> int:
         sandbox.write(hi_address, 'i', pair[1])
         experience = rng.choice([0, 1, max_experience - 1, max_experience + 5, rng.randrange(0, max_experience)])
         motivation = struct.unpack('<f', struct.pack('<f', rng.choice([100.0, 0.0, 50.5, rng.uniform(0, 100)])))[0]
-        salary = rng.choice([0, 9, 10, 11, 80, rng.randrange(0, 400)])
-        thing = sandbox.object(0x300, {2: ('B', kind), 0x210: ('i', experience), 0x214: ('i', salary), 0x234: ('f', motivation)})
+        pay = rng.choice([0, 9, 10, 11, 80, rng.randrange(0, 400)])
+        thing = sandbox.object(0x300, {2: ('B', kind), 0x210: ('i', experience), 0x214: ('i', pay), 0x234: ('f', motivation)})
         sandbox.set_fpcw(0x27F)
         native = signed(sandbox.call(DURATION, this=thing).eax)
-        port = duration(kind, experience, motivation, salary, pair, max_experience, factor)
+        port = duration(kind, experience, motivation, pay, pair, max_experience, factor)
         if native != port:
             bad += 1
-            print(f'duration(kind {kind:#x}, exp {experience}, motivation {motivation}, salary {salary}, pair {pair}): native {native}, port {port}')
+            print(f'duration(kind {kind:#x}, exp {experience}, motivation {motivation}, pay {pay}, pair {pair}): native {native}, port {port}')
         elif golden and index < 12:
-            lines.append(f'duration max {max_experience} factor {factor} kind {kind:#x} exp {experience} motivation {motivation!r} salary {salary} pair {pair} -> {native}')
+            lines.append(f'duration max {max_experience} factor {factor} kind {kind:#x} exp {experience} motivation {motivation!r} pay {pay} pair {pair} -> {native}')
         # the wage review
         kind = rng.choice(list(TOP))
         top = rng.choice([80, 250, rng.randrange(0, 600)])
@@ -222,21 +222,21 @@ def main(cases: int, golden: bool) -> int:
         sandbox.write(base + 8, 'i', row[1])
         sandbox.write(base + 0x14, 'i', row[2])
         experience = rng.choice([0, max_experience, rng.randrange(-100, max_experience + 100)])
-        salary = rng.choice([0, 10, 80, rng.randrange(-50, 400)])
+        pay = rng.choice([0, 10, 80, rng.randrange(-50, 400)])
         happiness = single(rng.choice([100.0, 0.0, rng.uniform(0, 100)]))
         motivation = single(rng.choice([100.0, 0.0, 19.9, rng.uniform(0, 100)]))
         demand_before = rng.randrange(0, 28)
         state['rand'] = rng.randrange(0, 32768)
-        thing = sandbox.object(0x300, {2: ('B', kind), 0x210: ('i', experience), 0x214: ('i', salary), 0x244: ('i', agency),
+        thing = sandbox.object(0x300, {2: ('B', kind), 0x210: ('i', experience), 0x214: ('i', pay), 0x244: ('i', agency),
                                        0x230: ('f', happiness), 0x234: ('f', motivation), 0x26C: ('i', demand_before), 0x270: ('i', 12345)})
         sandbox.set_fpcw(0x27F)
         sandbox.call(REVIEW, this=thing)
         native = (sandbox.read(thing + 0x230, 'f'), sandbox.read(thing + 0x234, 'f'), sandbox.read(thing + 0x270, 'i'), sandbox.read(thing + 0x26C, 'i'))
-        h, m, shortfall, demand = review(kind, experience, salary, row, happiness, motivation, unhappy, happy, lowest, max_experience, top, state['rand'])
+        h, m, shortfall, demand = review(kind, experience, pay, row, happiness, motivation, unhappy, happy, lowest, max_experience, top, state['rand'])
         port = (h, m, shortfall, demand_before if demand is None else demand)
         if native != port:
             bad += 1
-            print(f'review(kind {kind:#x}, exp {experience}, salary {salary}, row {row}, h {happiness}, m {motivation}): native {native}, port {port}')
+            print(f'review(kind {kind:#x}, exp {experience}, pay {pay}, row {row}, h {happiness}, m {motivation}): native {native}, port {port}')
         # the step, the rest and the daily experience gain
         experience = rng.choice([0, max_experience - 1, rng.randrange(0, max_experience)])
         energy, happiness, motivation = (single(rng.choice([100.0, 0.0, 0.05, rng.uniform(0, 100)])) for _ in range(3))

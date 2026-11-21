@@ -437,10 +437,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// Queues a cheat for the start of the next park turn (<see cref="ParkCheats"/>). False when the park cannot cheat (a Theme Park Inc economy: only Theme Park World's cheats are traced), the action is not
 	/// valid or the queue is full. The caller refuses read-only visits and online sessions.
 	/// </summary>
-	// [EXT:cheats-extension] Theme Park World parks only: the cheats are tp.exe's (docs/CHEATS.md); Theme Park Inc's executable was not searched for any
+	// [EXT:cheats-extension] a Theme Park World park takes tp.exe's cheats (docs/CHEATS.md); a Theme Park Inc park only its executable's two debug-dialog buttons, Skip Mission and Get Promoted
+	// (user decision 2026-11-21), with the extension on
 	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
 	// [EXT:cheats-ride-vehicles] a ride's vehicle limit only for a ride the level can raise now
-	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null)
+	public bool QueueCheat( CheatAction action ) => (Rules.ThemeParkInc
+			? ParkCheats.IsThemeParkIncKind( action.Kind ) && FeatureGates.Cheats && TpiCareer != null
+			: !ParkCheats.IsThemeParkIncKind( action.Kind ) && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null))
 		&& (action.Kind != CheatKind.RideVehicles || CheatHost!.CanRaiseRideVehicles( action.Argument )) && Cheats.Queue( action );
 
 	/// <summary>
@@ -479,6 +482,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 			case CheatKind.RideVehicles:
 				// [EXT:cheats-ride-vehicles] the ride raised at once; one removed since it was asked for leaves the cheat recorded with no effect
 				return CheatHost is not { } host ? null : host.TryRaiseRideVehicles( action.Argument ) ? "" : "unavailable";
+			case CheatKind.SkipMission:
+				return SkipThemeParkIncMission();
+			case CheatKind.GetPromoted:
+				return PromoteThemeParkIncCareer();
 			default:
 				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
 		}

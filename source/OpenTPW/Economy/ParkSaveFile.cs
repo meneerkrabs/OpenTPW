@@ -1036,7 +1036,8 @@ public static class ParkSaveFile
 		if ( data.Edition == GameEdition.ThemeParkInc )
 		{
 			if ( data.Easy || data.Mode != ParkGameMode.FullSimulation || data.Bankrupt || data.PendingInitialDay || data.Staff.Members.Count != 0
-				|| data.Staff.Candidates.Count != 0 || data.Cheats != null || data.Objectives.AdoptedChallenges != null )
+				|| data.Staff.Candidates.Count != 0 || data.Objectives.AdoptedChallenges != null
+				|| data.Cheats is { } cheats && (cheats.Log.Any( entry => !ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || cheats.Pending?.Any( action => !ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true) )
 				throw new InvalidDataException( "Park save is not a Theme Park Inc money-only park." );
 			if ( data.TpiWeather is { } weather && (!ThemeParkIncWeatherSpells.IsValid( weather )
 				|| data.Ledger.MonthIndex > 0 && weather == default) )

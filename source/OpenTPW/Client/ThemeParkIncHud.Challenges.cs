@@ -53,6 +53,26 @@ public sealed partial class ThemeParkIncHud
 		} );
 		hud.Add( new UiButton
 		{
+			Id = "challengePanelCheatSkipMission",
+			Text = () => SkipMissionLabel,
+			Font = fonts => fonts.Menu,
+			Visible = false,
+			Clicked = () => QueueTpiCheat( CheatKind.SkipMission ),
+			Bounds = new UiRect( 244, 1390, 600, 80 ),
+			Anchor = UiAnchor.TopLeft
+		} );
+		hud.Add( new UiButton
+		{
+			Id = "challengePanelCheatGetPromoted",
+			Text = () => GetPromotedLabel,
+			Font = fonts => fonts.Menu,
+			Visible = false,
+			Clicked = () => QueueTpiCheat( CheatKind.GetPromoted ),
+			Bounds = new UiRect( 864, 1390, 600, 80 ),
+			Anchor = UiAnchor.TopLeft
+		} );
+		hud.Add( new UiButton
+		{
 			Id = "challengePanelClose",
 			Text = () => T( OpenTpwText.TpiClose ),
 			Font = fonts => fonts.Menu,
@@ -166,7 +186,24 @@ public sealed partial class ThemeParkIncHud
 		foreach ( var element in hud.Elements )
 		{
 			if ( element.Id.StartsWith( "challengePanel", StringComparison.Ordinal ) )
-				element.Visible = visible;
+				element.Visible = visible && (!element.Id.StartsWith( "challengePanelCheat", StringComparison.Ordinal ) || TpiCheatsAvailable);
 		}
+	}
+
+	/// <summary>The debug dialog's button texts, as the executable holds them (UTF-16 at <c>0x9B79C8</c> and <c>0x9B79A8</c>; the original's dialog is English in every language).</summary>
+	internal const string SkipMissionLabel = "Skip Mission";
+	internal const string GetPromotedLabel = "Get Promoted";
+
+	/// <summary>Whether the two Theme Park Inc cheats are offered: the cheats extension is on and the park is a writable one with a career.</summary>
+	// [EXT:cheats-extension] Theme Park Inc's debug buttons are offered only with opentpw.cheats on (user decision 2026-11-21); the original's dialog 0x532A40 is a developer build's
+	internal bool TpiCheatsAvailable => FeatureGates.Cheats && level is { IsReadOnlyVisit: false } && level.Park?.Economy.TpiCareer != null;
+
+	/// <summary>Queues one of the two cheats for the next park turn and says so.</summary>
+	internal void QueueTpiCheat( CheatKind kind )
+	{
+		if ( !TpiCheatsAvailable || level.Park?.Economy is not { } economy )
+			return;
+		if ( economy.QueueCheat( new CheatAction( kind ) ) )
+			PostMessage( kind == CheatKind.SkipMission ? SkipMissionLabel : GetPromotedLabel );
 	}
 }

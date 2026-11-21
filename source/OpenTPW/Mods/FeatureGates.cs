@@ -91,10 +91,11 @@ public static class FeatureGates
 	public static bool WinterSnow => OpenTpwExtensions.IsEnabled( OfficialExtensions.WinterSnow ) && !GameEditions.IsThemeParkInc;
 
 	/// <summary>
-	/// [EXT:cheats-extension] The <c>opentpw.cheats</c> extension is on for this run: the cheats window and OpenTPW's own cheats (docs/CHEATS.md). Off by default and not in a Theme Park Inc run. The original's cheat mode does not
-	/// read this gate: it works whether the extension is on or off.
+	/// [EXT:cheats-extension] The <c>opentpw.cheats</c> extension is on for this run: the cheats window and OpenTPW's own cheats in a Theme Park World park, Theme Park Inc's two debug-dialog
+	/// cheats (Skip Mission, Get Promoted; user decision 2026-11-21) in a Theme Park Inc park (docs/CHEATS.md). Off by default. The original's cheat mode does not read this gate: it works whether the
+	/// extension is on or off.
 	/// </summary>
-	public static bool Cheats => OpenTpwExtensions.IsEnabled( OfficialExtensions.Cheats ) && !GameEditions.IsThemeParkInc;
+	public static bool Cheats => OpenTpwExtensions.IsEnabled( OfficialExtensions.Cheats );
 
 	/// <summary>Exporting, importing, visiting and postcards: the edition supports sharing and the online extension is on.</summary>
 	public static bool Sharing => GameEditions.Capabilities.Sharing && Online;

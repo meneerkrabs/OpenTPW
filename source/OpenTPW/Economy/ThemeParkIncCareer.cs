@@ -301,6 +301,9 @@ public sealed class ThemeParkIncCareer
 			FiringLine = firingLineForRank[rank];
 	}
 
+	/// <summary>The ranks the firing line table holds (0 to this minus 1), which <see cref="Promote"/> accepts.</summary>
+	public int RankCount => firingLineForRank.Count;
+
 	/// <summary>A challenge loss's firing line step (<c>0x5C4857</c>).</summary>
 	internal void LowerFiringLine() => FiringLine = unchecked( FiringLine - 1 );
 

@@ -67,4 +67,34 @@ public sealed partial class ParkEconomy
 		if ( GameCareerFiles.Instance.Read( $"/levels/{Settings.Theme}/global.sam" ) != null )
 			career.ChangeTheme( Settings.Theme );
 	}
+
+	/// <summary>
+	/// The Skip Mission cheat (<see cref="CheatKind.SkipMission"/>): the debug dialog's button runs the mission controller's completion tick, whose career side is
+	/// <see cref="ThemeParkIncCareer.CompleteMission"/>. The outcome names the mission the career is on afterwards, or "finished".
+	/// </summary>
+	// [BIN:TPI-EXE:0x532B39 skip mission] the dialog proc 0x532A40 takes button 0x186A1 ("Skip Mission", 0x9B79C8) to the park's controller (0x64ED00) and its completion tick 0x5F0940, then closes
+	// [EXT:tpi-capability-gates] the tick's world side is not ported: the new extent (0x678B00), the end sequence (0x5CD6E0), the next obstacle thing (0x6476F0), the exit statistics' start
+	// (0x5EEF60), message 0x2C and the refresh (0x4A5E30, 0x648C90) are left off
+	private string SkipThemeParkIncMission()
+	{
+		var career = TpiCareer!;
+		var completion = career.CompleteMission();
+		return completion.Finished || career.GameFinished ? "finished" : career.MissionCounter.ToString( System.Globalization.CultureInfo.InvariantCulture );
+	}
+
+	/// <summary>
+	/// The Get Promoted cheat (<see cref="CheatKind.GetPromoted"/>): a promotion to the career's rank plus one, as the mission controller's handler of message 0x25 applies it. The outcome is the new
+	/// rank, or "unavailable" for a rank past the firing line table OpenTPW holds (the original reads on past it).
+	/// </summary>
+	// [BIN:TPI-EXE:0x532A9E get promoted] button 0x186A2 ("Get Promoted", 0x9B79A8) reads the mission's Promotion.Number and the career's rank (0x5F0150), builds message 0x25 with the rank + 1
+	// (0x532AC0 incl, 0x4361C0) and posts it (0x436DD0); the controller's handler calls 0x74C450 with it (the panel 0x1A4 it opens is presentation)
+	private string PromoteThemeParkIncCareer()
+	{
+		var career = TpiCareer!;
+		var rank = unchecked( career.Rank + 1 );
+		if ( rank < 0 || rank >= career.RankCount )
+			return "unavailable";
+		career.Promote( rank );
+		return rank.ToString( System.Globalization.CultureInfo.InvariantCulture );
+	}
 }

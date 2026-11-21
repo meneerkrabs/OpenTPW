@@ -634,6 +634,9 @@ public sealed partial class ThemeParkIncHud
 
 	public void Draw( UiContext context ) => Stack.Draw( context );
 
+	/// <summary>Closes the open letter as its close button does (message 5 to the HUD's window), or null.</summary>
+	private Action? closeOpenLetter;
+
 	/// <summary>The letter window is open.</summary>
 	public bool LetterOpen => Stack.Screens.Any( screen => screen.Name == ThemeParkIncLetterWindow.ScreenName );
 
@@ -644,12 +647,21 @@ public sealed partial class ThemeParkIncHud
 	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
 	{
 		UiScreen? screen = null;
-		screen = ThemeParkIncLetterWindow.Create( letter, strings, () =>
+		var closed = false;
+		Action close = null!;
+		close = () =>
 		{
+			if ( closed )
+				return;
+			closed = true;
 			if ( screen is { IsRemoved: false } )
 				Stack.RemoveWhere( item => ReferenceEquals( item, screen ) );
+			if ( ReferenceEquals( closeOpenLetter, close ) )
+				closeOpenLetter = null;
 			dismissed();
-		}, RunLetterGoto );
+		};
+		screen = ThemeParkIncLetterWindow.Create( letter, strings, close, RunLetterGoto );
+		closeOpenLetter = close;
 		Stack.Push( screen );
 	}
 

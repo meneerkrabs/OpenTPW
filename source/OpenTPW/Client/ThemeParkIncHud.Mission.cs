@@ -25,10 +25,14 @@ public sealed partial class ThemeParkIncHud
 	// [BIN:TPI-EXE:0x42F020 objectives command] the key table's Objectives command builds the window unless the game mode 0xC65B80 is 3; the builder first closes the window the HUD has open
 	// (0x5013C0 sends message 5 to 0xA568BC), then registers itself there (0x501CD0)
 	// [BIN:TPI-EXE:0x50AFC0 loss window] a lost park's key tables are disabled (0x431230), so the key opens nothing then
+	// [BIN:TPI-EXE:0x5013C0 close the HUD's window] message 5 to the window registered at 0xA568BC, which is also the letter window's (0x526D27): the letter's procedure takes it as its close
+	// (0x52698F: destroyed, and categories 0x5D to 0x5F run their action, 0x649E60 for the bank's and the firing letter); the window is then built whatever that did
 	public bool OpenMissionWindow()
 	{
-		if ( Lost || level.Park?.Economy.TpiMissionWindowWorld( strings.Entry( ThemeParkIncText.NewPlayer ) ) is not { } world )
+		if ( Lost || level.Park?.Economy is not { TpiCareer.CurrentZone: not null } economy || economy.TpiMissionWindowWorld( strings.Entry( ThemeParkIncText.NewPlayer ) ) is not { } world )
 			return false;
+		if ( LetterOpen )
+			closeOpenLetter?.Invoke();
 		CloseMissionWindow();
 		ThemeParkIncMissionWindow? window = null;
 		window = new ThemeParkIncMissionWindow( TextsOrLanguage, strings, world, missionSession, () => CloseMissionWindow( window ), OpenChallengePanel );
@@ -67,7 +71,8 @@ public sealed partial class ThemeParkIncHud
 	{
 		var button = ToolButton( "objective", () => strings.Entry( ThemeParkIncMissionWindow.TitleText ), "", () => OpenMissionWindow(), 5 );
 		button.Help = null;
-		button.Bounds = new UiRect( 2024 - 306, 256, 286, 110 );
+		// the right edge below the challenges button, narrower than it so that the build, staff and challenge panels' widest row (to x 1824 at 4:3) stays clear
+		button.Bounds = new UiRect( 2024 - 190, 256, 190, 110 );
 		button.Anchor = UiAnchor.TopRight;
 	}
 

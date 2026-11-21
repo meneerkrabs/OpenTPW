@@ -228,6 +228,21 @@ public class ThemeParkIncMissionWindowTests
 	}
 
 	[TestMethod]
+	public void TheDetailsStopAtTheEndOfTheirBuffer()
+	{
+		var (window, world, _, _) = Window( 1, "", "Obstacle.Type 1703\nCompletion.EndingTheme 1\n" );
+		window.ComposeDetails();
+		var first = window.Details;
+		world.Missions.Career.DiscoverObstacleAbilities();
+		world.Missions.Career.MarkObstacleRemoved();
+		for ( var tick = 0; tick < 3 * ThemeParkIncMissionWindow.DetailsCapacity; tick++ )
+			window.ComposeDetails();
+		Assert.AreEqual( 0x9C3, window.Details.Length, "state 4 adds a line feed every tick until the 0x9C4-character buffer (terminator included) is full" );
+		StringAssert.StartsWith( window.Details, first + "\n" );
+		Assert.IsTrue( window.Details.Substring( first.Length ).All( character => character == '\n' ) );
+	}
+
+	[TestMethod]
 	public void TheObstaclePageShowsTheStaffAndTheTickets()
 	{
 		var (window, world, _, _) = Window( 1, "", "Obstacle.Type 1703\nObstacle.GoldenTickets 2\nCompletion.EndingTheme 1\n" );

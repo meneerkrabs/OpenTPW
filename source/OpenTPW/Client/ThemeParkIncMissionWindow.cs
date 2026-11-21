@@ -357,7 +357,15 @@ internal sealed class ThemeParkIncMissionWindow
 		else
 			ComposeObjectives();
 		details.Append( '\n' );
+		// [BIN:TPI-EXE:0x55C3A2 details buffer] the details are written into the window's buffer at +0x13B2, whose size the callers pass as 0x9C4 wide characters (0x55C3A2, 0x55C440,
+		// 0x55C50A); the appends themselves (0x871475, wcscat) take no size, so a text that keeps growing (states 3 and 4 add a line feed on every tick) would run past the buffer into
+		// the window object's following fields. The text stops at the buffer's end instead: at most 0x9C3 characters and the terminator
+		if ( details.Length > DetailsCapacity - 1 )
+			details.Length = DetailsCapacity - 1;
 	}
+
+	/// <summary>The details buffer's size in wide characters (<c>+0x13B2</c>, 0x9C4), its terminator included.</summary>
+	public const int DetailsCapacity = 0x9C4;
 
 	/// <summary>The research lines (<c>0x55C800</c>).</summary>
 	// [BIN:TPI-EXE:0x55C800 research lines] UITEXT 86, "\n", 103, "\n"; 104 and "\n" when the research manager thing (0x64EB20, park+0x1EAB56) is none; 105 and "\n" when the researcher list head

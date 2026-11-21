@@ -141,7 +141,8 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   `Promotion.Number` is set, the rank is at least it and the counter is not 2; else `MISSION_DESC[counter]`. Then a line feed and the signature (173, 174).
 - **Details (`0x55C350`).** In the ending zone an obstacle mission in state 1 shows the research lines (UITEXT 86, 103, 105 without a scientist, 106; 104 never
   shows because every world builds the research manager, `0x648423`), or 86 and 91 with the project's progress; states 3 and 4 write nothing, so the last text stays
-  and gains a line feed. A mission without an obstacle, or another zone below the required rank, lists the objectives (`0x55CA60`): 83, the promotion line (99 with
+  and gains a line feed (on every tick once the refresh runs; the buffer at `+0x13B2` holds 0x9C4 wide characters, but the appends `0x871475` take no size and would
+  run past it, so OpenTPW stops the text at 0x9C3 characters). A mission without an obstacle, or another zone below the required rank, lists the objectives (`0x55CA60`): 83, the promotion line (99 with
   the rank's name, or the hint by counter 94 to 102; any other counter repeats 83), one requirement line per exit statistic with a type (table `0x9BED18`, STAT_TITLES
   by type), the required challenges (3, always "Polar Zone" in the text), the golden tickets (85, 13/14), then 86, the position (98), one status line per statistic,
   the challenges won (4) and the tickets held (15). In another zone at or above the required rank (also when none is required) it is 86 and 75 with the ending zone's
@@ -154,9 +155,10 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   also starts a particle burst at the button (`0x500B70` → `0x7BACC0`), which OpenTPW does not draw.
 - **Refresh and lifetime.** Opening arms a 4000 ms timer; its expiry sets `0xA61814`, from which every tick refreshes the window (and a reopened window refreshes at
   once). Only the close and cancel buttons (id −2) clear it. In obstacle state 2 a window opened without the staff list is built again. The builder makes no pause
-  request (as the letter's), clears the career's `+0x27` and resets the page to the briefing. The Challenges tab closes the window and opens the challenges window
+  request (as the letter's), clears the career's `+0x27` and resets the page to the briefing. It first sends message 5 to the HUD's registered window (`0x5013C0`,
+  `0xA568BC`), so an open letter closes as its close button closes it (`0x52698F`; the bank's and the firing letter then lose the park) before the window is built. The Challenges tab closes the window and opens the challenges window
   (`0x529960`), which is not built: the text HUD's challenge panel stands in for it.
-- **Openers.** The key table's Objectives row (`0x9A8A0C`: O, no modifier, `0x42F020`, not in game mode 3), the HUD buttons (`0x54AC0F`, `0x54F7C1`), a click on the
+- **Openers.** The key table's Objectives row (`0x9A8A14`: O, no modifier, `0x42F020`, not in game mode 3), the HUD buttons (`0x54AC0F`, `0x54F7C1`), a click on the
   `ObstacleOpened` thing (`0x5068C3`), the challenges window's Objectives tab (`0x52A60F`), a letter's go-to kind 0xC (`0x551461`) and, three flight updates after a
   zone-arrival (mode 2) camera flight, the first briefing (`0x5D0369`). OpenTPW has the key, the text HUD's button and the letter go-to; the flight is ported
   separately.

@@ -284,7 +284,7 @@ are measured from the park; 4 (last month's takings, whose ride and facility row
 Science continuation save.
 
 **The mission window.** The executable's "Current Objective" window (`ThemeParkIncMissionWindow`, builder `0x55A7F0`, table `0x9BE808`;
-[TPI-MISSIONS.md §7](reverse/TPI-MISSIONS.md#7-the-mission-window)) opens with the Objectives key O (key table `0x9A8A0C`) or the text HUD's "Current Objective"
+[TPI-MISSIONS.md §7](reverse/TPI-MISSIONS.md#7-the-mission-window)) opens with the Objectives key O (key table `0x9A8A14`) or the text HUD's "Current Objective"
 button, which stands in for the native HUD's buttons (`[EXT:tpi-text-hud]`). It shows the mission's title, picture and sender, the briefing page and the details page
 with every exit statistic's requirement and status, the promotion hint, required challenges and golden tickets. Proceed is enabled when the controller's requirements are
 met and runs OnMissionComplete or the remove-obstacle message 0x24. It pauses nothing. The first briefing's automatic opening after the zone-arrival flight belongs to

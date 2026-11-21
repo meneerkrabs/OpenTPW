@@ -20,11 +20,13 @@ public sealed class UiStringTable
 	private readonly string[] thoughtNames;
 	private readonly string[] staffTypes;
 	private readonly string[][] staffNames;
+	private readonly string[] challengeTitles;
 
 	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null,
 		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null, StringFile? kidStates = null, string[]? thoughtNames = null,
-		StringTemplate[]? helpTemplates = null, string[]? staffTypes = null, string[][]? staffNames = null )
+		StringTemplate[]? helpTemplates = null, string[]? staffTypes = null, string[][]? staffNames = null, string[]? challengeTitles = null )
 	{
+		this.challengeTitles = challengeTitles ?? Array.Empty<string>();
 		this.staffTypes = staffTypes ?? Array.Empty<string>();
 		this.staffNames = staffNames ?? Array.Empty<string[]>();
 		this.helpTemplates = helpTemplates ?? Array.Empty<StringTemplate>();
@@ -48,7 +50,8 @@ public sealed class UiStringTable
 			language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
 			language.LoadStrings( "LOANNAMES.str" ).Entries, uiText.Templates, OptionalStrings( language, "INGREDIENT.str" ),
 			OptionalFile( language, "KIDSTATES.str" ), OptionalStrings( language, "THOUGHTS.str" ), helpText.Templates,
-			OptionalStrings( language, "STAFF_TYPES.str" ), StaffNameFiles.Select( name => OptionalStrings( language, name ) ?? Array.Empty<string>() ).ToArray() );
+			OptionalStrings( language, "STAFF_TYPES.str" ), StaffNameFiles.Select( name => OptionalStrings( language, name ) ?? Array.Empty<string>() ).ToArray(),
+			OptionalStrings( language, "CHALLENGE_TITLES.str" ) );
 	}
 
 	/// <summary>Theme Park Inc's per-role name tables, in the staff role order (handyman, mechanic, entertainer, guard, researcher, gardener).</summary>
@@ -81,6 +84,12 @@ public sealed class UiStringTable
 	public string StaffType( int role ) => Get( staffTypes, 2 * role );
 	/// <summary>The per-role name table's entry at <paramref name="index"/> (HANDYMAN_NAMES.str etc.); empty when out of range.</summary>
 	public string StaffName( int role, int index ) => role >= 0 && role < staffNames.Length ? Get( staffNames[role], index ) : "";
+	/// <summary>
+	/// Theme Park Inc's <c>CHALLENGE_TITLES.str</c>: a challenge's title by its <c>ScriptIndex</c>; empty when the table is not loaded (Theme Park World has none).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5C63E0 challenge title] the slot's title text is the string lookup 0x8934A0 of table [0xA0D65C] at the slot's mScriptIndex (+0x50); that table is mChallengeTitles,
+	// registered as CHALLENGE_TITLES::TableID (0x3F7) at +0x774 of the text object 0xA0CEE8 (0x4474A8)
+	public string ChallengeTitle( int scriptIndex ) => Get( challengeTitles, scriptIndex );
 	public string Theme( int index ) => Get( themeNames, index );
 	public string Object( int index ) => Get( objectNames, index );
 	public string Lender( int index ) => Get( lenderNames, index );

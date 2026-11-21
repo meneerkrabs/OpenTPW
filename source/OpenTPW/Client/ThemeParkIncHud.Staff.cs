@@ -150,6 +150,7 @@ public sealed partial class ThemeParkIncHud
 		else
 		{
 			CloseBuildWindow();
+			CloseChallengePanel();
 			staffOpen = true;
 			SetStaffPanelVisible( true );
 		}

@@ -84,6 +84,7 @@ public sealed partial class ThemeParkIncHud
 		BuildTopLine();
 		BuildWindow();
 		BuildStaffPanel();
+		BuildChallengePanel();
 		removeButton = ToolButton( "remove", () => T( OpenTpwText.TpiRemove ), T( OpenTpwText.TpiRemoveHelp ),
 			() => { level.IsRemovingObjects = !level.IsRemovingObjects; if ( level.IsRemovingObjects ) DisarmBuild(); }, 1 );
 		removeButton.Selected = () => level.IsRemovingObjects;
@@ -92,10 +93,13 @@ public sealed partial class ThemeParkIncHud
 		ToolButton( "cancel", () => T( OpenTpwText.TpiCancel ), T( OpenTpwText.TpiCancelHelp ), DisarmAll, 3 );
 		ToolButton( "speed", SpeedText, T( OpenTpwText.TpiSpeedHelp ), CycleSpeed, 4 );
 		ToolButton( "menu", () => T( OpenTpwText.TpiMenu ), T( OpenTpwText.TpiMenuHelp ), OpenPauseMenu, 5 );
-		// the bottom row is full and the build window covers the space above it, so the staff button stands in the free top-right corner
+		// the bottom row is full and the build window covers the space above it, so the staff button stands in the free top-right corner, the challenges button below it
 		var staffButton = ToolButton( "staff", () => T( OpenTpwText.TpiStaff ), T( OpenTpwText.TpiStaffHelp ), ToggleStaffPanel, 5 );
 		staffButton.Bounds = new UiRect( 2024 - 306, 16, 286, 110 );
 		staffButton.Anchor = UiAnchor.TopRight;
+		var challengesButton = ToolButton( "challenges", () => T( OpenTpwText.TpiChallenges ), T( OpenTpwText.TpiChallengesHelp ), ToggleChallengePanel, 5 );
+		challengesButton.Bounds = new UiRect( 2024 - 306, 136, 286, 110 );
+		challengesButton.Anchor = UiAnchor.TopRight;
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
@@ -113,6 +117,8 @@ public sealed partial class ThemeParkIncHud
 				CloseBuildWindow();
 			else if ( staffOpen )
 				CloseStaffPanel();
+			else if ( challengesOpen )
+				CloseChallengePanel();
 			else if ( level.IsRemovingObjects )
 				level.IsRemovingObjects = false;
 			else
@@ -309,6 +315,7 @@ public sealed partial class ThemeParkIncHud
 		else
 		{
 			CloseStaffPanel();
+			CloseChallengePanel();
 			buildOpen = true;
 			level.IsRemovingObjects = false;
 			SetBuildWindowVisible( true );
@@ -497,6 +504,7 @@ public sealed partial class ThemeParkIncHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		ShowWageDemands();
+		ShowChallengeNotices();
 		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );
 		// [BIN:TPW-EXE:0x4879D0 object click] the click selects the owner of the hovered cell, the cell of the cursor ray's nearest hit on the terrain or an object's model (0x45bf90, ObjectRayPick),

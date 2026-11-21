@@ -253,6 +253,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Wait( "tools down", 2 );
 		Do( "the tools are away", () => Require( !Level.IsRemovingObjects && !Level.CellTool.IsActive, "Cancel puts the remove tool away" ) );
 		PlanHandyman();
+		if ( flow.Level?.LevelName == "science" )
+			PlanChallenges();
 		Do( "round-trip Science state", () =>
 		{
 			var live = Level;
@@ -609,6 +611,43 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	/// The Theme Park Inc staff panel's hire: the first Cleaner (handyman) row is activated through the list, the hire is dropped on the first path cell the drop accepts, and the member's
 	/// thing is updated by the park's turns; the round trip that follows then carries him.
 	/// </summary>
+	/// <summary>
+	/// The challenge panel: an offer of the Science level's first slot (the hot-dog challenge, a measured type) is listed under its <c>CHALLENGE_TITLES.str</c> title, its row's
+	/// accept is refused while the park is closed and accepts it once the park is open; the continuation round trip that follows then carries the accepted challenge.
+	/// </summary>
+	private void PlanChallenges()
+	{
+		Do( "open the challenge panel", () => Click( Hud.Screen, "challenges" ) );
+		Wait( "challenge panel opens", 2 );
+		Do( "offer the hot-dog challenge", () =>
+		{
+			var economy = Level.Park!.Economy;
+			Require( economy.TpiChallenges is { } challenges && challenges.Slots[0].Type == 2 && challenges.Slots[0].ScriptIndex == 2, "the Science level's first slot is the hot-dog challenge" );
+			Require( Hud.Screen.Find( "challengePanelList" ) is { Visible: true }, "the challenge list is open" );
+			Require( economy.DebugOfferThemeParkIncChallenge( 0 ) == 0, "the slot is offered" );
+		} );
+		Wait( "the offer note shows", 2 );
+		Do( "the offer is listed by its title", () =>
+		{
+			var title = Hud.Strings.ChallengeTitle( 2 );
+			Require( title.Length > 0 && Hud.ChallengeRows()[0] == string.Format( flow.Strings.Extra( OpenTpwText.TpiChallengeOfferedRow ), title ), "the row names CHALLENGE_TITLES.str entry 2" );
+			Require( Hud.Messages.Contains( string.Format( flow.Strings.Extra( OpenTpwText.TpiChallengeOfferNote ), title ) ), "the HUD notes the new offer" );
+			var economy = Level.Park!.Economy;
+			if ( !economy.IsParkOpen )
+			{
+				Hud.ActivateChallengeRow( 0 );
+				Require( economy.TpiChallenges!.Slots[0].Status == ThemeParkIncChallengeStatus.Offered, "a closed park refuses the accept" );
+				economy.OpenPark();
+			}
+			Hud.ActivateChallengeRow( 0 );
+			Require( economy.TpiChallenges!.Slots[0].Status == ThemeParkIncChallengeStatus.Running && Hud.ChallengeRows()[0].StartsWith( Hud.ChallengeTitle( economy.TpiChallenges.Slots[0] ), StringComparison.Ordinal ),
+				"the open park's accept starts the 60-day timed phase" );
+		} );
+		Do( "close the challenge panel", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "challenge panel closes", 2 );
+		Do( "the challenge panel is closed", () => Require( Hud.Screen.Find( "challengePanelList" ) is { Visible: false } && !Hud.MenuOpen, "Escape closes the challenge panel" ) );
+	}
+
 	private void PlanHandyman()
 	{
 		Do( "open the staff panel", () => Click( Hud.Screen, "staff" ) );

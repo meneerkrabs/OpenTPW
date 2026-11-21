@@ -369,7 +369,7 @@ public class ThemeParkIncArrivalRingTests
 			Assert.IsNull( runtime.Import, "Readiness must not fabricate OriginalEconomyImport to pass a TPW guard." );
 		}
 		var capabilities = EditionCapabilities.ForThemeParkIncSlice();
-		Assert.IsFalse( capabilities.Advisor || capabilities.ParkSaves || capabilities.Staff || capabilities.Research || capabilities.Challenges );
+		Assert.IsFalse( capabilities.Advisor || capabilities.ParkSaves || capabilities.Staff || capabilities.Research );
 		Assert.IsTrue( capabilities.Money && capabilities.ExperimentalHud );
 	}
 

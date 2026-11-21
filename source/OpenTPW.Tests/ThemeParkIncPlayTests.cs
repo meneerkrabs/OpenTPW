@@ -60,7 +60,8 @@ public class ThemeParkIncPlayTests
 		Assert.IsTrue( capabilities.PersonnelFileFrontEnd, "the slice starts at its own Personnel File screen" );
 		Assert.IsTrue( capabilities.Money, "the money runs on Theme Park Inc's own balance keys" );
 		Assert.IsFalse( capabilities.Economy, "the whole Theme Park World economy needs keys Theme Park Inc's Standard.sam lacks" );
-		Assert.IsFalse( capabilities.Staff || capabilities.Research || capabilities.Challenges, "staff, research and challenges stay refused" );
+		Assert.IsFalse( capabilities.Staff || capabilities.Research, "staff and research stay refused" );
+		Assert.IsTrue( capabilities.Challenges, "Theme Park Inc's own challenge system runs (its unmeasurable types are never offered)" );
 		Assert.IsFalse( capabilities.OriginalHud || capabilities.Advisor || capabilities.FrontEnd
 			|| capabilities.ParkSaves || capabilities.Sharing, "the untraced systems stay refused" );
 		var note = capabilities.ExperimentalNote;
@@ -537,7 +538,9 @@ public class ThemeParkIncPlayTests
 		UseTpiData();
 		var park = new SlicePark( "science", withMoney: true );
 		var economy = park.Money!.Economy;
-		Assert.IsFalse( economy.Rules.Staff || economy.Rules.Research || economy.Rules.Challenges );
+		Assert.IsFalse( economy.Rules.Staff || economy.Rules.Research );
+		Assert.IsTrue( economy.Rules.Challenges && economy.TpiChallenges != null, "Theme Park Inc's own challenge system runs" );
+		CollectionAssert.AreEqual( new[] { 2, 35, 25, 46, 36, 41, 56, 17, 48, 17 }, economy.TpiChallenges!.Slots.Select( slot => slot.Type ).ToArray(), "the Science level's ten rows" );
 		Assert.IsFalse( economy.Features.GoldenTickets || economy.Features.Challenges || economy.Features.ResearchPanel || economy.Features.Upgrades );
 		Assert.ThrowsException<InvalidOperationException>( () => economy.Hire( 1 ) );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NoLandForSale, economy.TryBuyCells( CellPurchase.Land, 1 ), "Theme Park Inc has no Buy Land" );

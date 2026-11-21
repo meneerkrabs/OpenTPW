@@ -48,7 +48,11 @@ public class ThemeParkIncEconomyTests
 		Assert.IsTrue( tpw.Money && tpw.Staff && tpw.Research && tpw.Challenges && tpw.Economy, "Theme Park World runs every part" );
 		var tpi = EditionCapabilities.ForThemeParkIncSlice();
 		Assert.IsTrue( tpi.Money, "Theme Park Inc runs the money" );
-		Assert.IsFalse( tpi.Staff || tpi.Research || tpi.Challenges || tpi.Economy, "and nothing of the rest" );
+		Assert.IsFalse( tpi.Staff || tpi.Research || tpi.Economy, "and nothing of the rest" );
+		Assert.IsTrue( tpi.Challenges, "but its own challenge system" );
+		Assert.IsTrue( EconomyRules.ThemeParkIncMoney.Challenges && EconomyRules.ThemeParkIncMoney.ThemeParkInc );
+		var features = EconomyRules.ThemeParkIncMoney.Narrow( ParkModeFeatures.For( ParkGameMode.FullSimulation ) );
+		Assert.IsFalse( features.Challenges || features.GoldenTickets, "Theme Park World's objectives and golden tickets stay off in a Theme Park Inc park" );
 		Assert.IsFalse( EconomyRules.For( tpw ).ThemeParkInc, "the Theme Park World rules are the full ones" );
 		Assert.AreEqual( EconomyRules.Full with { ThemeParkInc = false }, EconomyRules.For( tpw ) );
 	}
@@ -182,49 +186,6 @@ public class ThemeParkIncEconomyTests
 		Assert.IsNull( economy.TakeTpiMail(), "a lost park (world state 4) gets no further letter" );
 		var tpw = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
 		Assert.IsNull( tpw.TakeTpiMail(), "Theme Park World has no such mail" );
-	}
-
-	[TestMethod]
-	public void OnlyAChallengesFirstLossShortensTheFiringLineAndAnEmptyLinePostsEveryLoss()
-	{
-		// [BIN:TPI-EXE:0x5C48DD lost-challenge notification] the challenge system posts notification id 7, which the tag system turns
-		// into advice 0x1A3 (response 750, speech 870, tag 0x5F, TAG_SYSTEM.str entry 167)
-		// [BIN:TPI-EXE:0x74BDD1 career firing line] the career starts with a firing line of 5; [BIN:TPI-EXE:0x5C4857 firing line countdown]
-		// only a challenge's first loss takes one off, and [BIN:TPI-EXE:0x5C48B6 firing line post] the mail follows any loss once none is left
-		// The slice refuses challenges (EconomyRules.ThemeParkIncMoney) because Theme Park Inc's data carries only balance keys, so this
-		// runs the TPI money park with the challenge system switched on to reach the wiring the ported challenge system will use.
-		var economy = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ),
-			ParkGameMode.FullSimulation, 7, new EconomyRules( Staff: false, Research: false, Challenges: true, ThemeParkInc: true ) );
-		economy.OpenPark();
-		var line = typeof( ParkEconomy ).GetField( "challengeFiringLine", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
-		Assert.AreEqual( 5, line.GetValue( economy ), "a new career's firing line" );
-		var indices = economy.Settings.Challenges.Keys.OrderBy( key => key ).ToArray();
-		Assert.IsTrue( indices.Length >= 3, "the test data carries three challenges" );
-		foreach ( var index in new[] { indices[0], indices[0], indices[0], indices[1], indices[2] } )
-		{
-			Lose( economy, index );
-			Assert.IsNull( economy.TakeTpiMail(), $"losing challenge {index} leaves a firing line of {line.GetValue( economy )}" );
-		}
-		Assert.AreEqual( 2, line.GetValue( economy ), "three challenges lost, the first of them three times, take three off" );
-		line.SetValue( economy, 1 );
-		Lose( economy, indices[0] );
-		Assert.AreEqual( 1, line.GetValue( economy ), "a challenge lost before takes nothing off" );
-		Assert.IsNull( economy.TakeTpiMail(), "and posts nothing while the line is positive" );
-		line.SetValue( economy, 0 );
-		Lose( economy, indices[1] );
-		Assert.AreEqual( ThemeParkIncAdviceMail.ChallengeLost, economy.TakeTpiMail(), "an empty line posts the firing letter" );
-		Lose( economy, indices[1] );
-		Assert.AreEqual( ThemeParkIncAdviceMail.ChallengeLost, economy.TakeTpiMail(), "and posts it on every further loss" );
-		Assert.IsNull( economy.TakeTpiMail(), "the caller takes each mail once" );
-
-		static void Lose( ParkEconomy economy, int index )
-		{
-			var current = typeof( ParkObjectives ).GetProperty( nameof( ParkObjectives.Current ) )!;
-			current.GetSetMethod( nonPublic: true )!.Invoke( economy.Objectives, new object?[] { new ActiveChallenge( index, 0, true, 0, 0, 0 ) } );
-			Assert.IsNotNull( current.GetValue( economy.Objectives ), $"challenge {index} stands" );
-			economy.UpdateChallenges( 1 );
-			Assert.IsNull( current.GetValue( economy.Objectives ), $"challenge {index} is lost" );
-		}
 	}
 
 	[TestMethod]

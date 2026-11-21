@@ -76,6 +76,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
 			TpiStaff.CreateOpeningPool( World, 0, ThemeParkIncCareerRank );
 		}
+		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
+		CreateThemeParkIncChallenges();
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -174,35 +176,6 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var mail = TpiPendingMail;
 		TpiPendingMail = null;
 		return mail;
-	}
-
-	/// <summary>
-	/// [BIN:TPI-EXE:0x74BDD1 career firing line] The career object's reset sets the rank to 1 and this counter to a fixed 5; only a
-	/// promotion message raises it, to that rank's <c>FiringLineForRank[n].Limit</c> when the limit is higher (<c>0x74C450</c>, called
-	/// from <c>0x5F1148</c>). OpenTPW has no promotions yet, so the counter starts at 5 and is never raised.
-	/// </summary>
-	private const int ThemeParkIncStartingFiringLine = 5;
-
-	/// <summary>Failed challenges a Theme Park Inc player may still take before the board ends the player's employment.</summary>
-	private int challengeFiringLine = ThemeParkIncStartingFiringLine;
-
-	/// <summary>The challenges a Theme Park Inc park has lost at least once: each takes one off the firing line only on its first loss.</summary>
-	private readonly HashSet<int> challengesLostOnce = new();
-
-	/// <summary>
-	/// [BIN:TPI-EXE:0x5C4857 firing line countdown] The challenge system's lost branch decrements the career counter on a challenge's
-	/// first loss only (the slot's loss count mChallengeLost, +0x5C, is 0; it is raised on every loss, 0x5C4870) and [BIN:TPI-EXE:0x5C48B6
-	/// firing line post] posts notification id 7 whenever the counter is no longer positive, so the letter arrives on the loss that exhausts
-	/// the line and on every loss after it; while the line is positive the lost branch posts the ordinary lost message (type 0x1B, kind 3,
-	/// 0x5C49A3) instead. The tag system turns id 7 into advice 0x1A3 (response 750, speech 870, tag 0x5F, entry 167). The counter lives in
-	/// the career object at 0xBFC484, not in the park; OpenTPW keeps it for the session and does not save it.
-	/// </summary>
-	private void CountThemeParkIncChallengeFailure( int challenge )
-	{
-		if ( challengesLostOnce.Add( challenge ) )
-			challengeFiringLine--;
-		if ( challengeFiringLine <= 0 )
-			TpiPendingMail = ThemeParkIncAdviceMail.ChallengeLost;
 	}
 
 	private static ThemeParkIncForecastQueue? CreateThemeParkIncForecast()
@@ -609,9 +582,14 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
 	internal void UpdateThings( long turn )
 	{
-		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab, the challenge system and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff, research and challenges
+		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff and research
 		if ( !Rules.Staff )
+		{
+			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system is a thing of the world pass (0x6375E0 -> 0x5C7930) whatever the staff
+			if ( TpiChallenges != null )
+				UpdateChallenges( turn );
 			return;
+		}
 		UpdateStaffVitals();
 		foreach ( var member in Staff.Members )
 			CountDownJob( member );
@@ -1484,14 +1462,18 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The challenge system's thing update, once per park turn (tp.exe <c>0x004D1E90</c>): the switch, the offers and a running challenge's check.</summary>
 	internal void UpdateChallenges( long turn )
 	{
+		// a Theme Park Inc park runs its own challenge system, never Theme Park World's objectives (EconomyRules.Narrow refuses those for it)
+		if ( TpiChallenges != null )
+		{
+			UpdateThemeParkIncChallenges( turn );
+			return;
+		}
 		if ( !Features.Challenges )
 			return;
 		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf, () => guestStatistics.GuestCensus ).ToList() )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
-			if ( kind == ParkEventKind.ChallengeFailed && Rules.ThemeParkInc )
-				CountThemeParkIncChallengeFailure( index );
 			Raise( kind, amount, 0, index, detail );
 		}
 	}
@@ -2790,7 +2772,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	public void AcceptChallenge()
 	{
-		RequireSystem( Rules.Challenges, "challenges" );
+		RequireSystem( Rules.Challenges && !Rules.ThemeParkInc, "Theme Park World challenges" );
 		var definition = Objectives.CurrentDefinition ?? throw new InvalidOperationException( "No challenge is offered." );
 		Objectives.AcceptAt( ParkCalendar.Seconds( Tick ), MeasureChallenge( definition ) );
 		Raise( ParkEventKind.ChallengeAccepted, definition.Prize, 0, definition.Index );
@@ -2798,7 +2780,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	public void DeclineChallenge()
 	{
-		RequireSystem( Rules.Challenges, "challenges" );
+		RequireSystem( Rules.Challenges && !Rules.ThemeParkInc, "Theme Park World challenges" );
 		var definition = Objectives.CurrentDefinition;
 		var index = Objectives.DeclineAt( ParkCalendar.Seconds( Tick ) );
 		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] a declined challenge whose mIndependent (+0x1d) is clear, a follow-up, credits half its prize (+0x14 / 2,
@@ -2853,6 +2835,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			item.TakingsRing.Today += price;
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
+			// [BIN:TPI-EXE:0x6126D0 fare taken] Theme Park Inc's paid use books its takings through 0x5E5DE0, which posts the challenge sale events
+			PostThemeParkIncTakingsEvents( item, price );
 		}
 		// [BIN:TPW-EXE:0x004FE1E0 shop use] a shop (WhichUIType 1) books 0x004E1B40's value (ShopGoodsCost: the cost of goods scaled by the quality and special-ingredient bytes) through 0x004E1920: the bank debit, the object's cost rings and the challenge types 12 and 13 all take the same number
 		var hasShopInfo = Catalog.TryGet( item.InfoId, out var shopInfo );
@@ -2867,6 +2851,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		{
 			item.PendingMonthlyCosts += goods;
 			item.TotalProfit += price;
+			PostThemeParkIncCostEvent( item, goods );
 		}
 		else
 		{
@@ -2908,6 +2893,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.SideshowTakings, price );
 			item.TakingsThisMonth += price;
 			item.TakingsRing.Today += price;
+			PostThemeParkIncTakingsEvents( item, price );
 		}
 		item.CustomersThisMonth++;
 		item.CustomersRing.Today++;
@@ -2917,6 +2903,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// [BIN:TPI-EXE:0x612789 sideshow cost] a won play (the use outcome 0x612740 runs for +0x21B set) books the thing's +0x88 through 0x5E60E0, the month accumulator again (ECON-060)
 			item.PendingMonthlyCosts += prize;
 			item.TotalProfit += price;
+			if ( won )
+				PostThemeParkIncCostEvent( item, prize );
 		}
 		else
 		{

@@ -63,7 +63,7 @@ public sealed record EditionCapabilities
 	public required bool Money { get; init; }
 	/// <summary>Research (the lab, researchers and the research table): needs the Theme Park World research keys.</summary>
 	public required bool Research { get; init; }
-	/// <summary>Challenges, golden tickets and the Theme Park World objective system.</summary>
+	/// <summary>Challenges: Theme Park World's objective system and golden tickets, or Theme Park Inc's own challenge system (<see cref="ThemeParkIncChallenges"/>).</summary>
 	public required bool Challenges { get; init; }
 	/// <summary>The whole Theme Park World park economy: money, staff, research and challenges together.</summary>
 	public bool Economy => Money && Staff && Research && Challenges;
@@ -114,16 +114,18 @@ public sealed record EditionCapabilities
 
 	/// <summary>
 	/// The experimental Theme Park Inc slice: worlds load and can be built in and walked by guests, but no system whose
-	/// Theme Park Inc rules or data OpenTPW has not traced runs. Only the money runs (docs/THEME-PARK-INC.md, "Economy"):
-	/// Theme Park Inc's <c>Standard.sam</c> lacks 86 of the balance keys the Theme Park World economy reads (measured October 17, 2026),
-	/// so staff, research and challenges stay refused, as do the original HUD, front end, advisor and every save, progress and sharing format.
+	/// Theme Park Inc rules or data OpenTPW has not traced runs. The money runs (docs/THEME-PARK-INC.md, "Economy"), and so does Theme Park Inc's own
+	/// challenge system (docs/reverse/TPI-CHALLENGE-SYSTEM.md): Theme Park Inc's <c>Standard.sam</c> lacks 86 of the balance keys the Theme Park World economy reads
+	/// (measured October 17, 2026), so Theme Park World's staff, research and challenge systems stay refused, as do the original HUD, front end, advisor and every save,
+	/// progress and sharing format.
 	/// </summary>
 	// [EXT:tpi-capability-gates] the slice's capability gates are OpenTPW's honest limits (a scope decision), not traced Theme Park Inc behaviour
 	public static EditionCapabilities ForThemeParkIncSlice() => new()
 	{
 		Money = true,
 		Research = false,
-		Challenges = false,
+		// Theme Park Inc's own challenge system (ParkEconomy.TpiChallenges); the types whose values OpenTPW cannot compute stay unoffered (ThemeParkIncChallenges.IsPorted)
+		Challenges = true,
 		OriginalHud = false,
 		ExperimentalHud = true,
 		Building = true,
@@ -135,8 +137,8 @@ public sealed record EditionCapabilities
 		PersonnelFileFrontEnd = true,
 		ParkSaves = false,
 		Sharing = false,
-		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar); "
-			+ "no staff apart from cleaners, research, challenges, advisor apart from the weather forecasts, missions, Global Master Save, "
+		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar) plus the challenges OpenTPW can measure; "
+			+ "no staff apart from cleaners, research, other challenges, advisor apart from the weather forecasts, missions, Global Master Save, "
 			+ "COS files, native park saves or sharing, and no Theme Park Inc in-game interface (only its Personnel File start screen); "
 			+ "none of it is checked against the original game"
 	};

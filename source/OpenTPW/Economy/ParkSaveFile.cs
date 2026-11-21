@@ -47,6 +47,12 @@ public static class ParkSaveFile
 		/// <summary>Theme Park Inc's hiring pool, members and strike records. Absent in Theme Park World saves and in Theme Park Inc saves from before the staff economy.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncStaffSnapshot? TpiStaff { get; init; }
+		/// <summary>
+		/// Theme Park Inc's challenge system: the ten slots, the offer delay and the switch, and the career's firing line and golden tickets. Absent in Theme Park World saves and in
+		/// Theme Park Inc saves from before the challenge system.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncChallengesSnapshot? TpiChallenges { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -716,6 +722,7 @@ public static class ParkSaveFile
 			TpiWeather = park.TpiWeather?.Capture(),
 			TpiForecast = park.TpiForecast?.Capture(),
 			TpiStaff = park.TpiStaff?.Capture(),
+			TpiChallenges = park.TpiChallenges?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1031,6 +1038,8 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc forecast advice." );
 			if ( !ThemeParkIncStaff.IsValid( data.TpiStaff ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc staff." );
+			if ( !ThemeParkIncChallenges.IsValid( data.TpiChallenges ) )
+				throw new InvalidDataException( "Park save has invalid Theme Park Inc challenges." );
 			foreach ( var item in data.Objects )
 			{
 				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
@@ -1041,7 +1050,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
 	}
 
@@ -1209,6 +1218,15 @@ public static class ParkSaveFile
 		else if ( park.TpiStaff != null )
 			// a Theme Park Inc save from before the staff economy holds no pool, and the pool's draws share the world generator: it cannot continue the same park
 			throw new InvalidDataException( "Park save was made before Theme Park Inc staff and cannot be continued; start the park again." );
+		if ( data.TpiChallenges is { } challenges )
+		{
+			if ( park.TpiChallenges == null )
+				throw new InvalidDataException( "Park save has Theme Park Inc challenges, but the challenge settings are unavailable." );
+			park.TpiChallenges.Restore( challenges );
+		}
+		else if ( park.TpiChallenges != null )
+			// the challenge system draws no random number: a Theme Park Inc save from before it continues with the system as a new world builds it (switched off, every slot idle)
+			park.TpiChallenges.Restore( park.TpiChallenges.Capture() );
 		park.PendingInitialDay = data.PendingInitialDay;
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );

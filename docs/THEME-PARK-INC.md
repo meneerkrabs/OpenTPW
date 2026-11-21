@@ -61,7 +61,7 @@ starts the playable slice below (older links still land here).
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). A start without a world opens the slice's
 [Personnel File start screen](#theme-park-inc-front-end) instead. It is not Theme Park Inc support: there is
-no Theme Park Inc in-game interface or research, and of the native save formats only the player file (`.GMS`) is written. Its money, the cleaners, the measurable challenges,
+no Theme Park Inc in-game interface or research, and of the native save formats only the player file (`.GMS`, desktop only) is written. Its money, the cleaners, the measurable challenges,
 the career and the mission controller run; nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
@@ -117,7 +117,8 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused. The net worth counts the
   owned squares only, by the cell-point rule `ParkEconomy.CellPoints` shares with Theme Park World. Theme Park Inc's own routine `0x5AFFB0` (thunk `0x404F34`) is the
   same: it skips a square whose word `+0x0E` has bit 0x40 (`0x67ECA0` with 0x40, `0x5B0017`), scores the types with the same predicates (`0x67F590`..`0x67F890`, the +10
-  test `0x67F640` always false), skips an object in state 4 (`0x5E3970`) and adds the upgrade costs scaled by the repair byte. Only the layout differs: 72-byte squares,
+  test `0x67F640` always false), skips an object in state 4 (`0x5E3970`) and adds the upgrade costs scaled by the repair byte. Only the layouts differ: 72-byte squares, the object record (upgrade costs at
+  type `+0x2AC` with a 0x48 stride, the repair float `+0x54`, the state `+0xA0`, the level byte `+0x64`),
   the cache at `+0x1F104` (stamp `+0x1F100`, valid `+0x1F108`). Its readers are the month's sample (age 0, `0x5AF53D`), the loan credit test (age 20, `0x5C0F19`) and two
   unidentified callers with age 10 (`0x721753`, `0x7217EC`).
 - **Guests** start with Theme Park Inc's own 24-row profile table, starting cash, exit counter and starting needs.
@@ -207,6 +208,8 @@ scene records). Open: how the original game transforms the zero-coordinate scene
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
 missing lake bed textures; the viewer's lighting and water transparency against the original.
 
+<a id="theme-park-inc-economy-money-only"></a>
+
 ### Theme Park Inc economy
 
 Since October 17, 2026 the slice runs Theme Park Inc's **money** (`EditionCapabilities.Money`) and still refuses Theme Park World's staff and research
@@ -258,7 +261,7 @@ The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Gener
 
 **What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
 upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); the challenge types OpenTPW cannot measure (see below); an obstacle mission's completion, which needs the research and the staff HQ's slots ([below](#theme-park-inc-missions)); the shares game; Theme Park Inc's
-weather presentation's sky; the advisor's other messages; native save formats. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
+weather presentation's sky; the advisor's other messages; the native park save formats (the player file `.GMS` is written on desktop). Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
 
 <a id="theme-park-inc-challenges"></a>

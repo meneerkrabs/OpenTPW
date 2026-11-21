@@ -197,15 +197,46 @@ public sealed class ThemeParkIncStaffMember
 	// [BIN:TPI-EXE:0x60D0D0 meter add] field = clamp(field + delta, 0, 100), the x87 sum compared and stored as a single
 	internal void AddHappiness( float delta ) => Happiness = Clamp( (double)delta + Happiness );
 
-	/// <summary>One update of research in a room: energy and happiness fall by the step x = 1 − experience / MaxExperience, kept as a single.</summary>
-	// [BIN:TPI-EXE:0x6289BD research step] x = (float)(1.0 - experience (unsigned 64) / MaxExperience) (0x6289D5..0x6289E8); 0x60D0D0(&energy, (float)(x × -0.1f)); happiness = clamp(happiness + x × -0.05f)
-	// (the x87 sum compared, stored as a single)
+	/// <summary>One update of research in a room: energy and happiness fall by the step x = 1 − experience / MaxExperience, every x87 operation rounded to a single.</summary>
+	// [BIN:TPI-EXE:0x6289BD research step] fildll the experience (+0x210, unsigned, zero-extended), fidivl MaxExperience (0xA02260), fsubrl 1.0, fstps x; flds x, fmuls -0.1f, fstps the argument of
+	// 0x60D0D0(&energy): flds the argument, fadds energy, the sum compared with 100.0f and 0.0f (above 100 stores 100, below 0 stores 0, else fstps); flds x, fmuls -0.05f, fadds happiness (+0x230), the same
+	// clamp and store
+	// [BIN:TPI-EXE:0x6BF33F control word] the game thread's x87 runs at 0x7F (24-bit significand) after DDSCL_FPUSETUP (0x851 at 0x6BF33F, 0x808 at 0x6BF5A8; docs/DETERMINISM.md), so the fidivl, fsubrl,
+	// fmuls and fadds each round to a single and the clamps compare the rounded sums
 	internal void ResearchStep( ThemeParkIncStaffSettings settings )
 	{
-		var x = (float)(1.0 - (double)(uint)Experience / settings.MaxExperience);
-		Energy = Clamp( (double)(float)(x * -0.1f) + Energy );
-		Happiness = Clamp( (double)x * -0.05f + Happiness );
+		var x = SingleOneMinusRatio( (uint)Experience, settings.MaxExperience );
+		var energyDelta = (float)(x * -0.1f);
+		Energy = ClampSingle( (float)(energyDelta + Energy) );
+		var happinessDelta = (float)(x * -0.05f);
+		Happiness = ClampSingle( (float)(happinessDelta + Happiness) );
 	}
+
+	/// <summary><c>fildll</c> <paramref name="numerator"/>, <c>fidivl</c> <paramref name="denominator"/>, <c>fsubrl</c> 1.0 at the 24-bit control word: each operation rounded to a single.</summary>
+	internal static float SingleOneMinusRatio( uint numerator, int denominator ) => (float)(1f - SingleQuotient( numerator, denominator ));
+
+	/// <summary>The quotient of two integers rounded once to a single (round to nearest, ties to even), as <c>fidivl</c> leaves it at the 24-bit control word.</summary>
+	internal static float SingleQuotient( uint numerator, int denominator )
+	{
+		if ( numerator == 0 || denominator == 0 )
+			return (float)numerator / denominator;
+		var divisor = (ulong)Math.Abs( (long)denominator );
+		// the quotient scaled by 2^64 has at least 33 bits, so its 24 leading bits and the rest decide the rounding exactly
+		var scaled = (UInt128)numerator << 64;
+		var quotient = scaled / divisor;
+		var rest = scaled % divisor;
+		var shift = 128 - (int)UInt128.LeadingZeroCount( quotient ) - 24;
+		var mantissa = quotient >> shift;
+		var dropped = quotient & ((UInt128.One << shift) - 1);
+		var half = UInt128.One << (shift - 1);
+		if ( dropped > half || dropped == half && (rest != 0 || (mantissa & 1) != 0) )
+			mantissa++;
+		var value = (float)Math.ScaleB( (double)mantissa, shift - 64 );
+		return denominator < 0 ? -value : value;
+	}
+
+	/// <summary>The meter clamp of <c>0x60D0D0</c> on a sum already rounded to a single: above 100 gives 100, below 0 gives 0.</summary>
+	private static float ClampSingle( float sum ) => sum > 100f ? 100f : sum < 0f ? 0f : sum;
 
 	/// <summary>Whether the member is too tired to go on: its energy byte below RestLevel.</summary>
 	// [BIN:TPI-EXE:0x62B3B0 tired] (u8)trunc(energy) < RestLevel, signed

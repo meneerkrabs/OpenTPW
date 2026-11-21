@@ -131,8 +131,10 @@ public sealed class ThemeParkIncResearch
 	/// The lab's thing update (<c>0x61E980</c>): every sixth world tick, each slot with a project and a consultant (or a project that needs none) gains the brain points of its team's members in state 24.
 	/// </summary>
 	// [BIN:TPI-EXE:0x61E980 lab tick] (W+0x1EAB40) % 6 (signed idiv) != 0 returns; slot 0 then 1: p = +0x14[slot], p <= -1 skips; consultant word 0 with 0x576FE0(StaffRqd) != 7 skips; sum = 0.0f;
-	// for the 20 ids of the slot's team: a thing whose state +0x1B4 is 24 (no kind or listing test) adds (float)((ld)0x62E4C0(T) × (ld)(int)+0x24EC × (ld)SpeedScaleDown + sum) (fild, fimul, fmuls, fadds,
-	// fstps); then 0x61FF80(&project, sum, slot), also with 0 points. No draw
+	// for the 20 ids of the slot's team: a thing whose state +0x1B4 is 24 (no kind or listing test) adds 0x62E4C0(T) × (int)+0x24EC × SpeedScaleDown + sum (fild, fimul, fmuls, fadds, fstps); then
+	// 0x61FF80(&project, sum, slot), also with 0 points. No draw
+	// [BIN:TPI-EXE:0x6BF33F control word] the game thread's x87 runs at the control word 0x7F (24-bit significand) once the device is set up: DirectDraw's SetCooperativeLevel with DDSCL_FPUSETUP
+	// (0x851 at 0x6BF33F, 0x808 at 0x6BF5A8) and no FPUPRESERVE, as tp.exe's 0x563914 (docs/DETERMINISM.md); so the fild is exact and fimul, fmuls and fadds each round to a single, in this order
 	// [BIN:TPI-EXE:0x637716 lab dispatch] the kind-14 update after the world tick's increment (0x64945D), so the tick it reads is the turn's
 	public void Tick( long turn, Func<ushort, ThemeParkIncStaffMember?> member, ThemeParkIncStaffSettings settings, Action<int> debit, Action<int, int> researched )
 	{
@@ -152,11 +154,20 @@ public sealed class ThemeParkIncResearch
 				if ( id != 0 && member( id ) is { State: Researching } scientist )
 				{
 					var work = settings.WorkDuration( scientist.Role, scientist.Experience, scientist.Motivation, scientist.Salary );
-					sum = (float)((double)work * WorkLoad * SpeedScaleDown + sum);
+					sum = ScientistPoints( work, WorkLoad, SpeedScaleDown, sum );
 				}
 			}
 			Advance( index, sum, slot, debit, researched );
 		}
+	}
+
+	/// <summary>One scientist's term of the lab tick at the 24-bit control word: <c>fild</c> the work, <c>fimul</c> the workload, <c>fmuls</c> SpeedScaleDown, <c>fadds</c> the sum, each rounded to a single.</summary>
+	internal static float ScientistPoints( int work, int workLoad, float speedScaleDown, float sum )
+	{
+		// the integer product is exact in a double (|work × workLoad| < 2^53), so its conversion is the fimul's one rounding
+		var product = (float)((double)work * workLoad);
+		var scaled = (float)(product * speedScaleDown);
+		return (float)(scaled + sum);
 	}
 
 	/// <summary>
@@ -178,7 +189,8 @@ public sealed class ThemeParkIncResearch
 			points = project.Cost - project.Done;
 		var done = points + project.Done;
 		projects[index] = project with { Done = done };
-		debit( unchecked( (int)(long)((double)project.CashPerBrainPoint * points) ) );
+		// fildl CashPerBrainPoint, fmuls points: one product rounded to a single at the control word 0x7F (Tick), then _ftol; the product of a small integer and a single is exact in a double
+		debit( unchecked( (int)(long)(float)((double)project.CashPerBrainPoint * points) ) );
 		if ( done >= project.Cost )
 		{
 			MarkResearched( project.ObjectId, project.Level );
@@ -337,11 +349,14 @@ public sealed class ThemeParkIncResearch
 	}
 
 	/// <summary>A project's percent done (<c>0x620210</c>): 100 for a cost of at most 0.1, else trunc(done × 100 / cost).</summary>
-	// [BIN:TPI-EXE:0x620210 percent done] cost <= 0.1 answers 100, else trunc(done × 100 / cost) (0x86FAB0)
+	// [BIN:TPI-EXE:0x620210 percent done] cost <= 0.1f answers 100, else trunc(done × 100.0f / cost) (flds, fmuls, fdivs, 0x86FAB0), each operation rounded to a single at the control word 0x7F (Tick)
 	public int Percent( int index )
 	{
 		var project = projects[index];
-		return project.Cost <= 0.1f ? 100 : unchecked( (int)(long)((double)project.Done * 100 / project.Cost) );
+		if ( project.Cost <= 0.1f )
+			return 100;
+		var scaled = (float)(project.Done * 100f);
+		return unchecked( (int)(long)(float)(scaled / project.Cost) );
 	}
 
 	/// <summary>Whether a slot's project is finished (<c>0x576EC0</c>): a project index of 0 or more whose done reaches its cost (<c>0x6201E0</c>).</summary>

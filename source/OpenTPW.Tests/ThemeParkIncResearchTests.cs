@@ -85,14 +85,14 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		Assert.IsTrue( research.SetTeam( 0, new ushort[] { 900, 901 }.Concat( new ushort[18] ).ToArray() ) );
 		Assert.IsTrue( scientist.Listed && idle.Listed );
 		var work = settings.WorkDuration( ThemeParkIncStaffRole.Researcher, scientist.Experience, scientist.Motivation, scientist.Salary );
-		var points = (float)((double)work * 85 * 0.005f + 0f);
+		var points = ThemeParkIncResearch.ScientistPoints( work, 85, 0.005f, 0f );
 		var debits = new List<int>();
 		var done = new List<(int, int)>();
 		research.Tick( 5, Lookup, settings, debits.Add, ( type, category ) => done.Add( (type, category) ) );
 		Assert.AreEqual( 0, debits.Count, "only every sixth world tick" );
 		research.Tick( 6, Lookup, settings, debits.Add, ( type, category ) => done.Add( (type, category) ) );
 		Assert.AreEqual( points, research.Projects[27].Done, "the idle scientist adds nothing" );
-		CollectionAssert.AreEqual( new[] { (int)(long)(1.0 * points) }, debits );
+		CollectionAssert.AreEqual( new[] { (int)(long)(float)(1.0 * points) }, debits );
 		var turn = 6L;
 		while ( done.Count == 0 )
 			research.Tick( turn += 6, Lookup, settings, debits.Add, ( type, category ) => done.Add( (type, category) ) );
@@ -102,13 +102,30 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		Assert.IsFalse( scientist.Listed, "the team is released" );
 		Assert.IsTrue( research.Team( 0 ).All( id => id == 0 ) );
 		Assert.AreEqual( 27, research.SlotProjects[0], "the slot keeps the finished project" );
-		Assert.IsTrue( debits.Take( debits.Count - 1 ).All( cash => cash == (int)(long)(1.0 * points) ), "each advance pays its points' cash, truncated" );
+		Assert.IsTrue( debits.Take( debits.Count - 1 ).All( cash => cash == (int)(long)(float)(1.0 * points) ), "each advance pays its points' cash, truncated" );
 
 		// a project with a consultant role and no consultant does not advance
 		research.SetProject( 1, 1 );
 		research.SetTeam( 1, new ushort[] { 900 }.Concat( new ushort[19] ).ToArray() );
 		research.Tick( turn += 6, Lookup, settings, debits.Add, ( _, _ ) => { } );
 		Assert.AreEqual( 0f, research.Projects[1].Done, "ride 1105 needs a mechanic consultant" );
+	}
+
+	[TestMethod]
+	public void TheLabTickAndTheResearchStepRoundEveryX87OperationToASingle()
+	{
+		// [BIN:TPI-EXE:0x6BF33F control word] the game thread runs at 0x7F after DDSCL_FPUSETUP: fimul, fmuls and fadds each round to a single
+		Assert.AreEqual( 1.49f, ThemeParkIncResearch.ScientistPoints( 38, 1, 0.005f, 1.3f ), "the single-precision steps" );
+		Assert.AreNotEqual( (float)((double)38 * 0.005f + 1.3f), ThemeParkIncResearch.ScientistPoints( 38, 1, 0.005f, 1.3f ), "one rounding at the end would give another sum" );
+		// [BIN:TPI-EXE:0x6289BD research step] fidivl then fsubrl, each rounded
+		Assert.AreEqual( 0.99593997f, ThemeParkIncStaffMember.SingleOneMinusRatio( 406, 100000 ) );
+		Assert.AreNotEqual( (float)(1.0 - 406.0 / 100000), ThemeParkIncStaffMember.SingleOneMinusRatio( 406, 100000 ), "one rounding at the end would give another step" );
+		for ( var numerator = 0u; numerator < 3000; numerator += 7 )
+			Assert.AreEqual( (float)numerator / 4999f, ThemeParkIncStaffMember.SingleQuotient( numerator, 4999 ), "exact operands: the single division" );
+		// operands beyond 2^24 keep one rounding of the exact quotient: 0xFFFFFFFF / 3 = 1431655765 rounds to 1431655808 (the nearest single)
+		Assert.AreEqual( 1431655808f, ThemeParkIncStaffMember.SingleQuotient( uint.MaxValue, 3 ) );
+		Assert.AreEqual( 0.5f, ThemeParkIncStaffMember.SingleQuotient( 1, 2 ) );
+		Assert.AreEqual( -0.25f, ThemeParkIncStaffMember.SingleQuotient( 1, -4 ) );
 	}
 
 	[TestMethod]
@@ -219,8 +236,8 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		var researchingTicks = member.DayTicks( ThemeParkIncStaffMember.DisplayState.Researching );
 		var energy = member.Energy;
 		world.Update( economy, member, ++turn );
-		var x = (float)(1.0 - (double)member.Experience / settings.MaxExperience);
-		Assert.AreEqual( (float)((double)(float)(x * -0.1f) + energy), member.Energy );
+		var x = ThemeParkIncStaffMember.SingleOneMinusRatio( (uint)member.Experience, settings.MaxExperience );
+		Assert.AreEqual( (float)((float)(x * -0.1f) + energy), member.Energy );
 		Assert.AreEqual( researchingTicks + 1, member.DayTicks( ThemeParkIncStaffMember.DisplayState.Researching ) );
 		for ( var step = 0; step < 20000 && member.State == ThemeParkIncResearch.Researching; step++ )
 			world.Update( economy, member, ++turn );

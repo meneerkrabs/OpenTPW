@@ -72,8 +72,8 @@ public sealed partial class ThemeParkIncHud
 
 	// STAFF_TYPES.str holds each role's singular and plural name as consecutive entries (Cleaner, Cleaners, Engineer, Engineers, Entertainer, Entertainers, Guard, Guards,
 	// Scientist, Scientists, Gardener, Gardeners), so a role in the staff role order (handyman .. gardener) reads entry 2 * role. Each per-role name table has exactly 35 entries
-	// (the candidate's R mod 35) and no leading header entries, so the NameIndex is the table index; the "index + 4" of the name formatter (0x62FFB0) is most likely the in-memory
-	// table header and is not applied (unverified against the executable).
+	// (the candidate's R mod 35) and no leading header entries; [BIN:TPI-EXE:0x62FFB0 staff name] the formatter passes the role's table and the candidate's word +4, its name
+	// index, to the string lookup 0x8934A0, so the NameIndex is the table index
 	private string StaffRow( ThemeParkIncStaffRole role, int nameIndex, int experience, int wage ) => string.Format( T( OpenTpwText.TpiStaffRow ),
 		strings.StaffType( 2 * (int)role ), strings.StaffName( (int)role, nameIndex ), experience, wage.ToString( "N0" ) );
 

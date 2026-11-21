@@ -242,5 +242,9 @@ Ported as an economy model, without the world simulation, and checked against th
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
 Not ported yet: the role state machines and their walking, working, slacking (`0x62D650`) and low-motivation rest; training; the wage negotiation dialog
-(`0x559E00`); the hire list UI; saving the pool; and the economy's use of all this (Theme Park Inc staff are still refused in the slice).
+(`0x559E00`); hiring and placement in the HUD; and the members' world (Theme Park Inc staff cannot be hired in the slice yet).
+
+Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
+thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a read-only Staff panel in the HUD.
+The plan for the members' world is in OpenTPW-notes (tpi-staff-world-plan.md): a separate Theme Park Inc staff world, handymen first.
 

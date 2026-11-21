@@ -165,6 +165,9 @@ public sealed record GuestSnapshot
 	public int BinId { get; init; }
 	/// <summary>The prankery flag (0, 100, 101 or 102). Absent before schema 5: no pranksters.</summary>
 	public int PrankFlag { get; init; }
+	/// <summary>Native TPI birth code, including zero. An absent code retains the legacy guest profile.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? TpiPrankCode { get; init; }
 	/// <summary>The way out a guard's set-down drew (<see cref="Guest.ExitSide"/>); absent for every other guest and in older saves.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? ExitSide { get; init; }

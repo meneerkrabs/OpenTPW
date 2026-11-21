@@ -66,6 +66,11 @@ public sealed class GuestSettings
 	/// constructor <c>0x60C6F2</c> from the type byte <c>+0x21A</c>); empty in Theme Park World's files, whose key has three values and is read into <see cref="Types"/>.
 	/// </summary>
 	public List<int> TpiPreferredExcitement { get; set; } = new();
+	internal ThemeParkIncGuestStartSettings? TpiGuestStart { get; set; }
+
+	internal int PreferredExcitement( int type, bool nativeTpiBirth ) => nativeTpiBirth
+		? TpiGuestStart!.Types[type].PreferredExcitement
+		: Types[Math.Min( type, Types.Count - 1 )].PreferredExcitement;
 	public int PerfectRide { get; set; } = 25;
 	public int GoodRide { get; set; } = 15;
 	public int OkRide { get; set; } = 5;
@@ -114,7 +119,10 @@ public sealed class GuestSettings
 			if ( FileSystem.FileExists( path ) )
 				ParseSam( FileSystem.ReadAllText( path ), values );
 		}
-		return FromValues( values );
+		var settings = FromValues( values );
+		if ( GameEditions.IsThemeParkInc )
+			settings.TpiGuestStart = ThemeParkIncGuestStartSettings.Parse( values );
+		return settings;
 	}
 
 	/// <summary>Key → whitespace-separated value tokens of one SAM line (comments after the values are dropped).</summary>

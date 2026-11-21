@@ -382,8 +382,18 @@ internal static class Game
 		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
 		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.
 		var sliceSmoke = args.Contains( "--tpi-smoke-test" );
+		var tpiRestartPhase = GetOption( args, "--debug-tpi-restart-smoke", "'capture' or 'restore'" );
 		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );
+		if ( tpiRestartPhase != null && (!GameEditions.IsThemeParkInc || sliceSmoke
+			|| string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_SAVE_DIR" ) )
+			|| (tpiRestartPhase switch
+			{
+				"capture" => originalLevelIndex < 0 || !args[originalLevelIndex + 1].Equals( "science", StringComparison.OrdinalIgnoreCase ) || File.Exists( GameFlow.IncScienceSavePath() ),
+				"restore" => !startsFrontEnd || !args.Contains( "--front-end" ),
+				_ => true
+			})) )
+			throw new ArgumentException( "The TPI restart smoke needs Theme Park Inc data and a dedicated OPENTPW_SAVE_DIR: capture with --load-original-level science and no existing Science slot, then restore with --front-end." );
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
 		var autorun = startsFrontEnd && capturePath == null && !GameEditions.IsThemeParkInc ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
@@ -1103,6 +1113,40 @@ internal static class Game
 				Log.Trace( $"--debug-forecast: quality {forecastQuality} posted as a forecast {weather.DaysOfWarning} days out (apply day {weather.ForecastApplyDay})." );
 			}
 		}
+		// [EXT:debug-tpi-forecast] smoke-only (Debug builds): posts one of the four traced Theme Park Inc weather
+		// forecasts through the park's own queue once the Science park runs, so a capture or smoke can observe the
+		// advisor's caption, speech and playback window. The queue, selection and timing are the park's.
+		var debugTpiForecast = GetOption( args, "--debug-tpi-forecast", "a Theme Park Inc forecast kind 1..4 (1 heatwave, 2 rain, 3 storm, 4 snow)" );
+		if ( debugTpiForecast != null )
+		{
+			if ( !int.TryParse( debugTpiForecast, out var forecastKind ) || forecastKind is < 1 or > 4 )
+				throw new ArgumentException( "--debug-tpi-forecast expects a kind from 1 to 4." );
+			Render.PostUpdate += PostDebugTpiForecast;
+			void PostDebugTpiForecast()
+			{
+				if ( flow.Level?.Park?.Economy is not { TpiForecast: { } queue } economy )
+					return;
+				Render.PostUpdate -= PostDebugTpiForecast;
+				var posted = queue.Post( forecastKind, economy.TpiForecastWorldTime, economy.TpiForecastEligible );
+				Log.Trace( $"--debug-tpi-forecast: kind {forecastKind} {(posted ? "posted" : "refused by the repeat check")} ({queue.Count} queued)." );
+			}
+		}
+		// [EXT:debug-tpi-storm] smoke-only (Debug builds): puts the Science park's weather into a storm with a due
+		// lightning timer, so a capture or smoke observes the storm timers, bolts and thunder. The timers are the park's.
+		// The slice smoke asserts a dry park's precipitation, so the two flags are not combined: the storm is for
+		// captures and observations without the smoke, which exits on its own.
+		if ( Array.IndexOf( args, "--debug-tpi-storm" ) >= 0 && Array.IndexOf( args, "--tpi-smoke-test" ) < 0 )
+		{
+			Render.PostUpdate += StartDebugTpiStorm;
+			void StartDebugTpiStorm()
+			{
+				if ( flow.Level?.Park?.Economy.TpiWeather is not { } weather )
+					return;
+				Render.PostUpdate -= StartDebugTpiStorm;
+				weather.Restore( new ThemeParkIncWeatherSnapshot( new( 3, 3, 10, 1 ), new( 3, 3, 10, 1 ), false, 1, 0 ) );
+				Log.Trace( "--debug-tpi-storm: the park's weather now runs the storm spell." );
+			}
+		}
 		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
 		// staff and buy open those windows, buyitem:<info id>[,<yaw degrees>] opens the buy window on that object type's row (making it available as the research cheat does when it is still in the lab, and holding its preview at that turn), msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, waves opens the first wave machine's settings window (waves:select only selects it), help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models, finale starts the end-of-park finale and winningmessage shows the Instant Action completion box.
 		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
@@ -1197,7 +1241,10 @@ internal static class Game
 			{
 				// [EXT:tpi-front-end-phase1] a Theme Park Inc start without a world opens its Personnel File (docs/THEME-PARK-INC.md)
 				flow.ShowThemeParkIncFrontEnd();
-				Render.Run();
+				if ( tpiRestartPhase == "restore" )
+					RunThemeParkIncSmoke( flow, tpiRestartPhase );
+				else
+					Render.Run();
 				return;
 			}
 			flow.ShowFrontEnd();
@@ -1218,13 +1265,9 @@ internal static class Game
 			? flow.StartLevel( args[originalLevelIndex + 1], original: true, developerPanels: !GameEditions.IsThemeParkInc, playerSave: ReadPlayerSave( args ) )
 			: flow.StartLevel( "jungle", original: false, developerPanels: true );
 
-		if ( sliceSmoke )
+		if ( sliceSmoke || tpiRestartPhase == "capture" )
 		{
-			using var sliceSmokeTest = new ThemeParkIncSmokeTest( flow );
-			Render.PostUpdate += sliceSmokeTest.Update;
-			Render.Run();
-			Render.PostUpdate -= sliceSmokeTest.Update;
-			sliceSmokeTest.VerifyCompleted();
+			RunThemeParkIncSmoke( flow, tpiRestartPhase );
 			return;
 		}
 
@@ -1259,6 +1302,15 @@ internal static class Game
 		}
 		else
 			Render.Run();
+	}
+
+	private static void RunThemeParkIncSmoke( GameFlow flow, string? restartPhase )
+	{
+		using var smoke = new ThemeParkIncSmokeTest( flow, restartPhase );
+		Render.PostUpdate += smoke.Update;
+		try { Render.Run(); }
+		finally { Render.PostUpdate -= smoke.Update; }
+		smoke.VerifyCompleted();
 	}
 
 	/// <summary>

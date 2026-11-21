@@ -197,8 +197,10 @@ public partial class Level
 	private ParkResumeSnapshot CaptureResumeSnapshotParts( AutomaticAdvisor? advisor, string displayName, IReadOnlyDictionary<string, string>? verifiedAssets, DateTimeOffset? savedUtc,
 		bool advisorMaySpeak, bool join )
 	{
-		if ( IsReadOnlyVisit || GameEditions.IsThemeParkInc || OriginalPark == null || Park == null || Guests == null )
-			throw new InvalidOperationException( "Only a writable Theme Park World park can be saved here." );
+		if ( IsReadOnlyVisit || OriginalPark == null || Park == null || Guests == null )
+			throw new InvalidOperationException( "Only a writable original park can be saved here." );
+		if ( GameEditions.IsThemeParkInc && (join || CoopRole != CoopRole.None || !Park.Economy.Rules.ThemeParkInc || LevelName != "science" || advisor != null) )
+			throw new NotSupportedException( "Theme Park Inc continuation supports only a solo Science park without a Theme Park World advisor." );
 		using ( FrameMarks.Measure( "capture.prepare" ) )
 		{
 			if ( !join )
@@ -264,6 +266,8 @@ public partial class Level
 			Clock = simulationClock.CaptureSnapshot(),
 			SoundSeed = random.SoundSeed,
 			Weather = Weather?.CaptureSnapshot(),
+			TpiWeatherClosingsSeen = Park.Economy.Rules.ThemeParkInc ? weatherClosingsSeen : null,
+			TpiHudSpeed = Park.Economy.Rules.ThemeParkInc ? GameSpeed.Normal : null,
 			Gate = Gate?.CaptureSnapshot(),
 			ParkName = ParkName is { } name ? new ParkNameSaveData( name.Line1, name.Line2 ) : null,
 			// [EXT:winter-snow-save] optional and unhashed: null (left out of the file) without snow
@@ -352,6 +356,7 @@ public partial class Level
 		}
 		yield return true;
 		simulationClock.RestoreSnapshot( snapshot.Clock );
+		weatherClosingsSeen = snapshot.TpiWeatherClosingsSeen ?? 0;
 		ResumedMessageTube = snapshot.MessageTube;
 		using ( LoadProfile.Measure( "resume-weather" ) )
 		{

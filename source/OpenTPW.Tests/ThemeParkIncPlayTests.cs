@@ -345,6 +345,83 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
+	public void TheRetailScienceEconomyResumesAcrossAMonthBoundary()
+	{
+		UseTpiData();
+		var economy = new SlicePark( "science", withMoney: true ).Money!.Economy;
+		var ride = economy.Catalog.Objects.First( info => info.Kind == ParkObjectKind.Ride && info.Upgrades[0].RunningCost > 0 );
+		economy.RegisterExisting( ride.InfoId );
+		economy.OpenPark();
+		economy.TakeLoan( 0 );
+		economy.AdvanceMonths( 3 );
+		economy.AdvanceDays( 20 );
+		var json = ParkSaveFile.Serialize( economy );
+		var directory = Directory.CreateTempSubdirectory( "opentpw-tpi-economy-" );
+		ParkEconomy restored;
+		try
+		{
+			var path = Path.Combine( directory.FullName, "science.json" );
+			ParkSaveFile.Save( path, economy );
+			restored = ParkSaveFile.Load( path );
+		}
+		finally
+		{
+			directory.Delete( recursive: true );
+		}
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ) );
+
+		economy.AdvanceMonths( 1 );
+		restored.AdvanceMonths( 1 );
+
+		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ) );
+	}
+
+	[TestMethod]
+	public void EveryRetailWorldLoadsTheNativeGuestProfileTable()
+	{
+		UseTpiData();
+		foreach ( var world in new[] { "science", "water", "arabian" } )
+		{
+			var settings = GuestSettings.Load( world );
+			var start = settings.TpiGuestStart;
+			Assert.IsNotNull( start, world );
+			Assert.AreEqual( (70, 20, 10), (start.Kids, start.Parents, start.Grandparents), world );
+			Assert.AreEqual( (400, 60, 15, 10), (start.ExitLevel, start.ExitVariation, start.CashVariation, start.PrankLikelihood), world );
+			Assert.AreEqual( 24, start.Types.Count, world );
+			CollectionAssert.AreEqual( settings.TpiPreferredExcitement.ToArray(), start.Types.Select( type => type.PreferredExcitement ).ToArray(), world );
+			Assert.AreEqual( new ThemeParkIncGuestType( 90, 300, 40, 0, 1f ), start.Types[0], world );
+			Assert.AreEqual( 0.95f, start.Types[8].SpeedMultiplier, world );
+		}
+	}
+
+	[TestMethod]
+	public void RetailGuestBodiesAndHeadsPairWithinEachGeneration()
+	{
+		UseTpiData();
+		string[][] expected = [["SPR_BD", "SPR_GB", "SPR_GK", "SPR_KB"], ["SPR_FA", "SPR_MO"], ["SPR_GM", "SPR_GR"]];
+		for ( var generation = 0; generation < expected.Length; generation++ )
+		{
+			var banks = GuestSpriteAtlas.LoadThemeParkIncGeneration( generation );
+			CollectionAssert.AreEqual( expected[generation], banks.Select( pair => pair.Body.Name.ToUpperInvariant() ).ToArray() );
+			CollectionAssert.AreEqual( expected[generation], banks.Select( pair => pair.Head.Name.ToUpperInvariant() ).ToArray() );
+			Assert.IsTrue( banks.All( pair => pair.Body.Frames.Length > 0 && pair.Head.Frames.Length > 0 ) );
+		}
+	}
+
+	[TestMethod]
+	public void RetailRainEventUsesTheGlobalAmbientCategoryAndLevelParameter()
+	{
+		UseTpiData();
+		var category = SoundCategory.TryLoad( FileSystem, "/global/sound", "cat_ambient" );
+		Assert.IsNotNull( category );
+		var rain = category.Catalog.Find( GameAudio.RainEvent );
+		Assert.IsNotNull( rain );
+		Assert.AreEqual( GameAudio.RainParameterCode, rain.Extra );
+		Assert.AreNotEqual( SoundEventPlayer.OneShot, rain.Player );
+		Assert.IsTrue( rain.Sounds.SelectMany( sound => sound.Samples ).Any( sample => category.GetBank( sample.BankNumber ) != null ) );
+	}
+
+	[TestMethod]
 	public void TheEntryFeeJudgementUsesTheDataDivisor()
 	{
 		UseTpiData();

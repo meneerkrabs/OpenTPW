@@ -33,6 +33,12 @@ later drawing uses the current HUD. Synthetic tests reconstruct actual CPU objec
 with a valid dummy-only model, and check staged rollback/commit and callback lifetime. They do not
 qualify original data, GPU/browser persistence, crash recovery, disk-full or native save behavior.
 
+## Experimental Science continuation on desktop
+
+In a solo Theme Park Inc Science park, the pause menu offers **Save Science park** and **Continue saved park**. To continue after leaving the game, open the Personnel File (`--front-end`) and choose **Load A Game**. The button is enabled on desktop when the slot exists and always resumes Science, regardless of the selected zone. A rejected save leaves the Personnel File open. Both menus use one separate OpenTPW world-save slot, `opentpw-tpi-science-world.json`, and leave layout checkpoints untouched. The save retains the economy and clock, guests and queue membership, object and script state, and the shared world generator. It also retains the active and pending weather spells, the drop count, the wind angle, and whether precipitation has stopped within the active spell. The save records which spell start the attractions have already processed. Older saves without a wind angle resume from the original starting angle of 90 degrees.
+
+OpenTPW validates the save and its assets before replacing the current park. Modes and state that the slice does not support remain unavailable. This does not import or write native Theme Park Inc saves, enable autosave or sharing, or provide continuation in Arabian, Water or the browser.
+
 The remainder of this document describes Theme Park World continuation saves.
 
 OpenTPW saves parks in its **own world-save format** (`"Format": "opentpw-world"`, version 1): one

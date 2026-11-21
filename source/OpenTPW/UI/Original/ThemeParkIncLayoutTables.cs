@@ -76,4 +76,30 @@ public static class ThemeParkIncLayoutTables
 			new( 1, 0x1u, 0xEA64u, 597, 241, 1374, 321, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPI-EXE:0x9b4854] layout table LetterWindow.</summary>
+	public static readonly LayoutTable LetterWindow = new( "LetterWindow", 0x9B4854, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0xA7F8u, 46, 44, 2002, 1492, -1, -1, "!window", null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0xA7F9u, 155, 426, 436, 506, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA7FAu, 455, 426, 1463, 506, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA7FBu, 155, 321, 436, 400, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA7FCu, 455, 321, 1463, 400, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA7FDu, 1480, 207, 1894, 621, -1, -1, "!frame", null, null, new LayoutNode[]
+			{
+				new( 6, 0x1u, 0xA7FEu, 1506, 232, 1869, 595, -1, -1, "mugshot", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0xA7FFu, 155, 217, 436, 297, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA800u, 455, 217, 1463, 297, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA801u, 155, 671, 1718, 1385, -1, -1, "!frame", null, new[] { 184, 702, 1690, 1353 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA802u, 455, 530, 1463, 609, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA803u, 155, 530, 436, 609, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xA804u, 1863, 52, 1946, 135, 1, -1, "b_close", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xA805u, 1856, 1285, 1958, 1387, 0, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xA806u, 146, 57, 1218, 136, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xA807u, 1773, 52, 1856, 135, 279, -1, "b_help", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x0u, 0xA808u, 1744, 1285, 1846, 1387, -1, -1, "b_goto", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }

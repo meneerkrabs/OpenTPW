@@ -6,7 +6,7 @@ The grammar was checked once, by hand, by reading all 86 layout tables of the ex
 the next table starts); that scan is not part of this script, whose ``--check`` reproduces only the two tables below. The executable is the no-CD ``Game.exe`` (SHA-256 below); the retail one is SafeDisc
 encrypted, so its tables are not readable statically.
 
-Phase 1 of the Theme Park Inc front end needs two tables:
+Phase 1 of the Theme Park Inc front end needs the first two tables; the in-game letter window the third:
 
 * ``PersonnelFile`` 0x9C0FBC: the start menu. Builder 0x56ADB0 (``CreateWindow`` 0x84DEA0 over this table), handler
   0x568CE0/0x568D40. Window ``!window_s``, four ``filetab`` player slots, the ``filepage`` label areas, the name box
@@ -15,6 +15,10 @@ Phase 1 of the Theme Park Inc front end needs two tables:
 * ``QuitConfirm`` 0x9B18BC: the generic confirm dialog every caller of builder 0x4F47F0 uses; its two buttons take
   their models (b_okay / b_cancel) from the caller's mode words (0x4F4937 and 0x4F49D4), so the table carries no model
   for them.
+* ``LetterWindow`` 0x9B4854: the mail window the tag system opens on a letter (builder 0x526CD0, procedure 0x526960):
+  the To/From/Subject/Date label and value pairs (0xA7FF/0xA800, 0xA7FB/0xA7FC, 0xA7F9/0xA7FA, 0xA803/0xA802), the
+  sender's ``mugshot`` (0xA7FE in the frame 0xA7FD), the body frame 0xA801, the title 0xA806 and the ``b_close``,
+  ``b_okay``, ``b_help`` and ``b_goto`` buttons (0xA804, 0xA805, 0xA807, 0xA808).
 
 A model hash is the root-name hash of ``UiModels.RootNameKey``; the names are resolved from the game's ui.wad and an
 unresolved or ambiguous hash is an error. Rectangles are (left, top, right, bottom) in the 2048 x 1536 virtual canvas.
@@ -40,16 +44,19 @@ TPI_SHA = '77ea0c41410aad7c94a5eda658e31cb4ac05f7253aaf6746ad5e8a90afbd967a'
 TABLES = [
     ('PersonnelFile', 0x9C0FBC, 0xC738, (273, 72, 1775, 1464), 0x9C15AC, 39),
     ('QuitConfirm', 0x9B18BC, 0xEA60, (499, 232, 1518, 830), 0x9B197E, 5),
+    ('LetterWindow', 0x9B4854, 0xA7F8, (46, 44, 2002, 1492), 0x9B4ADE, 17),
 ]
 
 # Controls the C# reads by model name or id; a table that lacks one is an error.
 REQUIRED_MODELS = {
     'PersonnelFile': ['!window_s', 'filetab', 'filepage', 'filebut', 'filebox', 'filebutok', 'mugshot', 'b_ltoggle10', '!f_plain', '!frame'],
     'QuitConfirm': ['!window', 'b_close'],
+    'LetterWindow': ['!window', '!frame', 'mugshot', 'b_close', 'b_okay', 'b_help', 'b_goto'],
 }
 REQUIRED_IDS = {
     'PersonnelFile': [0xC73D, 0xC73E, 0xC73F, 0xC740, 0xC754, 0xC755, 0xC759, 0xC73A, 0xC75B, 0xC758, 0xC757, 0xC75C, 0xC75E],
     'QuitConfirm': [0xEA61, 0xEA62, 0xEA63, 0xEA64],
+    'LetterWindow': list(range(0xA7F9, 0xA809)),
 }
 
 

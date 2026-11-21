@@ -211,6 +211,20 @@ public class QueueLinkTests
 	}
 
 	[TestMethod]
+	public void ExactContinuationDoesNotRepairUnlinkedQueueCells()
+	{
+		var (grid, ride) = Park();
+		for ( var y = 5; y >= 1; y-- )
+			grid.SetQueue( 2, y, 2 );
+		var before = grid.Cells.Version;
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		simulation.Register( ride, repairLegacyQueueLinks: false );
+		Assert.AreSame( ride, simulation.Attractions.Single() );
+		Assert.AreEqual( before, grid.Cells.Version );
+		Assert.IsTrue( Enumerable.Range( 1, 5 ).All( y => grid.Cells.LinksAt( 2, y ) == 0 ) );
+	}
+
+	[TestMethod]
 	public void AQueueWithAnyLinkByteIsNotRebuiltWhenTheRideRegisters()
 	{
 		var (grid, ride) = Park();

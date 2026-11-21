@@ -15,7 +15,7 @@ public sealed partial class GuestSimulation
 		// [EXT:smarter-guests-planning] the guest's last meal comes from the extension's state, for a policy that plans
 		decisions.UsesPlanning && SmarterGuests is { } smarter ? smarter.Meals.Of( guest.BirthId ) : -1, -1,
 		// [EXT:smarter-guests-paths] the guest's last complaint about its path, for a policy that weighs the path's comfort
-		decisions.UsesPathComfort && SmarterGuests is { } paths ? paths.Complaints.Of( guest.BirthId ) : -1 );
+		decisions.UsesPathComfort && SmarterGuests is { } paths ? paths.Complaints.Of( guest.BirthId ) : -1 ) { NativeTpiBirth = guest.TpiPrankCode.HasValue };
 
 	/// <summary>The score's eligibility only: preserve connected fallbacks, and opt in to a disconnected back only when it is a real raw queue cell.</summary>
 	// [BIN:TPW-EXE:0x004DE130 typed back] the back-of-queue walk starts at the front cell the entry's links name (0x004DE040) whatever the cell holds, so an empty-ground front is a one-cell back that passes 0x004DD920 and is scored; the route request then fails (a mask-0 walk cannot enter a type-0 cell) and the walk is stuck (state 10: "stuck on the way")
@@ -161,7 +161,7 @@ public sealed partial class GuestSimulation
 	/// </summary>
 	private long BestCommitment256( Guest guest )
 	{
-		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var preferred = Settings.PreferredExcitement( guest.Type, guest.TpiPrankCode.HasValue );
 		var (context, guestView) = (ContextNow(), ViewOf( guest ));
 		var counted = reservationCounts == null;
 		BeginReservations();
@@ -170,7 +170,7 @@ public sealed partial class GuestSimulation
 			var best = -1L;
 			foreach ( var other in attractions )
 			{
-				if ( !CouldJoinRide( other, type ) )
+				if ( !CouldJoinRide( other, preferred ) )
 					continue;
 				var view = ViewOf( other, guest );
 				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && CommitmentTurns256( view ) is var turns and >= 0 && (best < 0 || turns < best) )
@@ -186,9 +186,9 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>A ride a guest of this type could join now: it has a join cell, is open and working, has room, and its excitement is admitted.</summary>
-	private static bool CouldJoinRide( IRideVisitorBridge other, GuestType type ) =>
+	private static bool CouldJoinRide( IRideVisitorBridge other, int preferred ) =>
 		other.Kind == RideVisitorKind.Ride && other.JoinCell != null && other.IsOpen && !other.IsBrokenDown && other.QueueLength < other.QueueLimit
-		&& QueueJoinRules.Refusal( other.StaticExcitementLevel, other.JoinDifference( type.PreferredExcitement ) ) == null;
+		&& QueueJoinRules.Refusal( other.StaticExcitementLevel, other.JoinDifference( preferred ) ) == null;
 
 	/// <summary>
 	/// The queue patience hook (docs/SMARTER-GUESTS.md): runs after the existing leave tests of a waiting guest, on a turn the guest stays, never while it is called forward or in an
@@ -222,7 +222,7 @@ public sealed partial class GuestSimulation
 	{
 		if ( SmarterGuests == null )
 			return -1;
-		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var preferred = Settings.PreferredExcitement( guest.Type, guest.TpiPrankCode.HasValue );
 		var (context, guestView) = (ContextNow(), ViewOf( guest ));
 		var counted = reservationCounts == null;
 		BeginReservations();
@@ -231,7 +231,7 @@ public sealed partial class GuestSimulation
 			var best = -1L;
 			foreach ( var other in attractions )
 			{
-				if ( other.AttractionId == excludeAttractionId || !CouldJoinRide( other, type ) )
+				if ( other.AttractionId == excludeAttractionId || !CouldJoinRide( other, preferred ) )
 					continue;
 				var view = ViewOf( other, guest );
 				if ( SmarterGuestsRules.IsUnusedAdmissibleRide( context, guestView, view ) && SmarterGuestsRules.ExpectedWait256( view ) is { } wait && (best < 0 || wait < best) )

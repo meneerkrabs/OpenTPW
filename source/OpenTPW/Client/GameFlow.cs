@@ -392,7 +392,7 @@ internal sealed partial class GameFlow : IDisposable
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
 			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels, ClientToolGlobals = ProcessToolGlobals };
-		return EnterLevel( level, levelName, original, visit );
+		return EnterLevel( level, level.LevelName, original, visit );
 	}
 
 	/// <summary>

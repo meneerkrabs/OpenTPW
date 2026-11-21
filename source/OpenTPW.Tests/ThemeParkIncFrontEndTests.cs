@@ -141,12 +141,14 @@ public class ThemeParkIncFrontEndTests
 		GameEditions.Select( GameEdition.ThemeParkInc );
 		foreach ( var accepted in new[] { Array.Empty<string>(), new[] { "--front-end" }, new[] { "--game-path", "x", "--silent", "--mute", "--no-intro" }, new[] { "--front-end", "--language", "Dutch" },
 			new[] { "--front-end", "--windowed", "--resolution", "1280x720", "--upscale", "linear", "--render-scale", "67", "--ui-scale", "2", "--no-autorun" },
-			new[] { "--front-end", "--fullscreen" }, new[] { "--front-end", "--fullscreen-exclusive" } } )
+			new[] { "--front-end", "--fullscreen" }, new[] { "--front-end", "--fullscreen-exclusive" },
+			new[] { "--front-end", "--debug-tpi-restart-smoke", "restore" } } )
 			Assert.IsNull( GameEditions.ViewerRefusal( accepted ), string.Join( " ", accepted ) );
 		foreach ( var refused in new[]
 		{
 			new[] { "--front-end", "--smoke-test" }, new[] { "--front-end", "--load-original-level", "science" }, new[] { "--capture-world", "a.png" }, new[] { "--sandbox" },
-			new[] { "--m3-gate" }, new[] { "--setup" }, new[] { "--play-movie", "intro" }, new[] { "--build-texture-pack" }, new[] { "--tpi-smoke-test" }
+			new[] { "--m3-gate" }, new[] { "--setup" }, new[] { "--play-movie", "intro" }, new[] { "--build-texture-pack" }, new[] { "--tpi-smoke-test" },
+			new[] { "--debug-tpi-restart-smoke", "restore" }, new[] { "--front-end", "--debug-tpi-restart-smoke", "capture" }
 		} )
 			Assert.IsNotNull( GameEditions.ViewerRefusal( refused ), string.Join( " ", refused ) );
 		Assert.IsNull( GameEditions.ViewerRefusal( new[] { "--load-original-level", "water" } ), "a world still starts the slice directly" );
@@ -234,6 +236,27 @@ public class ThemeParkIncFrontEndTests
 		Assert.AreEqual( UiButton.DownFrame, slot.StateFrame( focused: true, pressed: false ), "no hover highlight on an inert slot" );
 		Assert.AreEqual( UiButton.DisabledFrame, ((UiButton)Element( frontEnd, "slot2" )).StateFrame( focused: false, pressed: false ) );
 		Assert.AreNotEqual( slot, frontEnd.Screen.Focused );
+	}
+
+	[TestMethod]
+	public void LoadAGameContinuesScienceWithoutStartingTheSelectedZone()
+	{
+		var strings = OriginalUiTests.FakeStrings();
+		var continued = 0;
+		var frontEnd = new ThemeParkIncFrontEnd( strings, new ThemeParkIncFrontEndHost
+		{
+			EnterWorld = _ => Assert.Fail( "Continuing must not start a fresh park." ),
+			ContinueScience = () => continued++
+		} );
+		frontEnd.SelectZone( "water" );
+		Click( frontEnd, FakeContext( strings ), "loadGame" );
+		Assert.AreEqual( 1, continued );
+		frontEnd.ShowLoadFailure( "Invalid Science save." );
+		var dialog = frontEnd.Stack.Top!;
+		Assert.AreEqual( "tpiLoadFailed", dialog.Name );
+		var message = (UiLabel)dialog.Find( "message" )!;
+		StringAssert.Contains( message.Text(), "Invalid Science save." );
+		Assert.IsTrue( message.Bounds.Right < dialog.Find( "ok" )!.Bounds.X, "Wrapped load errors must stay clear of the OK button." );
 	}
 
 	[TestMethod]

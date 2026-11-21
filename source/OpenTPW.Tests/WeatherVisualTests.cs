@@ -63,6 +63,64 @@ public class WeatherVisualTests
 	}
 
 	[TestMethod]
+	public void ThemeParkIncUsesItsOwnFieldAndStormSpeed()
+	{
+		var weather = new ThemeParkIncWeatherSpells( new ThemeParkIncWeatherSettings(
+			new int[16], new int[3], 0, (0, 40), (0, 40), (0, 40), (0, 40), (0, 40), 20, 600 ) );
+		var source = new ThemeParkIncWeatherVisualSource( weather );
+		var draws = 0;
+		var visual = new WeatherVisualState( () => { draws++; return 8192; } );
+		Assert.AreEqual( 3 * WeatherVisualState.FieldSize, draws );
+		Assert.AreEqual( NVector3.Zero, visual.DropOffset( 0 ) );
+		Assert.AreEqual( 3f, WeatherVisualState.TpiWrap( 3f ) );
+		Assert.AreEqual( -2.75f, WeatherVisualState.TpiWrap( 3.25f ) );
+		Assert.AreEqual( -2f, WeatherVisualState.TpiParallax( -2f ) );
+
+		var storm = new WeatherSpell( 3, 3, 100, 3 );
+		weather.Restore( new( storm, storm, false, 1, 20 ) );
+		visual.Update( 0.5f, source, Eye );
+		Assert.AreEqual( 20, visual.DropCount );
+		Assert.AreEqual( new NVector3( 2f, 1.75f, 2f ), visual.DropOffset( 0 ),
+			"The original non-power-of-two parallax mask yields -2 at the eye origin; the storm adds 2.25 units of fall." );
+		var vertices = new WeatherVertex[40 * 6];
+		Assert.AreEqual( 20 * 6, visual.WriteRain( Eye, vertices ) );
+		Assert.AreEqual( new NVector3( 2.01f, -1.75f, 2.04f ), vertices[0].Position );
+		Assert.AreEqual( 2.1f, vertices[0].W );
+		Assert.IsFalse( visual.Snow );
+		Assert.AreEqual( 0, visual.Bolts.Count );
+		Assert.AreEqual( 3 * WeatherVisualState.FieldSize, draws, "Rain does not redraw snow jitter." );
+
+		var snow = storm with { Kind = 4 };
+		weather.Restore( new( snow, snow, false, 2, 40 ) );
+		visual.Update( 0, source, Eye, drawFrame: false );
+		Assert.IsTrue( visual.Snow );
+		Assert.AreEqual( 0.8f, source.Speed );
+		Assert.AreEqual( 3 * WeatherVisualState.FieldSize, draws );
+		visual.Update( 0, source, Eye );
+		Assert.AreEqual( 3 * (WeatherVisualState.FieldSize + 40), draws );
+		Assert.AreEqual( new NVector3( -16f / 2048 ), visual.JitterOf( 0 ) );
+		Assert.AreEqual( 40 * WeatherVisualState.SnowVerticesPerFlake, visual.WriteSnow( Eye, vertices ) );
+		Assert.AreEqual( 2.1422875f, vertices[0].W, 0.000001f );
+
+		var windy = storm with { Quality = 0 };
+		weather.Restore( new( windy, windy, false, 3, 20, WindDirection: 0f ) );
+		var shiftedEye = WeatherCamera.Looking( new NVector3( 10f, 0f, 0f ) );
+		visual.Update( 0, source, shiftedEye );
+		var before = visual.DropOffset( 0 );
+		visual.Update( 0.25f, source, shiftedEye );
+		Assert.AreEqual( source.Direction.X * 4.5f * 0.25f, visual.DropOffset( 0 ).X - before.X, 0.000001f );
+		Assert.AreEqual( 20 * 6, visual.WriteRain( shiftedEye, vertices ) );
+		Assert.AreEqual( source.Direction.X * 0.1f,
+			(vertices[2].Position.X + vertices[5].Position.X - vertices[0].Position.X - vertices[1].Position.X) * 0.5f, 0.000001f );
+
+		var stopped = storm with { Quality = 40 };
+		weather.Restore( new( stopped, stopped, false, 3, 0, PrecipitationStopped: true ) );
+		visual.Update( 0.5f, source, Eye );
+		Assert.AreEqual( 0, visual.DropCount );
+		Assert.AreEqual( 0f, source.Speed );
+	}
+
+	[TestMethod]
 	public void TheFieldIsFixedAndItsPointsLieInTheBox()
 	{
 		var first = Field( WeatherVisualState.FieldSize );

@@ -258,6 +258,29 @@ public sealed class GuestSpriteAtlas
 	// [DATA:esprites.wad/Generic/Kidsheads/SPR_xx.ESP+TPC] heads are 8 frames × 7 directions (docs/GUESTS.md); the 5-direction selection of kid sets is reused
 	public static List<GuestSpriteAtlas> LoadKidHeads() => LoadSets( "/esprites/Generic/Kidsheads", "kidsheads" );
 
+	/// <summary>Loads TPI's body/head pairs for one generation, in body-bank order. Heads are paired by name, not by WAD entry position.</summary>
+	internal static IReadOnlyList<(GuestSpriteAtlas Body, GuestSpriteAtlas Head)> LoadThemeParkIncGeneration( int generation )
+	{
+		var folder = generation switch
+		{
+			0 => "Kids",
+			1 => "Parents",
+			2 => "Grandparents",
+			_ => throw new ArgumentOutOfRangeException( nameof( generation ) )
+		};
+		var bodies = LoadSets( $"/esprites/Generic/{folder}", folder.ToLowerInvariant() );
+		var heads = LoadSets( $"/esprites/Generic/{folder}heads", folder.ToLowerInvariant() + "heads" );
+		if ( bodies.Count == 0 || heads.Count != bodies.Count )
+			throw new InvalidDataException( $"Theme Park Inc's {folder} sprite bodies and heads do not form complete pairs." );
+		var headByName = new Dictionary<string, GuestSpriteAtlas>( StringComparer.OrdinalIgnoreCase );
+		foreach ( var head in heads )
+			if ( !headByName.TryAdd( head.Name, head ) )
+				throw new InvalidDataException( $"Theme Park Inc's {folder} has duplicate head bank '{head.Name}'." );
+		return bodies.Select( body => headByName.Remove( body.Name, out var head )
+			? (body, head)
+			: throw new InvalidDataException( $"Theme Park Inc's {folder} has no head bank for '{body.Name}'." ) ).ToArray();
+	}
+
 	/// <summary>
 	/// Loads the theme's costume sets (<c>esprites/&lt;theme&gt;/Costumes</c>, one per theme), drawn for guests in costume (sprite category 2, tp.exe
 	/// <c>0x00541F70</c>), or none when absent. They share the kids' animation layout.

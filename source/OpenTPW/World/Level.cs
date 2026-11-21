@@ -67,6 +67,7 @@ public partial class Level : IDisposable
 	private ParkLitterEffects? litterEffects;
 	/// <summary>The park's weather, created on the first simulation step of a park; null without a park economy.</summary>
 	public ParkWeather? Weather { get; private set; }
+	internal WeatherRenderer? TpiPrecipitationRenderer { get; private set; }
 
 	/// <summary>
 	/// The park door of an original level: the entrance gate's script and the open/close walk over the
@@ -324,6 +325,8 @@ public partial class Level : IDisposable
 		if (checkpoint != null && !GameEditions.IsThemeParkInc)
 			throw new NotSupportedException("TPI layout checkpoints require Theme Park Inc data.");
 		incLayout = checkpoint;
+		if ( loadOriginalLevel && GameEditions.IsThemeParkInc )
+			levelName = levelName.ToLowerInvariant();
 		if ( visit != null && visit.Level != levelName )
 			throw new ArgumentException( "The visit level must match the loaded level.", nameof( visit ) );
 		LevelName = levelName;
@@ -412,7 +415,7 @@ public partial class Level : IDisposable
 							Park = created;
 					}
 				}
-				else if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
+				else if ( !IsReadOnlyVisit && GameEditions.Capabilities.Money && resume != null )
 					Park = ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
 					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
@@ -424,6 +427,12 @@ public partial class Level : IDisposable
 		{
 			foreach ( var progress in SetupEntities() )
 				yield return progress;
+			if ( Park?.Economy.TpiWeather is { } tpiWeather )
+			{
+				// [BIN:TPI-EXE:0x642550 strike geometry] the X and Z draws scale by the map's cell counts times ten.
+				tpiWeather.MapCells = (OriginalPark?.Map.CellCountX ?? 0, OriginalPark?.Map.CellCountY ?? 0);
+				TpiPrecipitationRenderer = WeatherRendererModule.AttachThemeParkInc( this, tpiWeather );
+			}
 		}
 		if ( resume != null )
 		{
@@ -741,24 +750,62 @@ public partial class Level : IDisposable
 		RegisterPoolActivities();
 		NextStepIsLong = true;
 		yield return true;
-		List<GuestSpriteAtlas> sprites;
-		using ( LoadProfile.Measure( "guest-sprites" ) )
-			sprites = GuestSpriteAtlas.LoadKids();
-		yield return true;
-		// [EXT:pools-guest-art] with the pools extension on, the kid and head sets are the extension's 2x ones (together, and only where the game's kid sets are the Theme Park World ones)
-		var poolGuestSprites = PoolGuestSprites.LoadReplacement( sprites );
-		yield return true;
-		var gameKidCount = sprites.Count;
-		var headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
-		if ( poolGuestSprites != null )
-			sprites = poolGuestSprites.Kids;
+		List<GuestSpriteAtlas> sprites, headSprites;
+		int gameKidCount;
+		PoolGuestSprites.Replacement? poolGuestSprites = null;
+		Func<Guest, int>? tpiAtlas = null;
+		Func<Guest, int>? tpiHeadAtlas = null;
+		var legacyHeadById = false;
 		// [BIN:TPW-EXE:0x0041A9D0 kid set limit] the kid and head folders load the sets in the original's order (BI, KI, TA and SU first) up to the preset's limit (2, 4, 6 or 8), and a guest's draw picks among those (KidSetLoad); the pools sets take the same places, as the game's own do
 		if ( !GameEditions.IsThemeParkInc )
 		{
+			using ( LoadProfile.Measure( "guest-sprites" ) )
+				sprites = GuestSpriteAtlas.LoadKids();
+			yield return true;
+			// [EXT:pools-guest-art] only replaces the original Theme Park World kid set.
+			poolGuestSprites = PoolGuestSprites.LoadReplacement( sprites );
+			yield return true;
+			gameKidCount = sprites.Count;
+			headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
+			sprites = poolGuestSprites?.Kids ?? sprites;
 			var kidLimit = KidSetLoad.LimitOf( IGraphicsSettings.Instance );
 			sprites = KidSetLoad.Order( sprites, atlas => atlas.Name, kidLimit );
 			headSprites = KidSetLoad.Order( headSprites, atlas => atlas.Name, kidLimit );
 			Guests!.KidSetCount = sprites.Count;
+		}
+		else
+		{
+			// Keep the full kid group for legacy saves, but reduce new guests' draws by the
+			// native preset's count for their generation. The art itself is paired by name.
+			var kidLimit = KidSetLoad.LimitOf( IGraphicsSettings.Instance );
+			var banks = new IReadOnlyList<(GuestSpriteAtlas Body, GuestSpriteAtlas Head)>[3];
+			for ( var generation = 0; generation < banks.Length; generation++ )
+			{
+				using ( LoadProfile.Measure( "guest-sprites" ) )
+					banks[generation] = GuestSpriteAtlas.LoadThemeParkIncGeneration( generation );
+				yield return true;
+			}
+			if ( banks.Sum( group => group.Count ) > 8 )
+				throw new InvalidDataException( "The Theme Park Inc guest sprite banks exceed the eight available atlas slots." );
+			// [BIN:TPI-EXE:0x68F46A kid bank limit] 0x448F70 resolves 2/4/6/8 from NUMKIDS.
+			// The separate limit at 0x68F575 is for staff folders, not the parents or grandparents.
+			var counts = banks.Select( (group, generation) => generation == 0 && kidLimit is { } limit
+				? Math.Min( group.Count, limit ) : group.Count ).ToArray();
+			var offsets = new[] { 0, banks[0].Count, banks[0].Count + banks[1].Count };
+			var legacyKids = gameKidCount = banks[0].Count;
+			var simulation = Guests;
+			simulation.TpiSpriteBankCounts = counts;
+			sprites = banks.SelectMany( group => group.Select( pair => pair.Body ) ).ToList();
+			headSprites = banks.SelectMany( group => group.Select( pair => pair.Head ) ).ToList();
+			tpiAtlas = guest => guest.TpiPrankCode.HasValue ? NativeAtlas( guest ) : GuestAppearance.KidSet( guest, legacyKids );
+			tpiHeadAtlas = guest => guest.TpiPrankCode.HasValue ? NativeAtlas( guest ) : legacyHeadById
+				? GuestAppearance.KidSet( guest.Id, legacyKids ) : GuestAppearance.KidSet( guest, legacyKids );
+
+			int NativeAtlas( Guest guest )
+			{
+				var generation = simulation.TpiGeneration( guest );
+				return offsets[generation] + GuestAppearance.KidSet( guest, counts[generation] );
+			}
 		}
 		yield return true;
 		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)
@@ -770,6 +817,7 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		yield return true;
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
+		legacyHeadById = costumeHeads.Count == 0;
 		// [BIN:TPW-EXE:0x004FCAC0 head pick] a theme without costume heads (Fantasy, Hallow) reseeds the world generator with the rider and draws once on every head hung on a ride (RideScriptWorld.HeadHung)
 		Objects.ScriptWorld.HeadHangReseeds = !GameEditions.IsThemeParkInc && costumeHeads.Count == 0;
 		NextStepIsLong = true;
@@ -777,7 +825,7 @@ public partial class Level : IDisposable
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
 		// Reserve opaque bridge draw slots before every guest and staff sprite, including bridges built after swimmers appear.
 		PoolBridgeRenderer = new PoolBridgeRenderer( () => PoolBridges, Objects.Grid.Origin, PoolStyles.ForTheme( park.LevelName ) );
-		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { FeetChooser = BridgeGuestFeet, Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
+		GuestRenderer = new GuestRenderer( Guests, park.Heightfield, sprites ) { AtlasChooser = tpiAtlas, FeetChooser = BridgeGuestFeet, Draws = guest => (!(guest.IsSwimming || guest.InPoolActivity) || SwimmerRenderer == null) && (costumes.Count == 0 || !guest.InCostume), DrawsRideBody = guest => costumes.Count == 0 || !guest.BodySpriteInCostume };
 		NextStepIsLong = true;
 		yield return true;
 		if ( costumes.Count > 0 )
@@ -789,7 +837,7 @@ public partial class Level : IDisposable
 		GuestRenderer.BounceRiders = bounceRiders;
 		if ( CostumeRenderer != null )
 			CostumeRenderer.BounceRiders = bounceRiders;
-		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume, PickByThingId = costumeHeads.Count == 0 };
+		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { AtlasChooser = tpiHeadAtlas, Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume, PickByThingId = costumeHeads.Count == 0 };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );

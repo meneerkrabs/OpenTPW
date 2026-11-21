@@ -36,6 +36,14 @@ public static class ParkSaveFile
 		public required int Version { get; init; }
 		public required string Theme { get; init; }
 		public required bool Easy { get; init; }
+		/// <summary>The economy profile of the host save. Existing Theme Park World saves omit it.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public GameEdition Edition { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncWeatherSnapshot? TpiWeather { get; init; }
+		/// <summary>The advisor's pending weather forecasts and their per-kind play history. Absent in saves without one and in Theme Park World saves.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncForecastSnapshot? TpiForecast { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -254,6 +262,12 @@ public static class ParkSaveFile
 		/// <summary>Guests that have used the object; absent in older saves, which then use this and last month's customers.</summary>
 		public long? TimesUsed { get; init; }
 		public required long[] Statistics { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long PendingMonthlyCosts { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int TpiScriptCondition { get; init; }
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public DailyRingData[]? TpiPriceRings { get; init; }
 		/// <summary>Guests that walked away from the price (mNumWalkAways); absent in older saves and when 0.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public long WalkAways { get; init; }
@@ -695,6 +709,9 @@ public static class ParkSaveFile
 		{
 			Format = FormatName,
 			Version = CurrentVersion,
+			Edition = park.Rules.ThemeParkInc ? GameEdition.ThemeParkInc : GameEdition.ThemeParkWorld,
+			TpiWeather = park.TpiWeather?.Capture(),
+			TpiForecast = park.TpiForecast?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -814,7 +831,10 @@ public static class ParkSaveFile
 			WalkAways = item.WalkAways,
 			WalkAwaysToday = item.WalkAwaysToday,
 			WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.SkipWhile( day => day == 0 ).ToArray() : null,   // the oldest zero days carry no walk-aways: a restored list that lacks them reads and saves the same as the live one
-			Rings = RingsOf( item )
+			Rings = RingsOf( item ),
+			PendingMonthlyCosts = park.Rules.ThemeParkInc ? item.PendingMonthlyCosts : 0,
+			TpiScriptCondition = park.Rules.ThemeParkInc ? item.ScriptCondition : 0,
+			TpiPriceRings = park.Rules.ThemeParkInc ? new[] { item.CheapPriceRing, item.ExpensivePriceRing, item.DeclinedRing }.Select( DailyRingData.Of ).ToArray() : null
 		} ).ToList();
 
 	private static bool HasStaffWorldState( StaffMember member ) => member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
@@ -991,9 +1011,38 @@ public static class ParkSaveFile
 	internal static long BusyTurnsOf( StaffMemberData member ) =>
 		member.BusyTurns ?? ((Math.Clamp( member.BusyTicks!.Value, -1_000_000_000_000, 1_000_000_000_000 ) * 360 + ParkCalendar.SecondsPerTurn - 1) / ParkCalendar.SecondsPerTurn );
 
+	private static void ValidateEdition( Data data )
+	{
+		if ( !Enum.IsDefined( data.Edition ) )
+			throw new InvalidDataException( "Park save has an unknown edition." );
+		if ( data.Edition == GameEdition.ThemeParkInc )
+		{
+			if ( data.Easy || data.Mode != ParkGameMode.FullSimulation || data.Bankrupt || data.PendingInitialDay || data.Staff.Members.Count != 0
+				|| data.Staff.Candidates.Count != 0 || data.Cheats != null || data.Objectives.AdoptedChallenges != null )
+				throw new InvalidDataException( "Park save is not a Theme Park Inc money-only park." );
+			if ( data.TpiWeather is { } weather && (!ThemeParkIncWeatherSpells.IsValid( weather )
+				|| data.Ledger.MonthIndex > 0 && weather == default) )
+				throw new InvalidDataException( "Park save has invalid Theme Park Inc weather." );
+			if ( !ThemeParkIncForecastQueue.IsValid( data.TpiForecast ) )
+				throw new InvalidDataException( "Park save has invalid Theme Park Inc forecast advice." );
+			foreach ( var item in data.Objects )
+			{
+				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
+				if ( item.PendingMonthlyCosts is < 0 or > int.MaxValue || item.TpiPriceRings is not { Length: 3 } rings
+					|| rings.Any( ring => ring?.Entries == null || ring.Today < 0 || ring.Entries.Any( count => count < 0 ) ) )
+					throw new InvalidDataException( $"Park save has invalid Theme Park Inc costs or price rings for object {item.Id}." );
+				foreach ( var ring in rings )
+					_ = ring.ToRing();
+			}
+		}
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
+			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
+	}
+
 	/// <summary>Validates a parsed economy save in place. Internal: the world-save envelope validates its embedded economy through these same rules.</summary>
 	internal static void Validate( Data data )
 	{
+		ValidateEdition( data );
 		void Require( bool condition, string message )
 		{
 			if ( !condition )
@@ -1092,7 +1141,7 @@ public static class ParkSaveFile
 		Require( data.Objectives.AdoptedChallenges == null || data.Objectives.AdoptedChallenges.All( entry => entry.Length == 11 && entry[0] >= 0 && entry[9] is 0 or 1 && entry[10] is 0 or 1 ) && data.Objectives.AdoptedChallenges.Select( entry => entry[0] ).Distinct().Count() == data.Objectives.AdoptedChallenges.Count, "adopted challenge slots" );
 		if ( data.Research.RecentItems is { } recentItems )
 			SaveRecentResearch.Validate( recentItems );
-		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == (data.Edition == GameEdition.ThemeParkInc ? 0 : 5) && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.Research.CheatAvailable is not { } cheatAvailable || cheatAvailable.Count > 0 && cheatAvailable.Distinct().Count() == cheatAvailable.Count, "research cheat" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
@@ -1126,9 +1175,23 @@ public static class ParkSaveFile
 			throw new InvalidDataException( "Park save is inconsistent: pending initial calendar day." );
 		if ( !string.Equals( settings.Theme, data.Theme, StringComparison.OrdinalIgnoreCase ) || settings.IsEasy != data.Easy )
 			throw new InvalidDataException( $"Park save is for {data.Theme}{(data.Easy ? " (easy)" : "")}, not {settings.Theme}{(settings.IsEasy ? " (easy)" : "")}." );
+		if ( data.Edition != settings.Edition )
+			throw new InvalidDataException( $"Park save is for {data.Edition}, not {settings.Edition}." );
+		ValidateEdition( data );
+		var tpi = data.Edition == GameEdition.ThemeParkInc;
+		if ( tpi && (data.TpiWeather != null) != (settings.Weather != null) )
+			throw new InvalidDataException( "Park save weather does not match the Theme Park Inc settings." );
 		if ( data.Objectives.AdoptedChallenges is { } adopted )
 			settings.RestoreAdoptedChallenges( adopted.Select( entry => new ChallengeDefinition( entry[0], entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7], entry[8], entry[9] != 0, entry[10] != 0 ) ).ToList() );
-		var park = new ParkEconomy( settings, catalog, data.Mode, 0 );
+		var park = new ParkEconomy( settings, catalog, data.Mode, 0, tpi ? EconomyRules.ThemeParkIncMoney : null );
+		if ( data.TpiWeather is { } weather )
+			park.TpiWeather!.Restore( weather );
+		if ( data.TpiForecast is { } forecast )
+		{
+			if ( park.TpiForecast == null )
+				throw new InvalidDataException( "Park save has Theme Park Inc forecast advice, but the advisor settings are unavailable." );
+			park.TpiForecast.Restore( forecast );
+		}
 		park.PendingInitialDay = data.PendingInitialDay;
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );
@@ -1175,6 +1238,11 @@ public static class ParkSaveFile
 				WinnersThisMonth = item.Statistics[6],
 				WinnersLastMonth = item.Statistics[7],
 				TotalProfit = item.Statistics[8],
+				PendingMonthlyCosts = item.PendingMonthlyCosts,
+				ScriptCondition = item.TpiScriptCondition,
+				CheapPriceRing = item.TpiPriceRings?[0].ToRing() ?? new(),
+				ExpensivePriceRing = item.TpiPriceRings?[1].ToRing() ?? new(),
+				DeclinedRing = item.TpiPriceRings?[2].ToRing() ?? new(),
 				WalkAways = item.WalkAways,
 				WalkAwaysToday = item.WalkAwaysToday,
 				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new(),
@@ -1252,7 +1320,7 @@ public static class ParkSaveFile
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,
-			data.Objectives.SwitchedOn ?? (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge),
+			data.Objectives.SwitchedOn ?? (!tpi && (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge)),
 			data.Objectives.ActualThing, data.Objectives.CarriedThings, data.Objectives.NextOfferSeconds );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
@@ -1281,7 +1349,13 @@ public static class ParkSaveFile
 		data.World is { } world ? new WorldRandomState( world.Seed, data.WorldGenerator ?? new WorldSeed( world.Seed ).GeneratorState, world.SoundSeed ) : null;
 
 	/// <summary>Loads a save using the original data of its theme from the game file system.</summary>
-	public static ParkEconomy Load( string path ) => Load( path, ( theme, easy ) => (BalanceSettings.Load( theme, easy ), EconomyObjectCatalog.Load( theme, easy )) );
+	public static ParkEconomy Load( string path )
+	{
+		var data = Deserialize( ReadCapped( path ) );
+		var settings = data.Edition == GameEdition.ThemeParkInc
+			? BalanceSettings.LoadThemeParkInc( data.Theme ) : BalanceSettings.Load( data.Theme, data.Easy );
+		return Restore( data, settings, EconomyObjectCatalog.Load( data.Theme, data.Easy ) );
+	}
 
 	/// <summary>Writes atomically: a complete temporary file is moved over the destination.</summary>
 	public static void Save( string path, ParkEconomy park, WorldRandomState? world = null )

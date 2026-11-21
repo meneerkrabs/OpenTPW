@@ -163,20 +163,35 @@ public sealed class WeatherVisualState
 	private readonly NVector3[] points = new NVector3[FieldSize];
 	private readonly NVector3[] jitter = new NVector3[FieldSize];
 	private readonly List<WeatherBolt> bolts = new();
+	private readonly bool themeParkInc;
+	private readonly Func<int>? tpiRandom;
+	private NVector3 direction = FallDirection;
 	private NVector3 offset;
 	private NVector3 fall;
 	private int drawn;
 	private bool snow;
 
-	public WeatherVisualState()
+	public WeatherVisualState() : this( null ) { }
+
+	// [BIN:TPI-EXE:0x6EA1E8 precipitation field] 1024 points in [-3, 3], three CRT draws each.
+	internal WeatherVisualState( Func<int>? tpiRandom )
 	{
+		this.tpiRandom = tpiRandom;
+		themeParkInc = tpiRandom != null;
+		if ( tpiRandom != null )
+		{
+			float Axis() => ((tpiRandom() & 0x3FFF) - 8192) * System.BitConverter.UInt32BitsToSingle( 968887297u );
+			for ( var index = 0; index < FieldSize; index++ )
+				points[index] = new NVector3( Axis(), Axis(), Axis() );
+			return;
+		}
 		// 1024 fixed random points in the box, stored 0..8 so the wrap is a plain modulo.
 		for ( var index = 0; index < FieldSize; index++ )
 			points[index] = new NVector3( Unit(), Unit(), Unit() ) * (2 * BoxHalfExtent);
 	}
 
 	private float Unit() => random.Next( 1 << 20 ) / (float)(1 << 20);
-	private float JitterStep() => random.Next( 32 ) - 16;
+	private float JitterStep() => (tpiRandom is { } draw ? draw() & 31 : random.Next( 32 )) - 16;
 
 	/// <summary>Drops drawn this frame: min(source drops, 1024).</summary>
 	public int DropCount => drawn;
@@ -208,11 +223,17 @@ public sealed class WeatherVisualState
 	// [BIN:TPW-EXE:0x580013-0x5800B7 parallax quantisation] value - (-4) times 16384 through __ftol (0x67A830), and 0x1FFFF, times 1/16384 (0x701C60), minus 4 (0x701CF0), for each of the camera matrix's position floats at +0x30, +0x34 (negated) and +0x38
 	internal static float QuantisedParallax( float value ) => ((int)((value + BoxHalfExtent) * ParallaxGrid) & 0x1FFFF) / ParallaxGrid - BoxHalfExtent;
 
-	/// <summary>The drop point's position relative to the eye, in world axes (original units): the scrolled point wrapped into -4..4.</summary>
+	// [BIN:TPI-EXE:0x6ED8C5 precipitation parallax] TPI quantizes with a 0x17FFF mask and a 3-unit origin.
+	internal static float TpiParallax( float value ) => ((int)((value + 3f) * ParallaxGrid) & 0x17FFF) / ParallaxGrid - 3f;
+	internal static float TpiWrap( float value ) => value > 3f ? value - 6f : value < -3f ? value + 6f : value;
+	private static NVector3 WrapTpi( NVector3 value ) => new( TpiWrap( value.X ), TpiWrap( value.Y ), TpiWrap( value.Z ) );
+
+	/// <summary>The drop point's position relative to the eye, in original world units.</summary>
 	public NVector3 DropOffset( int index )
 	{
 		static float Wrap( float value ) => value - MathF.Floor( value / (2 * BoxHalfExtent) ) * (2 * BoxHalfExtent);
 		var point = points[index] + offset;
+		if ( themeParkInc ) return WrapTpi( point );
 		return new NVector3( Wrap( point.X ), Wrap( point.Y ), Wrap( point.Z ) ) - new NVector3( BoxHalfExtent );
 	}
 
@@ -226,6 +247,11 @@ public sealed class WeatherVisualState
 	{
 		drawn = Math.Clamp( source.DropCount, 0, FieldSize );
 		snow = source.Snow;
+		if ( source is ThemeParkIncWeatherVisualSource tpi )
+		{
+			UpdateTpiField( deltaSeconds, tpi, camera, drawFrame );
+			return;
+		}
 
 		if ( deltaSeconds > 0 )
 			fall += FallDirection * ((snow ? SnowVelocity : RainVelocity) * deltaSeconds);
@@ -254,6 +280,28 @@ public sealed class WeatherVisualState
 
 		foreach ( var strike in source.TakeStrikes() )
 			AddBolt( strike.Top, strike.Bottom, source.BoltLifetimeSeconds );
+	}
+
+	// [BIN:TPI-EXE:0x6ED978 field scroll] The saved offsets move opposite the fall on X/Z
+	// and along it on Y. The rain and snow loops subtract X/Z and add Y to the particles.
+	internal static (NVector3 Fall, NVector3 Offset) StepTpiScroll( NVector3 fall, NVector3 direction, float speed, float deltaSeconds, WeatherCamera camera )
+	{
+		fall = WrapTpi( fall + direction * (speed * deltaSeconds) );
+		var factor = camera.EyeMode ? EyeModeParallaxScale : ParallaxScale;
+		var parallax = new NVector3( -TpiParallax( factor * camera.Eye.X ), TpiParallax( -factor * camera.Eye.Y ), -TpiParallax( factor * camera.Eye.Z ) );
+		return (fall, fall + parallax);
+	}
+
+	private void UpdateTpiField( float deltaSeconds, ThemeParkIncWeatherVisualSource source, WeatherCamera camera, bool drawFrame )
+	{
+		direction = source.Direction;
+		if ( drawn == 0 )
+			return;
+		(fall, offset) = StepTpiScroll( fall, direction, source.Speed, deltaSeconds, camera );
+		// [BIN:TPI-EXE:0x6ED282 snow jitter] The standard snow path draws three CRT words per flake.
+		if ( snow && drawFrame )
+			for ( var index = 0; index < drawn; index++ )
+				jitter[index] = new NVector3( JitterStep(), JitterStep(), JitterStep() ) * SnowJitter;
 	}
 
 	/// <summary>Starts a bolt from <paramref name="top"/> (original units) down to y = 0 directly below it.</summary>
@@ -439,7 +487,7 @@ public sealed class WeatherVisualState
 	// [BIN:TPW-EXE:0x57F1F0 rain vertex] the vertices are submitted straight to the polygon path, no projection: with A the trailing end in camera space (y negated, the screen runs down) and d = B - A the streak (0.1 along the fall), p = 0.1 d.x and q = 0.1 d.y: V0 = A + (q, -p), V1 = A - (q, -p), V2 = B - (q, -p), V3 = B + (q, -p), the same z = A.z + 0.04 (0x701D0C) on all four and w = z of the vertex's own end + 0.1 (0x701D10: A.z on V0 and V1, B.z on V2 and V3), the colour 3c in each channel with c = max(0, int(12 (6 - A.z))) and alpha 0x80 on V0 and V1 and 0xFF on V2 and V3 (the leading end's colour uses the trailing end's depth too), only A.z > 0 tested
 	public int WriteRain( WeatherCamera camera, Span<WeatherVertex> output )
 	{
-		var fall = camera.ToCamera( FallDirection ) * StreakLength;
+		var fall = camera.ToCamera( direction ) * StreakLength;
 		var count = 0;
 		for ( var index = 0; index < drawn && count + 6 <= output.Length; index++ )
 			count += WriteStreak( camera.ToCamera( DropOffset( index ) ), fall, output[count..] );
@@ -480,7 +528,7 @@ public sealed class WeatherVisualState
 	{
 		var count = 0;
 		for ( var index = 0; index < drawn && count + SnowVerticesPerFlake <= output.Length; index++ )
-			count += WriteFlake( camera.ToCamera( DropOffset( index ) + jitter[index] ), index, displayAspect, output[count..] );
+			count += WriteFlake( camera.ToCamera( themeParkInc ? WrapTpi( points[index] + offset + jitter[index] ) : DropOffset( index ) + jitter[index] ), index, displayAspect, output[count..] );
 		return count;
 	}
 

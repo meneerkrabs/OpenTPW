@@ -84,6 +84,12 @@ internal sealed record ParkResumeSnapshot
 	public required uint SoundSeed { get; init; }
 	/// <summary>The weather's state, or null when the park had none (lobby/sandbox starts).</summary>
 	public ParkWeather.ParkWeatherSnapshot? Weather { get; init; }
+	/// <summary>The last Theme Park Inc spell start delivered to the attractions.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public int? TpiWeatherClosingsSeen { get; init; }
+	/// <summary>The selected Theme Park Inc HUD speed, excluding the pause menu's temporary pause.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public GameSpeed? TpiHudSpeed { get; init; }
 	/// <summary>The park gate's turn observation, or null when the park had no gate.</summary>
 	public ParkGate.ParkGateSnapshot? Gate { get; init; }
 	/// <summary>The park's name (the gate's two sign lines), or null when the park had none; saves from before the part carry none.</summary>

@@ -41,7 +41,7 @@ public sealed class WeatherRenderer : Entity
 	private readonly float scale;
 	private readonly float originalFieldOfView;
 	private readonly Func<float, float, float, float?>? farArgument;
-	private readonly WeatherVisualState visual = new();
+	private readonly WeatherVisualState visual;
 	private readonly WeatherBoltRibbon ribbon;
 	// the per-frame inputs of the ribbon's projection, set before a frame's bolts are built (no closure allocated per frame)
 	private System.Numerics.Matrix4x4 viewProjection;
@@ -58,6 +58,7 @@ public sealed class WeatherRenderer : Entity
 	/// <summary>Drops (rain streaks or snow flakes, counted once whatever their triangles) and bolt ribbons drawn in the last frame (smoke instrumentation).</summary>
 	public int DrawnDrops { get; private set; }
 	public int DrawnBolts { get; private set; }
+	internal bool DrawsSnow => visual.Snow;
 
 	/// <param name="source">The drop count, weather kind and bolt tops, in original units.</param>
 	/// <param name="originalToEngine">Maps an original position (Y up) to engine space; the park maps through its heightfield's origin.</param>
@@ -68,6 +69,7 @@ public sealed class WeatherRenderer : Entity
 	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<float> timeScale, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, float fieldOfView = OriginalProjection.FieldOfView, Func<float, float, float, float?>? farArgument = null )
 	{
 		this.source = source;
+		visual = source is ThemeParkIncWeatherVisualSource ? new WeatherVisualState( CrtProcessRandom.Next ) : new WeatherVisualState();
 		this.originalToEngine = originalToEngine;
 		this.timeScale = timeScale;
 		scale = engineUnitsPerOriginal;
@@ -79,7 +81,8 @@ public sealed class WeatherRenderer : Entity
 		// first simulation step — so no gameplay frame pays the shader compile and pipeline build mid-rain.
 		rainMaterial = Prepare( ImagePaths[0], RainFlags );
 		snowMaterial = Prepare( ImagePaths[1], SnowFlags );
-		boltMaterial = Prepare( ImagePaths[2], BoltFlags );
+		if ( source is not ThemeParkIncWeatherVisualSource )
+			boltMaterial = Prepare( ImagePaths[2], BoltFlags );
 	}
 
 	/// <summary>A material textured with one weather image from the game data, or null when the game folder lacks it (nothing of that kind is drawn then).</summary>
@@ -115,6 +118,9 @@ public sealed class WeatherRenderer : Entity
 		var view = Camera.ViewMatrix;
 		static SVector3 ToOriginalAxes( SVector3 engine ) => new( engine.X, engine.Z, engine.Y );
 		var eye = Camera.Position.GetSystemVector3();
+		// TPI's parallax reads the original world-space eye, not the centred park coordinates.
+		if ( source is ThemeParkIncWeatherVisualSource )
+			eye -= originalToEngine( SVector3.Zero );
 		return new WeatherCamera(
 			ToOriginalAxes( eye ) / scale,
 			ToOriginalAxes( new SVector3( view.M11, view.M21, view.M31 ) ),
@@ -345,9 +351,50 @@ internal sealed class ParkWeatherVisualSource( ParkWeather weather ) : IWeatherV
 	}
 }
 
+/// <summary>The Theme Park Inc spell state as read by the precipitation renderer, with no new world draws.</summary>
+internal sealed class ThemeParkIncWeatherVisualSource( ThemeParkIncWeatherSpells weather ) : IWeatherVisualSource
+{
+	private (float Angle, float Force)? lastWind;
+	private SVector3 direction;
+	public int DropCount => weather.RenderedDrops;
+	public bool Snow => weather.PrecipitationPresentation.Mode == 1;
+	public float Speed => weather.PrecipitationPresentation.Speed ?? 0f;
+	// [DATA:levels/science/Standard.sam:WeatherEffects.LightningTime] how long a bolt stays drawn.
+	public float BoltLifetimeSeconds => weather.LightningTimeMilliseconds / 1000f;
+	public IReadOnlyList<WeatherStrike> TakeStrikes()
+	{
+		var taken = weather.TakeStrikes();
+		foreach ( var strike in taken )
+			Log.Trace( $"Theme Park Inc storm: bolt from ({strike.Bottom.X:0},{strike.Bottom.Z:0}) to ({strike.Top.X:0},{strike.Top.Y:0},{strike.Top.Z:0})." );
+		return taken;
+	}
+
+	public SVector3 Direction
+	{
+		get
+		{
+			var wind = (weather.WindDirection, weather.WindForce);
+			if ( lastWind != wind )
+			{
+				// [EXT:hardware-d3d-path] Use the reference hardware precision, not the host GPU's arithmetic.
+				direction = ThemeParkIncPrecipitation.FallVector( wind.Item1, wind.Item2, singlePrecision: true );
+				lastWind = wind;
+			}
+			return direction;
+		}
+	}
+}
+
 /// <summary>Creates the weather's renderer with the weather itself: the park's simulation stays free of render concerns.</summary>
 internal static class WeatherRendererModule
 {
+	internal static WeatherRenderer? AttachThemeParkInc( Level level, ThemeParkIncWeatherSpells weather ) =>
+		global::Global.Render == null || OperatingSystem.IsBrowser() ? null
+			: CreateParkRenderer( level, new ThemeParkIncWeatherVisualSource( weather ) );
+
+	private static WeatherRenderer CreateParkRenderer( Level level, IWeatherVisualSource source ) =>
+		new( source, position => ToEngine( level, position ), () => level.SimulationTimeScale, farArgument: ParkFarArgument );
+
 	[ModuleInitializer]
 	internal static void Attach()
 	{
@@ -358,7 +405,7 @@ internal static class WeatherRendererModule
 			if ( global::Global.Render == null || Level.Current?.Park == null )
 				return;
 			var level = Level.Current;
-			_ = new WeatherRenderer( new ParkWeatherVisualSource( weather ), position => ToEngine( level, position ), () => level.SimulationTimeScale, farArgument: ParkFarArgument );
+			_ = CreateParkRenderer( level, new ParkWeatherVisualSource( weather ) );
 		};
 	}
 

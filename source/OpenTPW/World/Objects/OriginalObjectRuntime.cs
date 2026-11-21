@@ -492,6 +492,7 @@ public sealed partial class OriginalObjectRuntime
 			Heads = Visitors.Heads?.CaptureSnapshot(),
 			Stopped = stopped,
 			WasRunning = wasRunning,
+			ClosedDueToWeather = ClosedDueToWeather,
 			CompletedCycles = CompletedCycles,
 			AnimationsPlayed = AnimationsPlayed,
 			UnresolvedAnimations = unresolvedAnimations.ToArray(),
@@ -561,6 +562,7 @@ public sealed partial class OriginalObjectRuntime
 				Script!.RestoreStoppedFault( fault );
 		}
 		wasRunning = snapshot.WasRunning;
+		ClosedDueToWeather = snapshot.ClosedDueToWeather;
 		RestoreParticleObjects( snapshot.Stopped ? null : snapshot.ParticleObjects );
 		RestoreRepairParticle( snapshot.Stopped ? 0 : snapshot.RepairParticle );
 		// The scream is the script's state: its handle, operands and lost handles come back exactly, whether or not either run had audio (an older save

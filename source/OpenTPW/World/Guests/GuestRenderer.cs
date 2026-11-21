@@ -555,7 +555,7 @@ public sealed class GuestRenderer : Entity
 			vertexBuffer = Device.ResourceFactory.CreateBuffer( new BufferDescription( bytes, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 		}
 		var commandList = global::Global.Render.CommandList;
-		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)count * stride );
+		DynamicBufferUpload.Update( commandList, vertexBuffer, ref vertices[0], (uint)count * stride );
 
 		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 		{

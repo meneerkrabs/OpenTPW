@@ -17,7 +17,7 @@ public partial class Renderer : IDisplaySettings
 	internal bool IsFrameRecording { get; private set; }
 
 	public Window Window;
-	public ImGuiRenderer imGuiRenderer;
+	public ImGuiOverlayRenderer imGuiRenderer;
 
 	public Action? PreUpdate;
 	public Action? OnUpdate;
@@ -118,7 +118,7 @@ public partial class Renderer : IDisplaySettings
 			DisplayDiagnostics.Add( message );
 		}
 
-		imGuiRenderer = new ImGuiRenderer( Device, OutputDescription, Window.Size.X, Window.Size.Y );
+		imGuiRenderer = new ImGuiOverlayRenderer( Device, OutputDescription, Window.Size.X, Window.Size.Y );
 		ModKit.GlobalNamespace.ImGuiManager = imGuiRenderer;
 		new Editor( imGuiRenderer, Device );
 
@@ -878,11 +878,14 @@ public partial class Renderer : IDisplaySettings
 		var description = new SwapchainDescription( swapchainSource, (uint)Math.Max( 1, pixels.X ), (uint)Math.Max( 1, pixels.Y ), options.SwapchainDepthFormat, options.SyncToVerticalBlank, options.SwapchainSrgbFormat );
 		try
 		{
-			return OperatingSystem.IsMacOS()
+			var device = OperatingSystem.IsMacOS()
 				? GraphicsDevice.CreateMetal( options, description )
 				: OperatingSystem.IsWindows()
 					? GraphicsDevice.CreateD3D11( options, description )
 					: GraphicsDevice.CreateVulkan( options, description );
+			// the game's device and the setup wizard's both come from here; buffer writes follow its backend (DynamicBufferUpload)
+			DynamicBufferUpload.Backend = device.BackendType;
+			return device;
 		}
 		catch ( Exception exception ) when ( OperatingSystem.IsLinux() && exception is TypeInitializationException { TypeName: "Vulkan.VulkanNative" } or VeldridException )
 		{
@@ -922,7 +925,7 @@ public partial class Renderer : IDisplaySettings
 	internal void UpdateUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged
 	{
 		if ( IsFrameRecording )
-			CommandList.UpdateBuffer( buffer, 0, ref value );
+			DynamicBufferUpload.Update( CommandList, buffer, ref value );
 		else
 			SubmitUniform( buffer, value );
 	}
@@ -935,14 +938,14 @@ public partial class Renderer : IDisplaySettings
 	{
 		if ( IsFrameRecording )
 		{
-			CommandList.UpdateBuffer( buffer, 0, ref value, sizeInBytes );
+			DynamicBufferUpload.Update( CommandList, buffer, ref value, sizeInBytes );
 			return;
 		}
 		var bytes = System.Runtime.InteropServices.MemoryMarshal.AsBytes( new ReadOnlySpan<T>( in value ) )[..(int)sizeInBytes].ToArray();
-		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, bytes ) );
+		ImmediateSubmit( commands => DynamicBufferUpload.Update( commands, buffer, bytes ) );
 	}
 
 	// Keep the rare immediate-upload closure out of the per-draw allocation path.
 	private void SubmitUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged =>
-		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, value ) );
+		ImmediateSubmit( commands => DynamicBufferUpload.Update( commands, buffer, ref value ) );
 }

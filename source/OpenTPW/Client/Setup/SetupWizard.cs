@@ -19,7 +19,7 @@ internal sealed class SetupWizard : IDisposable
 
 	private readonly Window window;
 	private readonly GraphicsDevice device;
-	private readonly ImGuiRenderer imGui;
+	private readonly ImGuiOverlayRenderer imGui;
 	private readonly CommandList commandList;
 	private IReadOnlyList<InstallationReport> detected;
 	private readonly CancellationTokenSource lifetime = new();
@@ -72,7 +72,7 @@ internal sealed class SetupWizard : IDisposable
 		device = Renderer.CreateDevice( window );
 		var pixels = window.PixelSize;
 		scale = DpiScale( logicalSize, pixels );
-		imGui = new ImGuiRenderer( device, device.MainSwapchain.Framebuffer.OutputDescription, pixels.X, pixels.Y );
+		imGui = new ImGuiOverlayRenderer( device, device.MainSwapchain.Framebuffer.OutputDescription, pixels.X, pixels.Y );
 		ImGui.GetIO().FontGlobalScale = scale * 1.25f;
 		ImGui.GetStyle().ScaleAllSizes( scale );
 		commandList = device.ResourceFactory.CreateCommandList();

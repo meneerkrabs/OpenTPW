@@ -17,7 +17,7 @@ internal class BaseTab
 		}
 	}
 
-	public ImGuiRenderer ImGuiRenderer { get; set; }
+	public ImGuiOverlayRenderer ImGuiRenderer { get; set; }
 
 	public bool visible = false;
 

@@ -172,7 +172,7 @@ public class Model : Asset
 			return oldest;
 		}
 		var buffer = Device.ResourceFactory.CreateBuffer( new BufferDescription( indexCount * sizeof( uint ), BufferUsage.IndexBuffer | BufferUsage.Dynamic ) );
-		Device.UpdateBuffer( buffer, 0, triangleOrder!.FaceIndices );
+		DynamicBufferUpload.Update( Device, buffer, triangleOrder!.FaceIndices );
 		var created = new OrderVariant( triangleOrder.Share(), buffer ) { Rotation = rotation, HasRotation = true };
 		variants.Add( created );
 		return created;
@@ -262,7 +262,7 @@ public class Model : Asset
 			new BufferDescription( indexCount * sizeof( uint ), BufferUsage.IndexBuffer | ( dynamicIndices ? BufferUsage.Dynamic : 0 ) )
 		);
 
-		Device.UpdateBuffer( IndexBuffer, 0, indices );
+		DynamicBufferUpload.Update( Device, IndexBuffer, indices );
 	}
 
 	/// <summary>
@@ -514,7 +514,7 @@ internal sealed class TriangleOrder
 	{
 		if ( !dirty )
 			return;
-		commandList.UpdateBuffer( buffer, 0, sorted );
+		DynamicBufferUpload.Update( commandList, buffer, sorted );
 		dirty = false;
 	}
 }
@@ -535,7 +535,7 @@ internal sealed class ModelVertexBuffer
 		IsDynamic = dynamic;
 		Count = (uint)vertices.Length;
 		Buffer = device.ResourceFactory.CreateBuffer( new BufferDescription( Count * Stride, BufferUsage.VertexBuffer | (dynamic ? BufferUsage.Dynamic : 0) ) );
-		device.UpdateBuffer( Buffer, 0, vertices );
+		DynamicBufferUpload.Update( device, Buffer, vertices );
 	}
 
 	public DeviceBuffer Buffer { get; }
@@ -557,7 +557,7 @@ internal sealed class ModelVertexBuffer
 	{
 		if ( pending == null )
 			return;
-		commandList.UpdateBuffer( Buffer, 0, pending );
+		DynamicBufferUpload.Update( commandList, Buffer, pending );
 		pending = null;
 	}
 }

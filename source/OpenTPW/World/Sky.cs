@@ -314,7 +314,7 @@ public sealed class Sky : IDisposable
 				vertices[slot] = new Vertex( corners[MoonCorners[slot]], white, Upload( MoonUv[MoonCorners[slot]] ) );
 			var size = (uint)vertices.Length * VertexStride;
 			moon.Buffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( size, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
-			commandList.UpdateBuffer( moon.Buffer, 0, ref MemoryMarshal.GetArrayDataReference( vertices ), size );
+			DynamicBufferUpload.Update( commandList, moon.Buffer, ref MemoryMarshal.GetArrayDataReference( vertices ), size );
 			commandList.SetVertexBuffer( 0, moon.Buffer );
 			moon.Material.Set( "ObjectUniformBuffer", uniforms );
 			DrawRange( commandList, moon.Material, 0, vertices.Length );
@@ -646,7 +646,7 @@ public sealed class Sky : IDisposable
 				global::Global.Render.ScheduleDelete( old.Dispose );
 		}
 		var commandList = global::Global.Render.CommandList;
-		commandList.UpdateBuffer( vertexBuffer, 0, ref MemoryMarshal.GetArrayDataReference( staged ), size );
+		DynamicBufferUpload.Update( commandList, vertexBuffer, ref MemoryMarshal.GetArrayDataReference( staged ), size );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 
 		// the view without its translation: the sky is centred on the camera and only turns with it

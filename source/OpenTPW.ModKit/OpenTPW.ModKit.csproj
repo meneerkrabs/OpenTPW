@@ -5,6 +5,8 @@
     <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- ImGui/ImGuiOverlayRenderer.cs, Veldrid.ImGui's renderer, reads ImGui's native draw data through pointers -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

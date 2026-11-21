@@ -146,8 +146,10 @@ class TpiArrivalRingContract(unittest.TestCase):
         self.assertNotIn("AutomaticAdvisor", flow[:flow.index("if ( level.IsThemeParkIncSlice )")])
         self.assertNotIn("AttachLevel", flow[:flow.index("if ( level.IsThemeParkIncSlice )")])
         capabilities = method(read("source/OpenTPW/Client/Setup/GameEdition.cs"), "public static EditionCapabilities ForThemeParkIncSlice()")
-        for capability in ("Advisor", "ParkSaves", "Staff", "Research", "Challenges", "Sharing", "OriginalHud"):
+        for capability in ("Advisor", "ParkSaves", "Staff", "Research", "Sharing", "OriginalHud"):
             self.assertIn(f"{capability} = false", capabilities)
+        # Theme Park Inc's own challenge system runs (docs/reverse/TPI-CHALLENGE-SYSTEM.md, section 10); Theme Park World's stays off through EconomyRules.Narrow
+        self.assertIn("Challenges = true", capabilities)
         self.assertIn("ExperimentalHud = true", capabilities)
         refusal = 'if ( GameEditions.IsThemeParkInc ) throw new NotSupportedException( "Theme Park Inc park saves are not supported." );'
         resume_source = read("source/OpenTPW/Client/GameFlow.Resume.cs")

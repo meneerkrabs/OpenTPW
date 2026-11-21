@@ -1,0 +1,18 @@
+## Theme Park Inc: the challenge system runs in the park (November 21, 2026)
+
+A Theme Park Inc park now runs the executable's own challenge system, not Theme Park World's objectives. It follows the static trace in docs/reverse/TPI-CHALLENGE-SYSTEM.md, whose new section 10 lists what is ported, what is gated and what is still open.
+
+- **Slots.** The level's first ten `ChallengesInThisLevel` entries are row numbers of `Data/Challenges.sam`. Each row goes into the first free slot of ten (`0x5C7630`), and then the follow-up filter runs. The Science slots hold types 2, 35, 25, 46, 36, 41, 56, 17, 48 and 17, in list order.
+- **State machine.** The system runs once per world update. It switches on once the park is open and the mission counter reaches `MissionNumberForFirstChallenge`. After that, each turn it either works out which slots have become available (`CalcAvailTime`) and offers the lowest due slot at most every `DaysBetweenOffers` days, or it runs the accepted slots. An accepted slot goes into a grace period or straight into its timed phase. It can win early, fail while days are left, or be decided on its final day without the failure test. A closed park loses it. The clock arithmetic is the executable's: once an update passes the finish by a day or more, the days left stay negative and the slot never times out.
+- **Outcomes.** A win pays the cash prize through the bank and adds the golden tickets to the career. A loss returns the slot to its offer. On that slot's first loss the firing line drops by one, and once the line is spent every loss brings the firing letter. The system draws no random number.
+- **Measured types.** Type 2 (hot dogs: a fat shop triggers it, and paid sales are counted), type 25 (the least happy staff member) and type 41 (no strike). Every other type is never offered (`[EXT:tpi-capability-gates]`), because its trigger or value reads park state OpenTPW does not model. The shares, promotions and the level record's challenge counts are left off under the same label. A new career's mission counter is 0 and missions are not ported, so the Science park offers nothing in play yet: its measured rows need mission 2.
+- **Saves.** The Science continuation save keeps the slots, the offer delay, the switch, the firing line and the career's golden tickets.
+- **HUD.** A Challenges button (top right, below Staff) lists every challenge that has been offered, accepted or won, under its `CHALLENGE_TITLES.str` title. It shows the days left and the progress value, plus the firing line and the golden tickets. Clicking an offered challenge accepts it only while the park is open, as the original's mail does. The new texts are in all eleven languages.
+
+Verified with these checks:
+
+- The Theme Park Inc, challenge, determinism and save filters pass with the retail data. New tests cover the loader (including the retail Science list), every state transition, the offer gap, accept and grace, the Science types' win and failure tests, the outcomes, the save round trip and the HUD's accept.
+- The silent, offscreen Science smoke exits 0. It now offers the hot-dog challenge, checks that a closed park refuses the accept, and accepts it with the park open.
+- The fidelity register stays at 76 unresolved IDs. The browser build with the determinism pins builds.
+
+The original game was not launched, and no binary or data is included.

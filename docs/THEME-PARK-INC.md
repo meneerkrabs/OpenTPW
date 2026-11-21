@@ -61,7 +61,7 @@ starts the playable slice below (older links still land here).
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). A start without a world opens the slice's
 [Personnel File start screen](#theme-park-inc-front-end) instead. It is not Theme Park Inc support: there is
-no Theme Park Inc in-game interface, staff, research, challenges or native save writing (its money is the only economy), and nothing it draws has been
+no Theme Park Inc in-game interface, research or native save writing (its money, the cleaners and the measurable challenges are the only economy), and nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
@@ -77,8 +77,8 @@ See [WEB.md](WEB.md#game-files-on-demand) for import retries and storage limits.
 **Edition capability policy.** `GameEditions.Capabilities` (Client/Setup/GameEdition.cs) is the one
 place that says what an edition's park runs. Theme Park World keeps every implemented system. The
 Theme Park Inc slice runs building, guests and the money under an experimental HUD and refuses the systems whose
-Theme Park Inc rules or data OpenTPW has not traced. The economy capability is split into `Money` (on for the slice),
-`Staff`, `Research` and `Challenges` (off): Theme Park Inc's `Standard.sam` lacks 86 of the 152 fixed balance
+Theme Park Inc rules or data OpenTPW has not traced. The economy capability is split into `Money` and `Challenges` (on for the slice; the challenges
+are Theme Park Inc's own system, see [Challenges](#theme-park-inc-challenges)), `Staff` and `Research` (off): Theme Park Inc's `Standard.sam` lacks 86 of the 152 fixed balance
 keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage` (re-measured against the executable's
 schema rows October 17, 2026; the October 13 count of 89 of 155 was a text count), but carries the money keys. Also refused: advisor, Theme Park World's 3D lobby front end (`FrontEnd`; the Theme Park Inc Personnel File start screen has its own flag,
 `PersonnelFileFrontEnd`, on for the slice, `[EXT:tpi-front-end-phase1]`), native park saves, sharing
@@ -133,7 +133,7 @@ for the separate `.tpilayout` format, exact state boundaries and verification li
 
 **Science continuation.** The desktop pause menu can [save and continue a solo Science park](PARK-SAVES.md#experimental-science-continuation-on-desktop) in OpenTPW's own format. This is separate from layout checkpoints and does not resume the original Science prebuilt's simulation state.
 
-**What it leaves out.** No research, challenges or staff (the money runs, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
+**What it leaves out.** No research, no staff apart from cleaners, no challenge whose value OpenTPW cannot measure (the money runs, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
@@ -196,8 +196,9 @@ missing lake bed textures; the viewer's lighting and water transparency against 
 
 ### Theme Park Inc economy (money only)
 
-Since October 17, 2026 the slice runs Theme Park Inc's **money** (`EditionCapabilities.Money`) and still refuses staff, research and challenges
-(`Staff`, `Research`, `Challenges`; the whole Theme Park World economy is `Economy`, true only for Theme Park World). The park's economy is
+Since October 17, 2026 the slice runs Theme Park Inc's **money** (`EditionCapabilities.Money`) and still refuses Theme Park World's staff and research
+(`Staff`, `Research`; the whole Theme Park World economy is `Economy`, true only for Theme Park World); since November 21, 2026 it also runs Theme Park Inc's own
+challenge system (`Challenges`, [below](#theme-park-inc-challenges)), never Theme Park World's objectives. The park's economy is
 the same `ParkEconomy` class under `EconomyRules.ThemeParkIncMoney` (`Economy/EconomyRules.cs`), over settings built from Theme Park Inc's own keys.
 Evidence: static reading of the no-CD `Game.exe` against `tp.exe` (October 17, 2026), nothing run; none of it is compared with the running original.
 
@@ -240,9 +241,29 @@ walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleani
 The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`) and animate as their states ask (stand, walk, sweep).
 
 **What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
-upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); challenges, golden tickets and the missions; the shares game; Theme Park Inc's
+upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); the challenge types OpenTPW cannot measure (see below), spending golden tickets, promotions and the missions; the shares game; Theme Park Inc's
 weather presentation's sky; the advisor's other messages; native save formats. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
+
+<a id="theme-park-inc-challenges"></a>
+### Theme Park Inc challenges
+
+Since November 21, 2026 a Theme Park Inc park runs the executable's challenge system (`ThemeParkIncChallenges`, `ParkEconomy.TpiChallenges`), which is not Theme
+Park World's objective system: [TPI-CHALLENGE-SYSTEM.md](reverse/TPI-CHALLENGE-SYSTEM.md) traces it and its section 10 lists the port's status. The level's first ten
+`ChallengesInThisLevel` entries name rows of `Data/Challenges.sam` (Science: rows 2, 4, 5, 14, 13, 18, 21, 8, 20 and 22, types 2, 35, 25, 46, 36, 41, 56, 17, 48
+and 17) that load into ten slots; every world update the system switches on once the park is open, makes slots available by their triggers, offers the lowest due
+slot at most every `DaysBetweenOffers` (20) days, and runs an accepted slot through its grace period and timed phase to a win or a loss. A win pays the cash prize
+through the bank and adds the golden tickets to the career; a loss returns the slot to its offer, takes one off the firing line on the slot's first loss and, once the
+line is spent, posts the firing letter. The slots, the firing line and the career's tickets are saved in the Science continuation save. The system draws no random
+number.
+
+What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count comes from the sale bookings), 25 (the least happy staff member; the trigger is an
+entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
+or value reads park state OpenTPW does not model. A new career's mission counter is 0 and OpenTPW has no missions, so the Science rows that need mission 2, 3 or 4
+are never available either: in practice the Science park offers nothing until missions exist. Left off under the same label: the shares (prize and price effect),
+promotions and the level record's challenge counts. The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
+their `CHALLENGE_TITLES.str` title with the days left and the progress value, and accepts an offered row while the park is open, as the original's mail does
+(`[EXT:tpi-text-hud]`); the challenge mail's full text, its sounds and the advisor's sender advice are not ported.
 
 ### Prebuilt science save
 

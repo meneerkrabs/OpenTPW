@@ -20,3 +20,20 @@
 - **Correction.** The setter of a script variable, `0x6B0780`, has 89 call sites through its thunk `0x4028EC` (the camera flight among them); the reading of
   November 10 that nothing calls it (RIDES-045's retirement) missed the thunk. The declaration in `ObjectCatalog` says so; which slots the other callers write
   is still to be traced.
+
+Not ported yet: the placement in a world built without the prebuilt (the object-info order `0x647BF0` walks is not read, so Water and Arabian build no
+obstacles or camera path), the pick and cursor help over obstacle cells, the tile refresh of type 8, the flight's fog range and camera words, the
+advice classes admitted during a flight, and the 1750 gate's zone switch (recorded for the zone package). The mission window and its Proceed are a
+separate package; completion in play still needs it.
+
+Verified with these checks:
+
+- The Theme Park Inc, catalogue, layout, cell map, resume, park save and ride view filters pass with the retail data. New tests cover the placement rule
+  against the prebuilt's saved cells, the level's obstacle cells and thing ids, every opening variant (stays, deleted, replaced, gate, the map edge), the
+  layout round trip of the flags, the flight's natural end and skip with their 0x29 payloads, the clock rate, the first-day arrival, the save round trip,
+  mission 0 from the window's button to mission 1 with the gate's opening, and the lake's drain to 1704 at its flight's end.
+- The silent, offscreen Science smoke exits 0; it now checks the obstacles and the camera path in the world, flies the zone arrival (the ride view on the
+  camera path's seat, the HUD hidden, the clock at 1.0) and skips it with Escape.
+- The fidelity register stays at 76 unresolved IDs (no new approximation or extension label). The browser build with the determinism pins builds.
+
+The original game was not launched, and no binary or data is included.

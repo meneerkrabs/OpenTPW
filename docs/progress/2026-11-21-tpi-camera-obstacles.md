@@ -22,6 +22,9 @@
   bin's `VAR_CAPACITY`, `VAR_DIRTY` and `VAR_FIRERISK` from `Standard.sam`'s `LitterBin` words (20, 15, 5) and a plant's `VAR_TIMEOUT`, `VAR_TEST` and
   `VAR_SCALE` from its `Vegetation` words and 1000. A new object in a Theme Park Inc world now takes them (`ThemeParkIncConstructionWords`). Theme Park World's
   constructor (`0x4DB090`) writes none of them, so RIDES-045's retirement stands for Theme Park World with the corrected reason (docs/OBJECTS.md).
+- **With the mission window (#982).** The arrival flight's countdown opens the first briefing one update after the flight ends (`0x5D0369`), and the window's
+  Proceed starts the camera flights: an obstacle mission's 0x24 flies to the obstacle and opens it at the flight's end, and a mission with an `ObstacleOpened` or
+  `CutsceneObject` thing completes at the end of its flight.
 - **Review fixes.** A Science save or layout checkpoint from before the obstacles is refused with the start-again message (the park save's validation, before the
   asset comparison; the checkpoint format is version 4 and refuses version 3). The pause key stays reachable under a flight, as the original's key binding
   "pause" (`0x42F420`) is dispatched past the input window, so a flight started while paused waits for it instead of locking the game. A flight of thing 0, whose

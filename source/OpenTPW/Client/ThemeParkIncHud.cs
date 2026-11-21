@@ -103,6 +103,7 @@ public sealed partial class ThemeParkIncHud
 		var challengesButton = ToolButton( "challenges", () => T( OpenTpwText.TpiChallenges ), T( OpenTpwText.TpiChallengesHelp ), ToggleChallengePanel, 5 );
 		challengesButton.Bounds = new UiRect( 2024 - 306, 136, 286, 110 );
 		challengesButton.Anchor = UiAnchor.TopRight;
+		BuildMissionButton();
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
@@ -158,7 +159,9 @@ public sealed partial class ThemeParkIncHud
 	public GameSpeed Speed => speed;
 	// [BIN:TPI-EXE:0x42A17C lost pause lock] in the lost state a pause request does nothing, so the lost park's menus and screens run the park on
 	// [BIN:TPI-EXE:0x526CD0 letter window] the letter window's builder makes no pause request (0x42A170 is not among its calls): the park trades on while it is open
-	public float TimeScale => Stack.Screens.Skip( 1 ).Any( screen => screen.Name != ThemeParkIncLetterWindow.ScreenName ) && !Lost ? 0f : GameSpeedScale.Of( speed );
+	// [BIN:TPI-EXE:0x55A7F0 mission window] nor does the mission window's (it makes the same window calls as the letter's, 0x5013C0 and 0x501CD0)
+	public float TimeScale => Stack.Screens.Skip( 1 ).Any( screen => screen.Name is not (ThemeParkIncLetterWindow.ScreenName or ThemeParkIncMissionWindow.ScreenName) ) && !Lost
+		? 0f : GameSpeedScale.Of( speed );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	public BuildCategory Category => category;
 
@@ -503,6 +506,8 @@ public sealed partial class ThemeParkIncHud
 		}
 		if ( !MenuOpen )
 			TogglePause( input );
+		UpdateMissionKey( input );
+		UpdateMissionWindowRequests();
 
 		// The level's last action (builds, refusals) becomes a message here; the slice has no advisor to say it.
 		if ( level.LastActionMessage != lastLevelMessage )
@@ -644,6 +649,9 @@ public sealed partial class ThemeParkIncHud
 			Stack.Draw( context );
 	}
 
+	/// <summary>Closes the open letter as its close button does (message 5 to the HUD's window), or null.</summary>
+	private Action? closeOpenLetter;
+
 	/// <summary>The letter window is open.</summary>
 	public bool LetterOpen => Stack.Screens.Any( screen => screen.Name == ThemeParkIncLetterWindow.ScreenName );
 
@@ -651,15 +659,27 @@ public sealed partial class ThemeParkIncHud
 	/// Opens the letter window over the HUD; <paramref name="dismissed"/> runs when the player closes it.
 	/// </summary>
 	// [BIN:TPI-EXE:0x636217 letter window] the tag system opens the window on every accepted notification (ids 6 to 8, 0x5CD060)
+	// [BIN:TPI-EXE:0x526CF1 letter closes the HUD's window] the letter's builder 0x526CD0 calls 0x5013C0 first, which sends message 5 to the window registered at 0xA568BC: an open mission
+	// window closes, as a mission window opening closes a letter
 	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
 	{
+		CloseMissionWindow();
 		UiScreen? screen = null;
-		screen = ThemeParkIncLetterWindow.Create( letter, strings, () =>
+		var closed = false;
+		Action close = null!;
+		close = () =>
 		{
+			if ( closed )
+				return;
+			closed = true;
 			if ( screen is { IsRemoved: false } )
 				Stack.RemoveWhere( item => ReferenceEquals( item, screen ) );
+			if ( ReferenceEquals( closeOpenLetter, close ) )
+				closeOpenLetter = null;
 			dismissed();
-		} );
+		};
+		screen = ThemeParkIncLetterWindow.Create( letter, strings, close, RunLetterGoto );
+		closeOpenLetter = close;
 		Stack.Push( screen );
 	}
 

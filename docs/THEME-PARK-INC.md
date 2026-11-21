@@ -294,9 +294,18 @@ the 1700 gate opens (its `AfterShape`) at the end of the camera flight that the 
 drains to 1704 at the end of its own flight. The cheats extension's Skip Mission calls the completion tick directly (`0x5F0940`, as the original's debug button does at
 `0x532B39`): it advances the career and opens no obstacle.
 
-**No mission completes in play yet, except through the cheats extension's Skip Mission.** The mission window and its complete button
-(`ParkEconomy.PressThemeParkIncMissionComplete`) are a separate package. An obstacle mission would also need the research (message 0x23) and the staff HQ's
-obstacle slots, neither of which OpenTPW runs. The objective letter's window is not built.
+**The mission window.** The executable's "Current Objective" window (`ThemeParkIncMissionWindow`, builder `0x55A7F0`, table `0x9BE808`;
+[TPI-MISSIONS.md §7](reverse/TPI-MISSIONS.md#7-the-mission-window)) opens with the Objectives key O (key table `0x9A8A14`) or the text HUD's "Current Objective"
+button, which stands in for the native HUD's buttons (`[EXT:tpi-text-hud]`). It shows the mission's title, picture and sender, the briefing page and the details page
+with every exit statistic's requirement and status, the promotion hint, required challenges and golden tickets. Proceed is enabled when the controller's requirements are
+met and runs OnMissionComplete or the remove-obstacle message 0x24. It pauses nothing. The zone-arrival flight's end opens the first briefing one update later, as the original's
+countdown does (`0x5D0369`).
+
+**Few missions complete in play yet.** A mission without an obstacle completes through Proceed: at once, or at the end of the camera flight to its
+`ObstacleOpened` or `CutsceneObject` thing (message 0x29). An obstacle mission's Proceed posts 0x24, whose flight opens the obstacle, but its requirements also need the
+research (message 0x23) and the staff HQ's obstacle slots, neither of which OpenTPW runs yet. The cheats extension's Skip Mission still runs the completion tick. What does
+not run yet besides: the challenges window (the text HUD's challenge panel stands in for its tab) and the tag tube that would file the "Objective Complete!" letter; the
+letter itself is composed (`ThemeParkIncObjectiveLetter`) but waits in `ParkEconomy.TpiObjectiveLetters`.
 
 ### Prebuilt science save
 

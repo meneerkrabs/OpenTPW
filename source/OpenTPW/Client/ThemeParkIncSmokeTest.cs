@@ -64,6 +64,25 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Plan( captureForRestart: restartPhase == "capture" );
 	}
 
+	/// <summary>The mission window (docs/reverse/TPI-MISSIONS.md §7): the Objectives key opens it over mission 0, whose Proceed waits for the forty guests; it pauses nothing.</summary>
+	private void PlanMissionWindow()
+	{
+		Do( "open the mission window with the Objectives key", () => flow.InjectedInput = UiInput.Key( UiKeys.Objectives ) );
+		Wait( "mission window opens", 1 );
+		Do( "the mission window shows mission 0 with Proceed disabled", () =>
+		{
+			Require( Hud.MissionWindowOpen && Hud.Stack.Top?.Name == ThemeParkIncMissionWindow.ScreenName, "the Objectives key opens the mission window" );
+			var top = Hud.Stack.Top!;
+			Require( ((UiLabel)top.Find( "title" )!).Text() == flow.Strings.Entry( ThemeParkIncMissionWindow.TitleText ), "the window's title is UITEXT 461" );
+			Require( top.Find( "proceed" ) is { Enabled: false } && Hud.MissionWindow is { ProceedEnabled: false, Page: 0 }, "mission 0's Proceed is disabled at the start" );
+			Require( Hud.MissionWindow!.Briefing.Length > 0, "the briefing page shows the mission's text" );
+			Require( Hud.TimeScale > 0, "the mission window pauses nothing" );
+		} );
+		Do( "close the mission window", () => Click( Hud.Stack.Top!, "cancel" ) );
+		Wait( "mission window closes", 1 );
+		Do( "the mission window is closed", () => Require( !Hud.MissionWindowOpen && !Hud.MenuOpen, "Cancel closes the mission window" ) );
+	}
+
 	private void Plan( bool captureForRestart )
 	{
 		Wait( "slice starts", 10 );
@@ -92,6 +111,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 				Require( level.Guests?.Grid.Cells is { } obstacleCells && obstacleCells.ObstacleFlagAt( 41, 48 ) && obstacleCells.RawTypeAt( 41, 48 ) == 8, "the 1700 gate's footprint is a hole with the obstacle flag" );
 			}
 		} );
+		if ( flow.Level?.LevelName == "science" )
+			PlanMissionWindow();
 		if ( flow.Level?.LevelName == "science" )
 			PlanPrecipitation();
 		Do( "open the build window", () => Click( Hud.Screen, "build" ) );
@@ -484,7 +505,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 
 	/// <summary>
 	/// The zone arrival of a new game's Science park: the camera path 1798 flies (the ride view on its seat, the clock at 1.0, the HUD hidden under the input window), Escape skips it, message 0x29 carries the
-	/// trigger, and the mission window's countdown runs out one update later.
+	/// trigger, and the mission window's countdown runs out one update later and opens the first briefing.
 	/// </summary>
 	private void PlanArrivalFlight()
 	{
@@ -513,6 +534,10 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( economy.TpiIntroductionLetters == 1 && economy.TpiCareer!.ObjectiveLetterPosted, "the arrival's end posted mission 0's first briefing" );
 		} );
 		Wait( "the HUD comes back", 2 );
+		Do( "the countdown opened the mission window", () => Require( Hud.MissionWindowOpen && Hud.Stack.Top?.Name == ThemeParkIncMissionWindow.ScreenName, "the arrival's end opens the first briefing (0x5D0369)" ) );
+		Do( "close the arrival's mission window", () => Click( Hud.Stack.Top!, "cancel" ) );
+		Wait( "the arrival's mission window closes", 1 );
+		Do( "the arrival's mission window is closed", () => Require( !Hud.MissionWindowOpen, "Cancel closes the arrival's mission window" ) );
 	}
 
 	private void PlanColdRestore()

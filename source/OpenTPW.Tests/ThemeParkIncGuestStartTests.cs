@@ -116,13 +116,34 @@ public sealed class ThemeParkIncGuestStartTests
 	private static int Preferred( GuestSimulation park, Guest guest ) =>
 		OriginalGuestDecisions.ScoreInputOf( new DecisionContext( park.Settings, 0, false ), park.ViewOf( guest ), default ).PreferredExcitement;
 
-	private static GuestSimulation MakePark( bool tpi )
+	[TestMethod]
+	public void ALiveTpiGuestsBaseSpeedIsTheDrawnWordTimesItsProfilesMultiplier()
+	{
+		Assert.AreEqual( 57, ThemeParkIncGuestStart.ScaleBaseSpeed( 60, 0.95f, singlePrecision: true ), "at 24 bits 60 x 0.95f rounds to the single 57.0f" );
+		Assert.AreEqual( 56, ThemeParkIncGuestStart.ScaleBaseSpeed( 60, 0.95f, singlePrecision: false ), "where 53 bits keep 56.9999993 and truncate to 56" );
+		// [BIN:TPI-EXE:0x608FA4 base speed draw] [BIN:TPI-EXE:0x60C712 guest base speed] the first draw picks the word, the profile's SpeedMultiplier scales it, truncated
+		var park = MakePark( tpi: true, speedMultiplier: 0.41f );
+		park.World.Reseed( 0x73826fe5 );
+		var replay = new WorldRng( 0x73826fe5 );
+		var word = GuestSpeed.BaseSpeeds[(int)replay.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
+		var guest = park.SpawnInPark( 1, 1 );
+		Assert.AreEqual( (int)ThemeParkIncGuestStart.ScaleBaseSpeed( word, 0.41f, singlePrecision: true ), guest.BaseSpeed, "the product at the device's 24-bit precision ([EXT:hardware-d3d-path])" );
+		Assert.AreNotEqual( word, guest.BaseSpeed, "the multiplier applies" );
+		var saved = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( park.CaptureSnapshot() ) )!;
+		var resumed = MakePark( tpi: true, speedMultiplier: 0.41f );
+		resumed.RestoreSnapshot( saved );
+		Assert.AreEqual( guest.BaseSpeed, resumed.Guests.Single().BaseSpeed, "a scaled base speed below the walk speeds passes the snapshot's validation" );
+		var tpw = MakePark( tpi: false ).SpawnInPark( 1, 1 ).BaseSpeed;
+		Assert.IsTrue( GuestSpeed.BaseSpeeds.ToArray().Any( value => value == tpw ), "a Theme Park World guest keeps a table word" );
+	}
+
+	private static GuestSimulation MakePark( bool tpi, float speedMultiplier = 1f )
 	{
 		var grid = new GuestPathGrid( 4, 4 );
 		grid.SetPath( 1, 1, true );
 		var settings = new GuestSettings();
 		if ( tpi )
-			settings.TpiGuestStart = new( Enumerable.Range( 0, 24 ).Select( i => new ThemeParkIncGuestType( 90 - i, 300 + 20 * i, 40 + i, i / 8 ) ).ToArray(),
+			settings.TpiGuestStart = new( Enumerable.Range( 0, 24 ).Select( i => new ThemeParkIncGuestType( 90 - i, 300 + 20 * i, 40 + i, i / 8, speedMultiplier ) ).ToArray(),
 				400, 30, 15, 70, 20, 10, 100 );
 		return new GuestSimulation( grid, settings, 1 );
 	}

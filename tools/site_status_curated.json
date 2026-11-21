@@ -18,6 +18,6 @@
     {"text": "Build a park together with other players: a shared park is a snapshot, and its visitors walk it together but cannot change it. Co-op building is under way: every park edit already runs as a command, and the server's sessions and the game's link to them exist, but no screen starts a session yet.", "href": "docs/ONLINE.html"},
     {"text": "Rely on the original's exact numbers everywhere: some rules still use a documented approximation.", "href": "docs/FIDELITY-REGISTER.html", "matrix": ["Visitors, needs, routing and queues", "Economy, shops, toilets and staffing"]}
   ],
-  "later": "Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. Campaign, economy, staff, advisor and native park saves remain unavailable. The desktop edition chooser (--setup) is part of the releases since v0.8.0.",
+  "later": "Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. The money, the weather, the advisor's weather forecasts and the bank's \"Game Over\" letter run; campaign, challenges, research, staff at work, the rest of the advisor and native park saves remain unavailable. The desktop edition chooser (--setup) is part of the releases since v0.8.0.",
   "later_href": "docs/THEME-PARK-INC.html"
 }

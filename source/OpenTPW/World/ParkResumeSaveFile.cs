@@ -991,7 +991,9 @@ internal static class ParkResumeSaveFile
 				&& float.IsFinite( guest.OffsetX ) && float.IsFinite( guest.OffsetY ) && float.IsFinite( guest.QueueTargetX )
 				&& float.IsFinite( guest.QueueTargetY ),
 				$"guest {guest.Id} holds a position or draw value that is not finite" );
-			Require( guest.BaseSpeed is >= 60 and <= 140, $"guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds" );
+			// a Theme Park Inc guest's walk speed is scaled by its profile (0x60C712) and stored as a word; the guest simulation checks the exact values against the profile
+			Require( guest.TpiPrankCode.HasValue ? guest.BaseSpeed is >= 0 and <= ushort.MaxValue : guest.BaseSpeed is >= 60 and <= 140,
+				$"guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds" );
 			Require( guest.Navigation != null && guest.Navigation.Route != null && guest.Navigation.AlsoOpen != null,
 				$"guest {guest.Id} has no navigation state" );
 			var navigation = guest.Navigation!;

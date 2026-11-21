@@ -711,6 +711,7 @@ public partial class Level : IDisposable
 			{
 				SetupThemeParkIncStaff();
 				SetupThemeParkIncRideEvents();
+				SeedThemeParkIncObjectList();
 				SeedThemeParkIncCurrentObstacle();
 				AttachThemeParkIncMissionWorld();
 			}

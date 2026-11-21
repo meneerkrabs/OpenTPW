@@ -71,6 +71,9 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? TpiRideWear { get; init; }
+		/// <summary>Theme Park Inc's object list, newest first (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): written by a park with Theme Park Inc's staff, with its ride wear.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int>? TpiObjectList { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -744,6 +747,7 @@ public static class ParkSaveFile
 			TpiCareer = park.TpiCareer?.Capture(),
 			TpiMissions = park.TpiMissions?.Capture(),
 			TpiRideWear = park.TpiStaff != null ? ThemeParkIncRideWearRules : null,
+			TpiObjectList = park.TpiStaff != null ? park.ThemeParkIncObjectList.ToList() : null,
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1073,6 +1077,8 @@ public static class ParkSaveFile
 			// park the ported rules would have made
 			if ( data.TpiStaff != null && data.TpiRideWear != ThemeParkIncRideWearRules )
 				throw new InvalidDataException( ThemeParkIncRideWearMissing );
+			if ( data.TpiStaff != null && !ParkEconomy.IsValidThemeParkIncObjectList( data.Objects.Select( item => item.Id ), data.TpiObjectList ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc object list." );
 			ValidateThemeParkIncJobs( data );
 			foreach ( var item in data.Objects )
 			{
@@ -1084,7 +1090,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiRideWear != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiRideWear != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1222,7 +1228,8 @@ public static class ParkSaveFile
 		if ( data.Research.RecentItems is { } recentItems )
 			SaveRecentResearch.Validate( recentItems );
 		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == (data.Edition == GameEdition.ThemeParkInc ? 0 : 5) && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
-		Require( data.MechanicCursor >= 0, "mechanic cursor" );
+		// a Theme Park Inc cursor may rest on a thing OpenTPW does not build (a negated thing id of its object list)
+		Require( data.MechanicCursor >= 0 || data.TpiObjectList?.Contains( data.MechanicCursor ) == true, "mechanic cursor" );
 		Require( data.Research.CheatAvailable is not { } cheatAvailable || cheatAvailable.Count > 0 && cheatAvailable.Distinct().Count() == cheatAvailable.Count, "research cheat" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
@@ -1430,6 +1437,8 @@ public static class ParkSaveFile
 			data.Objectives.ActualThing, data.Objectives.CarriedThings, data.Objectives.NextOfferSeconds );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
+		if ( data.TpiObjectList != null )
+			park.RestoreThemeParkIncObjectList( data.TpiObjectList );
 		if ( data.StatisticsHistory is { } history )
 			park.StatisticsHistory.Restore( history, park.Ledger.History.Select( month => month.ParkRating ) );
 		else

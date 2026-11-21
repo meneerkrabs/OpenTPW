@@ -164,10 +164,11 @@ public sealed partial class ThemeParkIncStaffWorld
 	// repair line 0x5E28A0, the request +0x78 with +0x42 & 0x41 and & 0x1000 clear (relief, bin, plant), or state 2 with a and the claimant 0 or his; and then the claimant 0x5E37F0 0 (each call may
 	// lapse a claim); d = dx² + dy² of the cell bytes (+5, +7, as |Δ| of the cell words' columns and rows), strictly smaller replaces, in the urgent pair when the object is in state 1 or requested,
 	// else in the other (unsigned, 0xFFFFFFFF to start); until the word is back at the start; the urgent one, else the other
-	// [BIN:TPI-EXE:0x64F3E0 object list] a new object enters the list at its head, so the list runs newest first: the economy's instance ids descending, as Theme Park World's port takes them
+	// [BIN:TPI-EXE:0x64F3E0 object list] the list is ParkEconomy.ThemeParkIncObjectList: newest first, with the saved park's things OpenTPW does not build kept as negated thing ids, which the
+	// walk steps over as candidates of no kind (in the prebuilt Science park the six mission obstacles and lake objects and the fixed item 1710; docs/reverse/TPI-STAFF.md)
 	internal int FindRide( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
-		var list = economy.ObjectInstanceIds().OrderByDescending( id => id ).ToList();
+		var list = economy.ThemeParkIncObjectList;
 		var positions = new Dictionary<int, int>( list.Count );
 		for ( var index = 0; index < list.Count; index++ )
 			positions[list[index]] = index;

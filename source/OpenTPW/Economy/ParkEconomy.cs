@@ -73,6 +73,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( Rules.ThemeParkInc && settings.ThemeParkIncStaff is { } staffSettings )
 		{
 			TpiStaff = new ThemeParkIncStaff( staffSettings, TpiStaffNameText );
+			tpiObjectList = new();
 			// [BIN:TPI-EXE:0x630CB0 opening pool] the new-world init (0x6482BA -> 0x5D65B0 -> 0x630CB0) fills the opening pool from the world generator and stamps it with the turn,
 			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
 			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
@@ -2304,6 +2305,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( TpiStaff != null )
 			item.LifeGauge = ThemeParkIncStartingLife( info );
 		objects.Add( item.Id, item );
+		// [BIN:TPI-EXE:0x64F3E0 object list] a new Theme Park Inc object enters the object list at its head
+		tpiObjectList?.Insert( 0, item.Id );
 		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
@@ -2373,6 +2376,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var value = ScrapValue( item );
 		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
+		tpiObjectList?.Remove( instanceId );
 		ReleaseJobsOn( instanceId );
 		Post( LedgerCategory.OtherIncome, value );
 		Raise( ParkEventKind.ObjectSold, value, instanceId, item.InfoId );
@@ -2385,6 +2389,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var item = RequireObject( instanceId );
 		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
+		tpiObjectList?.Remove( instanceId );
 		ReleaseJobsOn( instanceId );
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
 	}
@@ -3246,6 +3251,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 			objects.Add( item.Id, item );
 			HookStateWord( item );
 		}
+		// the objects in the order they were built, newest first, until the save's own list is restored (RestoreThemeParkIncObjectList)
+		if ( tpiObjectList != null )
+			tpiObjectList = objects.Keys.OrderByDescending( id => id ).ToList();
 		loans.Clear();
 		loans.AddRange( restoredLoans );
 		takenOffers.Clear();

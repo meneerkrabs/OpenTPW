@@ -173,6 +173,40 @@ public sealed partial class ParkEconomy
 		item.ClaimTurn = turn;
 	}
 
+	/// <summary>
+	/// Theme Park Inc's object list (world <c>+0x1EAB88</c>, linked through each object's word <c>+0x14</c>), newest first, which the mechanics' ride finder walks
+	/// (<see cref="ThemeParkIncStaffWorld.FindRide"/>): an economy object by its instance id, and a thing of the original's park that OpenTPW does not build by its saved thing id negated, so the
+	/// finder's cursor steps over it as the original's does. Empty without Theme Park Inc's staff.
+	/// </summary>
+	// [BIN:TPI-EXE:0x64F3E0 object list] a new object enters the list at its head (AddObject) and a removed one leaves it (Sell, Remove); a park built from a save takes the saved list (the World
+	// variable FirstObject and the attractions' mNext words, Level.SeedThemeParkIncObjectList), a continuation its own (ParkSaveFile)
+	internal IReadOnlyList<int> ThemeParkIncObjectList => tpiObjectList ?? (IReadOnlyList<int>)Array.Empty<int>();
+	private List<int>? tpiObjectList;
+
+	/// <summary>
+	/// Whether <paramref name="keys"/> is an object list of a park holding <paramref name="objectIds"/>: every object exactly once, and otherwise only distinct negated thing ids
+	/// (1 to 65535).
+	/// </summary>
+	internal static bool IsValidThemeParkIncObjectList( IEnumerable<int> objectIds, IReadOnlyList<int>? keys )
+	{
+		if ( keys == null )
+			return false;
+		var ids = objectIds.ToHashSet();
+		var seen = new HashSet<int>();
+		foreach ( var key in keys )
+			if ( key == 0 || key < -ushort.MaxValue || !seen.Add( key ) || key > 0 && !ids.Contains( key ) )
+				return false;
+		return ids.All( seen.Contains );
+	}
+
+	/// <summary>Replaces the object list (a park built from a save, a continuation); refused when it does not hold every object of the park exactly once.</summary>
+	internal void RestoreThemeParkIncObjectList( IReadOnlyList<int> keys )
+	{
+		if ( tpiObjectList == null || !IsValidThemeParkIncObjectList( objects.Keys, keys ) )
+			throw new InvalidDataException( "The Theme Park Inc object list does not hold every object of the park exactly once." );
+		tpiObjectList = keys.ToList();
+	}
+
 	/// <summary>The life gauge a newly built Theme Park Inc object starts with: its type's <c>Info.WorkingLife</c>, or 100 without one.</summary>
 	// [BIN:TPI-EXE:0x5DB53A object life] the constructor stores 100.0 into +0x54 and +0x60, and +0x58 = the type's +0x8C (Info.WorkingLife) as a float, or 100.0 when it is 0
 	internal static double ThemeParkIncStartingLife( EconomyObjectInfo info ) => info.WorkingLife == 0 ? 100.0 : (float)info.WorkingLife;

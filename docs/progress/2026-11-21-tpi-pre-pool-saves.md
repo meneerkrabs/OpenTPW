@@ -1,0 +1,3 @@
+## Theme Park Inc: refused Science saves from before the staff pool are documented (November 21, 2026)
+
+The Science continuation section of `docs/PARK-SAVES.md` now explains why Science saves made before the staff hiring pool (PR #974) cannot be continued, and what happens to them. The pool draws from the same world generator as the rest of the park, so a park saved before it existed cannot go on exactly. The game shows a message and leaves both the file and the running park untouched. This documents the user's decision of November 21, 2026 to refuse these saves rather than migrate them. The refusal itself ships with #974.

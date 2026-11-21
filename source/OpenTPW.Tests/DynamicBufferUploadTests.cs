@@ -8,7 +8,7 @@ using Veldrid;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// Issue #829: on Direct3D 11 a partial update of a dynamic buffer became a GPU copy into it, which D3D11 does not allow for D3D11_USAGE_DYNAMIC;
+/// Issue #829: on Direct3D 11 a partial update of a dynamic buffer became a GPU copy into it, outside the paths D3D11 documents for D3D11_USAGE_DYNAMIC;
 /// <see cref="DynamicBufferUpload"/> widens such an update to the whole buffer so Veldrid writes it with Map(WRITE_DISCARD).
 /// </summary>
 [TestClass]
@@ -48,10 +48,10 @@ public class DynamicBufferUploadTests
 		while ( root != null && !Directory.Exists( Path.Combine( root.FullName, "source", "OpenTPW" ) ) )
 			root = root.Parent;
 		Assert.IsNotNull( root, "the repository root" );
-		var game = Path.Combine( root.FullName, "source", "OpenTPW" );
-		var helper = Path.Combine( game, "Render", "DynamicBufferUpload.cs" );
-		var direct = new Regex( @"\.UpdateBuffer\s*\(" );
-		var offenders = Directory.EnumerateFiles( game, "*.cs", SearchOption.AllDirectories )
+		var sources = new[] { "OpenTPW", "OpenTPW.Common", "OpenTPW.ModKit" }.Select( name => Path.Combine( root!.FullName, "source", name ) );
+		var helper = Path.Combine( root.FullName, "source", "OpenTPW", "Render", "DynamicBufferUpload.cs" );
+		var direct = new Regex( @"\.UpdateBuffer\s*(<[^>]*>\s*)?\(" );
+		var offenders = sources.SelectMany( directory => Directory.EnumerateFiles( directory, "*.cs", SearchOption.AllDirectories ) )
 			.Where( path => !path.Contains( $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}" ) && !path.Contains( $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}" ) )
 			.Where( path => !string.Equals( path, helper, StringComparison.Ordinal ) )
 			.Where( path => direct.IsMatch( File.ReadAllText( path ) ) )

@@ -94,8 +94,16 @@ public partial class Level
 	// camera path skip; then 0x4668C0 (tp.exe 0x42A560) with seat 1: the first dummy record of the model with type bit 0x1000 and value 1 (RideSeat), its node matrix the camera frame, camera mode 4 (the ride view)
 	private bool EnterThemeParkIncFlightView( OriginalObject thing )
 	{
-		ExitRideView();
+		LeaveThemeParkIncCameras();
 		return EnterWinningView( thing );
+	}
+
+	/// <summary>Leaves any ride or walk camera (<c>0x50B4E0</c>), back to the park camera: a ride view entered from the walk leaves the walk too.</summary>
+	// [BIN:TPI-EXE:0x50B4E0 leave cameras] camera word 0xA1465C bit 2 (the walk): 0x4675A0 (the walk left); else bit 4 (a ride view): 0x4657F0 (the ride left), and with bit 0x400 (entered from the walk) 0x4675A0 after it
+	private void LeaveThemeParkIncCameras()
+	{
+		ExitRideView();
+		ExitFreeWalk();
 	}
 
 	/// <summary>Whether <paramref name="item"/> is the thing of the Theme Park Inc flight that plays now, whose seat the ride view follows though it is no ride.</summary>
@@ -114,10 +122,10 @@ public partial class Level
 			if ( level.ThemeParkIncThing( thing ) is { } item )
 				level.EnterThemeParkIncFlightView( item );
 			else
-				level.ExitRideView();
+				level.LeaveThemeParkIncCameras();
 		}
 
-		public void LeaveView() => level.ExitRideView();
+		public void LeaveView() => level.LeaveThemeParkIncCameras();
 	}
 
 	/// <summary>The live attractions of <paramref name="type"/> in the thing list's order (newest first, <c>0xAA116C</c>).</summary>

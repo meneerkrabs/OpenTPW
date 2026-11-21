@@ -290,7 +290,9 @@ Science continuation save.
 **Camera flights and obstacles.** The cutscene thing flies the controller's cameras as the original does: the ride view on the target's camera seat while its own
 script plays the clip, the clock at the flight's rate, the HUD hidden; its end posts the completion message 0x29. A new game's Science park opens with the zone
 arrival's flyover over the camera path 1798, which Escape or a right click skips. The obstacles and the camera path are things of the world, with their cells, and
-the 1700 gate opens (its `AfterShape`) when mission 0 completes; the lake is the obstacle 1703 and drains to 1704.
+the 1700 gate opens (its `AfterShape`) at the end of the camera flight that the mission window's complete button starts for mission 0; the lake is the obstacle 1703 and
+drains to 1704 at the end of its own flight. The cheats extension's Skip Mission calls the completion tick directly (`0x5F0940`, as the original's debug button does at
+`0x532B39`): it advances the career and opens no obstacle.
 
 **No mission completes in play yet, except through the cheats extension's Skip Mission.** The mission window and its complete button
 (`ParkEconomy.PressThemeParkIncMissionComplete`) are a separate package. An obstacle mission would also need the research (message 0x23) and the staff HQ's

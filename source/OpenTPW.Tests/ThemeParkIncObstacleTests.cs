@@ -69,6 +69,22 @@ public class ThemeParkIncObstacleTests
 		new( 9000, "synthetic", null, ThemeParkIncMapGrid.Parse( after, "after" ), 0, 0, true, 0, false, gateTo, false, false, x, y, 0, 0, delete, replace, false );
 
 	[TestMethod]
+	public void TheSquareWritersTypeZeroClearsAnySquareAndOnlyTheWrittenTypesExceptionsRefuse()
+	{
+		var cells = new ParkCellMap( 16, 16 );
+		cells.SetType( 3, 3, (byte)ParkCellType.Path );
+		cells.SetOwner( 3, 3, 7 );
+		// [BIN:TPI-EXE:0x67E244 type 0] 0x67E240 passes type 0 over any square: a path square becomes type 0 and keeps its owner word
+		ThemeParkIncObstacles.SetSquareType( cells, 3, 3, 0 );
+		Assert.AreEqual( ((byte)0, (ushort)7), (cells.RawTypeAt( 3, 3 ), cells.OwnerAt( 3, 3 )) );
+		cells.SetType( 4, 4, (byte)ParkCellType.Path );
+		// another type over a path is refused by the generic rule, not by the path's exceptions
+		ThemeParkIncObstacles.SetSquareType( cells, 4, 4, 8 );
+		Assert.AreEqual( (byte)ParkCellType.Path, cells.RawTypeAt( 4, 4 ) );
+		Assert.ThrowsException<NotSupportedException>( () => ThemeParkIncObstacles.SetSquareType( cells, 5, 5, 1 ), "a path write needs the rules the obstacle port does not carry" );
+	}
+
+	[TestMethod]
 	public void TheOpeningWritesTheAfterShapeAndKeepsTheMapEdgeBlocked()
 	{
 		var cells = new ParkCellMap( 128, 128 );

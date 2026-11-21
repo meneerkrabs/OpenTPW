@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Numerics;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.UI.Original;
@@ -6,7 +7,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The experimental Theme Park Inc HUD under a camera flight's input window (docs/reverse/TPI-MISSIONS.md §5): the skip by Escape and by the right button's release, the pause key that stays reachable,
-/// the clock the slice runs at, and the refusal of a flight of thing 0. No game data needed.
+/// the clock the slice runs at, the refusal of a flight of thing 0, the 1750 gate's zone switch and the arrival's first day. No game data needed.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -85,5 +86,66 @@ public class ThemeParkIncFlightInputTests
 		Assert.IsFalse( cutscene.OverlayOpen );
 		Assert.IsFalse( hud.FlightActive );
 		Assert.IsTrue( cutscene.Play( 32, 1, ThemeParkIncCutscene.ArrivalMode ), "a refused thing 0 leaves the next flight free to start" );
+	}
+
+	/// <summary>A world of typed things without scripts, which end their flights by a skip.</summary>
+	private sealed class TypedThings( Dictionary<ushort, int> types ) : IThemeParkIncCutsceneWorld
+	{
+		public RideVM? ScriptOf( ushort thing ) => null;
+		public int? TypeOf( ushort thing ) => types.TryGetValue( thing, out var type ) ? type : null;
+		public void EnterView( ushort thing ) { }
+		public void LeaveView() { }
+	}
+
+	[TestMethod]
+	public void The1750GatesEndAsksForTheWaterZoneOnlyFromScience()
+	{
+		// [BIN:TPI-EXE:0x5D0A03 zone switch] the end of a flight of a thing of type 0x6D6 (1750) in the viewed zone 1 (Science) calls 0x6A26B0(2, 0)
+		var world = new TypedThings( new Dictionary<ushort, int> { [40] = 1750, [41] = 1700 } );
+		var zone = 1;
+		var cutscene = new ThemeParkIncCutscene( _ => { } ) { World = world, ViewedZone = () => zone };
+		void Fly( ushort thing )
+		{
+			Assert.IsTrue( cutscene.Play( thing, 2, 0 ) );
+			cutscene.ForceSkip();
+			cutscene.Update();
+			Assert.IsFalse( cutscene.Flying );
+		}
+		Fly( 41 );
+		Assert.AreEqual( 0, cutscene.ZoneSwitchRequests.Count, "another obstacle's end switches no zone" );
+		Fly( 40 );
+		CollectionAssert.AreEqual( new[] { 2 }, cutscene.ZoneSwitchRequests, "the 1750 gate's end in Science asks for zone 2" );
+		zone = 0;
+		Fly( 40 );
+		CollectionAssert.AreEqual( new[] { 2 }, cutscene.ZoneSwitchRequests, "outside Science the gate's end switches nothing" );
+	}
+
+	/// <summary>A mission world that knows the Science camera path's thing only.</summary>
+	private sealed class CameraPathWorld : IThemeParkIncMissionWorld
+	{
+		public ushort CurrentObstacle => 0;
+		public void FindCurrentObstacle( int type ) { }
+		public ushort FindAttraction( int type ) => type == 1798 ? (ushort)32 : (ushort)0;
+		public bool OpensAutomatically( int type ) => false;
+		public void OpenObstacle( ushort thing ) { }
+		public void DestroyThing( ushort thing ) { }
+		public void LoadExtent( int index ) { }
+	}
+
+	[TestMethod]
+	public void TheArrivalPlaysUntilTheParkClockReachesItsFirstWholeDay()
+	{
+		// [BIN:TPI-EXE:0x608C70 days since start] a turn is 15 000 / 4 x 10 000 000 clock units and the day 0xC92A69C000 (864 000 000 000): turn 23 is 0 whole days, turn 24 is 1
+		Assert.AreEqual( 0, (ThemeParkIncChallenges.Now( 23 ) - ThemeParkIncChallenges.Now( 0 )) / ThemeParkIncMissionController.Day );
+		Assert.AreEqual( 1, (ThemeParkIncChallenges.Now( 24 ) - ThemeParkIncChallenges.Now( 0 )) / ThemeParkIncMissionController.Day );
+		foreach ( var (turn, plays) in new[] { (23L, true), (24L, false) } )
+		{
+			var economy = ThemeParkIncHudChallengeTests.Economy();
+			economy.TpiMissionWorld = new CameraPathWorld();
+			economy.Advance( ParkCalendar.TickOfTurn( turn ) - economy.Tick );
+			Assert.AreEqual( turn, economy.Turn );
+			Assert.AreEqual( plays, economy.StartThemeParkIncArrival(), $"turn {turn}" );
+			Assert.AreEqual( plays ? (ushort)32 : (ushort)0, economy.TpiCutscene!.AnimThing );
+		}
 	}
 }

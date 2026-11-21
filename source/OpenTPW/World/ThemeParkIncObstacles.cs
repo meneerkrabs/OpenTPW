@@ -150,14 +150,16 @@ public static class ThemeParkIncObstacles
 
 	/// <summary>
 	/// Theme Park Inc's square type writer as the obstacle code calls it (<c>0x67AD00(type, 0, 0)</c>, whose default case is the setter <c>0x67CB70</c>): the same non-zero type counts one more placement,
-	/// type 0 or a cell of type 0 takes the type, anything else is refused. Only the type word changes: the owner word, the links and the placement counter stay, unlike Theme Park World's setter.
+	/// type 0 (over any square, a path or an object's too) or a cell of type 0 takes the type, anything else is refused. Only the type word changes: the owner word, the links and the placement counter stay, unlike Theme Park World's setter.
 	/// </summary>
 	// [BIN:TPI-EXE:0x67CB70 square type] 0x67E240(type) refuses (types 1, 3, 4 and 0x15 have exceptions there, which no obstacle grid holds); type != 0 and == +8: +0x20++ and return; types 1 and 3 are priced; then
 	// +8 = type, the map change counter and block stamp (0x5D81F0, 0x5D8210); no other square word is written
+	// [BIN:TPI-EXE:0x67E240 square type check] type 0 passes whatever the square holds (0x67E244); another type that is none of 1, 3, 4, 0x15 passes only over its own type or 0 (0x67E274..0x67E27D), whatever the
+	// square holds: the exceptions belong to the written type alone
 	internal static void SetSquareType( ParkCellMap cells, int x, int y, int type )
 	{
-		if ( type is 1 or 3 or 4 or 0x15 || cells.RawTypeAt( x, y ) is 1 or 3 or 4 or 0x15 )
-			throw new NotSupportedException( $"Theme Park Inc's square writer has rules for paths, queues and objects (0x67E240) that the obstacle port does not carry; cell ({x}, {y}) would need them." );
+		if ( type is 1 or 3 or 4 or 0x15 )
+			throw new NotSupportedException( $"Theme Park Inc's square writer has rules for paths, queues and objects (0x67E240) that the obstacle port does not carry; type {type} at cell ({x}, {y}) would need them." );
 		var current = cells.RawTypeAt( x, y );
 		if ( type != 0 && current == type )
 		{

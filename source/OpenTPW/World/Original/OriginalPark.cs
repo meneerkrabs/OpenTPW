@@ -29,6 +29,9 @@ public sealed class OriginalPark
 		Catalog = catalog;
 	}
 
+	/// <summary>Whether the level draws a <c>terrain/dlake.MD2</c> it holds: not a Theme Park Inc level with an <c>obstacles</c> folder (every shipped zone has one), whose lake is the obstacle 1703.</summary>
+	internal static bool DrawsTerrainLake( string levelName ) => !(GameEditions.IsThemeParkInc && FileSystem.DirectoryExists( $"/levels/{levelName}/obstacles" ));
+
 	public string LevelName { get; }
 	public MapFile Map { get; }
 	public ModelFile TerrainModel { get; }
@@ -61,7 +64,7 @@ public sealed class OriginalPark
 		// [BIN:TPI-EXE:0x647BF0 obstacle placement] Theme Park Inc's lake is the mission obstacle 1703 (obstacles/lake.wad, lake.MD2) and after its opening 1704 (obstacles/dlake.wad, dlake.MD2), objects
 		// of the world (docs/reverse/TPI-MISSIONS.md §6); terrain.wad's own dlake.MD2 is another file (119,268 bytes against the obstacle's 139,256), and no code of the executable names a lake
 		// model, so a level with an obstacles folder draws its lake as those objects only
-		var lakePath = GameEditions.IsThemeParkInc && FileSystem.DirectoryExists( $"/levels/{levelName}/obstacles" ) ? null
+		var lakePath = !DrawsTerrainLake( levelName ) ? null
 			: FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
 		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
 		var catalog = new Dictionary<int, OriginalObjectInfo>();

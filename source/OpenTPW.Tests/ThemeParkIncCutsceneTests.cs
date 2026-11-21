@@ -324,17 +324,18 @@ public class ThemeParkIncCutsceneTests
 		Assert.IsFalse( ParkSaveFile.Serialize( new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 ) )
 			.Contains( "TpiCutscene", StringComparison.Ordinal ), "a Theme Park World save writes no cutscene" );
 
-		// a restored flight with a script ends when the script sets variable 1, without a view to leave
-		var flights = new Flights();
+		// a restored flight with a script ends when the script sets variable 1, without a view to leave: the camera path's script runs its clip from the trigger its saved state holds in variable 0
+		var flights = ScienceFlights();
 		var ends = new List<ThemeParkIncCameraEnd>();
 		var loaded = new ThemeParkIncCutscene( ends.Add ) { World = flights };
 		loaded.Restore( new ThemeParkIncCutsceneSnapshot( 32 ) );
+		flights.ScriptOf( 32 )!.Variables[0] = 1;
 		loaded.Update();
-		Assert.IsTrue( loaded.Flying );
-		Assert.AreEqual( 0, flights.Views.Count );
-		loaded.ForceSkip();
-		loaded.Update();
-		Assert.AreEqual( new ThemeParkIncCameraEnd( 32, 0, 0 ), ends.Single() );
+		Assert.AreEqual( (true, false, false, (double?)null), (loaded.Flying, loaded.Skippable, loaded.SkipPending, loaded.ClockRate), "the restored flight waits for its script" );
+		var seconds = FlyUntilEnd( loaded, flights, 30 );
+		Assert.IsFalse( loaded.Flying );
+		Assert.IsTrue( seconds is > 16.0 and < 17.2, $"the script's own end came after its clip ({seconds:F2} s)" );
+		Assert.AreEqual( new ThemeParkIncCameraEnd( 32, 0, 0 ), ends.Single(), "the script cleared variable 0 with variable 1; the restored mode is 0" );
 		Assert.AreEqual( 0, flights.Views.Count, "no input window: the end leaves no view" );
 	}
 }

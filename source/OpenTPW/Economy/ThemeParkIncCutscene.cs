@@ -14,7 +14,7 @@ public interface IThemeParkIncCutsceneWorld
 	/// Leaves any ride or walk camera (<c>0x50B4E0</c>) and puts the camera on the thing's seat 1 (<c>0x5E5B20(0, 1)</c>, the ride view of <c>0x4668C0</c>), with the pointer look of the ride view.
 	/// </summary>
 	void EnterView( ushort thing );
-	/// <summary>Leaves the ride view (<c>0x50B4E0</c>), back to the camera it was entered from.</summary>
+	/// <summary>Leaves any ride or walk camera (<c>0x50B4E0</c>), back to the park camera.</summary>
 	void LeaveView();
 }
 
@@ -248,13 +248,16 @@ public sealed class ThemeParkIncCutscene
 
 	/// <summary>
 	/// Restores the saved thing (<c>0x5D0160</c>): only the flight's thing comes back. Mode, skip, rate, camera and input window are not saved, so a flight restored mid-way waits for its script's variable 1
-	/// and then ends without leaving a view, posting message 0x29 as any end.
+	/// and then ends without leaving a view, posting message 0x29 as any end. The skip flag starts clear, as in the original's first load of a process.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5D0160 cutscene save] versions 0 and 1: the thing base and the u16 0xA9D230; the park loader clears 0xA9D230 before reading it (0x64D63C); +0x24, +0x28 and the speed word are not saved
+	// [BIN:TPI-EXE:0x64D62E cutscene load] the loader allocates the thing (0x638120(0x30)) and sets only 0xA9D230 and +0x28 to 0: the constructor 0x5D0090, which clears 0xA9D254, 0xA9D255, 0xA9D256 and 0xA9D258, does not run,
+	// and only a start (0x5D0400) clears them otherwise. A load in a new process finds them at 0; a load in the same session keeps the last flight's, and 0xA9D254 stays 1 after any end, so there a restored
+	// flight ends at its first update. OpenTPW's load builds a new park with a new cutscene thing, which is the new process's load: the globals are 0
 	internal void Restore( ThemeParkIncCutsceneSnapshot snapshot )
 	{
 		AnimThing = snapshot.AnimThing;
-		// the globals 0xA9D254/0xA9D255 and +0x24 are a new session's zeros
+		// the globals 0xA9D254/0xA9D255 and +0x24 as a new process's load finds them
 		Mode = 0;
 		Skippable = false;
 		SkipPending = false;

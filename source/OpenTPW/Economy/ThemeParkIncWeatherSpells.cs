@@ -134,7 +134,12 @@ public sealed class ThemeParkIncWeatherSpells
 			() => ThemeParkIncStorm.Geometry( MapCells.Width, MapCells.Height, singlePrecision: true, draw ), draw );
 		storm = stormStep.State;
 		if ( stormStep.Strike is { } strike )
+		{
+			// only the renderer takes strikes (none in the browser or headless), so keep no more than the bolts it can draw at once
+			if ( strikes.Count == WeatherVisualState.MaximumBolts )
+				strikes.RemoveAt( 0 );
 			strikes.Add( strike );
+		}
 		if ( stormStep.Thunder is { } thunder )
 		{
 			thunderPosition = thunder;

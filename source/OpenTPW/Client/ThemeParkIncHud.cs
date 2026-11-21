@@ -92,7 +92,10 @@ public sealed partial class ThemeParkIncHud
 		ToolButton( "cancel", () => T( OpenTpwText.TpiCancel ), T( OpenTpwText.TpiCancelHelp ), DisarmAll, 3 );
 		ToolButton( "speed", SpeedText, T( OpenTpwText.TpiSpeedHelp ), CycleSpeed, 4 );
 		ToolButton( "menu", () => T( OpenTpwText.TpiMenu ), T( OpenTpwText.TpiMenuHelp ), OpenPauseMenu, 5 );
-		ToolButton( "staff", () => T( OpenTpwText.TpiStaff ), T( OpenTpwText.TpiStaffHelp ), ToggleStaffPanel, 5 ).Bounds = new UiRect( 2024 - 306, 1270, 286, 110 );
+		// the bottom row is full and the build window covers the space above it, so the staff button stands in the free top-right corner
+		var staffButton = ToolButton( "staff", () => T( OpenTpwText.TpiStaff ), T( OpenTpwText.TpiStaffHelp ), ToggleStaffPanel, 5 );
+		staffButton.Bounds = new UiRect( 2024 - 306, 16, 286, 110 );
+		staffButton.Anchor = UiAnchor.TopRight;
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)

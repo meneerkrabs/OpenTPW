@@ -114,13 +114,195 @@ public sealed class ThemeParkIncStaffWorld
 	/// <summary>The members' voices of the last updates: the handyman's walking (0xA0) and idle (0xA1) voice events at a member's position. Presentation, taken by the audio.</summary>
 	public List<(int Event, float X, float Y)> Voices { get; } = new();
 
-	/// <summary>Whether a staff member may be dropped on the cell (the drop's tests: owned, no fence post or track record, and of type 0, 1, 3 or 9); the drop has no occupancy test.</summary>
-	// [BIN:TPI-EXE:0x4D4EB0 staff drop] the flag 0x40 (0x67ECA0), the fence post (0x67F920 -> 0x685710, kind 0x19), the track record (0x67F890 -> 0x6856D0, kinds 0xB, 0xD, 0x10, 0x12, 0x19; a
-	// record of kind 0xC or 0x11 answers through its parent word +0x10) and the type (== 1 0x67F5B0, 3 or 9 0x67F5D0, == 0 0x67F6D0) in that order, as tp.exe's 0x46CC40; the fence kind is one of
-	// the track kinds, so StaffPlacementRules.IsValidDropCell without an occupancy callback is the same ladder; no occupancy or object list is read anywhere in 0x4D4EB0..0x4D4F94
-	// [BIN:TPI-EXE:0x4D1FC0 drop gate M] before the ladder, a type-4 cell holding a kind-3 thing gives M = its type record's +0x600 + 1 (0..3) or 5 (4, 5), 0 above 5; a nonzero M skips the ladder
-	// and the second gate 0x4D2180 ends the drop silently for M 1..5: a type-4 cell refuses either way (with or without the message), so the refusal set is the ladder's
-	public static bool CanDrop( ParkCellMap cells, int x, int y ) => StaffPlacementRules.IsValidDropCell( cells, x, y, occupied: null );
+	/// <summary>
+	/// The object whose thing a dropped-on cell holds, as the drop's gate 0x4D1FC0 reads it: its <c>Info.WhichUIType</c> (type record <c>+0x600</c>), its thing cell (where its thing is
+	/// filed), its placement angle, its shape and its map offset.
+	/// </summary>
+	public sealed record DropObject( int WhichUIType, (int X, int Y) ThingCell, int Rotation, ObjectShape Shape, int MapOffsetX, int MapOffsetY );
+
+	/// <summary>The outcome of a drop: the cell the member is made on, or none with or without the refusal's message.</summary>
+	public readonly record struct DropResult( (int X, int Y)? Cell, bool Silent );
+
+	/// <summary>
+	/// The drop of a staff member on cell (<paramref name="x"/>, <paramref name="y"/>) (0x4D4EB0): a type-4 cell whose chain holds an object's thing of a known kind is redirected to that
+	/// object's exit cell (a ride), its entrance cell (a shop, a sideshow and kinds 4 and 5) or the path cell beside its footprint nearest the drop (a feature), and ends silently when there is
+	/// none; every other cell takes the ladder (owned, no fence post or track record, of type 0, 1, 3 or 9) and is the member's cell, or is refused with the message. No occupancy is tested.
+	/// </summary>
+	// [BIN:TPI-EXE:0x4D4EB0 staff drop] the gate 0x4D1FC0 first; a nonzero M skips the ladder to 0x4D4F60. Otherwise the flag 0x40 (0x67ECA0), the fence post (0x67F920 -> 0x685710, kind 0x19),
+	// the track record (0x67F890 -> 0x6856D0, kinds 0xB, 0xD, 0x10, 0x12, 0x19; a record of kind 0xC or 0x11 answers through its parent word +0x10) and the type (== 1 0x67F5B0, 3 or 9 0x67F5D0,
+	// == 0 0x67F6D0) in that order, as tp.exe's 0x46CC40 (the fence kind is one of the track kinds, so StaffPlacementRules.IsValidDropCell without an occupancy callback is the same ladder); a
+	// refusal prints "Cannot place staff member here - the cell is of type %d" (0x4D51E8). At 0x4D4F60 the gate runs again and 0x4D2180(M, the cursor's cell word, the thing) gives the word
+	// stored at 0x14(%esp), the cell the role's constructor (the handyman's 0x5D48B0) receives; a word of 0 ends the drop at 0x4D51FB with no message and the tool stays. No occupancy or object
+	// list is read anywhere in 0x4D4EB0..0x4D4F94
+	// [BIN:TPI-EXE:0x4D1FC0 drop gate M] a cell of type 4 (+8) whose chain (+0x28, next +0xA, 0x5D9560) holds a kind-3 thing (byte +2) gives that thing and M from its type record's +0x600
+	// (0x5DF6D0 = the type of the thing's +0x16): 0 -> 1, 1 -> 2, 2 -> 3, 3 -> 4, 4 and 5 -> 5, above 5 (unsigned) -> 0; any other cell M = 0. The type loader 0x43D014 copies +0x70 into +0x600,
+	// and +0x70 is Info.WhichUIType by the Info key order (Id +0x10, Shape +0x1C, MapOffsetX/Y +0x34/+0x38, WhichUIType the 25th key): 0 ride, 1 shop, 2 sideshow, 3 feature
+	// [BIN:TPI-EXE:0x4D2180 drop redirect] M 1 takes the thing's word +0x48, M 2, 3 and 5 its word +0x46, M 4 none, any other M the cursor's own cell word; a word of 0 with a thing falls back
+	// to 0x5E9320 (FallbackDropWord)
+	public static DropResult Drop( ParkCellMap cells, int x, int y, DropObject? thing )
+	{
+		if ( !cells.InBounds( x, y ) )
+			return new( null, false );
+		var m = cells.RawTypeAt( x, y ) == 4 && thing != null ? DropGate( thing.WhichUIType ) : 0;
+		if ( m == 0 )
+			return StaffPlacementRules.IsValidDropCell( cells, x, y, occupied: null ) ? new( (x, y), false ) : new( null, false );
+		var word = m switch
+		{
+			1 => ExitWord( thing! ),
+			2 or 3 or 5 => EntranceWord( thing! ),
+			_ => (ushort)0
+		};
+		if ( word == 0 )
+			word = FallbackDropWord( cells, thing!, CellWord( x, y ) );
+		if ( word == 0 )
+			return new( null, true );
+		var cell = CellOfWord( word );
+		// the words of a placed object lie on the map; a word off it would be the original's out-of-map record, which is not modelled
+		return cells.InBounds( cell.X, cell.Y ) ? new( cell, false ) : new( null, true );
+	}
+
+	/// <summary>The drop gate's M of a kind-3 thing's <c>Info.WhichUIType</c> (0x4D1FC0's jump table 0x4D2084).</summary>
+	internal static int DropGate( int whichUIType ) => (uint)whichUIType switch
+	{
+		0 => 1,
+		1 => 2,
+		2 => 3,
+		3 => 4,
+		4 or 5 => 5,
+		_ => 0
+	};
+
+	/// <summary>A cell's word, <c>(y &lt;&lt; 7) + x + 1</c>, as the executable's 16-bit cell words are.</summary>
+	internal static ushort CellWord( int x, int y ) => (ushort)((y << 7) + x + 1);
+
+	/// <summary>The cell of a cell word.</summary>
+	internal static (int X, int Y) CellOfWord( ushort word ) => ((word - 1) & 0x7F, (word - 1) >> 7);
+
+	/// <summary>A cell offset turned by an angle (0x5D98D0, as tp.exe's 0x4D9CC0), as a word difference.</summary>
+	private static ushort OffsetWord( int x, int y, int angle )
+	{
+		var (dx, dy) = OriginalObject.RotateOffset( x, y, angle );
+		return (ushort)((dy << 7) + dx);
+	}
+
+	/// <summary>The thing's word +0x44: its own cell less its type's map offset turned by the angle plus 180 (0x5DB4B6), the placement anchor.</summary>
+	// [BIN:TPI-EXE:0x5DB4B6 object cell words] the object's builder (0x5DB1B0; its first argument is the cell 0x637100 files the thing under, its third the angle) sets +0x44 = that cell +
+	// the type's +0x604 (the map offset, copied from +0x34 and +0x38 by 0x43CFF0) turned by the angle + 0xB4 (0x5D98D0), +0x46 = +0x44 + the type's +0x5E8 turned by the angle and +0x48 =
+	// +0x44 + the type's +0x5F4 turned by the angle (0x5DB4C1..0x5DB52B)
+	private static ushort AnchorWord( DropObject thing ) =>
+		(ushort)(CellWord( thing.ThingCell.X, thing.ThingCell.Y ) + OffsetWord( thing.MapOffsetX, thing.MapOffsetY, thing.Rotation + 180 ));
+
+	/// <summary>The shape's entrance and exit cells as the type loader records them (type record <c>+0x5E8</c> and <c>+0x5F4</c>): (0, 0) for both without an entrance.</summary>
+	// [BIN:TPI-EXE:0x43CF40 shape access cells] the scan runs the columns (U, a cell of 8 bytes, bounded by the shape's +0) in the outer loop and the rows (V, 0x140 bytes, bounded by +4) in the
+	// inner one and stops at the first type 9 cell: +0x5E8 = its (U, V); then the first type 10 cell in the same order: +0x5F4, the entrance's (U, V) when there is none (0x43D0B6). A shape
+	// without an entrance leaves both (0, 0) (0x43CFC4..0x43CFE2), whatever exit it has
+	private static ((int U, int V) Entrance, (int U, int V) Exit) AccessOffsets( ObjectShape shape )
+	{
+		ObjectShapeCell? First( int type ) => shape.Cells.Where( cell => cell.CellType == type ).OrderBy( cell => cell.U ).ThenBy( cell => cell.V ).Cast<ObjectShapeCell?>().FirstOrDefault();
+		if ( First( ObjectShapeSymbols.TypeEntrance ) is not { } entrance )
+			return ((0, 0), (0, 0));
+		var exit = First( ObjectShapeSymbols.TypeExit ) ?? entrance;
+		return ((entrance.U, entrance.V), (exit.U, exit.V));
+	}
+
+	/// <summary>The thing's entrance word +0x46.</summary>
+	internal static ushort EntranceWord( DropObject thing )
+	{
+		var (u, v) = AccessOffsets( thing.Shape ).Entrance;
+		return (ushort)(AnchorWord( thing ) + OffsetWord( u, v, thing.Rotation ));
+	}
+
+	/// <summary>The thing's exit word +0x48.</summary>
+	internal static ushort ExitWord( DropObject thing )
+	{
+		var (u, v) = AccessOffsets( thing.Shape ).Exit;
+		return (ushort)(AnchorWord( thing ) + OffsetWord( u, v, thing.Rotation ));
+	}
+
+	/// <summary>
+	/// The drop's fallback (0x5E9320): the path cell beside the object's footprint rectangle nearest the cursor's cell, which gets the queue link byte pointing from the footprint cell to it;
+	/// 0 when no such cell is a path.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5E9320 drop fallback] the corner (x0, y0) is +0x44 plus the map offset turned by the angle +0x18: the thing's own cell. The shape's +4 rows (i) outer and +0 columns (j) inner
+	// give the cells (x0 + j, y0 + i) at 0, (x0 + i, y0 - j) at 90, (x0 - j, y0 + i) at 180 and (x0 + i, y0 + j) at 270 (0x5E9438..0x5E947E, exactly so: the 180 and 270 rectangles are not the
+	// turned footprint), (0, 0) at any other angle; each cell's neighbours (y + 1), (x + 1), (y - 1), (x - 1) (the byte tables at 0x54 and 0x5C) as 16-bit words; a neighbour of type 1
+	// (0x67F5B0) at the squared cell distance d from the cursor's word below the best (unsigned, 0xFFFFFFFF to start: the first wins a tie) is kept with its footprint cell. The kept neighbour's
+	// record +0xD (the queue link) gets 0x5E9230(footprint, neighbour), the direction byte of the step (0x65CBA0), and its word is the answer; none answers 0
+	internal static ushort FallbackDropWord( ParkCellMap cells, DropObject thing, ushort cursor )
+	{
+		var corner = (ushort)(AnchorWord( thing ) + OffsetWord( thing.MapOffsetX, thing.MapOffsetY, thing.Rotation ));
+		var (x0, y0) = CellOfWord( corner );
+		var (bx, by) = CellOfWord( cursor );
+		var best = uint.MaxValue;
+		ushort bestNeighbour = 0, bestCell = 0;
+		ReadOnlySpan<(int Dy, int Dx)> steps = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+		for ( var i = 0; i < thing.Shape.Height; i++ )
+		{
+			for ( var j = 0; j < thing.Shape.Width; j++ )
+			{
+				var (px, py) = thing.Rotation switch
+				{
+					0 => (x0 + j, y0 + i),
+					90 => (x0 + i, y0 - j),
+					180 => (x0 - j, y0 + i),
+					270 => (x0 + i, y0 + j),
+					_ => (0, 0)
+				};
+				foreach ( var (dy, dx) in steps )
+				{
+					var neighbour = (ushort)(((py + dy) << 7) + px + dx + 1);
+					var (nx, ny) = CellOfWord( neighbour );
+					// a word of 0 or past the map would read the record array's sentinel or beyond it; no such record is a path here
+					if ( neighbour == 0 || !cells.InBounds( nx, ny ) || cells.RawTypeAt( nx, ny ) != 1 )
+						continue;
+					var ex = (long)Math.Abs( bx - nx );
+					var ey = (long)Math.Abs( by - ny );
+					var distance = (uint)(ex * ex + ey * ey);
+					if ( distance >= best )
+						continue;
+					best = distance;
+					bestNeighbour = neighbour;
+					bestCell = (ushort)((py << 7) + px + 1);
+				}
+			}
+		}
+		if ( bestNeighbour == 0 )
+			return 0;
+		var (fx, fy) = CellOfWord( bestCell );
+		var (tx, ty) = CellOfWord( bestNeighbour );
+		cells.SetQueueLink( tx, ty, StepDirection( fx, fy, tx, ty ) );
+		return bestNeighbour;
+	}
+
+	/// <summary>The direction byte of a step from (<paramref name="fromX"/>, <paramref name="fromY"/>) to (<paramref name="toX"/>, <paramref name="toY"/>) (0x5E9230).</summary>
+	// [BIN:TPI-EXE:0x5E9230 step direction] dx = to - from, dy likewise; by the quadrant 0x80, 0x20, 2 or 8, then 1 or 0x10 when 2|dx| < |dy| and 0x40 or 4 when 2|dy| < |dx|: (0, +1) is 1,
+	// (+1, 0) 0x40, (0, -1) 0x10 and (-1, 0) 4
+	internal static byte StepDirection( int fromX, int fromY, int toX, int toY )
+	{
+		var dx = toX - fromX;
+		var dy = toY - fromY;
+		byte direction;
+		if ( dx >= 0 )
+		{
+			if ( dy >= 0 )
+			{
+				direction = 2 * dx < dy ? (byte)1 : (byte)0x80;
+				return 2 * dy < dx ? (byte)0x40 : direction;
+			}
+			dy = -dy;
+			direction = 2 * dx < dy ? (byte)0x10 : (byte)0x20;
+			return 2 * dy < dx ? (byte)0x40 : direction;
+		}
+		dx = -dx;
+		if ( dy >= 0 )
+		{
+			direction = 2 * dx < dy ? (byte)1 : (byte)2;
+			return 2 * dy < dx ? (byte)4 : direction;
+		}
+		dy = -dy;
+		direction = 2 * dx < dy ? (byte)0x10 : (byte)8;
+		return 2 * dy < dx ? (byte)4 : direction;
+	}
 
 	/// <summary>
 	/// A hired handyman dropped on <paramref name="cell"/>: its thing in the pool, the person's start (the world draw for the base speed, overwritten at once), the member's start

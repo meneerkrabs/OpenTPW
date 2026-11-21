@@ -125,7 +125,8 @@ public sealed partial class ThemeParkIncHud
 			return false;
 		if ( level.DropTpiStaff( cursorX, cursorY ) is { } member )
 			PostMessage( string.Format( T( OpenTpwText.TpiStaffRow ), strings.StaffType( (int)member.Role ), strings.StaffName( (int)member.Role, member.NameIndex ), member.Experience, member.Salary.ToString( "N0" ) ) );
-		else
+		// [BIN:TPI-EXE:0x4D4F8E silent drop] an object's redirect without a cell ends the drop with no message
+		else if ( !level.LastTpiDropSilent )
 		{
 			PostMessage( T( OpenTpwText.TpiStaffCannotPlace ) );
 			GameAudio.PlayUi( GameAudio.ErrorEvent );

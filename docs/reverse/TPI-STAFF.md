@@ -251,9 +251,12 @@ thing loop and before the calendar (`0x649868`), the career rank 1 for the agenc
 A separate Theme Park Inc staff world (`World/Staff/ThemeParkInc/ThemeParkIncStaffWorld.cs`) runs the placed members; Theme Park World's staff code is untouched (the slice
 refuses its staff capability, so its staff world is not built in a Theme Park Inc park).
 
-- **Hire and drop.** The staff panel's candidate rows hire: a Cleaner's row starts the hire (`0x630D10`) and puts him in the hand; a park click drops him when the cell passes
-  the drop's tests (`0x4D4EB0`: flag 0x40, fence post, track record, type 0, 1, 3 or 9, as tp.exe's, with no occupancy test; the slice types its footprint cells, so a cell under an object refuses by its type),
-  right-click or Esc cancels (`0x6319E0(1)`). The drop builds the member: its thing takes the free list's head and enters the thing list at its head (`0x637100` → `0x649270`), the
+- **Hire and drop.** The staff panel's candidate rows hire: a Cleaner's row starts the hire (`0x630D10`) and puts him in the hand; a park click drops him (`0x4D4EB0`). A
+  type-4 cell whose chain holds an object's thing (its own cell) goes through the gate `0x4D1FC0` and the redirect `0x4D2180` by the object's `Info.WhichUIType` (type record `+0x600`,
+  copied from `+0x70`): a ride's drop makes him on its exit cell (`+0x48`), a shop's, a sideshow's and kinds 4 and 5 on its entrance cell (`+0x46`), a feature's on the path cell beside its
+  footprint nearest the click, whose queue link byte then points from the footprint to it (`0x5E9320`, `0x5E9230`); without such a path cell the drop ends silently and he stays in the
+  hand. Every other cell takes the ladder (flag 0x40, fence post, track record, type 0, 1, 3 or 9, as tp.exe's, with no occupancy test; the other footprint cells refuse by their type 4)
+  and refuses with the message "Cannot place staff member here". Right-click or Esc cancels (`0x6319E0(1)`). The drop builds the member: its thing takes the free list's head and enters the thing list at its head (`0x637100` → `0x649270`), the
   person's start draws once for a base speed (`0x608FA4`, overwritten), the member's start sets the meters, the patrol rectangle (0, 0, 0x7F, 0x7F) and the base speed
   `lerp(exp, 0, MaxExperience, 100, 100 + MaxSpeedDifference)` (`0x626390`), and the handyman's start (`0x5D4980`) ends in his search.
 - **Thing update.** The world pass walks the thing list newest first (`0x6495C1`); a member's update is the handyman's pre-update `0x5D5000` (the common part `0x628050`: the speed
@@ -296,9 +299,8 @@ The rest-area finder `0x62BA20` (in the gate, the slack test `0x62D650` on enter
 thing is the flag `+0x42` bit 2 (and `+0x7C` nonzero), which the thing builder sets only from the type record's `+0x1B0` (`UsageInfo.ChillsYouOut`, `0x5DB6E2`), and no object of
 Science, Water or Arabian sets that key (`ThemeParkIncHandymanTests.NoThemeParkIncObjectIsARestArea`). The walk to a rest area is therefore unreachable and not ported (WP4).
 
-Not read or not ported in this package (inert, no stand-in): strikes in the park (WP5: no role's strike flag is set); the wage negotiation (WP6); the meaning of the
-type record's `+0x600` that the drop's M gate reads for a type-4 cell holding a kind-3 thing (`0x4D1FC0`; any M it gives ends the drop through `0x4D2180` or the type test, so a
-type-4 cell refuses either way); the thoughts and voices' presentation (`0x638960`, `0x60BE90`:
+Not read or not ported in this package (inert, no stand-in): strikes in the park (WP5: no role's strike flag is set); the wage negotiation (WP6); the drop fallback's scan
+of a 180 or 270 degree object covers the rectangle `0x5E9320` computes, which is not the turned footprint (ported as the executable has it); the thoughts and voices' presentation (`0x638960`, `0x60BE90`:
 their draws are taken, the voices queued); TPI litter types 9 to 12 (the pending-item drop `0x613D00`, whose gate
 is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0x5D73A0` (no static caller).
 

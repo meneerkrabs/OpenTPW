@@ -232,7 +232,7 @@ science save's objects register uncharged, like an imported park's; its own econ
 loans start fresh in the new session, like the guests.
 
 **Staff (handymen only).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner: activating his row puts him in the hand, a click on a path or grass cell drops
-him (the drop's cell tests are the executable's, `0x4D4EB0`), and right-click or Esc cancels. A placed handyman runs Theme Park Inc's own state machine (states 0, 1, 0x0F and 0x10:
+him (the drop's cell tests and its redirect of a drop on an object to the object's entrance, exit or nearest path cell are the executable's, `0x4D4EB0`), and right-click or Esc cancels. A placed handyman runs Theme Park Inc's own state machine (states 0, 1, 0x0F and 0x10:
 idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, shown as notes), and the
 guests drop litter by Theme Park Inc's litter step (`0x614B71`). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen walk with Theme Park World's
 walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleaning and the litter bins' fill are unported, so the handymen sweep litter only

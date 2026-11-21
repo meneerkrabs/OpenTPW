@@ -393,12 +393,15 @@ unsigned day comparisons and the mission gate; the offer (lowest due slot, stric
 ones); the accept into grace (state 2) or the timed phase (state 3); the grace end without resetting the values; the final-day decision without the failure test; the
 early failure, park-closed loss and early win; the "days left stays negative" arithmetic (the low dword of the signed 64-bit quotient); the event routine
 `0x5C8940`; the win and failure tests of every type except 19 and 28; the cash prize through the bank (as a paid fare is credited, `0x5C0760`), the golden tickets
-to the career (`+0x1074`), the firing line on a slot's first loss and the firing letter once the line is spent. "Now" is the clock base (the FILETIME of 2000-01-01)
+to the career (`+0x1074`), the promotion of `PromoGiven` (`0x74C450`), the current zone record's challenge counts (`+0xF0`, `+0xF4`), the firing line on a slot's first
+loss and the firing letter once the line is spent. "Now" is the clock base (the FILETIME of 2000-01-01)
 plus floor(turn × 15000 / 4) seconds in 100 ns units, and the park age of the day counts is `ThemeParkIncStaff.GameDay` (`0x608C70`), as the staff port reads it.
-The slots, `mNextChallengeDelayTime`, the switch, the firing line and the career's golden tickets are saved with the park (`ParkSaveFile.Data.TpiChallenges`); a
-Theme Park Inc save from before the system continues with the system as a new world builds it (it draws no random number).
+The slots, `mNextChallengeDelayTime` and the switch are saved with the park (`ParkSaveFile.Data.TpiChallenges`); the firing line, the golden tickets, the rank and the
+mission counter are the career's (`ThemeParkIncCareer`, `ParkSaveFile.Data.TpiCareer`, [TPI-CAREER.md](TPI-CAREER.md)). A Theme Park Inc save from before the career
+is refused.
 
-**Mission counter.** A new career's `+0x105C` is 0 (`0x74BDC1`) and OpenTPW has no missions, so it stays 0. Every Science row except 8 and 22 needs
+**Mission counter.** The availability reads the career's `+0x105C`; a new career's is 0 (`0x74BDC1`) and the mission controller is not ported yet, so it stays 0 unless
+the cheats extension's Skip Mission advances it. Every Science row except 8 and 22 needs
 `MissionNeededToActivate` 2, 3 or 4, so those slots are never available: a consequence of the data, not a gate.
 
 **Measured types.** `ThemeParkIncChallenges.IsPorted`: type 2 (trigger `0x5B9380`, any attraction whose `UsageInfo.SpecialIngredient` is 1; value: the sale events of

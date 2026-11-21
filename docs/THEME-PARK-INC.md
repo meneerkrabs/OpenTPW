@@ -82,9 +82,9 @@ are Theme Park Inc's own system, see [Challenges](#theme-park-inc-challenges)), 
 keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage` (re-measured against the executable's
 schema rows October 17, 2026; the October 13 count of 89 of 155 was a text count), but carries the money keys. Also refused: advisor, Theme Park World's 3D lobby front end (`FrontEnd`; the Theme Park Inc Personnel File start screen has its own flag,
 `PersonnelFileFrontEnd`, on for the slice, `[EXT:tpi-front-end-phase1]`), native park saves, sharing
-(export/import/visit), the mission campaign, the Global Master Save and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision).
-`Level` gates its economy on the policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save, GMS
-or COS file, and the start-up command line additionally refuses `--sandbox`,
+(export/import/visit), the mission campaign beyond the career object and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision).
+`Level` gates its economy on the policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save
+or COS file (the player's Global Master Save is written and read since November 21, 2026: [TPI-CAREER.md](reverse/TPI-CAREER.md)), and the start-up command line additionally refuses `--sandbox`,
 `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`, `--park-resume-smoke`,
 `--export-park`, `--import-park` and `--visit-park` on Theme Park Inc data, and `--front-end` together with a world. `--front-end` alone (or a start with no
 world and only file, language, display or sound options) opens the Personnel File; any other option without a world is refused as before.
@@ -254,14 +254,15 @@ Park World's objective system: [TPI-CHALLENGE-SYSTEM.md](reverse/TPI-CHALLENGE-S
 and 17) that load into ten slots; every world update the system switches on once the park is open, makes slots available by their triggers, offers the lowest due
 slot at most every `DaysBetweenOffers` (20) days, and runs an accepted slot through its grace period and timed phase to a win or a loss. A win pays the cash prize
 through the bank and adds the golden tickets to the career; a loss returns the slot to its offer, takes one off the firing line on the slot's first loss and, once the
-line is spent, posts the firing letter. The slots, the firing line and the career's tickets are saved in the Science continuation save. The system draws no random
-number.
+line is spent, posts the firing letter. A won challenge's `PromoGiven` promotes the career (`0x74C450`) and the current zone record counts the win. The firing line,
+the tickets, the rank and the mission counter are the career's (`ThemeParkIncCareer`, [TPI-CAREER.md](reverse/TPI-CAREER.md)); the slots and the career are saved in the
+Science continuation save. The system draws no random number.
 
 What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count comes from the sale bookings), 25 (the least happy staff member; the trigger is an
 entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
-or value reads park state OpenTPW does not model. A new career's mission counter is 0 and OpenTPW has no missions, so the Science rows that need mission 2, 3 or 4
-are never available either: in practice the Science park offers nothing until missions exist. Left off under the same label: the shares (prize and price effect),
-promotions and the level record's challenge counts. The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
+or value reads park state OpenTPW does not model. The availability reads the career's mission counter; the mission controller that completes missions is not ported
+yet, so a career stays at mission 0 unless the cheats extension's Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. Left off
+under the same label: the shares (prize and price effect). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
 their `CHALLENGE_TITLES.str` title with the days left and the progress value, and accepts an offered row while the park is open, as the original's mail does
 (`[EXT:tpi-text-hud]`); the challenge mail's full text, its sounds and the advisor's sender advice are not ported.
 
@@ -471,7 +472,8 @@ executable, which the script's `--check` does not repeat: it reproduces the two 
 - **Zone chooser** (`[EXT:tpi-front-end-zone-chooser]`): the original reaches Polar Zone and Arabian Nights only through its campaign and Overview Map, so the page offers a latched
   button per zone (Land of Invention = science, Polar Zone = water, Arabian Nights = arabian, named by `THEMENAMES.str`) above Enter Game. The label above them is OpenTPW's
   (`OpenTpwText.TpiZoneChooser`).
-- **Load A Game** resumes the [local OpenTPW Science save](PARK-SAVES.md#experimental-science-continuation-on-desktop), independent of the selected zone. It is disabled in the browser or when the slot does not exist. This is not the original save picker.
+- **Load A Game** resumes the [local OpenTPW Science save](PARK-SAVES.md#experimental-science-continuation-on-desktop), independent of the selected zone, with the career of the player file (below). It is disabled in the browser or when the slot does not exist. This is not the original save picker.
+- **The player file** (since November 21, 2026): the career is the Global Master Save `save/users/1New Player/New Player.GMS` (user decision, one player). Enter Game builds the zone's park with its career, saving the Science park and leaving a park write it ([TPI-CAREER.md](reverse/TPI-CAREER.md) §3.4).
 - **Delete Player** and **Coaster Design Kit** remain inactive. **Quit Game** (and Escape) asks for confirmation (cancel has the focus), and the tick closes the window.
 - Desktop: `--front-end`, or a plain start with Theme Park Inc data (`OPENTPW_GAME_PATH`/`--game-path` and no world), opens the page; `--load-original-level` still starts a world
   directly. The setup wizard and the remembered edition still ask for a world and start it directly in this phase, and the browser keeps its up-front theme choice.
@@ -613,7 +615,9 @@ noCD build of `Game.exe`, by static analysis only:
 - `0x0074D110` loads it;
 - the shared body is `0x0074D840` with its sub-serializers.
 
-The file is uncompressed and little-endian. The loader rejects it when one of six markers differs.
+The file is uncompressed and little-endian. Since November 21, 2026 every field is traced or kept as raw bytes, OpenTPW writes the file and reads it with the
+original's lenient rules (a marker that differs is a successful load that stops there); [TPI-CAREER.md](reverse/TPI-CAREER.md) §3 has the full layout, which
+supersedes the table below.
 
 | Part | Content |
 | --- | --- |
@@ -626,16 +630,10 @@ The file is uncompressed and little-endian. The loader rejects it when one of si
 | History | `mFirstHourTime`, then 644 × 20 bytes `mHistory[i]` |
 | Tail | `0x00592720` (a word and 92 bytes), `DTOT`, the shares game (`0x00620E30`: three company slots, `mNumberOwned`, `mPctCompanySharesOwned`, `mCompanyName`, `mCurrentValue`), `RAHS`, `0x00622D70` (count, bytes, a byte and three words), `MAPS`, the ambient sound tags (`0x005BF470`: count × 16 bytes) |
 
-Three German retail saves read to their last byte with every marker in place. They are kept private and
-checked by `ThemeParkIncGlobalSaveTests` when `OPENTPW_TPI_SAVES` names their folder. Sections without a traced
-meaning are read and skipped, and nothing is written back.
-
-The reader bounds park counts and names, map flags and ambient tags before reading
-their sections. It rejects truncated sections, trailing bytes and unpaired UTF-16
-surrogates in decoded sign lines or the company name. Valid surrogate pairs are
-accepted through the field's final code unit; unused units after the first NUL
-remain ignored. These text checks are OpenTPW's malformed-input policy. Synthetic
-tests cover every truncated prefix and the maximum supported table sizes.
+Three German retail saves read completely and write back byte for byte, directly and through the career object. They are kept private and
+checked by `ThemeParkIncGlobalSaveTests` and `ThemeParkIncCareerTests` when `OPENTPW_TPI_SAVES` names their folder. Synthetic tests cover every
+truncated prefix (a failed or a stopped load, as the body decides), the markers, the version and the trailing bytes. The decoded company name refuses
+unpaired UTF-16 surrogates (OpenTPW's malformed-input policy for its decoded view; the raw bytes are kept).
 
 ### `.GMI`: the refresh snapshot
 

@@ -61,10 +61,13 @@ internal sealed partial class GameFlow
 		? level : throw new NotSupportedException( "Only a solo Theme Park Inc Science park can be continued." );
 
 	/// <summary>Retires the park a load replaces without the leave's save: a load replacing the park discards it (docs/reverse/TPI-CAREER.md §3.4).</summary>
-	private void TearDownReplacingThemeParkIncPark()
+	private void TearDownReplacingThemeParkIncPark() => ReplacingThemeParkIncPark( () => TearDown( applyPendingLanguage: false ) );
+
+	/// <summary>Runs <paramref name="tearDown"/> with <see cref="incReplacingPark"/> held, so the leave's save (<c>SaveThemeParkIncOnLeave</c>) does nothing; released even when it throws.</summary>
+	internal void ReplacingThemeParkIncPark( Action tearDown )
 	{
 		incReplacingPark = true;
-		try { TearDown( applyPendingLanguage: false ); }
+		try { tearDown(); }
 		finally { incReplacingPark = false; }
 	}
 

@@ -335,9 +335,16 @@ repair byte of 25 writes `VAR_WORN` = 1 on every update (`0x5E3990`). Two blocks
 
 The level wires the ride events itself (`Level.SetupThemeParkIncRideEvents`): a Theme Park Inc park runs no park gate (`[EXT:tpi-park-open]`), so the Theme Park World wiring in
 `SetupParkGate` does not run there. The economy's script writes reach the ride's script, a maintenance request closes the ride, and a finished repair runs the closing tail, whose
-guard is the reopening guard `ParkGate.MayOpen` over the level's path grid. A cancelled request (`0x5E3400` with argument 0, `MaintenanceCancelled`) is not wired: the only caller in
-OpenTPW is the ride window's call button (`ParkHud.Maintenance`), whose target test refuses any edition but Theme Park World, and the Theme Park Inc slice runs its own HUD, which has
-no call button, so no cancel can reach a Theme Park Inc park.
+guard is the reopening guard `ParkGate.MayOpen` over the level's path grid.
+
+**The request's cancel `0x5E3400(0)`** (`0x5E3509`): "has cancelled its request for maintenance"; nothing when `+0x78` is 0; else `+0x78` = 0 and, unless the object is a bin or a plant
+(`+0x42` bits 0x40 and 0x1000), the open `0x5E1DC0`, whose guard only logs "Opening non-openable ride": the open word, `VAR_RIDECLOSED` = 0 and `SetState(0)` (`0x5E5160` stores the
+state at once, so a broken ride's state goes to 0 until its script's `VAR_BROKEN` turns it into state 1 again); then a claim (`+0x72`) ends: the claimant's common setter `0x628180(0)`,
+which keeps his target `+0x5D8`, and `+0x72` = `+0x74` = 0. Its callers are the native ride panel's cancel button `0x5563F0` (it pushes 0; the call `0x5562E0` beside it pushes 1, both
+on the panel's object `0xA60384`, through the thunk `0x4089E0`) and the toggle `0x50FCD0` (`sete` on its flag). The text HUD replaces that panel and has no call or cancel control
+(`[EXT:tpi-text-hud]`), but the shared `RequestMaintenanceCommand` (the co-op guest's call button, `ParkHud.GuestAttractions`) has no edition gate, so a park with Theme Park Inc's staff
+runs it as Theme Park Inc's request and cancel (`ParkEconomy.RequestMaintenance` → `CancelThemeParkIncMaintenance`), and the level opens the ride on `MaintenanceCancelled` whatever
+its guard, as `0x5E1DC0` does.
 
 **Wear tick `0x5E25B0`.** `Upgrades[level].WearRate` 0 returns; the script's `VAR_RUNNING` (variable 9) above 0 or `Info.RunsContinuously`; the turn & 0x3F zero. `VAR_ONRIDE`
 (variable 5) 0 gives the wear 0, else `0x5E21A0`: riders clamped to `0..MaxCapacity`; `s = 0.9 × speed / MaxSpeed` (the script's speed `+0xC0`, `0x6B0C30`), then `s + 0.1`, or
@@ -368,9 +375,12 @@ message 10 subscribed, the search). The update is the common pre-update (`0x5DA3
   that record and any other thing as its negated thing id. An object with a record enters at the head when the economy registers it and leaves with its sale; an obstacle's
   `ReplaceWithID` replacement enters at the head as its thing id (`ThemeParkIncObstacleThings.Place`), and a thing without a record that is removed (an opened obstacle, the mission
   controller's destroy) leaves through the level's removal handler. An id entered again drops its earlier entry first, and an object with a record that takes a freed thing id drops
-  that id's entry, so the list never holds a thing twice. The Science continuation saves the list and the cursor. The cursor may name a thing that is gone, as the HQ word does: the
-  finder reads an id it does not find as "start at the head", so a save accepts any cursor in the thing range (a negated id down to `-ThingPool.Capacity`), as it accepts a positive
-  cursor on a sold object. The seven things were saved in state 3 with a full state of repair and no request, the object update skips state 3, and their `.sam` files declare no
+  that id's entry, so the list never holds a thing twice. The Science continuation saves the list and the cursor. The HQ word is a thing id, so the cursor follows one: a cursor on a
+  sold object keeps the object's thing id (negated), and when a new thing takes a freed id (the free list hands it back last in, first out) the cursor names the newcomer, a ride by its
+  record (`ParkEconomy.LinkThemeParkIncThing`) or another thing by the same negated id, so the search starts at its successor as the original's does. The cursor may name a thing that is
+  gone: the finder reads an id it does not find as "start at the head", so a save accepts any cursor in the thing range (a negated id down to `-ThingPool.Capacity`). A park built from
+  the save holds the slot of a list thing OpenTPW does not rebuild (the tool entry 1710's thing 26), as the original keeps that thing alive; a resumed list must name exactly the placed
+  objects without an economy binding and, besides them, only such held attraction slots (`ParkResumeSaveFile.ThemeParkIncObjectListProblem`). The seven things were saved in state 3 with a full state of repair and no request, the object update skips state 3, and their `.sam` files declare no
   `RideBreakDown` keys, so they are never candidates. The prebuilt's HQ cursor word is 0.
 - Claimant `0x5E37F0`: a claim older than 100 turns lapses unless the claimant still targets the object (`0x62B280`: a mechanic's `+0x5D8`), and the claimant then goes idle.
 - To the ride `0x5DA650`: the claimant must be him ("UNUSUAL INCIDENT"); stuck clears `+0x5D8` and searches; arrived at a ride broken down, upgrading or called for sets 22,

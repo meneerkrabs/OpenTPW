@@ -31,7 +31,7 @@ public sealed partial class ThemeParkIncHud
 		CloseMissionWindow();
 		ThemeParkIncTagTubeWindow? window = null;
 		var addressee = strings.Entry( ThemeParkIncText.NewPlayer );
-		window = new ThemeParkIncTagTubeWindow( strings, economy, tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee ),
+		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee ),
 			() => RemoveTagTube( window ), RunLetterGoto );
 		TagTubeWindow = window;
 		Stack.Push( window.Build() );
@@ -67,6 +67,15 @@ public sealed partial class ThemeParkIncHud
 		button.Help = null;
 		button.Bounds = new UiRect( 2024 - 190, 376, 190, 110 );
 		button.Anchor = UiAnchor.TopRight;
+	}
+
+	private sealed class TagTubeWorld( ParkEconomy economy ) : IThemeParkIncTagTubeWorld
+	{
+		public ThemeParkIncTagTube Tube => economy.TpiTagTube!;
+
+		public void Delete( ThemeParkIncTagTubeRow row ) => economy.DeleteThemeParkIncTubeRow( row );
+
+		public bool Read( ThemeParkIncTagTubeRow row ) => economy.ReadThemeParkIncTubeRow( row );
 	}
 
 	private string TagTubeButtonText()

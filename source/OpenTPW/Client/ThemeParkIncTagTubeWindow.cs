@@ -3,6 +3,17 @@ using OpenTPW.UI.Original;
 
 namespace OpenTPW;
 
+/// <summary>What the tag tube window reads and changes of the park: the tube, and its delete and read.</summary>
+internal interface IThemeParkIncTagTubeWorld
+{
+	/// <summary>The park's tag tube.</summary>
+	ThemeParkIncTagTube Tube { get; }
+	/// <summary>The delete <c>0x636A40</c>.</summary>
+	void Delete( ThemeParkIncTagTubeRow row );
+	/// <summary>The row read of <c>0x553480</c>; false when the row was read.</summary>
+	bool Read( ThemeParkIncTagTubeRow row );
+}
+
 /// <summary>What survives the tag tube window between openings: the window object at <c>0xA60188</c> is static.</summary>
 internal sealed class ThemeParkIncTagTubeSession
 {
@@ -38,7 +49,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 	public const int FlashPeriod = 300;
 
 	private readonly UiStringTable strings;
-	private readonly ParkEconomy economy;
+	private readonly IThemeParkIncTagTubeWorld world;
 	private readonly ThemeParkIncTagTube tube;
 	private readonly ThemeParkIncTagTubeSession session;
 	private readonly Func<ThemeParkIncTagTubeRow, ThemeParkIncLetterWindow.Letter> compose;
@@ -56,12 +67,12 @@ internal sealed class ThemeParkIncTagTubeWindow
 	private bool refreshing, deleting, deletePending;
 	private ThemeParkIncTagTubeRow? pendingDelete;
 
-	public ThemeParkIncTagTubeWindow( UiStringTable strings, ParkEconomy economy, ThemeParkIncTagTubeSession session, Func<ThemeParkIncTagTubeRow, ThemeParkIncLetterWindow.Letter> compose,
+	public ThemeParkIncTagTubeWindow( UiStringTable strings, IThemeParkIncTagTubeWorld world, ThemeParkIncTagTubeSession session, Func<ThemeParkIncTagTubeRow, ThemeParkIncLetterWindow.Letter> compose,
 		Action close, Action<int, int> goTo )
 	{
 		this.strings = strings;
-		this.economy = economy;
-		tube = economy.TpiTagTube ?? throw new InvalidOperationException( "The tag tube window needs a park with a tag tube." );
+		this.world = world;
+		tube = world.Tube;
 		this.session = session;
 		this.compose = compose;
 		this.close = close;
@@ -165,9 +176,9 @@ internal sealed class ThemeParkIncTagTubeWindow
 		}
 		// the list's scroll parts: the arrows scroll one row, the ball shows and sets the first row
 		var track = listNode.Children.First( child => child.Type == 3 );
-		var ball = listNode.Children.First( child => child.Model == "b_vscroller" );
+		var ball = track.Children.First( child => child.Model == "b_vscroller" );
 		screen.Add( new UiListScrollBar( list, track.Rect, ball.Rect, null, "b_vscroller" ) { Id = "listScroll", Bounds = track.Rect, Anchor = UiAnchor.Center } );
-		foreach ( var part in listNode.Children.Where( child => child.Model is "b_vscrollup" or "b_vscrolldn" ) )
+		foreach ( var part in track.Children.Where( child => child.Model is "b_vscrollup" or "b_vscrolldn" ) )
 		{
 			var up = part.Model == "b_vscrollup";
 			screen.Add( new UiButton { Id = up ? "listUp" : "listDown", Model = part.Model, Clicked = () => list.Scroll( up ? -1 : 1 ), Bounds = part.Rect, Anchor = UiAnchor.Center } );
@@ -238,7 +249,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 				deleting = true;
 				ReadDeadline = 0;
 				Selected = null;
-				economy.DeleteThemeParkIncTubeRow( row );
+				world.Delete( row );
 				deleting = false;
 			}
 			deletePending = false;
@@ -339,6 +350,9 @@ internal sealed class ThemeParkIncTagTubeWindow
 			Show( selection.Selected );
 	}
 
+	/// <summary>Selects the row at <paramref name="index"/> in the list, as a click on it does (the list announces it with message 0x401).</summary>
+	internal void SelectRow( int index ) => list?.Select( index );
+
 	/// <summary>
 	/// A selection (<c>0x553550</c>, list message 0x401): the row at <paramref name="index"/> becomes the selected row; a different row than the shown one fills the details, shows its picture,
 	/// reads the previously shown row and becomes the shown row; the read deadline starts.
@@ -403,7 +417,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 		ReadDeadline = 0;
 		if ( refreshing || deleting || row == null )
 			return;
-		economy.ReadThemeParkIncTubeRow( row );
+		world.Read( row );
 	}
 
 	/// <summary>

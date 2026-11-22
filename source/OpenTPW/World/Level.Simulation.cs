@@ -427,13 +427,17 @@ public partial class Level
 		world?.UpdateStaffMember( economy, member, turn );
 	}
 
-	/// <summary>One object's thing update of the sweep: the economy's wear and breakdown step (0x004E0B90), then the ride update's admission (0x004E0E00).</summary>
+	/// <summary>
+	/// One object's thing update of the sweep: the economy's wear and breakdown step (0x004E0B90), a Theme Park Inc plant's state-3 update (0x5E4CB0), then the ride update's admission (0x004E0E00).
+	/// </summary>
+	// [BIN:TPI-EXE:0x63760B attraction update] kind 3: 0x5E4790, then the state dispatch 0x5E4CB0, whose state 3 is the plant's block (ParkEconomy.UpdateThemeParkIncPlant) and state 0 the ride update
 	private void SweepAttraction( ParkEconomy economy, OriginalObject item, long turn, HashSet<int> visitedStates )
 	{
 		if ( ObjectInstanceOf( item ) is { } instance && economy.TryGetObject( instance, out var state ) )
 		{
 			visitedStates.Add( instance );
 			economy.UpdateRide( state, turn );
+			economy.UpdateThemeParkIncPlant( state, item.ThingCell );
 		}
 		item.Visitors.UpdateAdmission();
 	}

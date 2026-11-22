@@ -1,0 +1,238 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// Theme Park Inc's plants (docs/reverse/TPI-STAFF.md, "Gardener and plants"): the shared script data\levels\vegetation.rse (0x5DE61A), the state-3 update 0x5E4CB0 (the wither rate, the gauge and the
+/// condition's RegionFX row), the constructor's and the destructor's rows, the dry and on-fire tests and the watering's end (0x5E31B0). The synthetic tests run without data; the retail ones need
+/// OPENTPW_TPI_PATH.
+/// </summary>
+[TestClass]
+[DoNotParallelize]
+public class ThemeParkIncPlantTests
+{
+	private BaseFileSystem? previous;
+	private GameEdition previousEdition;
+
+	[TestInitialize]
+	public void Initialize()
+	{
+		previous = FileSystem;
+		previousEdition = GameEditions.Current;
+		Log ??= new();
+	}
+
+	[TestCleanup]
+	public void Cleanup()
+	{
+		FileSystem = previous!;
+		GameEditions.Select( previousEdition );
+	}
+
+	private const string Standard =
+		"BankAccountInfo.InitialCash\t50000\nBankAccountInfo.InitialAdmissionFee\t25\n"
+		+ "Costs.QueueCell 25\nCosts.PathCell 10\nCosts.KartTrackCell 40\nCosts.WaterTrackCell 50\nCosts.MapCell 75\n"
+		+ "PeepInfo.ExcitementToCostDivisor 6\nPeepInfo.MinimumEntryFee 20\nPeepInfo.CheapPriceMultiplier 0.75\nPeepInfo.AveragePriceMultiplier 1.25\nPeepInfo.ExpensivePriceMultiplier 2.0\n"
+		+ "RegionFX[10].Radius 1\nRegionFX[10].Happiness 3\nRegionFX[10].Illness -5\n"
+		+ "RegionFX[11].Radius 1\nRegionFX[11].Happiness 2\nRegionFX[11].Illness -2\n"
+		+ "RegionFX[12].Radius 1\n"
+		+ "RegionFX[13].Radius 1\nRegionFX[13].Happiness -1\nRegionFX[13].Illness 1\n"
+		+ "Vegetation.RainWither 2.0\nVegetation.HeatwaveWither 0.5\nVegetation.SnowWither 1.0\nVegetation.StormWither 1.5\n";
+
+	private static readonly EconomyObjectInfo Plant = new( 1, "Bush", ParkObjectKind.Feature, ResearchCategory.Feature, 0,
+		new List<UpgradeLevelInfo> { new( 0, 100, 10, 0, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "/x", IsChoosable: false, RequiresWatering: true );
+
+	/// <summary>A synthetic Theme Park Inc economy with one plant whose script variables are <paramref name="variables"/> (vegetation.rse's 15).</summary>
+	private static (ParkEconomy Economy, ParkObjectState Plant) Economy( int[] variables )
+	{
+		var economy = new ParkEconomy( BalanceSettings.ForThemeParkInc( new SamSettings( new[] { SamDocument.Parse( Standard, "Standard.sam" ) } ), "science" ),
+			new EconomyObjectCatalog( new[] { Plant } ), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1, out var plant ) );
+		economy.ThemeParkIncScriptOf = instance => instance == plant!.Id ? variables : null;
+		return (economy, plant!);
+	}
+
+	private static int[] Variables( int condition = 0, int old = 0, int scale = 1000, int dead = 0, int onFire = 0 )
+	{
+		var variables = new int[15];
+		variables[ParkEconomy.PlantCondition] = condition;
+		variables[ParkEconomy.PlantOldState] = old;
+		variables[ParkEconomy.PlantScale] = scale;
+		variables[ParkEconomy.PlantDead] = dead;
+		variables[ParkEconomy.PlantOnFire] = onFire;
+		return variables;
+	}
+
+	[TestMethod]
+	public void TheRegionTableHasFifteenRowsInThemeParkIncAndEightInThemeParkWorld()
+	{
+		// [BIN:TPI-EXE:0x996684 Standard schema] "3,RegionFX,0,0,15"
+		var (economy, _) = Economy( Variables() );
+		Assert.AreEqual( RegionEffect.ThemeParkIncCount, economy.Litter.Environment.Effects.Length );
+		Assert.AreEqual( new RegionEffect( 1, 3, -5, 0, 0, 0 ), economy.Litter.Environment.Effects[10] );
+		var tpw = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
+		Assert.AreEqual( RegionEffect.Count, tpw.Litter.Environment.Effects.Length );
+	}
+
+	[TestMethod]
+	public void ANewPlantPutsRowTenOnItsCellAndItsDestructionTakesOffTheRowOfItsLiveCondition()
+	{
+		// [BIN:TPI-EXE:0x5DB63F plant row] row 10 at construction; [BIN:TPI-EXE:0x5DE9D3 plant row off] the row of VAR_CONDITION at destruction
+		var variables = Variables();
+		var (economy, plant) = Economy( variables );
+		economy.PlaceObjectEffects( plant.Id, (20, 20) );
+		Assert.AreEqual( ((short)3, (short)-5), (economy.Litter.Environment.At( 20, 20 ).Happiness, economy.Litter.Environment.At( 20, 20 ).Illness) );
+		Assert.AreEqual( ((short)1, (short)-2), (economy.Litter.Environment.At( 21, 20 ).Happiness, economy.Litter.Environment.At( 21, 20 ).Illness), "the coefficient over the distance + 1, toward zero" );
+		// the script moved to condition 1 since the plant's last update: the destructor takes off row 11, so row 10 minus row 11 stays behind, as in the original
+		variables[ParkEconomy.PlantCondition] = 1;
+		economy.Remove( plant.Id );
+		Assert.AreEqual( ((short)(3 - 2), (short)(-5 + 2)), (economy.Litter.Environment.At( 20, 20 ).Happiness, economy.Litter.Environment.At( 20, 20 ).Illness) );
+	}
+
+	[TestMethod]
+	public void TheUpdateMovesTheRowWhenTheConditionChangesAndWritesTheGaugeEveryTime()
+	{
+		// [BIN:TPI-EXE:0x5E4CB0 object state dispatch] c != o: VAR_OLDSTATE = c, row 10 + o off, row 10 + c on; +0x54 = (3 - c) × 33 on every update
+		var variables = Variables();
+		var (economy, plant) = Economy( variables );
+		economy.PlaceObjectEffects( plant.Id, (20, 20) );
+		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		Assert.AreEqual( 99.0, plant.Repair );
+		Assert.AreEqual( (short)3, economy.Litter.Environment.At( 20, 20 ).Happiness, "condition unchanged: row 10 stays" );
+		variables[ParkEconomy.PlantCondition] = 2;
+		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		Assert.AreEqual( (2, 33.0), (variables[ParkEconomy.PlantOldState], plant.Repair) );
+		Assert.AreEqual( ((short)0, (short)0), (economy.Litter.Environment.At( 20, 20 ).Happiness, economy.Litter.Environment.At( 20, 20 ).Illness), "row 12 is all zero" );
+		variables[ParkEconomy.PlantCondition] = 3;
+		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		Assert.AreEqual( ((short)-1, (short)1, 0.0), (economy.Litter.Environment.At( 20, 20 ).Happiness, economy.Litter.Environment.At( 20, 20 ).Illness, plant.Repair) );
+		// a condition outside 0..3 moves no row in (the tables 0x5E5044 and 0x5E5054 end at 3) but is still noted
+		variables[ParkEconomy.PlantCondition] = 7;
+		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		Assert.AreEqual( (7, (short)0), (variables[ParkEconomy.PlantOldState], economy.Litter.Environment.At( 20, 20 ).Happiness) );
+		Assert.AreEqual( (float)(-4 * 33), (float)plant.Repair );
+	}
+
+	[TestMethod]
+	public void TheScaleTakesTheWeathersWitherOnlyWhenItsThousandthsDiffer()
+	{
+		// [BIN:TPI-EXE:0x5E4D82 wither scale] s = VAR_SCALE / 1000 toward zero; a wither unequal to s writes ftol(wither × 1000)
+		var withers = new ThemeParkIncWithers( 0.5f, 2.0f, 1.5f, 1.0f );
+		Assert.AreEqual( 1.0f, ParkEconomy.PlantWither( 0, withers ), "no spell" );
+		CollectionAssert.AreEqual( new[] { 0.5f, 2.0f, 1.5f, 1.0f, 1.0f }, Enumerable.Range( 1, 5 ).Select( state => ParkEconomy.PlantWither( state, withers ) ).ToArray() );
+		var variables = Variables( scale: 1999 );
+		var (economy, plant) = Economy( variables );
+		Assert.AreEqual( withers, economy.Settings.ThemeParkIncWithers, "Standard.sam's Vegetation.*Wither, heatwave first as at 0xA029A4" );
+		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		Assert.AreEqual( 1999, variables[ParkEconomy.PlantScale], "1999 / 1000 is 1: equal to the clear sky's 1.0, so no write" );
+		variables[ParkEconomy.PlantScale] = -999;
+		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		Assert.AreEqual( 1000, variables[ParkEconomy.PlantScale], "-999 / 1000 is 0 toward zero: written" );
+	}
+
+	[TestMethod]
+	public void TheDryAndOnFireTestsReadTheConditionTheDeathAndTheFire()
+	{
+		// [BIN:TPI-EXE:0x5E3990 dry test] condition above 0 and (alive or burning); [BIN:TPI-EXE:0x5E3B20 on fire] VAR_ONFIRE
+		var variables = Variables();
+		var (economy, plant) = Economy( variables );
+		Assert.IsFalse( economy.ThemeParkIncPlantDry( plant ) );
+		variables[ParkEconomy.PlantCondition] = 1;
+		Assert.IsTrue( economy.ThemeParkIncPlantDry( plant ) );
+		variables[ParkEconomy.PlantDead] = 1;
+		Assert.IsFalse( economy.ThemeParkIncPlantDry( plant ), "a dead plant is not watered" );
+		variables[ParkEconomy.PlantOnFire] = 1;
+		Assert.IsTrue( economy.ThemeParkIncPlantDry( plant ), "unless it burns" );
+		Assert.AreEqual( 1, economy.ThemeParkIncPlantOnFire( plant ) );
+		variables[ParkEconomy.PlantCondition] = -1;
+		Assert.IsFalse( economy.ThemeParkIncPlantDry( plant ), "a condition at most 0 (signed) is never dry" );
+		economy.ThemeParkIncScriptOf = null;
+		Assert.IsFalse( economy.ThemeParkIncPlantDry( plant ), "no script reads 0" );
+	}
+
+	[TestMethod]
+	public void TheWateringsEndWritesTheWaterFillsTheGaugeAndClearsTheClaimAndTheRequest()
+	{
+		// [BIN:TPI-EXE:0x5E31B0 maintenance finish] VAR_WATER = 1, +0x54 = 100, +0x72 = 0, +0x78 = 0
+		var variables = Variables( condition: 2 );
+		var (economy, plant) = Economy( variables );
+		plant.MechanicId = 9;
+		plant.ClaimTurn = 40;
+		plant.MaintenanceRequested = true;
+		plant.Repair = 33;
+		economy.FinishThemeParkIncWatering( plant );
+		Assert.AreEqual( (1, 100.0, 0, false), (variables[ParkEconomy.PlantWater], plant.Repair, plant.MechanicId, plant.MaintenanceRequested) );
+	}
+
+	[TestMethod]
+	public void ThePlantsScriptWatersAndWithersThroughItsConditions()
+	{
+		// data\levels\vegetation.rse: VAR_WATER sets condition 2 back to 0 through 1 and condition 1 to 0; condition 3 (dead) stays
+		var corpus = Retail();
+		var script = new RideScriptFile( new MemoryStream( corpus ) );
+		CollectionAssert.AreEqual( new[] { "VAR_CONDITION", "VAR_WATER", "VAR_TIMEOUT", "VAR_TIMER", "VAR_DEAD", "VAR_TEST", "VAR_RIDECLOSED", "VAR_BROKEN", "VAR_WORN", "VAR_RUNNING",
+			"VAR_OLDSTATE", "VAR_SETFIRE", "VAR_ONFIRE", "VAR_PRANKED", "VAR_SCALE" }, script.VariableNames.ToArray(), "the indexes the engine reads and writes" );
+	}
+
+	[TestMethod]
+	public void InThemeParkIncAPlantRunsTheSharedVegetationScriptWithItsConstructionWords()
+	{
+		// [BIN:TPI-EXE:0x5DE61A plant script] data\levels\vegetation.rse for a thing with flag 0x1000; [BIN:TPI-EXE:0x5DB7D5 construction variables] 2, 5 and 14
+		Retail();
+		var catalog = ObjectCatalog.Load( "science" );
+		var plants = catalog.Entries.Where( entry => entry.Settings.GetBool( "UsageInfo.RequiresWatering" ) ).ToList();
+		Assert.IsTrue( plants.Count >= 5, $"{plants.Count} plants" );
+		GameEditions.Select( GameEdition.ThemeParkInc );
+		var runtime = new OriginalObjectRuntime( plants[0] );
+		Assert.IsNotNull( runtime.Script, "the plant runs data\\levels\\vegetation.rse" );
+		StringAssert.EndsWith( runtime.Script!.Options.SourceName!.ToLowerInvariant(), "vegetation.rse" );
+		var standard = ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, "science" )!;
+		ThemeParkIncStandard.ConstructionWords( standard ).Apply( plants[0].Settings, runtime.Script );
+		Assert.AreEqual( (400, 0, 1000), (runtime.Script.Variables[2], runtime.Script.Variables[5], runtime.Script.Variables[14]), "VAR_TIMEOUT, VAR_TEST and VAR_SCALE now land on a script" );
+		// Theme Park World's loader has no watering flag: a plant there keeps its archive's script (none)
+		GameEditions.Select( GameEdition.ThemeParkWorld );
+		Assert.AreEqual( plants[0].ScriptPath, OriginalObjectRuntime.ScriptOf( plants[0] ).Path );
+	}
+
+	[TestMethod]
+	public void EveryThemeParkIncPlantIsAFeatureNobodyChoosesThatIsNoReliefObjectAndHoldsNoLitter()
+	{
+		// the dry test's and the finish's first two branches (relief +0x42 bit 1, a bin bit 0x40) are not reached for a plant: no shipped plant has those flags, and none is choosable (state 3)
+		Retail();
+		foreach ( var world in new[] { "arabian", "science", "water" } )
+		{
+			var plants = ObjectCatalog.Load( world ).Entries.Where( entry => entry.Settings.GetBool( "UsageInfo.RequiresWatering" ) ).ToList();
+			Assert.IsTrue( plants.Count >= 5, $"{world}: {plants.Count} plants" );
+			foreach ( var plant in plants )
+			{
+				Assert.IsFalse( plant.Settings.GetBool( "UsageInfo.ProvidesRelief" ), $"{world}: {plant}" );
+				Assert.IsFalse( plant.Settings.GetBool( "UsageInfo.HoldsLitter" ), $"{world}: {plant}" );
+				Assert.IsFalse( plant.Settings.GetBool( "Info.IsChoosable" ), $"{world}: {plant}" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void TheShippedWithersAreTheVegetationKeys()
+	{
+		Retail();
+		var settings = BalanceSettings.LoadThemeParkInc( "science" );
+		// data\levels\Standard.sam: Vegetation.RainWither 2.0, HeatwaveWither 0.5, SnowWither 1.0, StormWither 1.5
+		Assert.AreEqual( new ThemeParkIncWithers( 0.5f, 2.0f, 1.5f, 1.0f ), settings.ThemeParkIncWithers );
+		Assert.AreEqual( RegionEffect.ThemeParkIncCount, RegionEffect.Load( settings.Standard, RegionEffect.ThemeParkIncCount ).Length );
+		var table = RegionEffect.Load( settings.Standard, RegionEffect.ThemeParkIncCount );
+		Assert.AreEqual( (new RegionEffect( 3, 3, -5, 0, 0, 0 ), new RegionEffect( 3, -1, 1, 0, 0, 0 )), (table[10], table[13]), "the healthy and the dead plant's rows" );
+	}
+
+	/// <summary>Points the file system at the Theme Park Inc data (Inconclusive without OPENTPW_TPI_PATH) and returns vegetation.rse's bytes.</summary>
+	private static byte[] Retail()
+	{
+		ThemeParkIncObstacleTests.UseTpiData();
+		var path = FileSystem.GetFiles( "/levels" ).First( file => string.Equals( Path.GetFileName( file ), OriginalObjectRuntime.VegetationScript, StringComparison.OrdinalIgnoreCase ) );
+		return FileSystem.ReadAllBytes( path );
+	}
+}

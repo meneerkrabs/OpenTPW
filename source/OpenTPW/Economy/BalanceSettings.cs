@@ -194,6 +194,10 @@ public sealed class BalanceSettings
 		Weather = ThemeParkIncWeatherSettings.Read( standard );
 		ThemeParkIncStaff = ThemeParkIncStaffSettings.Read( standard );
 		ThemeParkIncChallenges = ThemeParkIncChallengeSettings.Read( standard, challenges );
+		// [BIN:TPI-EXE:0x5E4D53 wither words] the plant update reads Vegetation.HeatwaveWither, RainWither, StormWither and SnowWither as floats at 0xA029A4..0xA029B0 (+0xF44..+0xF50 of the Standard
+		// object, after TimeBetweenWaterings +0xF3C and TestAnimation +0xF40 in the schema's order); a key the files lack keeps the reset object's 0
+		float Wither( string key ) => standard.Contains( key ) ? (float)standard.GetDouble( key ) : 0f;
+		ThemeParkIncWithers = new ThemeParkIncWithers( Wither( "Vegetation.HeatwaveWither" ), Wither( "Vegetation.RainWither" ), Wither( "Vegetation.StormWither" ), Wither( "Vegetation.SnowWither" ) );
 		var table = ThemeParkIncCareer.FiringLineTable( standard );
 		// [EXT:headless-economy] settings built from parsed keys (tests and tools) answer the six limits and the count dword from those keys; LoadThemeParkInc replaces this with the
 		// Standard object bound from the files' bytes, which answers every rank as the original's read does
@@ -255,6 +259,8 @@ public sealed class BalanceSettings
 	public ThemeParkIncStaffSettings? ThemeParkIncStaff { get; }
 	/// <summary>Theme Park Inc's challenge settings and rows (null in Theme Park World and where the challenge keys or <c>Challenges.sam</c> are missing).</summary>
 	public ThemeParkIncChallengeSettings? ThemeParkIncChallenges { get; }
+	/// <summary>Theme Park Inc's plants' wither rates by weather (all 0 in Theme Park World and where the files lack the keys).</summary>
+	public ThemeParkIncWithers ThemeParkIncWithers { get; }
 	/// <summary>The word Theme Park Inc's promotion reads for a rank (<see cref="ThemeParkIncStandard.FiringLineLimit"/>), null where it is not read; null for every rank in Theme Park World.</summary>
 	public Func<int, int?> ThemeParkIncFiringLineLimit { get; private set; } = _ => null;
 	public EntryFeePerception EntryFee { get; }

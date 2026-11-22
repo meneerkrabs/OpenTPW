@@ -270,7 +270,7 @@ Below `RideBreakDown.WarnPlayer` (5) the ride reports itself worn to its script;
 life first unless it is special; no random number decides a breakdown. A mechanic's search takes the nearest ride that is broken down or called for, else one below
 `RideBreakDown.Imminent` (10), which then asks for maintenance and closes; he walks to its entrance, works `(100 − repair) × the work duration / 100` updates, waits for the ride's fix
 animation, and repairs it fully (`0x5E2910`), which reopens it unless its guard, the park or the weather keeps it closed. The upgrade job is not reached: only a mechanic trained in
-Ride Upgrading takes one, a mechanic's training is not ported (only the handymen's is), and the economy sells no Theme Park Inc upgrade. The advisor's ride messages are not posted. Details and addresses:
+Ride Upgrading takes one; a mechanic trains through the common handler as the others do (the training's states 7 and 8), but the economy sells no Theme Park Inc upgrade, so no ride reaches the upgrade's state. The advisor's ride messages are not posted. Details and addresses:
 [TPI-STAFF.md](reverse/TPI-STAFF.md#mechanics-and-ride-wear-wp9-november-21-2026).
 
 **What stays refused.** The other staff roles (`[EXT:tpi-capability-gates]`); a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`, which no longer covers the rides), and no

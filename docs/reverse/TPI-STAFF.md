@@ -367,7 +367,7 @@ message 10 subscribed, the search). The update is the common pre-update (`0x5DA3
 - Finder `0x5DAAD0` on the HQ thing of world `+0x1EAB4E` (cursor `+0x14`, kept as `ParkEconomy.MechanicCursor`): the cursor moves one object on from the previous start over the object
   list (world `+0x1EAB88`, next `+0x14`, newest first, `0x64F3E0`) and walks it round once; a candidate is broken down, below its line, called for (not a relief object, bin or
   plant), or (for a mechanic whose learnt ability `+0x218` is 1) upgrading, and unclaimed; the nearest by `dx² + dy²` of the cell bytes, first broken or called-for ones, then the
-  others, the first met on a tie. `+0x218` is 0 from the member start and only training writes it, so no placed mechanic upgrades.
+  others, the first met on a tie. `+0x218` is 0 from the member start and only training writes it; a mechanic trained in Ride Upgrading would take an upgrading ride, but none reaches state 2.
 - The object list (`ParkEconomy.ThemeParkIncObjectList`). The attraction constructor `0x5DB1B0` puts every attraction, obstacles included, at the head (`0x64F3E0`, called at `0x5DB28C`:
   `+0x14` = the old head, world `+0x1EAB88` = the new one); the destroyer `0x637C40` → `0x5DE780` → `0x64F430` unlinks it. The save keeps the list: the World variable `FirstObject` and
   each attraction's `mNext`. In the prebuilt Science park it holds 24 things, newest first (thing ids 37 down to 14: Info.Id 1414, 1413, 1413, 1403, 1101, 1798, 1750, 1703, 1700, 1701,
@@ -398,8 +398,13 @@ message 10 subscribed, the search). The update is the common pre-update (`0x5DA3
   link `0x5E07B0`, which is tp.exe's `0x004DE4A0` instruction for instruction over 0x48-byte cell records, a running type-42 challenge, the park closed `+0x1EAB44`, the spell's
   `ClosedDuring*` word, the coaster test) closes the ride unless a running type-46 challenge holds it; then the spell's close sets `+0x41`, and a coaster that refuses guests closes.
 - Removal message `0x5D9DD0`: a mechanic whose ride is removed forgets it and goes idle.
+- Training: the dispatch sends every state outside 0..3, 21 and 22 to the common handler `0x6287A0` (the byte table `0x5DA358`, entry 6, `0x5DA333`). Its byte table `0x628B10` (state − 4, up
+  to 0x24) has cases for 4, 5, 6, 7, 8, 9, 11, 12, 14, 24, 25, 35 and 36; a mechanic reaches the training's 7 (`0x62A7C0`) and 8 (`0x62AA50`) through the panel's ability choice (`0x580550`),
+  and the suspended 0x25 and 0x26 lie above the table, with no case. So a mechanic walks to the training room, trains and is rewarded as a handyman is (§12.2), his saved state 7, 8, 0x25 or
+  0x26 is valid, and after the training he looks for work through his own search (the look-for-work table `0x62D974`: kind 4 `0x5DA3D0`). Ride Upgrading (`+0x218` = 1) opens the finder's
+  upgrading branch, which finds nothing while no ride reaches state 2.
 
-Gated: the upgrade job (`+0x218` and training, WP14; the economy sells no upgrade); the advisor's ride messages 0x40, 0x43 and the clearing of the ride's queued notices 6..9
+Gated: the upgrade job (the economy sells no upgrade, so no ride reaches state 2; a mechanic does learn Ride Upgrading, `+0x218` = 1, in the training room, see above); the advisor's ride messages 0x40, 0x43 and the clearing of the ride's queued notices 6..9
 (`0x636D10`) (`[EXT:tpi-capability-gates]`, the advisor's other messages; they draw nothing); the patrol area `0x6256A0` (WP15). The loo and bin finders and the toilet wear
 stay under `[EXT:tpi-no-maintenance-wear]`, which no longer covers the rides. No `rand()` call is reached: the paths above draw only the world generator, in the gate and the
 patrol, as the handyman's.

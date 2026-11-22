@@ -739,7 +739,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	// rest area (0x62BA20: none) and sets 0 (0x628180(0) at 0x62D94D)
 	private void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
-		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 5 0x5D52A0, kind 8 0x61B820
+		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 4 0x5DA3D0, kind 5 0x5D52A0, kind 8 0x61B820
 		if ( member.Role == ThemeParkIncStaffRole.Researcher )
 			SearchResearchRoom( economy, settings, member, turn );
 		else

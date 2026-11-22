@@ -6,8 +6,8 @@ namespace OpenTPW;
 /// </summary>
 /// <remarks>
 /// The upgrade job is not reached: a ride is upgraded only by a mechanic whose learnt ability (+0x218) is 1 (Ride Upgrading, <c>0x62B7D0</c> in the finder), which only training writes
-/// (<c>0x62AA50</c>, <c>0x62B860</c>, <c>0x62B8B0</c>; the member start <c>0x626390</c> clears it), and only the handymen's training states are ported; nor does the economy accept an upgrade
-/// purchase in a Theme Park Inc park, so no ride is ever in state 2. The states 2 and 3 (to a rest area and resting) are not reached either: no Theme Park Inc object is a rest area.
+/// (<c>0x62AA50</c>, <c>0x62B860</c>, <c>0x62B8B0</c>; the member start <c>0x626390</c> clears it); a mechanic trains through the common handler like the others, but the economy accepts no upgrade
+/// purchase in a Theme Park Inc park, so no ride is ever in state 2 and a trained mechanic finds no upgrade to take. The states 2 and 3 (to a rest area and resting) are not reached either: no Theme Park Inc object is a rest area.
 /// </remarks>
 public sealed partial class ThemeParkIncStaffWorld
 {
@@ -28,7 +28,9 @@ public sealed partial class ThemeParkIncStaffWorld
 
 	/// <summary>The mechanic's state handler.</summary>
 	// [BIN:TPI-EXE:0x5DA280 mechanic dispatch] states 0..0x16 by the byte table 0x5DA358 and the jump table 0x5DA33C: 0 idle 0x5DA309, 1 patrol 0x5DA2A1, 2 0x629EF0 and 3 0x62A1C0 (the rest
-	// area's, unreached), 21 0x5DA650, 22 0x5DA7C0, the others and anything above 0x16 the common 0x6287A0
+	// area's, unreached), 21 0x5DA650, 22 0x5DA7C0, the others and anything above 0x16 the common 0x6287A0 (entry 6, 0x5DA333)
+	// [BIN:TPI-EXE:0x6287A0 common states] state - 4 by the byte table 0x628B10 (up to 0x24) and the jump table 0x628ADC: 4, 5, 6, 7, 8, 9, 11, 12, 14, 24, 25, 35 and 36 have a case; of them the
+	// training's 7 (0x62A7C0) and 8 (0x62AA50) are what a mechanic reaches (the panel's ability choice, 0x580550); the suspended 0x25 and 0x26 lie above the table and have none
 	private void DispatchMechanic( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		switch ( member.State )
@@ -52,6 +54,12 @@ public sealed partial class ThemeParkIncStaffWorld
 				break;
 			case Repairing:
 				UpdateRepairing( economy, settings, member, turn );
+				break;
+			case ThemeParkIncTraining.ToTrainingRoom:
+				UpdateToTrainingRoom( economy, settings, member, turn );
+				break;
+			case ThemeParkIncTraining.Training:
+				UpdateTraining( economy, settings, member, turn );
 				break;
 		}
 	}
@@ -180,8 +188,8 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( cursor == 0 )
 			return 0;
 		var start = cursor;
-		// [BIN:TPI-EXE:0x62B7D0 learnt ability] a = +0x218 == 1 (Ride Upgrading); the member start 0x626390 clears it and a mechanic's training is not ported, and no Theme Park Inc ride reaches
-		// state 2 (the economy sells no upgrade), so the upgrading branch finds nothing
+		// [BIN:TPI-EXE:0x62B7D0 learnt ability] a = +0x218 == 1 (Ride Upgrading, learnt in the training room); no Theme Park Inc ride reaches state 2 (the economy sells no upgrade), so the upgrading
+		// branch finds nothing even for a trained mechanic
 		var canUpgrade = member.Ability == 1;
 		var (x, y) = member.Navigation!.Cell;
 		uint urgentBest = uint.MaxValue, otherBest = uint.MaxValue;

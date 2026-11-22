@@ -95,6 +95,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncCutsceneSnapshot? TpiCutscene { get; init; }
+		/// <summary>
+		/// Theme Park Inc's tag tube (the <c>SGAT</c> thing's mail rows). Required in a Theme Park Inc save; absent in Theme Park World saves. A Theme Park Inc save from before the tube is refused
+		/// (<see cref="TagTubeMissing"/>).
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncTagTubeSnapshot? TpiTagTube { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -773,6 +779,7 @@ public static class ParkSaveFile
 			TpiObjectList = park.TpiStaff != null ? park.ThemeParkIncObjectList.ToList() : null,
 			TpiResearch = park.CaptureThemeParkIncResearch(),
 			TpiCutscene = park.TpiCutscene?.Capture(),
+			TpiTagTube = park.TpiTagTube?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1086,6 +1093,12 @@ public static class ParkSaveFile
 	/// </summary>
 	internal const string StaffHqMissing = "This Theme Park Inc park was saved before OpenTPW kept the staff HQ and the research lab and cannot be continued; start a new game from the Personnel File.";
 
+	/// <summary>
+	/// The refusal of a Theme Park Inc park save from before the tag tube (<see cref="Data.TpiTagTube"/>): the original files the zone arrival's briefing and every objective letter as unread
+	/// rows, whose count drives the unread-mail advice, so an empty tube is not the park the save left.
+	/// </summary>
+	internal const string TagTubeMissing = "This Theme Park Inc park was saved before OpenTPW kept the tag tube (the park's letters) and cannot be continued; start a new game from the Personnel File.";
+
 	private static void ValidateEdition( Data data )
 	{
 		if ( !Enum.IsDefined( data.Edition ) )
@@ -1126,6 +1139,12 @@ public static class ParkSaveFile
 			// asset manifest is compared (ParkResumeSaveFile.RequireAssets would only name an asset the save does not expect)
 			if ( data.TpiCutscene == null )
 				throw new InvalidDataException( CutsceneMissing );
+			// a park save from before the tag tube holds none of the letters the original files (the arrival briefing at least, unread): its unread count and the advice it raises would differ
+			// from the park's, so it is refused here, before the asset manifest is compared
+			if ( data.TpiTagTube == null )
+				throw new InvalidDataException( TagTubeMissing );
+			if ( !ThemeParkIncTagTube.IsValid( data.TpiTagTube ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc tag tube." );
 			// user decision 2026-11-21: a Theme Park Inc park save from before the mechanics and the ride wear is refused: its rides were worn by other rules (or not at all), so it is not the
 			// park the ported rules would have made
 			if ( data.TpiStaff != null && data.TpiRideWear != ThemeParkIncRideWearRules )
@@ -1151,7 +1170,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiGardens != null || data.TpiObjectList != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiTagTube != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiGardens != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1553,6 +1572,13 @@ public static class ParkSaveFile
 		if ( data.PriceStatistics is { } statistics )
 			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
 		park.Cheats.Restore( data.Cheats );
+		// [BIN:TPI-EXE:0x64CF7C tag system load] the world load reads the SGAT thing and its rows (0x6355D0 with flag 0) after the things before it; the rows' expiry restarts from the clock
+		if ( data.TpiTagTube is { } tube )
+		{
+			if ( park.TpiTagTube == null )
+				throw new InvalidDataException( "Park save has a Theme Park Inc tag tube, but the park has no career." );
+			park.TpiTagTube.Restore( tube, unchecked( (uint)park.Turn ) );
+		}
 		return park;
 	}
 

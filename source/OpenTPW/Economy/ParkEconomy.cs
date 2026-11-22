@@ -82,6 +82,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		}
 		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
 		CreateThemeParkIncChallenges();
+		CreateThemeParkIncTagTube();
 		CreateThemeParkIncMissions();
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
@@ -604,6 +605,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 				UpdateChallenges( turn );
 			// [EXT:headless-economy] the research lab, an older thing of the prebuilt (id 6) than the controller and the challenge system, updates after them
 			UpdateThemeParkIncResearch( turn );
+			// [EXT:headless-economy] the tag system (built at 0x6483B7, before the research manager) is older still
+			UpdateThemeParkIncTagTube( turn );
 			return;
 		}
 		UpdateStaffVitals();
@@ -1648,7 +1651,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 				// [BIN:TPI-EXE:0x5C091F red-month notification] the bank's own handler receives the event value 2 and posts a type-25
 				// notification, which only the tag system consumes: one mail a month from the sixth on, carrying advice 0x1A2, unless the
 				// world state is already 4 (the park lost)
-				TpiPendingMail = ThemeParkIncAdviceMail.RedSixMonths;
+				PostThemeParkIncMail( ThemeParkIncAdviceMail.RedSixMonths );
 		}
 		if ( Rules.ThemeParkInc )
 		{
@@ -1809,7 +1812,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	internal void DebugPostThemeParkIncLetter( ThemeParkIncAdviceMail mail )
 	{
 		if ( Rules.ThemeParkInc )
-			TpiPendingMail = mail;
+			PostThemeParkIncMail( mail );
 	}
 
 	/// <summary>Admissions of months dropped from the bounded history (keeps the monthly differences exact).</summary>

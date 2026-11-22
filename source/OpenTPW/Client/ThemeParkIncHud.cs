@@ -105,6 +105,7 @@ public sealed partial class ThemeParkIncHud
 		challengesButton.Bounds = new UiRect( 2024 - 306, 136, 286, 110 );
 		challengesButton.Anchor = UiAnchor.TopRight;
 		BuildMissionButton();
+		BuildTagTubeButton();
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
@@ -161,7 +162,8 @@ public sealed partial class ThemeParkIncHud
 	// [BIN:TPI-EXE:0x42A17C lost pause lock] in the lost state a pause request does nothing, so the lost park's menus and screens run the park on
 	// [BIN:TPI-EXE:0x526CD0 letter window] the letter window's builder makes no pause request (0x42A170 is not among its calls): the park trades on while it is open
 	// [BIN:TPI-EXE:0x55A7F0 mission window] nor does the mission window's (it makes the same window calls as the letter's, 0x5013C0 and 0x501CD0)
-	public float TimeScale => Stack.Screens.Skip( 1 ).Any( screen => screen.Name is not (ThemeParkIncLetterWindow.ScreenName or ThemeParkIncMissionWindow.ScreenName) ) && !Lost
+	// [BIN:TPI-EXE:0x551CF0 tube window] nor does the tag tube window's (0x5013C0, 0x84DEA0, 0x501CD0)
+	public float TimeScale => Stack.Screens.Skip( 1 ).Any( screen => screen.Name is not (ThemeParkIncLetterWindow.ScreenName or ThemeParkIncMissionWindow.ScreenName or ThemeParkIncTagTubeWindow.ScreenName) ) && !Lost
 		? 0f : GameSpeedScale.Of( speed );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	public BuildCategory Category => category;
@@ -525,6 +527,7 @@ public sealed partial class ThemeParkIncHud
 		if ( !MenuOpen )
 			TogglePause( input );
 		UpdateMissionKey( input );
+		UpdateTagTubeKey( input );
 		UpdateMissionWindowRequests();
 
 		// The level's last action (builds, refusals) becomes a message here; the slice has no advisor to say it.
@@ -683,6 +686,7 @@ public sealed partial class ThemeParkIncHud
 	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
 	{
 		CloseMissionWindow();
+		CloseTagTube();
 		UiScreen? screen = null;
 		var closed = false;
 		Action close = null!;

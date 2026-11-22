@@ -330,6 +330,7 @@ public partial class Level
 			var weatherDone = false;
 			var challengesDone = false;
 			var labDone = false;
+			var tubeDone = false;
 			// [BIN:TPI-EXE:0x6495C1 thing pass] Theme Park Inc's world pass walks the thing list from its head (0xAA116C, newest first) and updates each thing through the kind switch 0x6375E0: its staff
 			// members are visited at their slots like every other thing (ThemeParkIncStaffWorld.Update)
 			var tpiWorld = economy.TpiStaff != null ? TpiStaffWorld : null;
@@ -379,6 +380,11 @@ public partial class Level
 						labDone = true;
 						economy.UpdateThemeParkIncResearch( turn );
 						break;
+					// [BIN:TPI-EXE:0x63770E tag system update] the class-12 thing's update is the tag tube's 0x635AB0
+					case SaveThingModel.TagSystem when !tubeDone && economy.TpiTagTube != null:
+						tubeDone = true;
+						economy.UpdateThemeParkIncTagTube( turn );
+						break;
 				}
 			}
 			// what has no slot in the pool (a headless scene's guests, a thing the pool does not hold) is updated after the sweep, in list order
@@ -402,6 +408,8 @@ public partial class Level
 				economy.UpdateChallenges( turn );
 			if ( !labDone )
 				economy.UpdateThemeParkIncResearch( turn );
+			if ( !tubeDone )
+				economy.UpdateThemeParkIncTagTube( turn );
 			if ( world != null )
 				world.EndStaffTurn( economy, turn );
 			else

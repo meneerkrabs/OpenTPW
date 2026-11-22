@@ -52,6 +52,7 @@ public sealed partial class ThemeParkIncHud
 			return false;
 		if ( LetterOpen )
 			closeOpenLetter?.Invoke();
+		CloseTagTube();
 		CloseMissionWindow();
 		ThemeParkIncMissionWindow? window = null;
 		window = new ThemeParkIncMissionWindow( TextsOrLanguage, strings, world, missionSession, () => CloseMissionWindow( window ), OpenChallengePanel );

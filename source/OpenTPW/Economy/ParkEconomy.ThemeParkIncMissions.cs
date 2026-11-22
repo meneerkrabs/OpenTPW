@@ -33,20 +33,11 @@ public sealed partial class ParkEconomy
 	/// <summary>The controller's status broadcasts (message 0x27) so far: the HUD redraws its mission lines when it changes. Not saved.</summary>
 	internal int TpiMissionRevision { get; private set; }
 
-	/// <summary>
-	/// The latest <see cref="MaxTpiMissionNotices"/> "Objective Complete!" letters the controller has posted (the index of the completed mission, <c>OBJECTIVE_COMPLETE.str</c>); their window is
-	/// not built, so nothing takes them. Not saved: the career's <c>+0x20</c> byte records that the letter went out.
-	/// </summary>
-	internal List<int> TpiObjectiveLetters { get; } = new();
-
 	/// <summary>The latest <see cref="MaxTpiMissionNotices"/> camera flights the controller asked for (<see cref="TpiCutscene"/> plays them). Not saved.</summary>
 	internal List<ThemeParkIncCameraRequest> TpiCameraRequests { get; } = new();
 
 	/// <summary>The latest <see cref="MaxTpiMissionNotices"/> camera ends (message 0x29: the thing and the result). Not saved.</summary>
 	internal List<ThemeParkIncCameraEnd> TpiCameraEnds { get; } = new();
-
-	/// <summary>The first briefings the zone arrival's end posted (<c>0x5CD6E0(0x5C, 5, 1)</c>); their window is not built. Not saved: the career's <c>+0x20</c> byte records it.</summary>
-	internal int TpiIntroductionLetters { get; private set; }
 
 	/// <summary>Theme Park Inc's cutscene thing (park thing class 22, <c>CUTS</c>): the camera flights; null wherever <see cref="TpiMissions"/> is.</summary>
 	public ThemeParkIncCutscene? TpiCutscene { get; private set; }
@@ -62,7 +53,7 @@ public sealed partial class ParkEconomy
 		}
 	}
 
-	/// <summary>The letters and camera requests kept.</summary>
+	/// <summary>The camera requests and ends kept.</summary>
 	internal const int MaxTpiMissionNotices = 32;
 
 	private static void AddTpiMissionNotice<T>( List<T> list, T notice )
@@ -114,6 +105,7 @@ public sealed partial class ParkEconomy
 	private void AttachThemeParkIncMissions( ThemeParkIncCareer career )
 	{
 		var attached = new ThemeParkIncMissionController( career, new ThemeParkIncMissionHost( this ), Turn, startStatistics: false );
+		TpiTagTube ??= new ThemeParkIncTagTube();
 		if ( TpiMissions is { } park )
 			attached.TakeFields( park );
 		TpiMissions = attached;
@@ -231,13 +223,15 @@ public sealed partial class ParkEconomy
 			economy.TpiCutscene?.Play( request.Thing, request.Animation, request.Mode );
 		}
 
-		public void PostIntroductionLetter() => economy.TpiIntroductionLetters++;
+		// [BIN:TPI-EXE:0x5F18DA arrival briefing post] the tag letter 0x5CD6E0(0x5C, 5, 1) in a type-0x19 wrapper (0x435DC0) through the message centre: the tag system files its row
+		public void PostIntroductionLetter() => economy.FileThemeParkIncLetter( ThemeParkIncTagLetter.Introduction( economy.Turn ) );
 
 		// [BIN:TPI-EXE:0x61CBF0 obstacle research] the research lab adds a kind-5 project for the mission's obstacle (HasObstacle, a current obstacle thing, the zone's type range, obstacle state 1,
 		// no such project yet): ThemeParkIncResearch.RegisterObstacle
 		public void EnsureObstacleResearch() => economy.RegisterThemeParkIncObstacleResearch();
 
-		public void PostObjectiveLetter( int completed ) => AddTpiMissionNotice( economy.TpiObjectiveLetters, completed );
+		// [BIN:TPI-EXE:0x5EF991 objective letter post] 0x5CEAE0(career +0x105C - 1) in a type-0x19 wrapper (0x435DC0) through the message centre: the tag system files its row (kind 4 opens no window)
+		public void PostObjectiveLetter( int completed ) => economy.FileThemeParkIncLetter( ThemeParkIncTagLetter.Objective( completed, economy.Turn ) );
 
 		// [BIN:TPI-EXE:0x61DC20 lab message 0x27] the research lab hears the controller's status broadcast and runs its obstacle registration 0x61CBF0 again
 		public void StatusChanged()

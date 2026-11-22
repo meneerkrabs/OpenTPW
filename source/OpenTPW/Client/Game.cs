@@ -1182,8 +1182,15 @@ internal static class Game
 						case "buytab":
 						{
 							var (tab, row) = argument.Split( ':', 2 ) is [var tabName, var rowName] ? (tabName, rowName) : (argument, null);
+							var buyTab = Enum.Parse<OpenTPW.Hud.BuildCategory>( tab, true );
+							// the buy window has Theme Park World's four tabs; Theme Park Inc's facilities are its own HUD's
+							if ( !OpenTPW.Hud.ParkHud.BuyTabs.Contains( buyTab ) )
+							{
+								Log.Warning( $"--debug-hud: the buy window has no {tab} tab." );
+								break;
+							}
 							hud.OpenBuyWindow();
-							hud.SelectCategory( Enum.Parse<OpenTPW.Hud.BuildCategory>( tab, true ) );
+							hud.SelectCategory( buyTab );
 							var rowIndex = row == null ? -1 : hud.BuyItems.ToList().FindIndex( item => hud.ListName( item ) == row );
 							if ( rowIndex >= 0 )
 							{

@@ -66,22 +66,71 @@ public partial class Level
 	{
 		// [BIN:TPI-EXE:0x5DB786 room flags] the attraction builder sets the thing's +0x42 |= 0x200 when the type record's +0x1B4 (UsageInfo.ThinkingSpace) is nonzero and |= 0x400 when +0x1B8
 		// (UsageInfo.TrainingRoom) is; [BIN:TPI-EXE:0x64F3E0 object list] the builder pushes the thing onto the front of the object list park+0x1EAB88 (the World variable FirstObject), as 0x637100 pushes
-		// it onto the thing list: an object built in the park is first on both, so the thing list's order (Level.ThemeParkIncAttractionsOf) is the object list's for every room a player builds; no
+		// it onto the thing list: an object built in the park is first on both, and the finders walk that list (ObjectList below); no
 		// prebuilt Theme Park Inc park holds a research or training room (ThemeParkIncTrainingTests)
 		public ThemeParkIncRoom? First( ThemeParkIncRoomKind kind )
 		{
 			var key = kind == ThemeParkIncRoomKind.Research ? "UsageInfo.ThinkingSpace" : "UsageInfo.TrainingRoom";
-			var order = level.Things.Capture().Select( ( slot, index ) => (slot.Id, index) ).ToDictionary( pair => pair.Id, pair => pair.index );
-			// a room being destroyed is no longer on the object list: the attraction's destroy unlinks it (0x64F430 at 0x5DE7C4) before it broadcasts message 0xA
-			var room = level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue
-					&& item.ThingId != level.tpiDestroyedRoom )
-				.OrderBy( item => order.TryGetValue( item.ThingId, out var index ) ? index : int.MaxValue ).ThenByDescending( item => item.ThingId ).FirstOrDefault();
-			if ( room == null )
-				return null;
+			var room = ObjectList( key ).FirstOrDefault();
+			return room == null ? null : new ThemeParkIncRoom( (ushort)room.ThingId, Entrance( room ) );
+		}
+
+		// [BIN:TPI-EXE:0x5DB6E2 rest-area flag] the attraction builder sets the thing's +0x42 |= 2 when the type record's +0x1B0 (UsageInfo.ChillsYouOut) is nonzero: the staff rooms (Science 1400,
+		// Water 2420, Arabian 3418); the open word +0x7C (mCanLoad, 1 from the constructor 0x5DB5FB for a facility) is read as the runtime's open state, the script's VAR_RIDECLOSED: OpenTPW keeps no
+		// separate open word, and the two agree while nothing closes a facility (the text HUD offers no close, and the weather closing asks only the choosable attractions, which a staff room is not)
+		public IReadOnlyList<ThemeParkIncRestArea> RestAreas() => ObjectList( "UsageInfo.ChillsYouOut" )
+			.Select( item => new ThemeParkIncRestArea( (ushort)item.ThingId, item.ThingCell, Entrance( item ), item.Runtime.IsOpen ) ).ToArray();
+
+		/// <summary>
+		/// The live objects whose type sets <paramref name="key"/>, in the object list's order (<see cref="ParkEconomy.ThemeParkIncObjectList"/>, park+0x1EAB88, newest first), which the finders
+		/// 0x62BA20 walk. A thing being destroyed is no longer on the list: the attraction's destroy unlinks it (0x64F430 at 0x5DE7C4) before it broadcasts message 0xA.
+		/// </summary>
+		private IEnumerable<OriginalObject> ObjectList( string key )
+		{
+			if ( level.Park?.Economy is not { } economy )
+				yield break;
+			// both lookups are built once per walk, so the walk stays linear in the list and the placed objects
+			var byInstance = new Dictionary<int, OriginalObject>();
+			foreach ( var (item, instance) in level.economyInstances ?? new() )
+				byInstance[instance] = item;
+			Dictionary<int, OriginalObject>? byThing = null;
+			foreach ( var entry in economy.ThemeParkIncObjectList )
+			{
+				// an object with an economy record is listed by its instance, any other attraction thing by its negated thing id (the first placed object holding it)
+				OriginalObject? item;
+				if ( entry > 0 )
+					item = byInstance.GetValueOrDefault( entry );
+				else
+				{
+					if ( byThing == null )
+					{
+						byThing = new Dictionary<int, OriginalObject>();
+						foreach ( var candidate in level.Objects.Objects )
+							byThing.TryAdd( candidate.ThingId, candidate );
+					}
+					item = byThing.GetValueOrDefault( -entry );
+				}
+				if ( item is { IsDeleted: false } && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue && item.ThingId != level.tpiDestroyedRoom )
+					yield return item;
+			}
+		}
+
+		/// <summary>A room's entrance cell (its thing's word +0x46).</summary>
+		private static (int X, int Y) Entrance( OriginalObject room )
+		{
 			var settings = room.Entry.Settings;
 			var thing = new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), room.ThingCell, room.Placement.Rotation, room.Entry.Shape,
 				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
-			return new ThemeParkIncRoom( (ushort)room.ThingId, ThemeParkIncStaffWorld.CellOfWord( ThemeParkIncStaffWorld.EntranceWord( thing ) ) );
+			return ThemeParkIncStaffWorld.CellOfWord( ThemeParkIncStaffWorld.EntranceWord( thing ) );
+		}
+
+		public int Occupancy( ushort thing ) => level.ThemeParkIncThing( thing )?.Script is { Variables.Length: > 0 } script ? script.Variables[0] : 0;
+
+		// [BIN:TPI-EXE:0x5E5DA0 customer] the thing's history object (+0x130) raises its daily customers (+0x110, today's slot) and its monthly customers (+0x1278): OpenTPW's customer ring and month count
+		public void RecordCustomer( ushort thing )
+		{
+			if ( level.ThemeParkIncThing( thing ) is { } item && level.economyInstances.TryGetValue( item, out var instance ) )
+				level.Park?.Economy.RecordCustomer( instance );
 		}
 
 		// [BIN:TPI-EXE:0x6B0740 script instance] the room thing's +0x2C keys its script instance in the list 0xB8C5C8; 0x6B0C90 / 0x6B0780 read and write its int variable [i] (+0x1C, bounded by +0x8C)
@@ -127,12 +176,13 @@ public partial class Level
 	{
 		if ( TpiStaffWorld is not { } staffWorld || Park?.Economy is not { } economy || item.ThingId is not (> 0 and <= ushort.MaxValue) )
 			return;
-		if ( ThemeParkIncRoomKindOf( item.Entry.Settings ) is not { } kind )
-			return;
 		tpiDestroyedRoom = item.ThingId;
 		try
 		{
-			staffWorld.RoomDestroyed( economy, kind, (ushort)item.ThingId, economy.Turn );
+			if ( ThemeParkIncRoomKindOf( item.Entry.Settings ) is { } kind )
+				staffWorld.RoomDestroyed( economy, kind, (ushort)item.ThingId, economy.Turn );
+			// [BIN:TPI-EXE:0x626638 rest area removed] the same message 0xA reaches every member's base handler, which compares the thing with his rest area (+0x248)
+			staffWorld.RestAreaRemoved( economy, (ushort)item.ThingId, economy.Turn );
 		}
 		finally
 		{

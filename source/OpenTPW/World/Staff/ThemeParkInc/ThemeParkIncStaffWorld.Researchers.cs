@@ -39,8 +39,9 @@ public sealed partial class ThemeParkIncStaffWorld
 		economy.TpiResearch?.UpdateLabActive( economy.TpiStaff.Members.Any( other => other.Role == ThemeParkIncStaffRole.Researcher && other.Placed ) );
 	}
 
-	/// <summary>The researcher's state handler (<c>0x61B620</c>): states 0 and 1 his own, 24 and 25 the common handler's.</summary>
-	// [BIN:TPI-EXE:0x61B620 researcher dispatch] state <= 3 by the table 0x61B774 (0 0x61B73D, 1 0x61B63A, 2 0x629EF0, 3 0x62A1C0), others the common handler 0x6287A0 (24 0x6289BD, 25 0x62DCB0)
+	/// <summary>The researcher's state handler (<c>0x61B620</c>): states 0 and 1 his own, 2 and 3 the rest's, 24, 25 and 0x23 the common handler's.</summary>
+	// [BIN:TPI-EXE:0x61B620 researcher dispatch] state <= 3 by the table 0x61B774 (0 0x61B73D, 1 0x61B63A, 2 0x629EF0, 3 0x62A1C0), others the common handler 0x6287A0 (24 0x6289BD, 25 0x62DCB0, 0x23
+	// 0x62CA90)
 	private void DispatchResearcher( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		switch ( member.State )
@@ -65,6 +66,15 @@ public sealed partial class ThemeParkIncStaffWorld
 				break;
 			case ThemeParkIncResearch.Researching:
 				UpdateResearching( economy, settings, member, turn );
+				break;
+			case ToRestArea:
+				UpdateToRestArea( economy, settings, member, turn );
+				break;
+			case Resting:
+				UpdateResting( economy, settings, member, turn );
+				break;
+			case RestSearch:
+				UpdateRestSearch( economy, settings, member, turn );
 				break;
 		}
 	}

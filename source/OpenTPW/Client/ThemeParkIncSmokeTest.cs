@@ -307,6 +307,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		PlanGardener();
 		PlanPerformers();
 		if ( flow.Level?.LevelName == "science" )
+			PlanFacilities();
+		if ( flow.Level?.LevelName == "science" )
 			PlanChallenges();
 		Do( "round-trip Science state", () =>
 		{
@@ -819,6 +821,91 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Handyman ) > 0, "the cleaner's sprite source shows a frame of the handymen's bank" );
 			Log.Trace( $"Theme Park Inc slice smoke: cleaner {member.ThingId} in state {member.State:X} at {member.Navigation!.Cell}, energy {member.Energy}, last update turn {member.LastUpdateTurn}, walk original {member.Navigation.Original} arrived {member.Navigation.Arrived} target ({member.Navigation.TargetX >> 16}, {member.Navigation.TargetY >> 16}) links {Level.Guests!.Grid.Cells.LinksAt( member.Navigation.Cell.X, member.Navigation.Cell.Y ):X}; {Level.Park!.Economy.Litter.Count} litter item(s) in the park." );
 		} );
+	}
+
+	private OriginalObject? staffRoom;
+
+	/// <summary>
+	/// The facilities tab (the build panel's fifth, Info.WhichUIType 5): it lists the researched facilities mission 0 allows; the staff room is armed through the list and built beside the cleaner,
+	/// where it becomes the rest area his tired gate walks him to, and the litter bin is built and takes Standard.sam's construction words.
+	/// </summary>
+	private void PlanFacilities()
+	{
+		Do( "open the build window for the facilities", () => Click( Hud.Screen, "build" ) );
+		Wait( "build window opens", 2 );
+		Do( "choose the facilities tab", () => Click( Hud.Screen, $"category{BuildCategory.Facilities}" ) );
+		Wait( "the facilities tab shows", 2 );
+		Do( "the tab lists the researched facilities of mission 0", () =>
+		{
+			Require( Hud.Category == BuildCategory.Facilities, "the fifth tab is the facilities'" );
+			var ids = Hud.Catalog.GetItems( BuildCategory.Facilities ).Select( item => item.InfoId ).OrderBy( id => id ).ToArray();
+			// the prebuilt's controls research the toilets, the bin and the staff room, not the kiosk (1200) or the camera (1421); the research room waits for mission 1, the training room for mission 2
+			Require( ids.SequenceEqual( new[] { 1400, 1422, 1439, 3417 } ), $"the Science facilities of mission 0 are listed ({string.Join( ", ", ids )})" );
+			var items = Hud.Catalog.GetItems( BuildCategory.Facilities ).ToList();
+			chosenIndex = items.FindIndex( item => item.InfoId == 1400 );
+			armedEntry = items[chosenIndex].Entry;
+		} );
+		Do( "arm the staff room through the list", ArmThroughList );
+		Wait( "staff room arms", 2 );
+		Do( "build the staff room beside the cleaner", () =>
+		{
+			Require( Level.BuildEntry == armedEntry && armedEntry!.InfoId == 1400, "the staff room is armed" );
+			var cash = Level.Park!.Economy.Balance;
+			staffRoom = PlaceFacilityNear( armedEntry!, hiredHandyman!.Navigation!.Cell );
+			Require( Level.BuildEntry == null && cash - Level.Park.Economy.Balance == 500, "the staff room costs its Upgrades[0].CostOfUpgrade, 500, and the build disarms" );
+			Require( Level.TpiStaffWorld!.Rooms!.RestAreas().Any( area => area.Thing == staffRoom.ThingId && area.CanLoad ), "the open staff room is a rest area" );
+		} );
+		Do( "the tired cleaner walks to the staff room", () =>
+		{
+			var economy = Level.Park!.Economy;
+			var member = hiredHandyman!;
+			member.Energy = economy.TpiStaff!.Settings.RestLevel;
+			Level.TpiStaffWorld!.Search( economy, member, economy.Turn );
+			Require( member.State == ThemeParkIncStaffWorld.ToRestArea && member.RestArea == staffRoom!.ThingId,
+				$"the rest-area finder takes the staff room and the gate sends him there (state {member.State:X}, rest area {member.RestArea})" );
+		} );
+		Do( "open the build window for the bin", () => Click( Hud.Screen, "build" ) );
+		Wait( "build window opens", 2 );
+		Do( "choose the litter bin", () =>
+		{
+			Require( Hud.Category == BuildCategory.Facilities, "the tab stays the facilities'" );
+			var items = Hud.Catalog.GetItems( BuildCategory.Facilities ).ToList();
+			chosenIndex = items.FindIndex( item => item.InfoId == 1422 );
+			armedEntry = items[chosenIndex].Entry;
+		} );
+		Do( "arm the bin through the list", ArmThroughList );
+		Wait( "bin arms", 2 );
+		Do( "the built bin takes the construction words", () =>
+		{
+			Require( Level.BuildEntry == armedEntry && armedEntry!.InfoId == 1422, "the bin is armed" );
+			var bin = PlaceFacilityNear( armedEntry!, staffRoom!.ThingCell );
+			// [BIN:TPI-EXE:0x5DB7D5 construction words] VAR_CAPACITY, VAR_DIRTY and VAR_FIRERISK from Standard.sam's LitterBin keys (20, 15 and 5 in the retail data)
+			var words = ThemeParkIncStandard.ConstructionWords( ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, Level.LevelName )! );
+			Require( bin.Runtime.Script is { } script && (script.Variables[3], script.Variables[11], script.Variables[12]) == (words.BinCapacity, words.BinDirty, words.BinFireRisk),
+				"the Science bin's script holds the Standard words" );
+		} );
+	}
+
+	/// <summary>Builds the armed facility on the free cell nearest <paramref name="near"/> whose entrance opens onto a walkable path cell (Level.PlaceObject, the world click's build).</summary>
+	private OriginalObject PlaceFacilityNear( ObjectCatalogEntry entry, (int X, int Y) near )
+	{
+		var grid = Level.Guests!.Grid;
+		var cells = Enumerable.Range( 0, grid.CountX * grid.CountY ).Select( index => (X: index % grid.CountX, Y: index / grid.CountX) )
+			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X );
+		foreach ( var cell in cells )
+		{
+			if ( Level.CheckFreeObject( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed )
+				continue;
+			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
+			var doors = ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, 0 ).Where( point => point.Kind == ObjectCellKind.Entrance ).ToArray();
+			if ( doors.Length > 0 && !doors.All( door => grid.IsWalkable( door.OutsideX, door.OutsideY ) ) )
+				continue;
+			var placed = Level.PlaceObject( entry, cell.X, cell.Y, 0 );
+			Require( placed != null && placed.Entry == entry && placed.ThingId > 0, $"{entry.DisplayName} is built with a thing of the park" );
+			return placed!;
+		}
+		Require( false, $"find a site for {entry.DisplayName}" );
+		return null!;
 	}
 
 	/// <summary>

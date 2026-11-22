@@ -109,7 +109,10 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		("shops", "Shops.sam", ParkObjectKind.Shop),
 		("sideshow", "SideShow.sam", ParkObjectKind.Sideshow),
 		("features", "Features.sam", ParkObjectKind.Feature),
-		("upgrades", "Upgrades.sam", ParkObjectKind.Upgrade)
+		("upgrades", "Upgrades.sam", ParkObjectKind.Upgrade),
+		// Theme Park Inc's facilities (ObjectCategory.Facility): bought like a feature, which their Theme Park World counterparts (the toilets, bins, staff rooms and security cameras of the features
+		// folder) are; Science spells the folder Facilities, so it is found without regard to case
+		("facilities", "facilities.sam", ParkObjectKind.Feature)
 	};
 
 	private readonly Dictionary<int, EconomyObjectInfo> objects;
@@ -222,11 +225,10 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		var result = new List<EconomyObjectInfo>();
 		foreach ( var (directory, categoryFile, kind) in Categories )
 		{
-			var categoryPath = $"/levels/{theme}/{directory}";
-			if ( !FileSystem.DirectoryExists( categoryPath ) )
+			if ( FindChild( $"/levels/{theme}", directory, directory: true ) is not { } categoryPath )
 				continue;
-			var categoryLayer = FileSystem.FileExists( $"{categoryPath}/{categoryFile}" )
-				? SamDocument.Parse( FileSystem.ReadAllText( $"{categoryPath}/{categoryFile}" ), $"{categoryPath}/{categoryFile}" )
+			var categoryLayer = FindChild( categoryPath, categoryFile, directory: false ) is { } categoryFilePath
+				? SamDocument.Parse( FileSystem.ReadAllText( categoryFilePath ), categoryFilePath )
 				: new SamDocument( categoryFile, Array.Empty<SamEntry>() );
 			foreach ( var archive in FileSystem.GetDirectories( categoryPath ).OrderBy( item => item, StringComparer.OrdinalIgnoreCase ) )
 			{
@@ -257,6 +259,22 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 					yield return null;
 		AddModObjects( theme, easy, result );
 		yield return new EconomyObjectCatalog( result );
+	}
+
+	/// <summary>
+	/// The data-root-relative path of <paramref name="name"/> under <paramref name="parent"/>, the exact spelling first and then without regard to case (the object catalogue's rule: Theme Park Inc's
+	/// Science spells its facilities folder <c>Facilities</c>); null when there is none.
+	/// </summary>
+	private static string? FindChild( string parent, string name, bool directory )
+	{
+		var path = $"{parent}/{name}";
+		if ( directory ? FileSystem.DirectoryExists( path ) : FileSystem.FileExists( path ) )
+			return path;
+		if ( !FileSystem.DirectoryExists( parent ) )
+			return null;
+		var children = directory ? FileSystem.GetDirectories( parent ) : FileSystem.GetFiles( parent );
+		return children.Select( child => FileSystem.GetRelativePath( FileSystem.GetAbsolutePath( child ) ) )
+			.FirstOrDefault( child => string.Equals( Path.GetFileName( child ), name, StringComparison.OrdinalIgnoreCase ) );
 	}
 
 	/// <summary>

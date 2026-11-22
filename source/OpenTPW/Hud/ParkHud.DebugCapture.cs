@@ -127,7 +127,7 @@ public sealed partial class ParkHud
 		// a type still in the lab is made available as the research cheat does, so every preview can be captured
 		for ( var attempt = 0; attempt < 2; attempt++ )
 		{
-			foreach ( var category in Enum.GetValues<BuildCategory>() )
+			foreach ( var category in BuyTabs )
 			{
 				SelectCategory( category );
 				var index = BuyItems.ToList().FindIndex( item => item.InfoId == infoId );

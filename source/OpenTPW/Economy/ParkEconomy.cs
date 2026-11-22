@@ -3077,6 +3077,16 @@ public sealed partial class ParkEconomy : IParkEconomy
 		Raise( ParkEventKind.GuestPaid, price, item.Id, item.InfoId, nameof( LedgerCategory.OtherIncome ) );
 	}
 
+	/// <summary>A customer of a Theme Park Inc object that takes no money (<c>0x5E5DA0</c>: a staff member arriving at his rest area): its customer ring and month count rise.</summary>
+	// [BIN:TPI-EXE:0x5E5DA0 customer] the history object's daily customers (+0x110) and monthly customers (+0x1278) rise by one; no event and no counter
+	internal void RecordCustomer( int instanceId )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return;
+		item.CustomersThisMonth++;
+		item.CustomersRing.Today++;
+	}
+
 	/// <summary>Rides have no per-ride price in the original data of Theme Park World; use is counted for statistics and challenges.</summary>
 	public void RecordRideUse( int instanceId )
 	{

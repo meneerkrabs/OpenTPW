@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -183,6 +184,36 @@ public class ThemeParkIncLandTests
 	}
 
 	[TestMethod]
+	public void AScienceContinuationWithoutTheFacilitiesIsRecognisedByItsManifest()
+	{
+		// a continuation saved before the catalogue held the facilities pins no facilities.sam: ValidateShape refuses it with the start-again message before the asset comparison
+		var hash = new string( '0', 64 );
+		Assert.IsTrue( ParkResumeSaveFile.PinsThemeParkIncFacilities( new Dictionary<string, string> { ["data:/levels/science/Facilities/facilities.sam"] = hash } ) );
+		Assert.IsFalse( ParkResumeSaveFile.PinsThemeParkIncFacilities( new Dictionary<string, string> { ["data:/levels/science/rides/Rides.sam"] = hash } ) );
+		Assert.IsFalse( ParkResumeSaveFile.PinsThemeParkIncFacilities( new Dictionary<string, string> { ["mod:x:/levels/science/Facilities/facilities.sam"] = hash } ), "only the game data's folder counts" );
+		Assert.IsFalse( ParkResumeSaveFile.PinsThemeParkIncFacilities( null ) );
+		StringAssert.Contains( ParkResumeSaveFile.ThemeParkIncFacilitiesMissing, "before its facilities were kept" );
+		// a member saved before the rest areas reads as resting nowhere
+		var old = System.Text.Json.JsonSerializer.Deserialize<ThemeParkIncStaffMemberSnapshot>( """{"Id":1,"Role":0,"NameIndex":0,"SpriteDraw":0,"Experience":1,"Salary":1,"Agency":0,"Happiness":1,"Motivation":1,"Energy":1,"WageShortfall":0,"WageDemandDay":0,"DayCounters":[0,0,0,0,0,0,0,0,0]}""" )!;
+		Assert.AreEqual( 0, old.RestArea );
+	}
+
+	[TestMethod]
+	public void NoModOrExtensionObjectReachesAThemeParkIncZone()
+	{
+		// IsListed hides a type without an object control (ThemeParkIncResearch.IsResearched), and the original's load gives every type of the zone one (0x43F900 -> 0x5CFEB0): so no OpenTPW object may
+		// enter a Theme Park Inc zone's catalogue. A mod's (and the official extensions') objects.json names one of Theme Park World's four themes, and those are no Theme Park Inc zone
+		CollectionAssert.AreEquivalent( new[] { "jungle", "hallow", "space", "fantasy" }, ObjectCatalog.Themes.ToArray() );
+		Assert.IsFalse( ObjectCatalog.Themes.Intersect( new[] { "arabian", "science", "water" } ).Any() );
+		foreach ( var zone in new[] { "arabian", "science", "water" } )
+		{
+			var json = $$"""{ "schema": 1, "idRange": { "first": 40000, "last": 40010 }, "objects": [ { "archive": "objects/x", "theme": "{{zone}}", "category": "features", "infoId": 40000 } ] }""";
+			var error = Assert.ThrowsException<InvalidDataException>( () => OpenTPW.Mods.ModObjectsFile.Parse( System.Text.Encoding.UTF8.GetBytes( json ), Array.Empty<string>() ) );
+			StringAssert.Contains( error.Message, "must be one of" );
+		}
+	}
+
+	[TestMethod]
 	public void ScienceListsNoSpecialRideInMissionZero()
 	{
 		UseTpiData();
@@ -191,10 +222,26 @@ public class ThemeParkIncLandTests
 		var all = new OriginalBuildCatalog( catalog );
 		var listed = Enum.GetValues<BuildCategory>().SelectMany( gated.GetItems ).Select( item => item.InfoId ).ToHashSet();
 		var hidden = Enum.GetValues<BuildCategory>().SelectMany( all.GetItems ).Select( item => item.InfoId ).Where( id => !listed.Contains( id ) ).OrderBy( id => id ).ToArray();
-		CollectionAssert.AreEqual( new[] { 1110, 1160, 1170, 1180 }, hidden, "Info.IsSpecial: the Victorian house, the water ride, the tour ride and the log mill" );
+		// Info.IsSpecial: the Victorian house, the water ride, the tour ride and the log mill; the research room (1404, UsageInfo.ThinkingSpace 1) waits for mission 1 and the training room (1440,
+		// UsageInfo.TrainingRoom 1) for mission 2 or the obstacle research of mission 1
+		CollectionAssert.AreEqual( new[] { 1110, 1160, 1170, 1180, 1404, 1440 }, hidden );
 		Assert.IsTrue( listed.Count > 0 );
-		// the research lab (1404, UsageInfo.ThinkingSpace 1) and the training room (1440, UsageInfo.TrainingRoom 1) are Facilities (Info.WhichUIType 5), which the slice's catalogue does not load
-		Assert.IsFalse( catalog.Entries.Any( entry => entry.InfoId is 1404 or 1440 ) );
+		// [BIN:TPI-EXE:0x57A598 facilities tab] the facilities folder's types are the fifth tab's (Info.WhichUIType 5 from facilities.sam)
+		CollectionAssert.AreEqual( new[] { 1200, 1400, 1404, 1421, 1422, 1439, 1440, 3417 }, all.GetItems( BuildCategory.Facilities ).Select( item => item.InfoId ).ToArray() );
+		Assert.IsTrue( all.GetItems( BuildCategory.Facilities ).All( item => item.Entry!.Category == ObjectCategory.Facility && item.Entry.WhichUIType == 5 ) );
+		CollectionAssert.AreEqual( new[] { 1200, 1400, 1421, 1422, 1439, 3417 }, gated.GetItems( BuildCategory.Facilities ).Select( item => item.InfoId ).ToArray(), "mission 0" );
+		var missionOne = new OriginalBuildCatalog( catalog, entry => ThemeParkIncCatalogue.IsListed( entry, 1, false ) );
+		CollectionAssert.AreEqual( new[] { 1200, 1400, 1404, 1421, 1422, 1439, 3417 }, missionOne.GetItems( BuildCategory.Facilities ).Select( item => item.InfoId ).ToArray(), "mission 1: the research room" );
+		var missionTwo = new OriginalBuildCatalog( catalog, entry => ThemeParkIncCatalogue.IsListed( entry, 2, false ) );
+		CollectionAssert.AreEqual( new[] { 1200, 1400, 1404, 1421, 1422, 1439, 1440, 3417 }, missionTwo.GetItems( BuildCategory.Facilities ).Select( item => item.InfoId ).ToArray(), "mission 2: the training room" );
+		// the original lists a type in tab 5 by its +0x600 alone; IsBuildable also asks for the facilities folder (so a Theme Park Inc toilet a mod brings into a Theme Park World park, whose own .sam
+		// says 5, never reaches Theme Park World's four-tab buy window), which is the same rule on the three zones' data: only the facilities say 5
+		foreach ( var zone in new[] { "science", "water", "arabian" } )
+		{
+			var fives = ObjectCatalog.Load( zone ).Entries.Where( entry => entry.WhichUIType == 5 ).ToArray();
+			Assert.AreEqual( 8, fives.Length, zone );
+			Assert.IsTrue( fives.All( entry => entry.Category == ObjectCategory.Facility ), zone );
+		}
 	}
 
 	[TestMethod]

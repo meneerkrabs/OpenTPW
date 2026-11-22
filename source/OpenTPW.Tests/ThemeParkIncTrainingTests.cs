@@ -267,8 +267,10 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 
 			var older = objects.TryPlace( training, 9, 9, 0, out _ )!;
 			older.ThingId = 500;
+			economy.AddThemeParkIncThing( 500 );
 			var newer = objects.TryPlace( training, 12, 12, 0, out _ )!;
 			newer.ThingId = 600;
+			economy.AddThemeParkIncThing( 600 );
 			Assert.AreEqual( (ushort)600, world.Rooms!.First( ThemeParkIncRoomKind.Training )!.Value.Thing, "the newest room first" );
 			// the room being destroyed is off the object list while its messages go out (0x64F430 at 0x5DE7C4): the finder takes the other one
 			var destroyed = typeof( Level ).GetField( "tpiDestroyedRoom", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;

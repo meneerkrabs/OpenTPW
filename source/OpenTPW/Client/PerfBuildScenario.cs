@@ -54,7 +54,7 @@ internal sealed class PerfBuildScenario
 		level.Park?.Economy.Research.MakeEveryItemAvailable();
 		hud.OpenBuyWindow();
 		yield return "buy window opened";
-		foreach ( var category in Enum.GetValues<BuildCategory>() )
+		foreach ( var category in ParkHud.BuyTabs )
 		{
 			hud.SelectCategory( category );
 			yield return $"buy tab {category}, rows 1..{Math.Min( hud.BuyItems.Count, BuyListModel.VisibleRows )} of {hud.BuyItems.Count}";
@@ -77,7 +77,7 @@ internal sealed class PerfBuildScenario
 		if ( Camera.Mode is not ParkCameraMode camera || !level.TryGetGridCell( camera.Target.X, camera.Target.Y, out var centreX, out var centreY ) )
 			yield break;
 		var placed = new HashSet<string>( StringComparer.Ordinal );
-		foreach ( var category in Enum.GetValues<BuildCategory>() )
+		foreach ( var category in ParkHud.BuyTabs )
 		{
 			hud.OpenBuyWindow();
 			hud.SelectCategory( category );

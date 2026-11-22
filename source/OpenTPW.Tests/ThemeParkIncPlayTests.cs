@@ -517,7 +517,7 @@ public class ThemeParkIncPlayTests
 		runtime.LinkAttraction( placed!.Visitors, entry.InfoId );
 		Assert.AreEqual( before - info.PurchaseCost, economy.Balance, "exactly one debit of the purchase price, linking included" );
 		Assert.AreEqual( info.PurchaseCost, bought!.TotalSpent );
-		// a long run of guests: the litter is on, as the park's handymen sweep it (ThemeParkIncHandymanTests), and no toilet wears (Facilities, the toilets' directory, is not in the slice's catalogue;
+		// a long run of guests: the litter is on, as the park's handymen sweep it (ThemeParkIncHandymanTests), and no toilet wears (the toilets are facilities the player may build, none is built here;
 		// the toilet wear is a synthetic test, and Theme Park Inc's own toilet wear is unported: [EXT:tpi-no-maintenance-wear])
 		Assert.IsFalse( economy.Litter.Disabled, "the guests drop litter in a park with Theme Park Inc staff" );
 		var cashAfterBuilds = economy.Balance;

@@ -2,11 +2,11 @@ namespace OpenTPW;
 
 /// <summary>
 /// Theme Park Inc's gardener in the park (docs/reverse/TPI-STAFF.md, "Gardener and plants"): kind 0x14, the pre-update <c>0x5D2820</c> and the dispatch <c>0x5D2A60</c> (0 idle, 1 patrol, 0x1F to
-/// the plant, 0x20 watering, the training states through the common handler), the search <c>0x5D28C0</c> with the plant chooser <c>0x5D2DC0</c> and the claim reader <c>0x5E37F0</c>, and the
+/// the plant, 0x20 watering, the rest states 2, 3 and 0x23, the training states through the common handler), the search <c>0x5D28C0</c> with the plant chooser <c>0x5D2DC0</c> and the claim reader <c>0x5E37F0</c>, and the
 /// watering's end (ParkEconomy.FinishThemeParkIncWatering).
 /// </summary>
 /// <remarks>
-/// The states 2 and 3 (to a rest area and resting) are not reached: no Theme Park Inc object is a rest area. The facing the watering state asks for (<c>0x609E60</c>: the heading word +0x2C from the
+/// A tired gardener rests as the other roles do (the states 2, 3 and 0x23, ThemeParkIncStaffWorld.Rest.cs). The facing the watering state asks for (<c>0x609E60</c>: the heading word +0x2C from the
 /// queue link byte of the gardener's cell, 1000, 1500, 500 or 2000 in the 2048 units of <c>0x91E074</c>) is presentation and not ported: the gardener keeps the heading of his walk's last step
 /// (<c>[EXT:tpi-twp-guest-rules]</c>, D1). The destructor's claim release (<c>0x5D2430</c> → <c>0x5E37B0</c>) waits for the firing of Theme Park Inc staff, which is not ported.
 /// </remarks>
@@ -38,8 +38,9 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>The gardener's state handler.</summary>
-	// [BIN:TPI-EXE:0x5D2A60 gardener dispatch] states 0..0x20 by the byte table 0x5D2B68 and the jump table 0x5D2B4C: 0 the idle end 0x62CA10, 1 0x5D2A81, 2 0x629EF0 and 3 0x62A1C0 (the rest area's,
-	// unreached), 0x1F 0x5D2C70, 0x20 0x5D2ACE, every other and anything above 0x20 the common handler 0x6287A0 (7 -> 0x62A7C0, 8 -> 0x62AA50)
+	// [BIN:TPI-EXE:0x5D2A60 gardener dispatch] states 0..0x20 by the byte table 0x5D2B68 (00 01 02 03, then 06 for 4..0x1E, 04 and 05) and the jump table 0x5D2B4C: 0 the idle end 0x62CA10, 1 0x5D2A81,
+	// 2 0x629EF0 and 3 0x62A1C0 (the rest area's, ThemeParkIncStaffWorld.Rest.cs), 0x1F 0x5D2C70, 0x20 0x5D2ACE, every other and anything above 0x20 the common handler 0x6287A0 (entry 6, 0x5D2B41:
+	// 7 -> 0x62A7C0, 8 -> 0x62AA50, 0x23 -> 0x62CA90)
 	private void DispatchGardener( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		switch ( member.State )
@@ -69,6 +70,17 @@ public sealed partial class ThemeParkIncStaffWorld
 				break;
 			case ThemeParkIncTraining.Training:
 				UpdateTraining( economy, settings, member, turn );
+				break;
+			// [BIN:TPI-EXE:0x5D2A60 gardener rest states] the byte table 0x5D2B68 sends 2 to the jump-table entry 2 (0x5D2B26 -> 0x629EF0) and 3 to entry 3 (0x5D2B2F -> 0x62A1C0), the handyman's
+			// entries for the same states; 0x23 lies above 0x20 and goes to the common handler 0x6287A0, whose byte table 0x628B10 sends it (index 0x1F) to entry 10, 0x62897B -> 0x62CA90
+			case ToRestArea:
+				UpdateToRestArea( economy, settings, member, turn );
+				break;
+			case Resting:
+				UpdateResting( economy, settings, member, turn );
+				break;
+			case RestSearch:
+				UpdateRestSearch( economy, settings, member, turn );
 				break;
 		}
 	}

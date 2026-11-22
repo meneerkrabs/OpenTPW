@@ -21,8 +21,9 @@ namespace OpenTPW;
 /// <c>Standard.sam</c> — which is all <see cref="GuestSettings"/> ever reads, whatever the difficulty —
 /// the theme's <c>Easy_Standard.sam</c> in easy mode, <c>/Challenges.sam</c> and the theme's
 /// <c>global.sam</c> when present), the advisor settings when present, and the theme's terrain
-/// <c>base.map</c>/<c>base.MD2</c> (the heightfield placement and guest paths run on; Theme Park Inc's
-/// <c>dlake.MD2</c> joins when present). Out of scope by design: textures and other presentation media
+/// <c>base.map</c>/<c>base.MD2</c> (the heightfield placement and guest paths run on; a terrain <c>dlake.MD2</c> joins only where
+/// the level draws it, <see cref="OriginalPark.DrawsTerrainLake"/>: no shipped level, since a Theme Park Inc zone's lake is its obstacle objects, which the
+/// catalogue pins). Out of scope by design: textures and other presentation media
 /// (guest sprites, sky, music, sounds, hoardings, fonts, <c>OBJECT_NAMES</c> strings), enhanced/custom
 /// texture packs, and original <c>TPWS</c>/<c>TPWI</c> saves — changing them must not invalidate a park.
 /// Easy_/Online_ overlays inside an archive are pinned with it: replacing any bytes of a trusted archive
@@ -40,7 +41,8 @@ internal static class ParkResumeAssetManifest
 	private static readonly string DataRootPrefix = ContentRoot.Data.KeyPrefix;
 
 	// The category default .sam layered under every object file of a category. Mirrors ObjectCatalog's
-	// category directories (note <c>sideshow</c> → <c>SideShow.sam</c>); keep in sync with it.
+	// category directories (note <c>sideshow</c> → <c>SideShow.sam</c>) except Theme Park Inc's <c>obstacles</c>, whose folder ships no
+	// defaults file (its objects' own members are pinned with the archives); keep in sync with it.
 	private static readonly (string Directory, string Defaults)[] CategoryDefaults =
 	{
 		("rides", "Rides.sam"),
@@ -127,8 +129,8 @@ internal static class ParkResumeAssetManifest
 	}
 
 	/// <summary>
-	/// The theme's terrain base map, heightfield model and (Theme Park Inc) lake model as data-relative
-	/// paths, in that fixed order — whichever the terrain directory lists; empty when it does not exist.
+	/// The theme's terrain base map, heightfield model and lake model (only where the level draws it, <see cref="OriginalPark.DrawsTerrainLake"/>) as
+	/// data-relative paths, in that fixed order — whichever the terrain directory lists; empty when it does not exist.
 	/// </summary>
 	private static IEnumerable<string> TerrainFiles( string theme )
 	{
@@ -141,7 +143,7 @@ internal static class ParkResumeAssetManifest
 		{
 			return Array.Empty<string>();
 		}
-		var names = new[] { "base.map", "base.MD2", OriginalPark.LakeModelName };
+		var names = OriginalPark.DrawsTerrainLake( theme ) ? new[] { "base.map", "base.MD2", OriginalPark.LakeModelName } : new[] { "base.map", "base.MD2" };
 		return names.Select( name => listed.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), name, StringComparison.OrdinalIgnoreCase ) ) )
 			.Where( file => file != null )
 			.Select( file => FileSystem.GetRelativePath( FileSystem.GetAbsolutePath( file! ) ) )

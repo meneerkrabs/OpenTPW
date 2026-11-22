@@ -155,6 +155,8 @@ public sealed partial class ParkCellMap
 	private readonly byte[] links;
 	private readonly byte[] queueLinks;
 	private readonly ushort[] owners;
+	// the Theme Park Inc obstacle cell flag (map square +0x24), allocated on its first write: Theme Park World maps never have one
+	private bool[]? obstacleCells;
 	private readonly int[] typeCounts = new int[256];
 	private readonly int[] blockStamps;
 	/// <summary>Cells per side of a stamp block (the original's 16 × 16-cell blocks).</summary>
@@ -175,6 +177,7 @@ public sealed partial class ParkCellMap
 		links = (byte[])source.links.Clone();
 		queueLinks = (byte[])source.queueLinks.Clone();
 		owners = (ushort[])source.owners.Clone();
+		obstacleCells = (bool[]?)source.obstacleCells?.Clone();
 		typeCounts = (int[])source.typeCounts.Clone();
 		BlocksX = source.BlocksX;
 		BlocksY = source.BlocksY;
@@ -901,6 +904,30 @@ public sealed partial class ParkCellMap
 		placements[index] = value;
 		Version++;
 		NoteChange( x, y, index, before );
+	}
+
+	/// <summary>
+	/// Theme Park Inc's obstacle cell flag (map square <c>+0x24</c>): the cell belongs to an obstacle's footprint, so the pick and the cursor help follow its owner word to the obstacle. Always false
+	/// on a Theme Park World map. It blocks nothing; the obstacle's cell types do (docs/reverse/TPI-MISSIONS.md §6).
+	/// </summary>
+	// [BIN:TPI-EXE:0x647E01 obstacle cell flag] the placement writes +0x24 = 1 and the opening 0x5E8CB4 writes 0; the pick 0x666BE0 and the hover at 0x504A0C read it
+	public bool ObstacleFlagAt( int x, int y ) => obstacleCells != null && InBounds( x, y ) && obstacleCells[y * Width + x];
+
+	/// <summary>Whether any cell carries the obstacle flag (<see cref="ObstacleFlagAt"/>).</summary>
+	public bool HasObstacleFlags => obstacleCells != null && Array.IndexOf( obstacleCells, true ) >= 0;
+
+	/// <summary>Sets Theme Park Inc's obstacle cell flag (<see cref="ObstacleFlagAt"/>).</summary>
+	public void SetObstacleFlag( int x, int y, bool value )
+	{
+		var index = Index( x, y );
+		if ( obstacleCells == null )
+		{
+			if ( !value )
+				return;
+			obstacleCells = new bool[Width * Height];
+		}
+		obstacleCells[index] = value;
+		Version++;
 	}
 
 	/// <summary>Sets the owner word (<see cref="OwnerAt"/>). Not part of the state digest: it is derived from the placed objects and the queues' rides.</summary>

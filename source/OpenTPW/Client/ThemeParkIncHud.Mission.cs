@@ -10,6 +10,25 @@ public sealed partial class ThemeParkIncHud
 	/// <summary>The open mission window (null when it is closed).</summary>
 	internal ThemeParkIncMissionWindow? MissionWindow { get; private set; }
 
+	/// <summary>The camera flight's mission-window requests this HUD has answered (<see cref="ThemeParkIncCutscene.MissionWindowRequests"/>).</summary>
+	private int answeredMissionWindowRequests = -1;
+
+	/// <summary>
+	/// Opens the mission window when the camera flight's countdown asked for it since the last update (one update after a zone-arrival flight ends): the countdown's end calls the
+	/// builder directly, so it opens over whatever is open, closing a letter as every opening does.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D0369 flight window countdown] 0xA9D258 counts 1, 2, 3 on the flight updates after a mode-2 end, then 0xA61810 is built (0x55A7F0)
+	private void UpdateMissionWindowRequests()
+	{
+		var requests = level.Park?.Economy?.TpiCutscene?.MissionWindowRequests ?? 0;
+		if ( answeredMissionWindowRequests < 0 )
+			answeredMissionWindowRequests = requests;
+		if ( requests == answeredMissionWindowRequests )
+			return;
+		answeredMissionWindowRequests = requests;
+		OpenMissionWindow();
+	}
+
 	/// <summary>The mission window is open.</summary>
 	public bool MissionWindowOpen => Stack.Screens.Any( screen => screen.Name == ThemeParkIncMissionWindow.ScreenName );
 

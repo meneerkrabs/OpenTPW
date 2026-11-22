@@ -59,6 +59,8 @@ public interface IThemeParkIncMissionHost
 	void EnsureObstacleResearch();
 	/// <summary>The "Objective Complete!" letter of mission <paramref name="completed"/> (<c>0x5CEAE0</c>).</summary>
 	void PostObjectiveLetter( int completed );
+	/// <summary>The first briefing after the zone arrival's flyover (<c>0x5CD6E0(0x5C, 5, 1)</c>).</summary>
+	void PostIntroductionLetter();
 	/// <summary>The controller's status broadcast (message 0x27, then <c>0x54D660</c>).</summary>
 	void StatusChanged();
 }
@@ -353,6 +355,18 @@ public sealed class ThemeParkIncMissionController
 			InitExitStatistics( turn );
 		}
 		return completion;
+	}
+
+	/// <summary>
+	/// The end of the zone arrival's flyover (<c>0x5F1760</c>, called by the cutscene's mode-2 end): on mission 0, unless the career's <c>+0x20</c> byte is set, the first briefing goes out and the byte is set.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5F1760 arrival briefing] career +0x20 == 1: nothing; counter (+0x105C) != 0: nothing; else a 0x24-byte message object 0x5CD6E0(0x5C, 5, 1) is posted and +0x20 = 1 (0x5F18DA, 0x5F18F7)
+	public void IntroductionEnded()
+	{
+		if ( career.ObjectiveLetterPosted || career.MissionCounter != 0 )
+			return;
+		host.PostIntroductionLetter();
+		career.ObjectiveLetterPosted = true;
 	}
 
 	/// <summary>Message 0x23: the obstacle's research is complete; the next update shows it.</summary>

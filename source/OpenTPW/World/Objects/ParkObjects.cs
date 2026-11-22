@@ -438,7 +438,7 @@ public sealed class ParkObjects
 			return null;
 		// the new object is built (models, script) before anything is demolished or cleared, so a failed build leaves the park as it was;
 		// like Add, its script draws from the world generator (DET-013)
-		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) );
+		var item = Constructed( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ) );
 		foreach ( var victim in plan.Overwritten )
 			Remove( victim );
 		foreach ( var (x, y) in plan.ClearedPaths )
@@ -459,7 +459,28 @@ public sealed class ParkObjects
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
 	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
 		// the placement ordinal stays the object's creation seed (identity and save bookkeeping); its script draws from the world generator like the original's (DET-013)
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ) );
+		Register( Constructed( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ) ) );
+
+	/// <summary>
+	/// The Standard words a new Theme Park Inc object's script takes (<see cref="ThemeParkIncConstructionWords"/>), read from the theme's Standard.sam on first use; the reset object's zeros without
+	/// the game's Standard.sam (a synthetic catalogue). Null outside Theme Park Inc.
+	/// </summary>
+	private ThemeParkIncConstructionWords? tpiConstruction;
+
+	/// <summary>
+	/// The end of a new object's construction in a Theme Park Inc world: its litter bin or plant script variables take the Standard words (<see cref="ThemeParkIncConstructionWords.Apply"/>). Theme Park
+	/// World's constructor (tp.exe <c>0x4DB090</c>) writes none of them, so a Theme Park World park, and a Theme Park Inc object a mod brings into one, keeps them at 0. A restored or imported object keeps its
+	/// variables as its load gives them.
+	/// </summary>
+	private OriginalObject Constructed( OriginalObject item )
+	{
+		if ( !GameEditions.IsThemeParkInc )
+			return item;
+		tpiConstruction ??= ThemeParkIncStandard.ConstructionWords( ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, Catalog.Theme )
+			?? new ThemeParkIncSamObject( ThemeParkIncStandard.Schema ) );
+		tpiConstruction.Value.Apply( item.Entry.Settings, item.Runtime.Script );
+		return item;
+	}
 
 	/// <summary>
 	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
@@ -771,8 +792,9 @@ public sealed class ParkObjects
 				continue;
 			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; the thing records of the six that have an archive carry the fixed-item default position (128, 128) and angle 0 (the five without an archive carry real positions, but nothing to draw), so no transform field is left unread in the save — evidence needed: how the original places a local-coordinate fixed model at its anchor (a thing's position bytes are decoded as (cell + fraction / 256) x 10 only by the camera-target setters 0x503490 and 0x5A1100 of the no-CD Theme Park Inc exe, no model placement reads them there)
 			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)
-			var thingId = Things != null && save.FindAttraction( record ) is { } thing && Things.IsUsed( thing.Id ) && Things.ModelOf( thing.Id ) == SaveThingModel.Attraction
-				&& objects.All( other => other.ThingId != thing.Id ) ? thing.Id : 0;
+			var thingId = Things == null ? 0 : save.ThemeParkIncWorld != null
+				? save.FindThemeParkIncAttraction( record ) is { } attraction ? SavedThingId( attraction.Id ) : 0
+				: save.FindAttraction( record ) is { } thing ? SavedThingId( thing.Id ) : 0;
 			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, seeds[record] ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
 			// a Theme Park Inc save's attraction thing of the record (the import's join), for the object list's order (Level.SeedThemeParkIncObjectList)
 			if ( save.FindThemeParkIncAttraction( record ) is { } tpiThing )
@@ -792,7 +814,32 @@ public sealed class ParkObjects
 			count++;
 			yield return (count, (index + 1) / (float)records.Count);
 		}
+		// [DATA:PreBuilt/prebuilt.TPWS:SYSG] the lake obstacle (1703, thing 30) is an attraction thing without a scene record (OriginalParkImport.UnrecordedThemeParkIncAttractions): it is the thing of the
+		// World chain with its own id, a fixed item (Info.DontApplyOffset 1) like the obstacles the records name, so it is placed at the same sentinel anchor (0, 0)
+		foreach ( var attraction in save.UnrecordedThemeParkIncAttractions )
+		{
+			var entry = Catalog.Find( attraction.InfoId );
+			if ( !IsImportedObject( entry ) )
+				continue;
+			var thingId = Things != null ? SavedThingId( attraction.Id ) : 0;
+			Register( new OriginalObject( entry, ComputePlacement( entry, 0, 0, 0 ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			count++;
+		}
 		yield return (count, 1);
+	}
+
+	/// <summary>
+	/// The thing id an imported object keeps: its saved attraction thing's id when the pool holds the saved chain there (a Theme Park World save), or, in a Theme Park Inc park whose pool is a new
+	/// world's, when that slot is still free; else 0 (the next free slot).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D6D40 park loader] a loaded Theme Park Inc park keeps its things' ids: the World variables name them (CurrentObstacle names the prebuilt's 1700 gate, thing 29)
+	private int SavedThingId( int saved )
+	{
+		if ( Things == null || objects.Any( other => other.ThingId == saved ) )
+			return 0;
+		if ( Things.IsUsed( saved ) )
+			return Things.ModelOf( saved ) == SaveThingModel.Attraction ? saved : 0;
+		return GameEditions.IsThemeParkInc && saved is >= 1 and <= ThingPool.Capacity ? saved : 0;
 	}
 
 	/// <summary>Gives the imported objects' scripts the ids, list order and pass counter of an original save's RSSE block (<see cref="SavedScriptImport"/>, DET-013); returns the report lines.</summary>

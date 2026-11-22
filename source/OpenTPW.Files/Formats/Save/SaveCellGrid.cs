@@ -43,6 +43,8 @@ public readonly struct SaveCell
 	public const int ParentIdOffset = 11;
 	/// <summary>The map cell's <c>mType</c> (u32): 1 path, 2 water, 7 no terrain, 0x1e fixed walkway, ...</summary>
 	public const int MapTypeOffset = 25;
+	/// <summary>The last dword of a Theme Park Inc map cell (its 56 bytes are Theme Park World's 52 and this): the obstacle cell flag, map square <c>+0x24</c>.</summary>
+	public const int ThemeParkIncObstacleFlagOffset = 53;
 	/// <summary>The structure (track) cell's <c>mType</c> (u32): 0x19 for a hoarding (park fence post).</summary>
 	public const int StructureTypeOffset = 77;
 	/// <summary>The map cell's <c>mLitter</c> (u32, tp.exe cell record +0x2C): the litter type 1 to 8, 0 for none.</summary>
@@ -108,6 +110,10 @@ public readonly struct SaveCell
 
 	/// <summary>The map cell's type (TPW records).</summary>
 	public uint MapType => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( MapTypeOffset, 4 ) );
+
+	/// <summary>A Theme Park Inc record's obstacle cell flag (map square <c>+0x24</c>, <see cref="ThemeParkIncObstacleFlagOffset"/>); 0 for a Theme Park World record, which has no such dword.</summary>
+	// [DATA:PreBuilt/prebuilt.TPWS:cell grid] the dword is 1 on exactly the obstacle footprints' cells whose shape value is not 0 and 0 everywhere else
+	public uint ThemeParkIncObstacleFlag => baseRecordBytes == ThemeParkIncRecordBytes ? BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( ThemeParkIncObstacleFlagOffset, 4 ) ) : 0;
 
 	// [BIN:TPW-EXE:0x004D8DD0 map cell serializer] the PC serializer writes mLitter (+0x2C, 4 bytes), mLitterCollector (+0x30, 2), mLitterScript (+0x28 and +0x38, 4 each), mPylonIndex (+0x40, 2), mStatusFlags (+0x26, 1), mTimeMarkedForLitterCollection (+0x34, 4) and mWho (+0x24, 2) after the base 0x4D0B30, in the Mac order below (STP-PPC 0x100D6C90): mLitter (4), mLitterCollector (2), mLitterScript (4 twice), mPylonIndex (2), mStatusFlags (1), mTimeMarkedForLitterCollection (4) and mWho (2) follow the 29-byte base (docs/reverse/PPC-formats.md); the status flags byte is the MAP attribute at +46
 	/// <summary>The litter in the cell (TPW records): 0 for none, else 1 to 8 (<c>LitterType</c>); another value is kept as read.</summary>

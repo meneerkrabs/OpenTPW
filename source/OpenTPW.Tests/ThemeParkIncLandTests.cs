@@ -1,5 +1,5 @@
-using System.Collections.Generic;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -234,6 +234,14 @@ public class ThemeParkIncLandTests
 		CollectionAssert.AreEqual( new[] { 1200, 1400, 1404, 1421, 1422, 1439, 3417 }, missionOne.GetItems( BuildCategory.Facilities ).Select( item => item.InfoId ).ToArray(), "mission 1: the research room" );
 		var missionTwo = new OriginalBuildCatalog( catalog, entry => ThemeParkIncCatalogue.IsListed( entry, 2, false ) );
 		CollectionAssert.AreEqual( new[] { 1200, 1400, 1404, 1421, 1422, 1439, 1440, 3417 }, missionTwo.GetItems( BuildCategory.Facilities ).Select( item => item.InfoId ).ToArray(), "mission 2: the training room" );
+		// the original lists a type in tab 5 by its +0x600 alone; IsBuildable also asks for the facilities folder (so a Theme Park Inc toilet a mod brings into a Theme Park World park, whose own .sam
+		// says 5, never reaches Theme Park World's four-tab buy window), which is the same rule on the three zones' data: only the facilities say 5
+		foreach ( var zone in new[] { "science", "water", "arabian" } )
+		{
+			var fives = ObjectCatalog.Load( zone ).Entries.Where( entry => entry.WhichUIType == 5 ).ToArray();
+			Assert.AreEqual( 8, fives.Length, zone );
+			Assert.IsTrue( fives.All( entry => entry.Category == ObjectCategory.Facility ), zone );
+		}
 	}
 
 	[TestMethod]

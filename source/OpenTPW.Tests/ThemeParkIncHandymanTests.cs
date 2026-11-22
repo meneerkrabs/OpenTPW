@@ -409,23 +409,6 @@ public class ThemeParkIncHandymanTests
 
 	// ---- The rest-area finder and the hire on a level ----------------------------------------
 
-	[TestMethod]
-	public void TheStaffRoomsAreTheRestAreasTheHandymanFinds()
-	{
-		// [BIN:TPI-EXE:0x62BA20 rest-area finder] its only thing test is the flag +0x42 bit 2, which the thing builder sets only from the type record's +0x1B0 (UsageInfo.ChillsYouOut, 0x5DB6E2):
-		// each world's facilities folder holds one such type, its staff room (ThemeParkIncRestTests runs the walk to it)
-		_ = ScienceEconomy();
-		foreach ( var (world, id) in new[] { ("science", 1400), ("water", 2420), ("arabian", 3418) } )
-		{
-			var objects = ObjectCatalog.Load( world ).Entries;
-			Assert.IsTrue( objects.Count > 0, world );
-			var resting = objects.Where( entry => entry.Settings.Values.Any( pair => pair.Key.Equals( "UsageInfo.ChillsYouOut", StringComparison.OrdinalIgnoreCase ) && pair.Value.Trim() != "0" ) ).ToArray();
-			CollectionAssert.AreEqual( new[] { id }, resting.Select( entry => entry.InfoId ).ToArray(), world );
-			Assert.AreEqual( ObjectCategory.Facility, resting[0].Category, world );
-			CollectionAssert.AreEqual( new[] { id }, EconomyObjectCatalog.Load( world, easy: false ).Objects.Where( info => info.ChillsYouOut ).Select( info => info.InfoId ).ToArray(), world );
-		}
-	}
-
 	private static void Set( object target, string field, object? value ) =>
 		target.GetType().GetField( field, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
 

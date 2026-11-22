@@ -163,14 +163,18 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 		CollectionAssert.AreEquivalent( new[] { 1, 3 }, draws.ToArray(), "both branches ran" );
 		// room again: the walk to it and state 2 (the closing draw still taken)
 		rooms.Occupants[40] = 0;
+		var success = new WorldRng( economy.World.State );
 		world.Update( economy, member, ++turn );
 		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRestArea, 40), (member.State, member.RestArea) );
+		success.NextWord();
+		Assert.AreEqual( success.State, economy.World.State, "the successful branch still takes the closing draw (0x62CB53 jumps to 0x62CBCF), and only it" );
 		// no area at all: state 0, no draw
 		rooms.Areas.Clear();
 		member.State = ThemeParkIncStaffWorld.RestSearch;
 		var state = economy.World.State;
 		world.Update( economy, member, ++turn );
 		Assert.AreEqual( (ThemeParkIncStaffWorld.Idle, 0), (member.State, member.RestArea) );
+		Assert.AreEqual( state, economy.World.State, "no rest area: state 0 and no draw (0x62CC33)" );
 	}
 
 	[TestMethod]
@@ -279,5 +283,109 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 		var copy = restored.TpiStaff!.Members.Single( other => other.Id == member.Id );
 		Assert.AreEqual( (ThemeParkIncStaffWorld.Resting, 40), (copy.State, copy.RestArea) );
 		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ), "the save round-trips exactly" );
+	}
+
+	[TestMethod]
+	public void TheLevelsRestAreasFollowTheObjectListAndTheOpenWord()
+	{
+		// [BIN:TPI-EXE:0x62BA20 rest-area finder] the attraction list newest first, a thing with +0x42 & 2 and the open word; the level's IThemeParkIncRooms on placed objects of synthetic types
+		var economy = ScienceEconomy();
+		var root = System.IO.Directory.CreateTempSubdirectory( "opentpw-tpi-rest-rooms" ).FullName;
+		var previousEntities = Entity.All;
+		Entity.All = new();
+		var (previousStarter, previousKiller) = (OriginalObjectRuntime.ParticleStarter, OriginalObjectRuntime.ParticleKiller);
+		OriginalObjectRuntime.ParticleStarter = _ => 1;
+		OriginalObjectRuntime.ParticleKiller = _ => { };
+		var model = Md2ModelFileTests.CreateGeometry();
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( 0x42 ), 1 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( 0x44 ), 0 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x268 ), 0 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x78 ), 0x264 );
+		foreach ( var offset in new[] { 0x38, 0x3a, 0x3c, 0x3e, 0x4a } )
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( offset ), 0 );
+		System.IO.File.WriteAllBytes( System.IO.Path.Combine( root, "model.MD2" ), model );
+		System.IO.File.WriteAllBytes( System.IO.Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		try
+		{
+			ObjectCatalogEntry Entry( int id, string usage ) => new( "science", ObjectCategory.Facility, "/synthetic", new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {id}\n{usage}", "synthetic.sam" ) } ),
+				new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
+				new BaseFileSystem( root ), null );
+			var staffRoom = Entry( 1400, "UsageInfo.ChillsYouOut 1\n" );
+			var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, null,
+				new object[] { "science", Array.Empty<ObjectCatalogEntry>() }, null )!;
+			var objects = new ParkObjects( catalog, new SandboxParkGrid(), new WorldSeed( 1 ) );
+			var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+			void Backing( object target, string name, object value ) =>
+				target.GetType().GetField( $"<{name}>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( target, value );
+			var world = new ThemeParkIncStaffWorld( Row( economy ) );
+			Backing( level, "Objects", objects );
+			Backing( level, "TpiStaffWorld", world );
+			var runtime = (ParkEconomyRuntime)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomyRuntime ) );
+			Backing( runtime, "Economy", economy );
+			Backing( level, "Park", runtime );
+			typeof( Level ).GetMethod( "AttachThemeParkIncRooms", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, null );
+
+			// the things in their pool's order: the newest thing heads the list, as the object list's (0x637100, 0x64F3E0)
+			var first = objects.TryPlace( staffRoom, 3, 9, 0, out _ )!;
+			first.ThingId = level.Things.Allocate( SaveThingModel.Attraction );
+			var second = objects.TryPlace( staffRoom, 9, 9, 0, out _ )!;
+			second.ThingId = level.Things.Allocate( SaveThingModel.Attraction );
+			var ride = objects.TryPlace( Entry( 1105, "" ), 6, 12, 0, out _ )!;
+			ride.ThingId = level.Things.Allocate( SaveThingModel.Attraction );
+			var areas = world.Rooms!.RestAreas();
+			CollectionAssert.AreEqual( new[] { (ushort)second.ThingId, (ushort)first.ThingId }, areas.Select( area => area.Thing ).ToArray(), "the staff rooms only, newest first" );
+			Assert.AreEqual( second.ThingCell, areas[0].Cell );
+			Assert.IsTrue( areas.All( area => area.CanLoad ), "a built facility is open (the constructor's open word, 0x5DB5FB)" );
+			// the open word: OpenTPW's open state is the script's VAR_RIDECLOSED, the same word while nothing closes a facility
+			Assert.IsTrue( second.Runtime.SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 1 ) );
+			Assert.IsFalse( world.Rooms.RestAreas()[0].CanLoad );
+			// the room being destroyed is off the list while its messages go out
+			typeof( Level ).GetField( "tpiDestroyedRoom", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, first.ThingId );
+			CollectionAssert.AreEqual( new[] { (ushort)second.ThingId }, world.Rooms.RestAreas().Select( area => area.Thing ).ToArray() );
+		}
+		finally
+		{
+			foreach ( var entity in Entity.All.ToArray() )
+				entity.Delete();
+			Entity.All = previousEntities;
+			(OriginalObjectRuntime.ParticleStarter, OriginalObjectRuntime.ParticleKiller) = (previousStarter, previousKiller);
+			System.IO.Directory.Delete( root, true );
+		}
+	}
+
+	[TestMethod]
+	public void AScienceContinuationWithoutTheFacilitiesIsRefusedBeforeTheAssetComparison()
+	{
+		var economy = ScienceEconomy();
+		// the real manifest of the Science catalogue pins the facilities folder's facilities.sam
+		var assets = ParkResumeAssetManifest.Capture( ObjectCatalog.Load( "science" ), "science", false );
+		Assert.IsTrue( ParkResumeSaveFile.PinsThemeParkIncFacilities( assets ) );
+		Assert.IsTrue( assets.Keys.Any( key => key.Contains( "/Facilities/resrch/", StringComparison.OrdinalIgnoreCase ) ), "and the facilities' archives" );
+		var without = assets.Where( pair => !pair.Key.Contains( "/facilities/", StringComparison.OrdinalIgnoreCase ) ).ToDictionary( pair => pair.Key, pair => pair.Value );
+		Assert.IsFalse( ParkResumeSaveFile.PinsThemeParkIncFacilities( without ) );
+		var envelope = ParkResumeSaveFileTests.Envelope();
+		envelope = envelope with
+		{
+			Theme = "science",
+			StartKind = ParkStartKind.FullSimulation,
+			Economy = ParkSaveFile.Capture( economy ),
+			Staff = null, Gate = null, Advisor = null, Weather = null,
+			TpiHudSpeed = GameSpeed.Normal,
+			TpiCurrentObstacle = 1700,
+			TpiWeatherClosingsSeen = 0,
+			Layout = envelope.Layout! with { Cells = envelope.Layout.Cells! with { Land = null, TpiUnowned = Convert.ToBase64String( new byte[16 * 16 / 8] ) } }
+		};
+		byte[] Bytes( ParkResumeSnapshot snapshot ) => ParkResumeJson.Serialize( snapshot );
+		var refused = Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkResumeSaveFile.Deserialize( Bytes( envelope with { AssetHashes = without } ) ) );
+		StringAssert.Contains( refused.Message, ParkResumeSaveFile.ThemeParkIncFacilitiesMissing );
+		// with the facilities pinned the shape check passes this test and fails, if at all, on another part of the synthetic envelope
+		try
+		{
+			ParkResumeSaveFile.Deserialize( Bytes( envelope with { AssetHashes = assets } ) );
+		}
+		catch ( System.IO.InvalidDataException other )
+		{
+			Assert.IsFalse( other.Message.Contains( "facilities", StringComparison.Ordinal ), other.Message );
+		}
 	}
 }

@@ -7,6 +7,10 @@
   the builder compares the type's `+0x600`, the type loader's copy of `Info.WhichUIType` (`0x43D014`), with the tab. `ObjectCatalogEntry.IsBuildable` accepts type 5 for a facility and
   `BuildCategory.Facilities` is 5; the text HUD's build window has a fifth button (in all eleven languages). The list keeps the mission gate and the research gate, so Science's mission 0 lists
   the two toilets, the bin and the staff room; the research room comes with mission 1 and the training room with mission 2 (or mission 1 after the obstacle research).
+- **Theme Park World's buy window.** `BuildCategory.Facilities` exists for both editions, but Theme Park World's buy window has its four tabs (`ParkHud.BuyTabs`): the perf build
+  scenario, the debug captures and `--debug-hud buytab` walk those, `buytab:facilities` is refused with a warning, and the window's title tolerates a category without a tab.
+- **Economy catalogue lookup.** The economy catalogue now finds a category folder and its defaults file without regard to case (Science's `Facilities`), as the object catalogue does. It
+  tries the exact path first, which Theme Park World's folders and defaults files (`Rides.sam`, `SideShow.sam`, ...) always match, so Theme Park World's results are unchanged.
 - **Single instance.** The row activation `0x57CF60` refuses a type with `UsageInfo.SingleInstance` 1 (the research and training rooms) while its control's built count (`+0x18`, raised by the
   constructor `0x5DBA8A`, lowered by the destroy `0x5DE7B4`) is above 0, with the sound 0x1D; the text HUD refuses it with a note.
 - **Research gate.** A type whose object control is not researched stays hidden (`0x57CB66`); now that the research room can be built, research unlocks it. After a park file's load the original
@@ -30,7 +34,8 @@ Open question: `ThemeParkIncStaffMember.Rest`, the moving step and the daily gai
 
 Verified with these checks:
 
-- The Theme Park Inc, park save, catalogue, staff and resume filters pass with the retail data. New tests cover the facilities tab and its mission gate, the staff rooms as the only rest areas
+- The Theme Park Inc, park save, catalogue, staff and resume filters pass with the retail data, as do the HUD, buy window and perf tests. New tests cover the buy window's four tabs,
+  the single-instance refusal, the level's rest areas in object-list order with their open word, the real Science manifest's facilities and the continuation's refusal without them, the facilities tab and its mission gate, the staff rooms as the only rest areas
   of the three zones, the finder's order and open word, the tired gate's walk, the rest to full energy and its end, the full room's wait and draws, the slack test, the low-motivation rest,
   a removed room, a resting researcher's save round trip, the version-4 checkpoint refusal, and the catalogue's litter bin with its script's construction words.
 - The silent, offscreen Science smoke exits 0; it now opens the facilities tab, checks its mission-0 list, builds the staff room beside the cleaner, sends the tired cleaner to it, and builds the

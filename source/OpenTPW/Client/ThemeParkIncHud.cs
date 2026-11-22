@@ -356,9 +356,13 @@ public sealed partial class ThemeParkIncHud
 	/// </summary>
 	// [BIN:TPI-EXE:0x57CF60 single instance] the row's type: +0x1BC (UsageInfo.SingleInstance, the word after TrainingRoom +0x1B8) equal to 1 and 0x5B5560 (the control's built count +0x18, raised by the
 	// constructor 0x5DBA8A and lowered by the destroy 0x5DE7B4) above 0 play the sound 0x1D (0x5039C0) and arm nothing; the list's draw 0x57A399 greys such a row (presentation)
+	/// <summary>Whether the list refuses <paramref name="entry"/>: <c>UsageInfo.SingleInstance</c> 1 with a live object of the type in the park.</summary>
+	internal static bool RefusesSingleInstance( ObjectCatalogEntry entry, IEnumerable<OriginalObject> objects ) =>
+		entry.Settings.GetInt( "UsageInfo.SingleInstance" ) == 1 && objects.Any( item => !item.IsDeleted && item.Entry.InfoId == entry.InfoId );
+
 	private void ArmBuild( ObjectCatalogEntry entry )
 	{
-		if ( entry.Settings.GetInt( "UsageInfo.SingleInstance" ) == 1 && level.Objects.Objects.Any( item => !item.IsDeleted && item.Entry.InfoId == entry.InfoId ) )
+		if ( RefusesSingleInstance( entry, level.Objects.Objects ) )
 		{
 			PostMessage( string.Format( T( OpenTpwText.TpiSingleInstance ), ItemNameOf( entry ) ) );
 			return;

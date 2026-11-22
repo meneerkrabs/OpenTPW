@@ -185,6 +185,12 @@ public sealed partial class ParkHud
 	}
 
 	public void SelectCategory( BuildCategory category ) => buy.SelectCategory( category );
+
+	/// <summary>
+	/// The buy window's tabs in <see cref="BuildCategory"/> order: Theme Park World's four (the table <c>0x4cd94</c>). Theme Park Inc's facilities tab (5) belongs to its own build list
+	/// (<c>ThemeParkIncHud</c>), so code that walks the buy window's tabs walks these, not every <see cref="BuildCategory"/>.
+	/// </summary>
+	internal static IReadOnlyList<BuildCategory> BuyTabs { get; } = Enum.GetValues<BuildCategory>().Where( category => BuyCategories.Any( entry => entry.Category == category ) ).ToArray();
 	/// <summary>Selects the list row <paramref name="index"/> (clamped) and scrolls it into view.</summary>
 	public void SelectBuyItem( int index ) => buy.Select( index );
 	public void ScrollBuyList( int rows ) => buy.Scroll( rows );
@@ -299,7 +305,8 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122
 		screen.Add( new UiLabel
 		{
-			Id = "title", Text = () => strings[BuyCategories.First( entry => entry.Category == buy.Category ).Title], Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title,
+			// a category without a tab (Theme Park Inc's facilities, which this window never offers) has no title
+			Id = "title", Text = () => BuyCategories.FirstOrDefault( entry => entry.Category == buy.Category ) is { Model: not null } tab ? strings[tab.Title] : "", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center
 		} );
 		// [BIN:TPW-EXE:0x4acdae buy window control 512] a type-1 label at (1297,75)-(1769,154) (table record 0x755114) shows the park's cash balance (0x7cf83c -> 0x5195d0 -> 0x6ad810, the HUD cash accessor) as UITEXT 0x1ca "Cash $ N" (0x4ace20), or 0x1cb with the magnitude when it is negative (0x4acdec); 0x4ac2fa refreshes it. The same label text as the hire window's control 9366.

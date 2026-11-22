@@ -76,7 +76,8 @@ public partial class Level
 		}
 
 		// [BIN:TPI-EXE:0x5DB6E2 rest-area flag] the attraction builder sets the thing's +0x42 |= 2 when the type record's +0x1B0 (UsageInfo.ChillsYouOut) is nonzero: the staff rooms (Science 1400,
-		// Water 2420, Arabian 3418); the open word +0x7C is the runtime's open state (mCanLoad), 1 from the constructor (0x5DB5FB) for a facility
+		// Water 2420, Arabian 3418); the open word +0x7C (mCanLoad, 1 from the constructor 0x5DB5FB for a facility) is read as the runtime's open state, the script's VAR_RIDECLOSED: OpenTPW keeps no
+		// separate open word, and the two agree while nothing closes a facility (the text HUD offers no close, and the weather closing asks only the choosable attractions, which a staff room is not)
 		public IReadOnlyList<ThemeParkIncRestArea> RestAreas() => ObjectList( "UsageInfo.ChillsYouOut" )
 			.Select( item => new ThemeParkIncRestArea( (ushort)item.ThingId, item.ThingCell, Entrance( item ), item.Runtime.IsOpen ) ).ToArray();
 

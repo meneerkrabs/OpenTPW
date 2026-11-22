@@ -184,6 +184,8 @@ public sealed class ObjectCatalogEntry
 	// [BIN:TPW-EXE:0x004AAF70 build menu filler] the build-menu filler lists a definition when its model loaded (def+0x508 == 0), its WhichUIType (def+0x4AC, copied from +0x4C at the end of 0x413410) equals the tab, AddOn.UpgradesId (def+0x284) is 0 and the control record 0x4D3D10(id)+0x10 is non-zero (availability or research); tools and fixed items are not filtered by name, their data has WhichUIType 4, and every upgrade-category object has AddOn.UpgradesId != 0, which gives this rule on the whole corpus
 	// [BIN:TPI-EXE:0x57A482 build panel tabs] Theme Park Inc's panel calls its list builder 0x57CA20 for the tabs 0 (button 0x32DF), 1 (0x32DE), 2 (0x32DD), 3 (0x32E0) and 5 (0x32E1, the jump table 0x57A728):
 	// a type is listed in the tab equal to its +0x600 (Info.WhichUIType), so the facilities (5) are buildable there and no tab shows type 4; only Theme Park Inc's facilities folder holds type 5
+	// (ThemeParkIncLandTests), so asking for the folder is the same rule on the data, and it keeps a Theme Park Inc toilet a mod brings into Theme Park World (its own .sam says 5) out of that
+	// edition's four-tab buy window
 	public bool IsBuildable => (WhichUIType is >= 0 and <= 3 || WhichUIType == FacilityTab && Category == ObjectCategory.Facility) && !IsFixedItem && !IsTool && Category != ObjectCategory.Upgrade;
 
 	/// <summary>Theme Park Inc's facilities tab: <c>Info.WhichUIType</c> 5 (<c>facilities.sam</c>).</summary>

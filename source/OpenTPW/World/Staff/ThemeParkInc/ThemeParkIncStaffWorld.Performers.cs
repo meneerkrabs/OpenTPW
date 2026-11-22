@@ -6,9 +6,10 @@ namespace OpenTPW;
 /// </summary>
 /// <remarks>
 /// The guard's chase, carry and first aid (the states 0x1A, 0x1C, 0x1D and 0x1E, entered from the staff HQ's prank message <c>0x6323F9</c> and the first-aid loop <c>0x557E00</c>) are not ported: they
-/// read the guests' own state numbers (<c>0x614720</c> tests the guest's <c>+0x2C0</c> against Theme Park Inc's set, 6..0xD, 0x17 and 0x1F upward; the first aid's patient is a guest in state 0x1B),
+/// read the guests' own state numbers (<c>0x614720</c> tests the guest's <c>+0x2C0</c> against Theme Park Inc's set, 6..0xD, 0x16 and 0x1F upward; the first aid's patient is a guest in state 0x1B),
 /// which a park's Theme Park World guests do not carry (<c>[EXT:tpi-capability-gates]</c>; docs/reverse/TPI-STAFF.md, "Guard"). The guests' reaction to a performing entertainer (<c>0x614D41</c>, in the guest's own
-/// update: the facing and the state writes) belongs to the guests' rules (<c>[EXT:tpi-twp-guest-rules]</c>) and is not ported either; the entertainer's row 0 on the cells cheers the guests through the needs phase, as in Theme Park World.
+/// update: the facing and the state writes) is not ported either (<c>[EXT:tpi-capability-gates]</c>: Theme Park World's own turn towards a performer, 0x004FEFF4, reads Theme Park World's staff, so a Theme Park Inc
+/// park's guests get neither); the entertainer's row 0 on the cells cheers the guests through the needs phase, as in Theme Park World.
 /// </remarks>
 public sealed partial class ThemeParkIncStaffWorld
 {
@@ -179,7 +180,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// The finder 0x5B1B20(kind 1, cell, radius): whether a thing of kind 1 (a guest) stands in the square of the radius around the cell, clipped to the map, as Theme Park World's 0x004C8EB0 finds one.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5B19C0 kind finder] the square [cell ± radius] clipped to 0..0x7F (only the cell word is masked to 16 bits; the radius is the argument as it is), the things of each cell's chain (0xADE6B4 + 0x1F038, nine bytes a cell) by the kind byte +2;
-	// the flag 1 stops at the first. [EXT:tpi-twp-guest-rules] the guests are Theme Park World's, so the kind-1 things are the guests TPW's finder counts
+	// the flag 1 stops at the first. [EXT:tpi-twp-guest-rules] the guests are Theme Park World's, so the kind-1 things are the guests TPW's finder counts; that finder,
+	// IGuardGuests.AnyGuestWithin, carries APPROX:ECON-022 (see there)
 	private bool AnyGuestWithin( (int X, int Y) cell, int radius ) => GuestFinder?.Invoke( cell, radius ) ?? (Guests as IGuardGuests)?.AnyGuestWithin( cell, radius ) == true;
 
 	/// <summary>A test's stand-in for the guests' finder (a world without guests); null reads <see cref="Guests"/>.</summary>

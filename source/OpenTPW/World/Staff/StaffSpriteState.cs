@@ -201,10 +201,13 @@ public sealed class StaffSpriteState
 		Require( source.Interval is >= 1 and <= SpritePlayer.LongestInterval );
 		Require( source.OutputValid <= 1 );
 		var programs = StaffSpritePrograms.Builtin;
-		Require( programs.Contains( new StaffSpritePc( source.CurrentPc ) ) && programs.Contains( new StaffSpritePc( source.RestartPc ) ) );
-		Require( source.LastPc == 0 || programs.Contains( new StaffSpritePc( source.LastPc ) ) );
+		// Theme Park Inc's performance programs (260 to 263) are built in for every edition, but only a Theme Park Inc park's entertainers run them
+		bool Known( uint word ) => programs.Contains( new StaffSpritePc( word ) )
+			&& (GameEditions.IsThemeParkInc || new StaffSpritePc( word ).Program is < StaffSpriteProgram.ThemeParkIncPerformanceA or > StaffSpriteProgram.ThemeParkIncPerformanceD);
+		Require( Known( source.CurrentPc ) && Known( source.RestartPc ) );
+		Require( source.LastPc == 0 || Known( source.LastPc ) );
 		foreach ( var word in source.Stack )
-			Require( word == 0 || programs.Contains( new StaffSpritePc( word ) ) );
+			Require( word == 0 || Known( word ) );
 		var registers = source.Registers;
 		Require( registers[(int)StaffSpriteRegister.Kind] <= 8 && registers[(int)StaffSpriteRegister.Variant] <= int.MaxValue );
 		Require( registers[(int)StaffSpriteRegister.Slot] < SpriteAnimationFile.SlotCount );

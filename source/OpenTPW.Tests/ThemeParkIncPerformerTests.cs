@@ -94,6 +94,19 @@ public class ThemeParkIncPerformerTests
 		return Enumerable.Range( 0, 16 * 16 ).SelectMany( index => { var (h, i, g, s, a) = environment.At( index % 16, index / 16 ); return new[] { h, i, g, s, a }; } ).ToArray();
 	}
 
+	[TestMethod]
+	public void APerformanceProgramInASavedSpriteIsOnlyValidInAThemeParkIncPark()
+	{
+		// the four performance programs (260 to 263) are built in for every edition, but only Theme Park Inc's entertainers run them, so a Theme Park World save that points at one is refused
+		var snapshot = new StaffSpriteStateSnapshot( 0, 0, new StaffSpriteVmSnapshot( new StaffSpritePc( StaffSpriteProgram.ThemeParkIncPerformanceA, 0 ).Word,
+			new StaffSpritePc( StaffSpriteProgram.ThemeParkIncPerformanceA, 0 ).Word, 0, (int)StaffSpriteRunState.Running, 0, new uint[StaffSpriteVmState.StackCapacity], 0, 0, 0, 0, 1,
+			new uint[StaffSpriteVmState.RegisterCount], 0 ) );
+		GameEditions.Select( GameEdition.ThemeParkInc );
+		StaffSpriteState.ValidateSnapshot( snapshot );
+		GameEditions.Select( GameEdition.ThemeParkWorld );
+		Assert.ThrowsException<InvalidDataException>( () => StaffSpriteState.ValidateSnapshot( snapshot ) );
+	}
+
 	// ---- Data ---------------------------------------------------------------------------------------
 
 	[TestMethod]

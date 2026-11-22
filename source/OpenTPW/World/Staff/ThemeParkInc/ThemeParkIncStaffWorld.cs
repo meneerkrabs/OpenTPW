@@ -891,12 +891,15 @@ public sealed partial class ThemeParkIncStaffWorld
 		// doubled without the run, as tp.exe's 0x004FA3F8
 		if ( result == WalkResult.Walking )
 		{
-			if ( !member.Sprite.RestartsAt( StaffSpriteEvents.Walk ) )
+			// 0x60B541: the speed bonus +0xD6 above the table's first word (0x9CFB20, 0) and the class byte 7 (a guard) runs; no other staff role does
+			var run = member.Role == ThemeParkIncStaffRole.Guard && unchecked( (ushort)member.SpeedBonus ) > unchecked( (ushort)BonusTable[0] );
+			var (template, program) = run ? (2, StaffSpriteEvents.Run) : (1, StaffSpriteEvents.Walk);
+			if ( !member.Sprite.RestartsAt( program ) )
 			{
-				member.Template = 1;
-				member.Sprite.QueueTemplate( StaffSpriteEvents.Walk );
+				member.Template = template;
+				member.Sprite.QueueTemplate( program );
 			}
-			member.Sprite.QueueInterval( GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, run: false ) );
+			member.Sprite.QueueInterval( GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, run ) );
 		}
 		return result;
 	}

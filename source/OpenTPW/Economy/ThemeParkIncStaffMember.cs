@@ -361,7 +361,7 @@ public sealed class ThemeParkIncStaffMember
 			// an entertainer or a guard keeps his cell effect (0x609E20's cell word and the radius it went down with); the entertainer's performing template is 0x13..0x16, no other role has an effect
 			ThemeParkIncStaffRole.Entertainer => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or (>= 0x13 and <= 0x16)
 				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			ThemeParkIncStaffRole.Guard => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 3 or 0xF
+			ThemeParkIncStaffRole.Guard => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 2 or 3 or 0xF
 				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
 			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 2 or 3 or 0xF or 0x19
 		};

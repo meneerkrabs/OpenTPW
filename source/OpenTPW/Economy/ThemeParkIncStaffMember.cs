@@ -39,6 +39,22 @@ public sealed class ThemeParkIncStaffMember
 	public int WageShortfall { get; internal set; }
 	/// <summary>The day of the month the member will demand a rise on (+0x26C), 0 for none.</summary>
 	public int WageDemandDay { get; internal set; }
+	/// <summary>The trained ability (+0x218, <c>mKnownAbilities</c>; ABILITIES.str): 0 for none, one at a time.</summary>
+	public int Ability { get; internal set; }
+	/// <summary>The ability being learnt (+0x220, <c>mCurrentlyLearning</c>), 0 for none.</summary>
+	public int LearningAbility { get; internal set; }
+	/// <summary>The training progress (+0x224, <c>mSAProgress</c>).</summary>
+	public int TrainingProgress { get; internal set; }
+	/// <summary>The ability chosen to learn (+0x22C, <c>mGoingToLearn</c>), which entering training (state 8) takes.</summary>
+	public int ChosenAbility { get; internal set; }
+	/// <summary>The staff HQ obstacle slot the member fills (+0x228, <c>mSlotLocation</c>), -1 for none.</summary>
+	public int HqSlot { get; internal set; } = -1;
+	/// <summary>Listed in a research lab team (+0x274, <c>mResearching</c>): a researcher in a research room shows "Researching" only then.</summary>
+	public bool Listed { get; internal set; }
+	/// <summary>The research room the researcher walks to or works in (+0x27C, <c>mRRoom</c>), 0 for none.</summary>
+	public int ResearchRoom { get; internal set; }
+	/// <summary>The turn the researcher entered his research room (+0x278, <c>mTimeStartedResearching</c>).</summary>
+	public long ResearchStamp { get; internal set; }
 
 	/// <summary>Hires <paramref name="candidate"/>: its role, name, experience, wage as the salary, agency and look.</summary>
 	public static ThemeParkIncStaffMember Hire( ThemeParkIncHireCandidate candidate, int id ) =>
@@ -181,13 +197,55 @@ public sealed class ThemeParkIncStaffMember
 	// [BIN:TPI-EXE:0x60D0D0 meter add] field = clamp(field + delta, 0, 100), the x87 sum compared and stored as a single
 	internal void AddHappiness( float delta ) => Happiness = Clamp( (double)delta + Happiness );
 
+	/// <summary>One update of research in a room: energy and happiness fall by the step x = 1 − experience / MaxExperience, every x87 operation rounded to a single.</summary>
+	// [BIN:TPI-EXE:0x6289BD research step] fildll the experience (+0x210, unsigned, zero-extended), fidivl MaxExperience (0xA02260), fsubrl 1.0, fstps x; flds x, fmuls -0.1f, fstps the argument of
+	// 0x60D0D0(&energy): flds the argument, fadds energy, the sum compared with 100.0f and 0.0f (above 100 stores 100, below 0 stores 0, else fstps); flds x, fmuls -0.05f, fadds happiness (+0x230), the same
+	// clamp and store
+	// [BIN:TPI-EXE:0x6BF33F control word] the game thread's x87 runs at 0x7F (24-bit significand) after DDSCL_FPUSETUP (0x851 at 0x6BF33F, 0x808 at 0x6BF5A8; docs/DETERMINISM.md), so the fidivl, fsubrl,
+	// fmuls and fadds each round to a single and the clamps compare the rounded sums
+	internal void ResearchStep( ThemeParkIncStaffSettings settings )
+	{
+		var x = SingleOneMinusRatio( (uint)Experience, settings.MaxExperience );
+		var energyDelta = (float)(x * -0.1f);
+		Energy = ClampSingle( (float)(energyDelta + Energy) );
+		var happinessDelta = (float)(x * -0.05f);
+		Happiness = ClampSingle( (float)(happinessDelta + Happiness) );
+	}
+
+	/// <summary><c>fildll</c> <paramref name="numerator"/>, <c>fidivl</c> <paramref name="denominator"/>, <c>fsubrl</c> 1.0 at the 24-bit control word: each operation rounded to a single.</summary>
+	internal static float SingleOneMinusRatio( uint numerator, int denominator ) => (float)(1f - SingleQuotient( numerator, denominator ));
+
+	/// <summary>The quotient of two integers rounded once to a single (round to nearest, ties to even), as <c>fidivl</c> leaves it at the 24-bit control word.</summary>
+	internal static float SingleQuotient( uint numerator, int denominator )
+	{
+		if ( numerator == 0 || denominator == 0 )
+			return (float)numerator / denominator;
+		var divisor = (ulong)Math.Abs( (long)denominator );
+		// the quotient scaled by 2^64 has at least 33 bits, so its 24 leading bits and the rest decide the rounding exactly
+		var scaled = (UInt128)numerator << 64;
+		var quotient = scaled / divisor;
+		var rest = scaled % divisor;
+		var shift = 128 - (int)UInt128.LeadingZeroCount( quotient ) - 24;
+		var mantissa = quotient >> shift;
+		var dropped = quotient & ((UInt128.One << shift) - 1);
+		var half = UInt128.One << (shift - 1);
+		if ( dropped > half || dropped == half && (rest != 0 || (mantissa & 1) != 0) )
+			mantissa++;
+		var value = (float)Math.ScaleB( (double)mantissa, shift - 64 );
+		return denominator < 0 ? -value : value;
+	}
+
+	/// <summary>The meter clamp of <c>0x60D0D0</c> on a sum already rounded to a single: above 100 gives 100, below 0 gives 0.</summary>
+	private static float ClampSingle( float sum ) => sum > 100f ? 100f : sum < 0f ? 0f : sum;
+
 	/// <summary>Whether the member is too tired to go on: its energy byte below RestLevel.</summary>
 	// [BIN:TPI-EXE:0x62B3B0 tired] (u8)trunc(energy) < RestLevel, signed
 	public bool Tired( ThemeParkIncStaffSettings settings ) => ((int)Energy & 0xFF) < settings.RestLevel;
 
 	/// <summary>The member's thing id in the park's thing pool (the handle the litter claim and the message order use); 0 until it is placed.</summary>
 	public int ThingId { get; internal set; }
-	/// <summary>The state word (+0x1B4): 0 idle, 1 walking (patrol), a handyman's 0x0F to litter and 0x10 sweeping, a mechanic's 21 to the ride and 22 repairing (ThemeParkIncStaffWorld).</summary>
+	/// <summary>The state word (+0x1B4): 0 idle, 1 walking (patrol), a handyman's 0x0F to litter and 0x10 sweeping, 7 to the training room and 8 training, a mechanic's 21 to the ride and 22
+	/// repairing, a researcher's 24 researching and 25 to his room (ThemeParkIncStaffWorld).</summary>
 	public int State { get; internal set; }
 	/// <summary>The idle stamp (+0x23C): the turn an idle spell after a walk began, else 0.</summary>
 	public long IdleStamp { get; internal set; }
@@ -243,14 +301,19 @@ public sealed class ThemeParkIncStaffMember
 		: new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost,
 		SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial );
 
-	/// <summary>The roles <see cref="ThemeParkIncStaffWorld"/> places in the park: the handyman and the mechanic.</summary>
-	public static bool IsPlacedRole( ThemeParkIncStaffRole role ) => role is ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic;
+	/// <summary>The roles <see cref="ThemeParkIncStaffWorld"/> places in the park: the handyman, the mechanic and the researcher.</summary>
+	public static bool IsPlacedRole( ThemeParkIncStaffRole role ) => role is ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher;
 
-	/// <summary>The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10, a mechanic's 0, 1, 21 and 22.</summary>
+	/// <summary>
+	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10 and the training states 7, 8, 0x25 and 0x26; a mechanic's 0, 1, 21 and 22; a researcher's
+	/// 0, 1, 24 and 25.
+	/// </summary>
 	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
-		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10,
+		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 or ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended
+			or ThemeParkIncTraining.ToTrainingRoomSuspended,
 		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing,
+		ThemeParkIncStaffRole.Researcher => state is 0 or 1 or ThemeParkIncResearch.Researching or ThemeParkIncStaffWorld.ToResearchRoom,
 		_ => false
 	};
 

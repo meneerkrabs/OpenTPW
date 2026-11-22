@@ -241,7 +241,7 @@ Ported as an economy model, without the world simulation, and checked against th
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
-Not ported yet: the state machines of the roles other than the handyman and the mechanic; slacking (`0x62D650`) and low-motivation rest; training; the wage negotiation dialog (`0x559E00`).
+Not ported yet: the state machines of the roles other than the handyman, the mechanic and the researcher; slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.
@@ -290,7 +290,7 @@ refuses its staff capability, so its staff world is not built in a Theme Park In
 - **Saves.** A placed member's thing (state, stamps, target, speed words, patrol rectangle, template and walk) is in the TpiStaff snapshot; the members' cell-chain entry numbers
   are in the continuation save (`TpiStaffChain`); a litter claim by a placed member's thing id is valid.
 
-Labels: the walk step `0x60B440`, the route set-up `0x62EB10`, the patrol destination `0x609F70` and the speed step `0x60BC90` use Theme Park World's walk, wander and speed
+Labels: the walk step `0x60B440`, the route search behind the staff route `0x62EB10` (SetDest `0x63E3A0`), the patrol destination `0x609F70` and the speed step `0x60BC90` use Theme Park World's walk, wander and speed
 smoothing (`[EXT:tpi-twp-guest-rules]`, user-approved 2026-11-21 for the staff's walk; WP0 found D1/D2/D5 differences and read `0x609F70` as a call skeleton only), as do the
 guests' bin search, bin walk and bin arrival; the loo finder `0x5D6230` and the bin finder `0x5D5F10` find nothing to clean because Theme Park Inc's toilet wear and the bins' fill
 are unported (`[EXT:tpi-no-maintenance-wear]`, reworded: the handymen ship without loo and bin cleaning); the other roles are refused at the hire (`[EXT:tpi-capability-gates]`).
@@ -361,7 +361,7 @@ update runs at the 24-bit x87 precision the Direct3D device sets (`[EXT:hardware
 message 10 subscribed, the search). The update is the common pre-update (`0x5DA3B0` jumps to `0x628050`) and the dispatch `0x5DA280`: 0 idle (voice 0xA3, the idle end
 `0x62CA10`), 1 patrol (voice 0xA2, the walk, the search on arrival or stuck), 21 to the ride `0x5DA650`, 22 repairing `0x5DA7C0`; 2 and 3 are the rest area's (unreached).
 - Search `0x5DA3D0`: the gate `0x62BBA0`; too tired goes to the tail; `+0x5D8` = the finder; the patrol area `0x62C6B0` (the whole map answers true; another rectangle needs the
-  unported patrol-area tool, and a saved mechanic with one is refused); "found a ride"; the route `0x62EAC0` to the ride's entrance word `+0x46` at the point (0x80, 0x80); the claim
+  unported patrol-area tool, and a saved mechanic with one is refused); "found a ride"; the route `0x62EAC0` to the ride's entrance word `+0x46` at the point (0x80, 0x80), which calls the staff route `0x62EB10` (the closed park's entrance refusal and the walk mask, `StaffRoute`); the claim
   `0x5E3780` (`+0x72` = his thing id, `+0x74` = the turn); advice 0x43 (not posted); a ride not broken down, not called for and below `Imminent` gets the request `0x5E3400(1)`
   (`+0x78` = 1 and, unless a bin or a plant, closed); state 21; the tail patrols or idles.
 - Finder `0x5DAAD0` on the HQ thing of world `+0x1EAB4E` (cursor `+0x14`, kept as `ParkEconomy.MechanicCursor`): the cursor moves one object on from the previous start over the object
@@ -404,3 +404,99 @@ Gated: the upgrade job (`+0x218` and training, WP14; the economy sells no upgrad
 stay under `[EXT:tpi-no-maintenance-wear]`, which no longer covers the rides. No `rand()` call is reached: the paths above draw only the world generator, in the gate and the
 patrol, as the handyman's.
 
+
+## 12. Staff HQ obstacle slots, training and research (November 21, 2026)
+
+### 12.1 The staff HQ's obstacle slots
+
+`ThemeParkIncStaffHeadquarters` (held by `ThemeParkIncStaff.Hq`, saved in its snapshot) is the slot part of the HQ thing (class 9, `park+0x1EAB4C`, constructor `0x632270`):
+
+- **Table `0x634600`.** The mission's five `ObstacleStaff` records (StaffType `+0x2E0`, Ability `+0x2E4`, Number `+0x2E8`, stride 12) append `Number` empty slots each, whatever the count dword; the rest up to 20
+  are `{7, 0, 0}` ("no requirement"). The append has no bound in the executable; OpenTPW refuses a mission asking for more than 20.
+- **Staff type codes `0x62AF70`** are the role order: handyman 0, mechanic 1, entertainer 2, guard 3, researcher 4, gardener 5 (r7 §8.1 had guard and entertainer swapped; the table `0x62AFD0` settles it).
+- **Assign `0x634B00`**: a member with slot index -1 takes the first slot whose ability equals his trained ability and whose thing word is 0. The staff type is not compared (`0x62AF70`'s answer is dropped
+  at `0x634B50`), so an untrained member can fill a padding slot and any role with the ability can fill a requirement.
+- **Release `0x634730`** (message 0x21 for a staff thing, 0x2A gone to train): the ability's count falls (also for ability 0); ability 0 stops; a member in a slot leaves it (only gardeners, handymen and
+  mechanics have the slot cleared, at their own index) and the first member of his role with the same ability who fills no slot (the finders `0x6348C0`/`0x634980`/`0x634A40` over the role's list, the
+  table excluding the slotted, `0x55E3B0`) is assigned.
+- **Training finished `0x63256F`** (message 0x2B): count up, assign.
+- **Rebuild `0x634D20`** (messages 0x23 and 0x24): every slotted gardener/handyman/mechanic leaves his slot, the table is rebuilt, and for an obstacle mission each requirement's finder by staff type (0
+  handyman, 1 mechanic, 5 gardener; another type repeats the last answer) assigns a member.
+- **MetRequirements `0x55A620`** reads the real slots (`ThemeParkIncStaffHeadquarters.AllFilled`). A park file's HQ is loaded, not constructed: the prebuilt Science park keeps its saved twenty `{7, 0, 0}`.
+- Not ported: the per-object trained-staff requirement lists at `0xAA0330` (`0x623FB0` on 0x2B, `0x6241B0` on a release), which an attraction's activation reads (UITEXT 985).
+
+Message delivery: the queue `0xA09728` reaches its listeners in ascending handle order; OpenTPW calls the listeners at the post (`ParkEconomy.ThemeParkIncObstacleResearched`, `ThemeParkIncObstacleRemoved`),
+the HQ before the mission controller.
+
+### 12.2 Training and abilities
+
+`ThemeParkIncTraining` (rules) and `ThemeParkIncStaffWorld.Training.cs` (states 7 and 8 of a placed member) port Theme Park Inc's training, which replaces Theme Park World's budget split:
+
+- **Abilities** (`ABILITIES.str`, member `+0x218`, one at a time): compatibility `0x62B6C0` is mechanic 1–6, handyman 7–8, guard 9, gardener 10–14, entertainers and scientists none. A member may learn an
+  ability (`0x639B20`) when the career discovered it (`+0x1064`; 1, 7 and 9 at a reset, the obstacle research adds the mission's), his role takes it and he has **10000** experience (hard-coded; the
+  drop path alone also tests `MinExperienceForTraining`).
+- **Choosing** (`0x580550`, the "Select Ability To Learn" panel `0x580860`): the panel lists every learnable ability, or UITEXT 713 when three members are in states 7, 8, 0x25 or 0x26 (`0x639F40`), or the
+  role's line 707–712. The member's own ability refuses (714); another one asks for the retraining confirmation (715); then `+0x22C` = the choice and state 7, even from state 8.
+- **The drop path** (`0x629B20` on a training room's cell) hard-codes ability 2, so only a mechanic who may learn Construction trains by a drop; any other drop falls through to the normal drop.
+  OpenTPW's drop (handymen only) therefore never trains, as the original's.
+- **Training room**: the first thing of the object list `park+0x1EAB88` whose flag word has 0x400 (`UsageInfo.TrainingRoom`, set by the attraction builder `0x5DB79A`); one room serves every trainee.
+- **The staff route** `0x62EB10` (litter, patrol entry, training room, research room): a closed park (`park+0x1EAB44`) refuses the entrance cells (47, 17) and (48, 17); the walk mask (`+0x1A0`, the
+  walk's `+0xB4`) is 1 when the member's cell or the target cell is empty (type 0), else 0; then `0x60B8E0` sets the walk. Its stranded-mark test (`+0x1B0`, `0x60BB50`) never holds for staff: the
+  only writer with a stamp (`0x60A4AE`) is reached by guests alone. **The cell steer** `0x60B7F0` (Theme Park World's `0x4FA530`) is the same walk to a cell's centre.
+- **State 7** (entry `0x628492`, tick `0x62A7C0`): the staff route to the centre of the room's entrance cell (`+0x46`), and when it is refused the walk mask 1 and the cell steer `0x60B7F0` to the same
+  point (the second search may leave the paths), with the speed bonus 25; arrived, the room's script variable 0 rises, state 8 and
+  message **0x2A** (the HQ releases his old ability, §12.1); stuck, every update costs `HappyHitCosRoomInaccessible` (the CRT `rand()` there only picks a thought bubble, which is not drawn, so no draw is taken; user decision 2026-11-21).
+- **State 8** (entry `0x62852A`, tick `0x62AA50`): the sprite source is deleted; `+0x220 = +0x22C` and the progress 0 (experience ≥ 10000); `+0x224 += SkillIncrement` (10) each update; at
+  `ProgessUpperLimit` (3000: **300 updates**) the ability is learnt, the advisor's line 0x175, the finish `0x62AB90` (message **0x2B**, the letter of kind 0xC, the room's variable 0 falls, the sprite
+  again, state 0), motivation 100, `TrainingExtraExperience` (5000) and then `StaffAgencies[agency].TrainingExperienceGainModifier` percent of the new experience, capped at MaxExperience, and a look
+  for work. No wage change.
+- **A destroyed room** (`0x637C40`): the demolish runs at the click (the world click handler `0x4D30F8` → the cell-op engine `0x660D80` → `0x666DA0` → `0x6674E1`), and the destroy broadcasts message
+  0x21 and then the attraction's message 0xA (`0x5DE780`, which first unlinks the room from the object list with `0x64F430`, so the room finders no longer see it) through the dispatcher `0x436DD0`, which calls every listener at once in ascending thing handle order; only the thing's free waits for the
+  turn's tail (`0x649814`). OpenTPW's removal hook (`ParkObjects.ObjectRemoving`) runs at the same click (`ThemeParkIncStaffWorld.RoomDestroyed`).
+- **Cancel** `0x62E7A0` (the staff message 0xA for a removed training room, or state 8 entered with nothing chosen): nothing for a member learning nothing; else the ability in training is dropped,
+  the room's variable 0 falls, a member in the room is shown again, the advisor's line 0x1C9, the letter of kind 0xD, state 0 and a look for work.
+- **What abilities unlock**: Ride Upgrading (1) for upgrades, Firefighting (7) for burning bins, First Aid (9), the HQ's mission slots, ride activation (UITEXT 985) and research consultants. Of these
+  only the HQ slots and the consultants (§12.3) are ported; the others belong to unported role work.
+- **HUD** (`[EXT:tpi-text-hud]`): a hired member's row in the staff panel opens his ability list (with a training room in the park); choosing the same ability twice confirms a retraining; the
+  advisor's lines show as notes.
+- Not ported: the training-room panel's three slots (`0xA6C128`) and its suspend/resume (states 0x25/0x26, `0x62B960`), which only it sets.
+
+### 12.3 Research and the researchers
+
+`ThemeParkIncResearch` (the lab thing, class 14, and the object controls' researched words) and `ThemeParkIncStaffWorld.Researchers.cs` port Theme Park Inc's research, which replaces Theme Park
+World's effort split:
+
+- **The lab** of a park file is loaded, not filled: the prebuilt Science park brings 50 projects, both slots at -4 (the lab start's value, which every reader takes for none), the workload 85 and the
+  object controls (`0x5CF9B0`, researched `+0x10` and level `+0x14`). Projects are `+0x78` records of 0x24 bytes (`0x61F670`); `mType` stays whatever the record held (the prebuilt's free records are 0xCD).
+- **Tick** `0x61E980`, every sixth world tick (`W+0x1EAB40 % 6`, after the turn's increment): slot 0 then 1; a slot with a project and a consultant (or a project whose `StaffRqd` maps to no role,
+  `0x576FE0`) sums, over its 20-member team, each thing in state **24** (no kind or listing test): `work × workload × SpeedScaleDown + sum`, work = `0x62E4C0` (the researcher's
+  `Researcher.Min/MaxResearchAbility` lerp, 1 for a salary below 10). The game thread's x87 runs at the control word 0x7F (24-bit significand) after DDSCL_FPUSETUP (`0x6BF33F`, `0x6BF5A8`), so the
+  `fimul`, `fmuls` and `fadds` each round to a single, as do the advance's cash product, the percent done (`0x620210`) and the researcher's step below; no x86 oracle covers these routines yet.
+- **Advance** `0x61FF80`: a finished project only releases its team; else the points (at most the rest of the cost) are added, `trunc(CashPerBrainPoint × points)` is debited through the bank (also 0),
+  and at the cost the object control is researched with the project's level, message **0x11** goes out, every type `LinkedWith` the object is researched, and the team is released (`+0x274 = 0`; the
+  researchers keep their state, the slot keeps the finished project).
+- **Message 0x11** `0x61DC20`: the career is told (`0x74D740`: the CDK entry of the type clears its flag); a **Park Expansion** (category 5) posts **0x23** (the HQ rebuilds its slots and the controller
+  shows the obstacle, §12.1); then the next upgrade level's project (`0x61FE70`).
+- **Obstacle project** `0x61CBF0` (the controller's registration and every message 0x27): HasObstacle, the obstacle thing, obstacle state 1, the type in the viewed zone's range (arabian ≥ 3700, science
+  ≤ 1800, water 2700–2800), no project of the type yet: category 5, cost `Obstacle.ResearchEffort` (no CostScaleUp), one cash a point, no consultant.
+- **Consultant** `0x61D970`: none for a project without a role; with `StaffSA` the first staff member of any role with that ability, else the first of the role (never a researcher). In the original a consultant who
+  leaves is replaced by the pick and a leaving scientist leaves both teams (`0x61DAD0`, message 0x21); no member leaves a Theme Park Inc park in OpenTPW (the fire and the quit are not ported), so this
+  listener, like the HQ's release on a destroyed member (`0x634730`), has no sender and is not modelled.
+- **Catalogue**: a type whose control is not researched is not listed (`0x57CB66`; the mode-3 exception is not the career game's). A park without a seeded lab (a new zone, the headless economy) keeps
+  every buyable object on offer (`[EXT:tpi-no-research]`). The lab's save keeps the object types' research words it read (`Research.Category`, `LinkedWith`, `Group` and the levels' costs), so a
+  lab restored without a level completes its projects as the level's would; a lab without them waits instead of ticking (`[EXT:headless-economy]`).
+- **The panel** (text HUD rows, `[EXT:tpi-text-hud]`): no scientist → 328/329; "Start New Project" takes slot 0 when it is empty or finished, else slot 1, else 336/337 (`0x575F98`); the chooser
+  (`0x574D00`) offers, in project order, every project not finished, not the other slot's, whose group is within the current zone's tech level, and a level project only when its object stands in the
+  park; the consultant is the automatic pick (none → 330/331); the team lists the researchers not on the other team; OK with nobody asks 333, a cancel asks 334/335 (`0x61F560`). The original's
+  "Edit Project" commits the last project chosen in that slot's chooser (`0xA67C24`), which can be project 0 after a load; the text HUD edits the slot's own project.
+- **Researchers** in the park: hired and dropped like the handyman (`0x61B070`); the start runs the look-for-work sequence (`0x61B820`: the gate `0x62BBA0`, too tired → idle, the room finder
+  `0x62E0E0` → state 25, none → happiness −2 and idle) and sets the lab's active flag (`0x61E4E0`). The finder takes the **first** room flagged 0x200 (`UsageInfo.ThinkingSpace`), with no distance,
+  capacity or tie test, when a walk to its entrance reaches it. State 25 (`0x62DCB0`): arrived → the room's script variable 0 rises, state 24 (the sprite deleted, `+0x278` stamped); stuck →
+  `HappyHitCosRoomInaccessible` and idle. State 24 (`0x6289BD`): energy `+= x × −0.1f`, happiness `+= x × −0.05f` (x = `1 − exp/MaxExp`, every operation rounded to a single, the clamps on the rounded sums); at an energy byte of at most RestLevel
+  he leaves (variable 0 falls, shown again), idles and looks for work — at exactly RestLevel the tired test (`<`) lets the finder send him back. Research ends no other way. The display state counts
+  "Researching" only for a listed researcher (`+0x274`). A removed research room clears both teams (message 0x21, `0x61DB90`) and then sends its researchers out (message 10, `0x61B570`), at the click as above.
+- **Level projects** `0x61FE70`: after a completion, levels without a research cost count as researched at once and the first level with one becomes a category-4 project (cost × CostScaleUp). Every
+  shipped `Upgrades[n].CashPerBrainPoint` is 0, so the original calls the CRT `rand()` (`0x61FF1A`) and throws the result away: the project always costs 1 cash per brain point and no draw is taken
+  (user decision, 2026-11-21).
+- Not ported: the lab fill of a new zone (`0x61C9E0`, `rand() % 2 + 1` per project at `0x61FD50`): it waits for the user's decision at the zone package. Also not ported: the category efforts
+  (computed, read by no tick), the lab-active messages 5/6 (advisor), the "project suspended" texts 300–304, and the per-object staff requirement lists of §12.1. Ride projects need a mechanic consultant, and mechanics are not hired in the slice yet.

@@ -280,8 +280,7 @@ public sealed class ThemeParkIncMissionController
 	// [BIN:TPI-EXE:0x55A620 met requirements] EndingTheme != the current zone record's +0x64 and != 3: false ("not in correct theme"); HasObstacle (0x5F0190): obstacle state (0x5F01D0) != 2: false;
 	// any of the 20 staff HQ slots (0x64E940 +0x14, stride 12) with +0 != 7 and word +8 == 0: false ("some slots not filled"); tickets (0x5F05E0) < Obstacle.GoldenTickets: false; else true without
 	// 0x5F0600; not an obstacle mission: 0x5F0600
-	// [EXT:tpi-capability-gates] the staff HQ's obstacle slots belong to the staff roles OpenTPW does not port (only the cleaners and the mechanics run): an obstacle mission's requirements are not met while the slots
-	// are not modelled
+	// the slots are the staff HQ's (ThemeParkIncStaffHeadquarters.AllFilled); a park without the HQ (no Theme Park Inc staff, IThemeParkIncMissionHost.ObstacleStaffSlotsFilled null) never meets an obstacle mission
 	public bool MetRequirements()
 	{
 		var ending = career.Mission.EndingTheme;

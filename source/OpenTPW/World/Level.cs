@@ -713,6 +713,7 @@ public partial class Level : IDisposable
 				SetupThemeParkIncRideEvents();
 				SeedThemeParkIncObjectList();
 				SeedThemeParkIncCurrentObstacle();
+				SeedThemeParkIncHqAndLab();
 				AttachThemeParkIncMissionWorld();
 			}
 			yield return 0.95f;

@@ -65,6 +65,9 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncMissionControllerSnapshot? TpiMissions { get; init; }
+		/// <summary>Theme Park Inc's research lab and object controls (absent: the park has no lab).</summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncResearchSnapshot? TpiResearch { get; init; }
 		/// <summary>
 		/// The Theme Park Inc ride-wear rules the save's rides and mechanics follow (<see cref="ThemeParkIncRideWearRules"/>): written by a park with Theme Park Inc's staff. A Theme Park Inc save
 		/// without it was made before the mechanics and the ride wear were ported and is refused.
@@ -754,6 +757,7 @@ public static class ParkSaveFile
 			TpiMissions = park.TpiMissions?.Capture(),
 			TpiRideWear = park.TpiStaff != null ? ThemeParkIncRideWearRules : null,
 			TpiObjectList = park.TpiStaff != null ? park.ThemeParkIncObjectList.ToList() : null,
+			TpiResearch = park.CaptureThemeParkIncResearch(),
 			TpiCutscene = park.TpiCutscene?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
@@ -1062,6 +1066,12 @@ public static class ParkSaveFile
 	/// </summary>
 	internal const string CutsceneMissing = "This Theme Park Inc park was saved before OpenTPW kept the obstacles and the camera flights and cannot be continued; start a new game from the Personnel File.";
 
+	/// <summary>
+	/// The refusal of a Theme Park Inc park save from before the staff HQ and the research lab (<see cref="ThemeParkIncStaffSnapshot.Hq"/>, <see cref="Data.TpiResearch"/>): its Science park would run
+	/// without the lab its prebuilt brings and without the HQ's obstacle slots.
+	/// </summary>
+	internal const string StaffHqMissing = "This Theme Park Inc park was saved before OpenTPW kept the staff HQ and the research lab and cannot be continued; start a new game from the Personnel File.";
+
 	private static void ValidateEdition( Data data )
 	{
 		if ( !Enum.IsDefined( data.Edition ) )
@@ -1077,6 +1087,11 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc weather." );
 			if ( !ThemeParkIncForecastQueue.IsValid( data.TpiForecast ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc forecast advice." );
+			// a Theme Park Inc park save from before the staff HQ and the research lab were kept holds neither: the park would continue without the lab the prebuilt Science park brings (the whole
+			// catalogue on offer) and without the HQ's slots, so an obstacle mission could never be met; it is refused, as the saves from before the career, the controller and the challenges are.
+			// Every save since then holds the HQ with its staff (ThemeParkIncStaff.Capture), so the missing HQ marks the older save before any asset check
+			if ( data.TpiStaff is { Hq: null } )
+				throw new InvalidDataException( StaffHqMissing );
 			if ( !ThemeParkIncStaff.IsValid( data.TpiStaff ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc staff." );
 			if ( !ThemeParkIncChallenges.IsValid( data.TpiChallenges ) )
@@ -1089,6 +1104,8 @@ public static class ParkSaveFile
 			// a loaded controller never starts its exit statistics (0x64D5B4), so a park save from before the controller could never meet its mission: it is refused, not continued
 			if ( data.TpiMissions == null )
 				throw new InvalidDataException( MissionControllerMissing );
+			if ( !ThemeParkIncResearch.IsValid( data.TpiResearch ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc research lab." );
 			if ( !ThemeParkIncMissionController.IsValid( data.TpiMissions ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc mission controller." );
 			// a park save from before the camera flight was written by a catalogue without the obstacles, which its world's objects and asset manifest do not hold: it is refused here, before the
@@ -1112,7 +1129,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiObjectList != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1319,6 +1336,9 @@ public static class ParkSaveFile
 		else if ( park.TpiStaff != null )
 			// a Theme Park Inc save from before the staff economy holds no pool, and the pool's draws share the world generator: it cannot continue the same park
 			throw new InvalidDataException( "Park save was made before Theme Park Inc staff and cannot be continued; start the park again." );
+		// a park no park file seeded (a new zone, a headless economy) saved no lab and keeps none; a save from before the lab was kept is refused above (ValidateEdition)
+		if ( tpi )
+			park.RestoreThemeParkIncResearch( data.TpiResearch );
 		if ( data.TpiChallenges is { } challenges )
 		{
 			if ( park.TpiChallenges == null )

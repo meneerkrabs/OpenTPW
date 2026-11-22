@@ -74,7 +74,8 @@ public sealed partial class ThemeParkIncHud
 		this.level = level;
 		this.strings = strings;
 		this.host = host;
-		catalog = new OriginalBuildCatalog( level.Objects.Catalog, entry => ThemeParkIncCatalogue.IsListed( entry, level.ThemeParkIncMissionNumber, level.ThemeParkIncObstacleResearchDone ) );
+		catalog = new OriginalBuildCatalog( level.Objects.Catalog, entry => ThemeParkIncCatalogue.IsListed( entry, level.ThemeParkIncMissionNumber, level.ThemeParkIncObstacleResearchDone,
+			level.ThemeParkIncResearched( entry.Settings.GetInt( "Info.Id" ) ) ) );
 		hud = new UiScreen( "tpiHud" ) { Modal = false };
 		Stack.Push( hud );
 		AddLabel( "guests", () => GuestsText(), new UiRect( 24, 196, 900, 60 ) );
@@ -522,6 +523,7 @@ public sealed partial class ThemeParkIncHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		ShowWageDemands();
+		ShowTrainingNotices();
 		ShowChallengeNotices();
 		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );

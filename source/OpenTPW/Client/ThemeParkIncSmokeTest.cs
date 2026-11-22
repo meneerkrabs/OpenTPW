@@ -121,6 +121,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 				// the tool entry 1710 (thing 26) is not rebuilt, and its slot is held as the original keeps the thing (Level.SeedThemeParkIncObjectList)
 				Require( level.Objects.Objects.All( item => item.ThingId != 26 ) && level.Things.IsHeld( 26 ) && level.Things.ModelOf( 26 ) == SaveThingModel.Attraction,
 					"the prebuilt's unbuilt thing 26 holds its attraction slot" );
+				Require( economy.TpiStaff!.Hq.Slots.Count == ThemeParkIncStaffHeadquarters.SlotCount && economy.TpiStaff.Hq.AllFilled, "the staff HQ keeps the prebuilt's twenty empty-requirement slots" );
+				Require( economy.TpiResearch is { Count: 50, HasControls: true } research && research.Infos.Count > 0 && !research.IsResearched( 1105 )
+					&& Hud.StaffRows().Contains( flow.Strings.Entry( 285 ) ), "the research lab holds the prebuilt's fifty projects, gates the catalogue and has its row in the staff panel" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )

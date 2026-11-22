@@ -77,6 +77,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// [BIN:TPI-EXE:0x630CB0 opening pool] the new-world init (0x6482BA -> 0x5D65B0 -> 0x630CB0) fills the opening pool from the world generator and stamps it with the turn,
 			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
 			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
+			// [BIN:TPI-EXE:0x6482E3 staff HQ thing] the new-world init builds the staff HQ, whose constructor fills its slot table from the career's mission (0x632270 -> 0x634600)
+			TpiStaff.Hq.BuildSlots( TpiCareer.Mission );
 		}
 		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
 		CreateThemeParkIncChallenges();
@@ -600,6 +602,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system and mission controller are things of the world pass (0x6375E0 -> 0x5C7930, 0x5EF520) whatever the staff
 			if ( TpiChallenges != null || TpiMissions != null )
 				UpdateChallenges( turn );
+			// [EXT:headless-economy] the research lab, an older thing of the prebuilt (id 6) than the controller and the challenge system, updates after them
+			UpdateThemeParkIncResearch( turn );
 			return;
 		}
 		UpdateStaffVitals();
@@ -2197,7 +2201,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			return PurchaseResult.UnknownObject;
 		if ( !moving && !info.IsBuyable )
 			return PurchaseResult.NotBuyable;
-		// [EXT:tpi-no-research] without research (refused for Theme Park Inc) every buyable object is on offer, as the experimental build list has always offered the whole catalogue
+		// a Theme Park Inc park's research gates its catalogue list (ThemeParkIncCatalogue.IsListed, 0x57CB66), not the purchase: [EXT:tpi-no-research] a Theme Park Inc economy without a seeded lab (a new zone,
+		// whose lab fill waits for the user's decision at the zone package, and the headless economy) offers every buyable object
 		if ( !moving && Rules.Research && !Research.IsAvailable( infoId ) )
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )

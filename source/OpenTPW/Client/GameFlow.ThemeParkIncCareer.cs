@@ -53,33 +53,12 @@ internal sealed partial class GameFlow
 	{
 		if ( string.IsNullOrWhiteSpace( folder ) )
 			return false;
-		return StartsWithFolder( Path.GetFullPath( path ), Path.GetFullPath( folder ) ) || StartsWithFolder( RealPath( path ), RealPath( folder ) );
+		return StartsWithFolder( Path.GetFullPath( path ), Path.GetFullPath( folder ) ) || StartsWithFolder( PathLinks.ResolveLinks( path ), PathLinks.ResolveLinks( folder ) );
 	}
 
 	private static bool StartsWithFolder( string path, string folder ) =>
 		( Path.TrimEndingDirectorySeparator( path ) + Path.DirectorySeparatorChar ).StartsWith( Path.TrimEndingDirectorySeparator( folder ) + Path.DirectorySeparatorChar,
 			StringComparison.OrdinalIgnoreCase );
-
-	/// <summary>The full path with every symbolic link among its existing parts resolved; the parts that do not exist yet are kept as given.</summary>
-	internal static string RealPath( string path, int depth = 0 )
-	{
-		var full = Path.GetFullPath( path );
-		var root = Path.GetPathRoot( full )!;
-		var parts = full[root.Length..].Split( new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries );
-		var current = root;
-		for ( var index = 0; index < parts.Length; index++ )
-		{
-			var next = Path.Combine( current, parts[index] );
-			FileSystemInfo info = Directory.Exists( next ) ? new DirectoryInfo( next ) : new FileInfo( next );
-			if ( !info.Exists )
-				return Path.Combine( new[] { current }.Concat( parts[index..] ).ToArray() );
-			// a link's final target may itself lie below linked folders; a cycle stops at the depth guard and keeps the path as it is
-			current = info.LinkTarget != null && depth < 32 && info.ResolveLinkTarget( returnFinalTarget: true ) is { } target
-				? RealPath( target.FullName, depth + 1 )
-				: next;
-		}
-		return current;
-	}
 
 	/// <summary>The largest player file read: the retail files are about 18 KB, so anything near this is not one.</summary>
 	internal const int MaxThemeParkIncPlayerFileBytes = 4 << 20;

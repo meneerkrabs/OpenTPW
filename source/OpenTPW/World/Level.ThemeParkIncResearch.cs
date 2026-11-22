@@ -89,13 +89,27 @@ public partial class Level
 		{
 			if ( level.Park?.Economy is not { } economy )
 				yield break;
+			// both lookups are built once per walk, so the walk stays linear in the list and the placed objects
 			var byInstance = new Dictionary<int, OriginalObject>();
 			foreach ( var (item, instance) in level.economyInstances ?? new() )
 				byInstance[instance] = item;
+			Dictionary<int, OriginalObject>? byThing = null;
 			foreach ( var entry in economy.ThemeParkIncObjectList )
 			{
-				// an object with an economy record is listed by its instance, any other attraction thing by its negated thing id
-				var item = entry > 0 ? byInstance.GetValueOrDefault( entry ) : level.Objects.Objects.FirstOrDefault( candidate => candidate.ThingId == -entry );
+				// an object with an economy record is listed by its instance, any other attraction thing by its negated thing id (the first placed object holding it)
+				OriginalObject? item;
+				if ( entry > 0 )
+					item = byInstance.GetValueOrDefault( entry );
+				else
+				{
+					if ( byThing == null )
+					{
+						byThing = new Dictionary<int, OriginalObject>();
+						foreach ( var candidate in level.Objects.Objects )
+							byThing.TryAdd( candidate.ThingId, candidate );
+					}
+					item = byThing.GetValueOrDefault( -entry );
+				}
 				if ( item is { IsDeleted: false } && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue && item.ThingId != level.tpiDestroyedRoom )
 					yield return item;
 			}

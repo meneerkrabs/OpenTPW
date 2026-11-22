@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Linq;
@@ -180,6 +181,21 @@ public class ThemeParkIncLandTests
 		Assert.IsFalse( ThemeParkIncCatalogue.IsListed( 0, 0, 0, 0, 1, 1, false ), "mission 1 waits for the obstacle research" );
 		Assert.IsTrue( ThemeParkIncCatalogue.IsListed( 0, 0, 0, 0, 1, 1, true ) );
 		Assert.IsTrue( ThemeParkIncCatalogue.IsListed( 0, 0, 0, 0, 1, 2, false ) );
+	}
+
+	[TestMethod]
+	public void AScienceContinuationWithoutTheFacilitiesIsRecognisedByItsManifest()
+	{
+		// a continuation saved before the catalogue held the facilities pins no facilities.sam: ValidateShape refuses it with the start-again message before the asset comparison
+		var hash = new string( '0', 64 );
+		Assert.IsTrue( ParkResumeSaveFile.PinsThemeParkIncFacilities( new Dictionary<string, string> { ["data:/levels/science/Facilities/facilities.sam"] = hash } ) );
+		Assert.IsFalse( ParkResumeSaveFile.PinsThemeParkIncFacilities( new Dictionary<string, string> { ["data:/levels/science/rides/Rides.sam"] = hash } ) );
+		Assert.IsFalse( ParkResumeSaveFile.PinsThemeParkIncFacilities( new Dictionary<string, string> { ["mod:x:/levels/science/Facilities/facilities.sam"] = hash } ), "only the game data's folder counts" );
+		Assert.IsFalse( ParkResumeSaveFile.PinsThemeParkIncFacilities( null ) );
+		StringAssert.Contains( ParkResumeSaveFile.ThemeParkIncFacilitiesMissing, "before its facilities were kept" );
+		// a member saved before the rest areas reads as resting nowhere
+		var old = System.Text.Json.JsonSerializer.Deserialize<ThemeParkIncStaffMemberSnapshot>( """{"Id":1,"Role":0,"NameIndex":0,"SpriteDraw":0,"Experience":1,"Salary":1,"Agency":0,"Happiness":1,"Motivation":1,"Energy":1,"WageShortfall":0,"WageDemandDay":0,"DayCounters":[0,0,0,0,0,0,0,0,0]}""" )!;
+		Assert.AreEqual( 0, old.RestArea );
 	}
 
 	[TestMethod]

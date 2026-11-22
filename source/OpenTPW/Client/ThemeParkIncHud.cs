@@ -216,7 +216,7 @@ public sealed partial class ThemeParkIncHud
 				Selected = () => category == choice,
 				Clicked = () => { category = choice; },
 				// five tabs, the original panel's (0x57A482: rides, shops, sideshows, features, facilities), side by side over the list's width
-				Bounds = new UiRect( 244 + index * 316, 284, 300, 84 ),
+				Bounds = new UiRect( 244 + index * 316, 284, 296, 84 ),
 				Anchor = UiAnchor.TopLeft
 			} );
 		}

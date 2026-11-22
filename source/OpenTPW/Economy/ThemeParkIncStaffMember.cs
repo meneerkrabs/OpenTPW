@@ -299,8 +299,9 @@ public sealed class ThemeParkIncStaffMember
 	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10 and the training states 7, 8, 0x25 and 0x26; a researcher's 0, 1, 24 and 25; and for both the rest
 	/// states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area).
 	/// </summary>
-	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch || role switch
+	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
+		ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Researcher when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch => true,
 		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 or ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended
 			or ThemeParkIncTraining.ToTrainingRoomSuspended,
 		ThemeParkIncStaffRole.Researcher => state is 0 or 1 or ThemeParkIncResearch.Researching or ThemeParkIncStaffWorld.ToResearchRoom,

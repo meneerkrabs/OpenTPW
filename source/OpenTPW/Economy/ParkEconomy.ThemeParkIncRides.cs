@@ -147,9 +147,11 @@ public sealed partial class ParkEconomy
 		item.MaintenanceRequested = false;
 		if ( !(Catalog.TryGet( item.InfoId, out var info ) && (info.HoldsLitter || info.RequiresWatering)) )
 		{
+			// in state 2 the original's SetState(0) would end an upgrade; Theme Park Inc's upgrades are not sold (no placed mechanic can install one), so that state is refused here
 			if ( ObjectState( item ) == RideObjectStates.Upgrading )
 				throw new InvalidOperationException( "A Theme Park Inc upgrade needs a mechanic trained in Ride Upgrading, which is not ported." );
-			// SetState(0): a broken or condemned ride's state word goes to 0 (its script's VAR_BROKEN turns it back into state 1 at the next ride update, 0x5E5960)
+			// SetState(0): a broken or condemned ride's state word goes to 0 (its script's VAR_BROKEN turns it back into state 1 at the next ride update, 0x5E5960); the original's store would also
+			// overwrite a state 3 (an object that is not choosable), which no request reaches: the search takes only candidates and the command only rides and relief objects, all choosable
 			item.IsBrokenDown = false;
 			Raise( ParkEventKind.MaintenanceCancelled, 0, item.Id, item.InfoId );
 		}

@@ -343,8 +343,12 @@ state at once, so a broken ride's state goes to 0 until its script's `VAR_BROKEN
 which keeps his target `+0x5D8`, and `+0x72` = `+0x74` = 0. Its callers are the native ride panel's cancel button `0x5563F0` (it pushes 0; the call `0x5562E0` beside it pushes 1, both
 on the panel's object `0xA60384`, through the thunk `0x4089E0`) and the toggle `0x50FCD0` (`sete` on its flag). The text HUD replaces that panel and has no call or cancel control
 (`[EXT:tpi-text-hud]`), but the shared `RequestMaintenanceCommand` (the co-op guest's call button, `ParkHud.GuestAttractions`) has no edition gate, so a park with Theme Park Inc's staff
-runs it as Theme Park Inc's request and cancel (`ParkEconomy.RequestMaintenance` → `CancelThemeParkIncMaintenance`), and the level opens the ride on `MaintenanceCancelled` whatever
-its guard, as `0x5E1DC0` does.
+runs it as Theme Park Inc's request and cancel (`ParkEconomy.RequestMaintenance` → `RequestThemeParkIncMaintenance`, `CancelThemeParkIncMaintenance`), and the level opens the ride on
+`MaintenanceCancelled` whatever its guard, as `0x5E1DC0` does. The command's call follows the ride panel's button state `0x5511B0` (case 0x13, `0x5511FB`): it is enabled while the
+staff HQ (world `+0x1EAB54`) counts a thing of the mechanics' kind 4 (`0x5B2DB0(4)`: things of that kind whose byte `+3` is 0), that is a placed mechanic, and no strike is tested;
+the cancel needs no mechanic. (`0x556300`, the enabled test beside the cancel `0x5563F0`, counts kind 20, the gardeners, for its panel.) Two corners are left as they are: in state 2
+the original's `SetState(0)` would end an upgrade, which the port refuses because Theme Park Inc's upgrades are not sold; and the store would overwrite a state 3, which no request
+reaches.
 
 **Wear tick `0x5E25B0`.** `Upgrades[level].WearRate` 0 returns; the script's `VAR_RUNNING` (variable 9) above 0 or `Info.RunsContinuously`; the turn & 0x3F zero. `VAR_ONRIDE`
 (variable 5) 0 gives the wear 0, else `0x5E21A0`: riders clamped to `0..MaxCapacity`; `s = 0.9 × speed / MaxSpeed` (the script's speed `+0xC0`, `0x6B0C30`), then `s + 0.1`, or
@@ -379,7 +383,9 @@ message 10 subscribed, the search). The update is the common pre-update (`0x5DA3
   sold object keeps the object's thing id (negated), and when a new thing takes a freed id (the free list hands it back last in, first out) the cursor names the newcomer, a ride by its
   record (`ParkEconomy.LinkThemeParkIncThing`) or another thing by the same negated id, so the search starts at its successor as the original's does. The cursor may name a thing that is
   gone: the finder reads an id it does not find as "start at the head", so a save accepts any cursor in the thing range (a negated id down to `-ThingPool.Capacity`). A park built from
-  the save holds the slot of a list thing OpenTPW does not rebuild (the tool entry 1710's thing 26), as the original keeps that thing alive; a resumed list must name exactly the placed
+  the save holds the slot of a list thing OpenTPW does not rebuild (the tool entry 1710's thing 26), as the original keeps every saved thing alive (the World loader rebuilds the free
+  list from the slots no saved thing occupies, `0x64D759`, as tp.exe's `0x518D43`); a slot that cannot be held refuses the park. This is a partial fix: the held slot takes the newest
+  place of the used list rather than the saved thing's, and the slice's other saved things that it does not rebuild keep the new world's slots; a resumed list must name exactly the placed
   objects without an economy binding and, besides them, only such held attraction slots (`ParkResumeSaveFile.ThemeParkIncObjectListProblem`). The seven things were saved in state 3 with a full state of repair and no request, the object update skips state 3, and their `.sam` files declare no
   `RideBreakDown` keys, so they are never candidates. The prebuilt's HQ cursor word is 0.
 - Claimant `0x5E37F0`: a claim older than 100 turns lapses unless the claimant still targets the object (`0x62B280`: a mechanic's `+0x5D8`), and the claimant then goes idle.

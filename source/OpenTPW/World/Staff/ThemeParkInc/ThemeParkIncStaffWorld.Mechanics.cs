@@ -239,8 +239,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>
 	/// The object's claimant (0x5E37F0), 0 for none: a claim taken more than 100 turns ago lapses unless its claimant still targets the object, and the claimant then goes idle.
 	/// </summary>
-	// [BIN:TPI-EXE:0x5E37F0 claimant] +0x72 zero: none; the turn above +0x74 + 100 (unsigned) and the claimant's 0x62B280(the object) false (kind 4: +0x5D8 is the object; kind 5: its loo or bin
-	// target +0x5DA, which the ported handyman never sets; other kinds false): "Ride: removing staff member from this ride, he's taken too long to fix it", the claimant's 0x628180(0) and +0x72 = 0,
+	// [BIN:TPI-EXE:0x5E37F0 claimant] +0x72 zero: none; the turn above +0x74 + 100 (unsigned) and the claimant's 0x62B280(the object) false (kind 4 and kind 0x14: +0x5D8 is the object; kind 5: its loo
+	// or bin target +0x5DA, which the ported handyman never sets; other kinds false): "Ride: removing staff member from this ride, he's taken too long to fix it", the claimant's 0x628180(0) and +0x72 = 0,
 	// +0x74 = 0
 	internal int Claimant( ParkEconomy economy, ParkObjectState item, long turn )
 	{
@@ -249,7 +249,14 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( unchecked( (uint)turn ) > unchecked( (uint)(item.ClaimTurn + 100) ) )
 		{
 			var claimant = economy.TpiStaff?.Members.FirstOrDefault( member => member.Navigation != null && member.ThingId == item.MechanicId );
-			if ( claimant is not { Role: ThemeParkIncStaffRole.Mechanic } || claimant.RideId != item.Id )
+			// [BIN:TPI-EXE:0x62B280 claim validator] kind 4 and 0x14 compare the word +0x5D8 with the object (0x62B2B3 jumps to the mechanic's compare for 0x14)
+			var targets = claimant switch
+			{
+				{ Role: ThemeParkIncStaffRole.Mechanic } => claimant.RideId == item.Id,
+				{ Role: ThemeParkIncStaffRole.Gardener } => claimant.PlantId == item.Id,
+				_ => false
+			};
+			if ( !targets )
 			{
 				if ( claimant != null )
 					SetState( economy, claimant, Idle, turn );
@@ -296,18 +303,29 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>
-	/// The removal message (10) a mechanic hears (0x5D9DD0): when the removed object is his ride, he forgets it and goes idle. Called for every placed mechanic when the economy removes an object.
+	/// The removal message (10) a mechanic (0x5D9DD0) or a gardener (0x5D2480) hears: when the removed object is his ride or his plant, he forgets it and goes idle. Called for every placed member
+	/// when the economy removes an object.
 	/// </summary>
+	// [BIN:TPI-EXE:0x5D2480 gardener message] message 10 whose object word (+8) is his +0x5D8: "Gardener: plant I was watering was deleted", +0x5D8 = 0, template 3 in the state 0x20 (0x5D0F90), then
+	// 0x628180(0); the base handler 0x6265C0 follows for every message (the gardener's constructor subscribed him, 0x436AC0(this, 10))
 	// [BIN:TPI-EXE:0x5D9DD0 mechanic message] message 10 whose object word (+8) is his +0x5D8: "Mechanic: ride I was fixing was deleted", +0x5D8 = 0 and the setter 0x5DA150(0) (0x628180(0): the
 	// idle stamp the turn after state 1, else 0, the speed bonus 0 and template 3); the constructor subscribed him to the message (0x436AC0(this, 10))
 	internal static void ObjectRemoved( ThemeParkIncStaff staff, int instanceId, long turn )
 	{
 		foreach ( var member in staff.Members )
 		{
-			if ( member.Role != ThemeParkIncStaffRole.Mechanic || member.Navigation == null || member.RideId != instanceId )
+			if ( member.Navigation == null )
 				continue;
-			member.RideId = 0;
-			EnterIdle( member, turn );
+			if ( member.Role == ThemeParkIncStaffRole.Mechanic && member.RideId == instanceId )
+			{
+				member.RideId = 0;
+				EnterIdle( member, turn );
+			}
+			else if ( member.Role == ThemeParkIncStaffRole.Gardener && member.PlantId == instanceId )
+			{
+				member.PlantId = 0;
+				EnterIdle( member, turn );
+			}
 		}
 	}
 }

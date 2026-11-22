@@ -5,11 +5,12 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>The researcher's walk to his research room (state 25); state 24 is <see cref="ThemeParkIncResearch.Researching"/>.</summary>
 	public const int ToResearchRoom = 25;
 
-	/// <summary>The thing model of a role's staff thing (the load cases 4 mechanic, 5 handyman, 8 researcher).</summary>
+	/// <summary>The thing model of a role's staff thing (the load cases 4 mechanic, 5 handyman, 8 researcher, 0x14 gardener).</summary>
 	internal static SaveThingModel ThingModelOf( ThemeParkIncStaffRole role ) => role switch
 	{
 		ThemeParkIncStaffRole.Researcher => SaveThingModel.Researcher,
 		ThemeParkIncStaffRole.Mechanic => SaveThingModel.Mechanic,
+		ThemeParkIncStaffRole.Gardener => SaveThingModel.Gardener,
 		_ => SaveThingModel.Handyman
 	};
 

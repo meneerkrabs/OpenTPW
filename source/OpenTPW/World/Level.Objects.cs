@@ -2015,6 +2015,15 @@ public partial class Level
 	}
 
 	private readonly Dictionary<OriginalObject, int> economyInstances = new();
+
+	/// <summary>
+	/// A cache of the reverse of <see cref="economyInstances"/>: the object last found for each economy instance. Every hit is checked against <see cref="economyInstances"/>, and a miss or a stale
+	/// entry scans it again, so the cache never answers an object the map no longer links.
+	/// </summary>
+	private Dictionary<int, OriginalObject>? instanceObjects;
+
+	/// <summary>The object whose removal is being handled: unlinked only after its economy record is sold, so the sale still reads its script (a plant's condition row, <c>0x5DE9D3</c>).</summary>
+	private OriginalObject? removingObject;
 	private int? prototypeInstance;
 	private bool prototypeBought;
 
@@ -2056,7 +2065,8 @@ public partial class Level
 		}
 		Objects.ObjectRemoved += item =>
 		{
-			var linked = economyInstances.Remove( item, out var instance );
+			// the object stays linked until its record is sold: the sale's destructor (0x5DE9D3) reads a plant's live condition from its script
+			var linked = economyInstances.TryGetValue( item, out var instance );
 			// [BIN:TPI-EXE:0x64F430 object list] a Theme Park Inc attraction without an economy record (an obstacle, a replacement) leaves the object list as its thing id; one with a record leaves
 			// it with the record's sale
 			if ( !linked )
@@ -2064,8 +2074,20 @@ public partial class Level
 			// a guest walking to a removed bin gets the removal message (tp.exe 0x004FB360); bins are known by their economy instance
 			if ( linked && item.Entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) )
 				Guests?.BinRemoved( instance );
-			if ( SellRemovedObject( Park, item.Visitors.AttractionId, linked ? instance : null ) is { } credit )
-				LastActionMessage = $"Removed {item.Entry.DisplayName}; scrap value ${credit} credited.";
+			long? credit;
+			removingObject = item;
+			try
+			{
+				credit = SellRemovedObject( Park, item.Visitors.AttractionId, linked ? instance : null );
+			}
+			finally
+			{
+				removingObject = null;
+				if ( linked )
+					economyInstances.Remove( item );
+			}
+			if ( credit is { } scrap )
+				LastActionMessage = $"Removed {item.Entry.DisplayName}; scrap value ${scrap} credited.";
 		};
 	}
 
@@ -2250,6 +2272,27 @@ public partial class Level
 		Park?.Guests?.Link( item.Visitors.AttractionId, instance );
 		// a toilet, a camera or a fireworks object spreads its RegionFX row where it stands (its thing's cell)
 		Park?.Economy.PlaceObjectEffects( instance, (item.Placement.X, item.Placement.Y) );
+	}
+
+	/// <summary>
+	/// The live object linked to an economy instance, or null; the object being removed counts until its record is sold. A cached answer is used while the map still links it, else the map is
+	/// scanned (the first live owner in its order, as a scan always answered).
+	/// </summary>
+	private OriginalObject? ObjectOfInstance( int instance )
+	{
+		var cache = instanceObjects ??= new();
+		bool Live( OriginalObject candidate ) => !candidate.IsDeleted || ReferenceEquals( candidate, removingObject );
+		if ( cache.TryGetValue( instance, out var cached ) && economyInstances.TryGetValue( cached, out var linked ) && linked == instance && Live( cached ) )
+			return cached;
+		foreach ( var (item, owned) in economyInstances )
+		{
+			if ( owned != instance || !Live( item ) )
+				continue;
+			cache[instance] = item;
+			return item;
+		}
+		cache.Remove( instance );
+		return null;
 	}
 
 	/// <summary>The fireworks' script variable 0 (<c>VAR_STATUS</c> in Hallow's Firework Show and Space's Laser Show).</summary>

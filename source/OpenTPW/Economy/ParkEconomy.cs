@@ -55,7 +55,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		Counters.Added += ( key, amount ) => Objectives.AccumulateCounter( key, amount, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		Counters.Restored += () => Objectives.RestoreLegacyRawValue( MeasureChallenge, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		EntranceFee = settings.InitialAdmissionFee;
-		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
+		Litter.Environment.Effects = RegionEffect.Load( settings.Standard, Rules.ThemeParkInc ? RegionEffect.ThemeParkIncCount : RegionEffect.Count );
 		Litter.World = () => World;
 		// a park without staff has no pool: the world generator is not drawn from for candidates (the settings hold no staff keys then)
 		if ( Rules.Staff )
@@ -915,6 +915,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) )
 			return null;
+		// a Theme Park Inc plant holds the row of the condition its update last moved to: row 10 from its construction (0x5DB675), then the update's moves (0x5E4CB0), each of which writes that
+		// condition into VAR_OLDSTATE. vegetation.rse copies VAR_CONDITION into VAR_OLDSTATE before each change it makes (COPY VAR_OLDSTATE VAR_CONDITION) and follows each change with a WAITANIM of
+		// at least 300 script ms, longer than a 248 ms turn, so an update runs between two changes and VAR_OLDSTATE names the row on the cells at any save point, also between a script change and
+		// the next update (a watering 2 -> 1 -> 0 spans two updates, not one pass; ThemeParkIncPlantTests runs the script beside the update). Only a park whose turns stopped while its scripts ran on
+		// could see two changes between updates; the original's update would then move the wrong row as well
+		if ( IsThemeParkIncPlant( item ) )
+			return ReadThemeParkIncScript( item, PlantOldState ) is >= 0 and <= 3 and var noted ? PlantRow( noted ) : null;
 		if ( info.ProvidesRelief )
 			return IsDirtyToilet( item ) ? RegionEffect.DirtyToilet : RegionEffect.CleanToilet;
 		if ( info.ProvidesSecurity )
@@ -937,8 +944,17 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	/// <summary>The object leaves the park (tp.exe destructor <c>0x004DD0A0</c>): its row comes off its cell.</summary>
 	// [BIN:TPW-EXE:0x004DD0A0 object destructor] row 4 for a camera, row 7 for fireworks while their script variable 0 is below 2, and for a toilet row 1 at a gauge of 25 or more, else row 6 (0x004D8460)
+	// [BIN:TPI-EXE:0x5DE9D3 plant row off] a Theme Park Inc thing with +0x43 bit 0x10 takes off the row of its live VAR_CONDITION (0x6B0C90(inst, 0); the table 0x5DEBF0: 0..3 rows 10..13 through
+	// 0x5D74D0; any other condition none), not the row its update last moved: a condition the script changed since the plant's last update leaves the difference of the two rows on the cells
 	private void RemoveObjectEffects( ParkObjectState item )
 	{
+		if ( IsThemeParkIncPlant( item ) )
+		{
+			if ( item.EffectCell is { } plantCell && ReadThemeParkIncScript( item, PlantCondition ) is >= 0 and <= 3 and var condition )
+				Litter.Environment.Apply( PlantRow( condition ), plantCell.X, plantCell.Y, add: false );
+			item.EffectCell = null;
+			return;
+		}
 		if ( item.EffectCell is not { } cell || ObjectEffectRow( item ) is not { } row )
 			return;
 		Litter.Environment.Apply( row, cell.X, cell.Y, add: false );
@@ -1120,10 +1136,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>One object's update of a park turn (the body of <see cref="UpdateRides"/>): the wear step, the breakdown check and the relief objects' worn report.</summary>
 	internal void UpdateRide( ParkObjectState item, long turn )
 	{
-		// a Theme Park Inc park with its staff runs Theme Park Inc's own object update (UpdateThemeParkIncRide)
+		// a Theme Park Inc park with its staff runs Theme Park Inc's own object update (UpdateThemeParkIncRide), then the state dispatch's plant block (UpdateThemeParkIncPlant)
+		// [BIN:TPI-EXE:0x63760B attraction update] kind 3: 0x5E4790, then the state dispatch 0x5E4CB0, whose state 3 is the plant's block and state 0 the ride update (the level's admission)
 		if ( TpiStaff != null )
 		{
 			UpdateThemeParkIncRide( item, turn );
+			UpdateThemeParkIncPlant( item );
 			return;
 		}
 		// [BIN:TPW-EXE:0x004DB4FB object state] a thing whose type record is choosable (Info.IsChoosable, +0x32 bit 4) starts in state 0, any other in state 3, which the update skips

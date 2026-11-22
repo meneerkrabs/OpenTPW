@@ -14,7 +14,15 @@ public partial class Level
 		Park.Economy.FirstUnconnectedQueueRide = FirstUnconnectedQueue;
 		Park.Economy.ObjectThingId = ThingIdOfInstance;
 		Park.Economy.ArrivalBusStopCell = ArrivalBusStopCellWord;
+		Park.Economy.ThemeParkIncScriptOf = ScriptVariablesOfInstance;
 	}
+
+	/// <summary>
+	/// The script variables of the object linked to an economy instance (the prototype's included), for Theme Park Inc's engine, which reads and writes them by index (<c>0x6B0C90</c>, <c>0x6B0780</c>):
+	/// any linked object with a script, a plant (not choosable) included, and the object being removed until its record is sold; null for none.
+	/// </summary>
+	private int[]? ScriptVariablesOfInstance( int instance ) =>
+		ObjectOfInstance( instance ) is { } item ? item.Runtime.Script?.Variables : prototypeInstance == instance ? PlacedRide?.Runtime.Script?.Variables : null;
 
 	/// <summary>The thing id (the original's pool slot) of the attraction with this economy instance id; 0 for an object the level does not hold. The advisor's records carry it for the tube's locate button.</summary>
 	private int ThingIdOfInstance( int instance )

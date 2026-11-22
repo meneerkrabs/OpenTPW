@@ -69,6 +69,12 @@ public sealed class ThingPool
 
 	public ThingPool() => ResetFreeList();
 
+	/// <summary>
+	/// Whether the pool is a Theme Park Inc park's, whose thing kinds reach the gardener's 0x14 (<see cref="SaveThingModel.Gardener"/>); Theme Park World's kinds stop at 19, so its pool refuses
+	/// model 20.
+	/// </summary>
+	public bool ThemeParkInc { get; init; }
+
 	/// <summary>The number of used slots.</summary>
 	public int Count => usedCount;
 
@@ -228,7 +234,7 @@ public sealed class ThingPool
 		{
 			if ( slot.Id is < 1 or > Capacity )
 				throw new InvalidDataException( $"Thing id {slot.Id} is outside the pool's 1..{Capacity}." );
-			if ( !IsThingModel( slot.Model ) )
+			if ( !IsThingModel( slot.Model, ThemeParkInc ) )
 				throw new InvalidDataException( $"Thing {slot.Id} has model {(int)slot.Model}, which is not a thing model." );
 			if ( !seen.Add( slot.Id ) )
 				throw new InvalidDataException( $"Thing id {slot.Id} appears more than once." );
@@ -261,7 +267,7 @@ public sealed class ThingPool
 	/// </summary>
 	public bool Occupy( int id, SaveThingModel thingModel )
 	{
-		if ( id is < 1 or > Capacity || used[id] || !IsThingModel( thingModel ) )
+		if ( id is < 1 or > Capacity || used[id] || !IsThingModel( thingModel, ThemeParkInc ) )
 			return false;
 		var previous = 0;
 		for ( var free = freeHead; free != 0; previous = free, free = nextFree[free] )
@@ -299,7 +305,7 @@ public sealed class ThingPool
 	}
 
 	/// <summary>The problems that stop <paramref name="snapshot"/> from restoring (an id outside the pool or repeated, an unknown model, a free id that is in use, a placeholder or a waiting destroy that is not a used slot); empty when it restores.</summary>
-	public static IReadOnlyList<string> Problems( ThingPoolSnapshot? snapshot )
+	public static IReadOnlyList<string> Problems( ThingPoolSnapshot? snapshot, bool themeParkInc = false )
 	{
 		var problems = new List<string>();
 		if ( snapshot?.Used == null || snapshot.FreeFirst == null )
@@ -314,7 +320,7 @@ public sealed class ThingPool
 				problems.Add( "a used thing slot is missing" );
 			else if ( slot.Id is < 1 or > Capacity )
 				problems.Add( $"thing id {slot.Id} is outside the pool's 1..{Capacity}" );
-			else if ( slot.Model is < 1 or > 19 )
+			else if ( !IsThingModel( (SaveThingModel)slot.Model, themeParkInc ) )
 				problems.Add( $"thing {slot.Id} has model {slot.Model}, which is not a thing model" );
 			else if ( !used.Add( slot.Id ) )
 				problems.Add( $"thing id {slot.Id} appears more than once" );
@@ -354,7 +360,7 @@ public sealed class ThingPool
 	/// <exception cref="InvalidDataException">The snapshot has <see cref="Problems"/>.</exception>
 	public void RestoreSnapshot( ThingPoolSnapshot snapshot )
 	{
-		var problems = Problems( snapshot );
+		var problems = Problems( snapshot, ThemeParkInc );
 		if ( problems.Count != 0 )
 			throw new InvalidDataException( problems[0] );
 		Restore( snapshot.Used.Select( slot => new ThingSlot( slot.Id, (SaveThingModel)slot.Model ) ) );
@@ -423,11 +429,12 @@ public sealed class ThingPool
 		}
 	}
 
-	private static bool IsThingModel( SaveThingModel value ) => (int)value is >= 1 and <= 19;
+	// [BIN:TPI-EXE:0x6375E0 thing dispatch] Theme Park Inc's thing kinds reach 0x14, the gardener (0x63763E); Theme Park World's stop at 19
+	private static bool IsThingModel( SaveThingModel value, bool themeParkInc ) => (int)value is >= 1 and <= 19 || themeParkInc && value == SaveThingModel.Gardener;
 
-	private static void ValidateModel( SaveThingModel value )
+	private void ValidateModel( SaveThingModel value )
 	{
-		if ( !IsThingModel( value ) )
+		if ( !IsThingModel( value, ThemeParkInc ) )
 			throw new ArgumentOutOfRangeException( nameof( value ), $"Model {(int)value} is not a thing model." );
 	}
 }

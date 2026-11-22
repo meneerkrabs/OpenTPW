@@ -70,9 +70,12 @@ public class ThemeParkIncConstructionVariableTests
 		var after = script.Variables;
 		Assert.AreEqual( (20, 15, 5), (after[3], after[11], after[12]), "0x5DB7F1, 0x5DB80F, 0x5DB82C" );
 		Assert.IsTrue( after.Select( ( value, index ) => index is 3 or 11 or 12 || value == before[index] ).All( same => same ), "no other variable is written" );
-		// the plants: the original loads data\levels\vegetation.rse for a thing with flag 0x1000 (0x5DE61A); OpenTPW does not, so a plant has no script and its writes are dropped, as 0x6B0780 drops them
+		// the plants: the original loads data\levels\vegetation.rse for a thing with flag 0x1000 (0x5DE61A), and so does OpenTPW in Theme Park Inc (ThemeParkIncPlantTests), so the plant's
+		// writes land on its script
 		var plant = ObjectCatalog.Load( "science" ).Entries.First( entry => entry.Settings.GetBool( "UsageInfo.RequiresWatering" ) );
-		Assert.IsNull( new OriginalObjectRuntime( plant ).Script );
+		var plantScript = new OriginalObjectRuntime( plant ).Script!;
+		ThemeParkIncStandard.ConstructionWords( ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, "science" )! ).Apply( plant.Settings, plantScript );
+		Assert.AreEqual( (400, 0, 1000), (plantScript.Variables[2], plantScript.Variables[5], plantScript.Variables[14]), "0x5DB850, 0x5DB86E, 0x5DB88A" );
 	}
 
 	[TestMethod]

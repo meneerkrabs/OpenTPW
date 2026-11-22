@@ -186,7 +186,7 @@ public partial class Level
 	{
 		if ( Park?.Economy.TpiStaff == null || Guests == null )
 			return;
-		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests, ObjectCells = TpiObjectCells };
+		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests, ObjectCells = TpiObjectCells, ObjectThings = TpiObjectThing };
 		AttachThemeParkIncRooms();
 		AdoptTpiStaffThings();
 		// the members' sprites: Theme Park Inc's esprites.wad holds the handymen's bank under the folder Theme Park World's loader reads (Generic\Handymen, Spr_ha), found by name
@@ -318,18 +318,26 @@ public partial class Level
 	// [BIN:TPI-EXE:0x5DB4C1 object cell words] +0x46 = +0x44 + the type's +0x5E8 turned by the angle (ThemeParkIncStaffWorld.EntranceWord, the drop's); a cell word of 0 or off the map has no cell
 	private ((int X, int Y) Thing, (int X, int Y)? Entrance)? TpiObjectCells( int instance )
 	{
-		foreach ( var (item, linked) in economyInstances )
-		{
-			if ( linked != instance || item.IsDeleted )
-				continue;
-			var settings = item.Entry.Settings;
-			var thing = new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
-				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
-			var word = ThemeParkIncStaffWorld.EntranceWord( thing );
-			var entrance = ThemeParkIncStaffWorld.CellOfWord( word );
-			return (item.ThingCell, word != 0 && Guests != null && Guests.Grid.Cells.InBounds( entrance.X, entrance.Y ) ? entrance : null);
-		}
-		return null;
+		if ( TpiObjectThing( instance ) is not { } thing )
+			return null;
+		var word = ThemeParkIncStaffWorld.EntranceWord( thing );
+		var entrance = ThemeParkIncStaffWorld.CellOfWord( word );
+		return (thing.ThingCell, word != 0 && Guests != null && Guests.Grid.Cells.InBounds( entrance.X, entrance.Y ) ? entrance : null);
+	}
+
+	/// <summary>
+	/// An economy object's thing for the Theme Park Inc gardener's chooser: its thing cell (the distance) and what the drop's fallback <c>0x5E9320</c> reads of it (its shape, angle and map offset),
+	/// from the placed object linked to the instance; null for an object the level does not place.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D2F4C chooser fallback] the chooser hands the plant thing and the gardener's cell word to 0x5E9320, which reads the thing's +0x44 anchor, the type's shape and map offset and
+	// the angle (ThemeParkIncStaffWorld.FallbackDropWord, the drop's)
+	private ThemeParkIncStaffWorld.DropObject? TpiObjectThing( int instance )
+	{
+		if ( ObjectOfInstance( instance ) is not { IsDeleted: false } item )
+			return null;
+		var settings = item.Entry.Settings;
+		return new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
+			settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
 	}
 
 	/// <summary>

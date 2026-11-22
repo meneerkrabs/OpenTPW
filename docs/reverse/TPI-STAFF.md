@@ -241,7 +241,7 @@ Ported as an economy model, without the world simulation, and checked against th
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
-Not ported yet: the state machines of the entertainer and the guard; slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
+Not ported yet: the state machines of the roles other than the handyman, the mechanic, the researcher and the gardener; slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.
@@ -361,7 +361,7 @@ update runs at the 24-bit x87 precision the Direct3D device sets (`[EXT:hardware
 message 10 subscribed, the search). The update is the common pre-update (`0x5DA3B0` jumps to `0x628050`) and the dispatch `0x5DA280`: 0 idle (voice 0xA3, the idle end
 `0x62CA10`), 1 patrol (voice 0xA2, the walk, the search on arrival or stuck), 21 to the ride `0x5DA650`, 22 repairing `0x5DA7C0`; 2 and 3 are the rest area's (unreached).
 - Search `0x5DA3D0`: the gate `0x62BBA0`; too tired goes to the tail; `+0x5D8` = the finder; the patrol area `0x62C6B0` (the whole map answers true; another rectangle needs the
-  unported patrol-area tool, and a saved mechanic with one is refused); "found a ride"; the route `0x62EAC0` to the ride's entrance word `+0x46` at the point (0x80, 0x80); the claim
+  unported patrol-area tool, and a saved mechanic with one is refused); "found a ride"; the route `0x62EAC0` to the ride's entrance word `+0x46` at the point (0x80, 0x80), which calls the staff route `0x62EB10` (the closed park's entrance refusal and the walk mask, `StaffRoute`); the claim
   `0x5E3780` (`+0x72` = his thing id, `+0x74` = the turn); advice 0x43 (not posted); a ride not broken down, not called for and below `Imminent` gets the request `0x5E3400(1)`
   (`+0x78` = 1 and, unless a bin or a plant, closed); state 21; the tail patrols or idles.
 - Finder `0x5DAAD0` on the HQ thing of world `+0x1EAB4E` (cursor `+0x14`, kept as `ParkEconomy.MechanicCursor`): the cursor moves one object on from the previous start over the object

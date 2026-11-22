@@ -6,8 +6,8 @@ namespace OpenTPW;
 /// </summary>
 /// <remarks>
 /// The upgrade job is not reached: a ride is upgraded only by a mechanic whose learnt ability (+0x218) is 1 (Ride Upgrading, <c>0x62B7D0</c> in the finder), which only training writes
-/// (<c>0x62AA50</c>, <c>0x62B860</c>, <c>0x62B8B0</c>; the member start <c>0x626390</c> clears it), and the economy accepts no upgrade purchase in a Theme Park Inc park, so no ride is ever in
-/// state 2 (training is ported, ThemeParkIncStaffWorld.Training, but no training room can be built in play). The states 2 and 3 (to a rest area and resting) are not reached either: no Theme Park Inc object is a rest area.
+/// (<c>0x62AA50</c>, <c>0x62B860</c>, <c>0x62B8B0</c>; the member start <c>0x626390</c> clears it), and only the handymen's training states are ported; nor does the economy accept an upgrade
+/// purchase in a Theme Park Inc park, so no ride is ever in state 2. The states 2 and 3 (to a rest area and resting) are not reached either: no Theme Park Inc object is a rest area.
 /// </remarks>
 public sealed partial class ThemeParkIncStaffWorld
 {
@@ -52,13 +52,6 @@ public sealed partial class ThemeParkIncStaffWorld
 				break;
 			case Repairing:
 				UpdateRepairing( economy, settings, member, turn );
-				break;
-			// the common handler 0x6287A0 (byte table 0x628B10, jump table 0x628ADC): 7 -> 0x62A7C0, 8 -> 0x62AA50, as the handyman's
-			case ThemeParkIncTraining.ToTrainingRoom:
-				UpdateToTrainingRoom( economy, settings, member, turn );
-				break;
-			case ThemeParkIncTraining.Training:
-				UpdateTraining( economy, settings, member, turn );
 				break;
 		}
 	}
@@ -127,7 +120,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// </summary>
 	// [BIN:TPI-EXE:0x5DA3D0 mechanic search] 0x62BBA0 nonzero returns; tired (0x62B3B0, "Too tired to fix rides") goes to the tail; +0x5D8 = the finder 0x5DAAD0 (on the HQ thing of the world word
 	// +0x1EAB4E, 0x64E9A0) whatever follows; 0 goes to the tail; the patrol-area test 0x62C6B0 false goes to the tail silently; "Mechanic: found a ride that needs repairing"; the route 0x62EAC0 to
-	// the ride's entrance word +0x46 (0x62EB10 with the point 0x80, 0x80) failing logs "couldn't reach broken ride" and goes to the tail; else the claim 0x5E3780; a ride neither requested
+	// the ride's entrance word +0x46 (0x62EAC0 turns the word into the cell bytes with the point 0x80, 0x80 and calls the staff route 0x62EB10: StaffRoute) failing logs "couldn't reach broken ride" and goes to the tail; else the claim 0x5E3780; a ride neither requested
 	// (0x5E3B70) nor upgrading (0x5E3B90) posts advice 0x43 (not posted: [EXT:tpi-capability-gates], the advisor's other messages; it draws nothing); a ride not in state 1 (0x5E3950), not
 	// requested and below its line (0x5E28A0) gets the request 0x5E3400(1); then the setter 0x5DA150(0x15); the tail: the patrol destination 0x609F70 sets 1, none ("Couldn't even move to random
 	// dest") sets 0
@@ -141,7 +134,7 @@ public sealed partial class ThemeParkIncStaffWorld
 			var found = FindRide( economy, member, turn );
 			member.RideId = found;
 			if ( found != 0 && economy.TryGetObject( found, out var ride ) && InMechanicArea( member )
-				&& ObjectCells?.Invoke( found ) is { Entrance: { } entrance } && Route( member, entrance, GuestWander.CentreByte, GuestWander.CentreByte ) )
+				&& ObjectCells?.Invoke( found ) is { Entrance: { } entrance } && StaffRoute( economy, member, entrance, GuestWander.CentreByte, GuestWander.CentreByte ) )
 			{
 				economy.ClaimThemeParkInc( ride, member.ThingId, turn );
 				if ( ParkEconomy.ObjectState( ride ) != RideObjectStates.BrokenDown && !ride.MaintenanceRequested && economy.BelowThemeParkIncRepairLine( ride ) )
@@ -187,7 +180,8 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( cursor == 0 )
 			return 0;
 		var start = cursor;
-		// [BIN:TPI-EXE:0x62B7D0 ability test] a = the learnt ability +0x218 == 1 (Ride Upgrading), which only training writes; no ride reaches state 2, so a trained mechanic finds no upgrade either
+		// [BIN:TPI-EXE:0x62B7D0 learnt ability] a = +0x218 == 1 (Ride Upgrading); the member start 0x626390 clears it and a mechanic's training is not ported, and no Theme Park Inc ride reaches
+		// state 2 (the economy sells no upgrade), so the upgrading branch finds nothing
 		var canUpgrade = member.Ability == 1;
 		var (x, y) = member.Navigation!.Cell;
 		uint urgentBest = uint.MaxValue, otherBest = uint.MaxValue;

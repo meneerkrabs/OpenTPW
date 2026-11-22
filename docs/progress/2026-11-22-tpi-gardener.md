@@ -7,7 +7,7 @@ A Theme Park Inc park's plants now wither by their own script, and the player ca
 - **Training.** A Gardener learns the abilities 10 to 14 and fills the staff HQ's slots that ask for them (needed by mission 1's obstacle).
 - **Sprites.** Gardeners are drawn with Theme Park Inc's own gardener sprites (`Generic\Gardeners`).
 - **Saves.** The Science continuation save keeps the gardeners, their plant and stamp, and the plants' scripts. A Theme Park Inc save made before this is refused with a message before its assets are checked.
-- **The mechanics.** This branch builds on the mechanics (#985): the gardener shares their object list, claim word and maintenance request, and a mechanic now trains through the common handler as well.
+- **The mechanics.** This branch builds on the mechanics (#985): the gardener shares their object list, claim word and maintenance request.
 
 Labels: `[EXT:tpi-capability-gates]` no longer covers the gardener; it still covers the entertainer and the guard, the advisor's notices and a patrol area smaller than the whole map (`0x6256A0`). Not ported, inert: the gardener's facing while watering (`0x609E60`, presentation), the destructor's claim release (staff cannot be fired yet) and the guests' fire prank on plants. No new approximation or label is added, and no CRT `rand()` draw is reached.
 

@@ -4,8 +4,8 @@ namespace OpenTPW;
 /// Theme Park Inc's staff in the park (docs/reverse/TPI-STAFF.md §11): the placed members' things and their state machines, beside Theme Park World's
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
 /// meters, day counters and search, and the training states 7 and 8; the mechanic runs 0, 1, 21 (to the ride) and 22 (repair) with the ride wear of ParkEconomy.UpdateThemeParkIncRide; the
-/// gardener runs 0, 1, 0x1F (to the plant) and 0x20 (watering) with the plants of ParkEconomy.UpdateThemeParkIncPlant; the mechanic and the gardener train as the handyman does; the researcher
-/// runs his states 0, 1, 24 (researching) and 25 (to his research room); the entertainer and the guard are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
+/// researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the gardener runs 0, 1, 0x1F (to the plant) and 0x20 (watering) with the training states and the plants of
+/// ParkEconomy.UpdateThemeParkIncPlant (ThemeParkIncStaffWorld.Gardeners); the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
 /// </summary>
 /// <remarks>
 /// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
@@ -72,29 +72,15 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x5D9BB4 mechanic sprite] the mechanic's constructor makes its source with the category 0xA and the variant byte it was given (+0x30); esprites.wad holds the mechanics' bank
 	// in Generic\Mechanics (Spr_om), the folder Theme Park World's loader reads for its mechanics
 	public static int VariantOf( ThemeParkIncStaffMember member, IStaffSpriteBanks? banks ) =>
-		banks?.BankCount( StaffTypeOf( member.Role ) ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
+		banks?.BankCount( SpriteTypeOf( member ) ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
 
-	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (0xA), the researchers' (0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (0x12).</summary>
-	internal static StaffType SpriteTypeOf( ThemeParkIncStaffMember member ) => StaffTypeOf( member.Role );
-
-	/// <summary>The staff sprite set's role a placed member is drawn as.</summary>
-	public static StaffType StaffTypeOf( ThemeParkIncStaffRole role ) => role switch
+	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (category 0xA), the researchers' (category 0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (category 0x12, <c>Generic\Gardeners</c>).</summary>
+	internal static StaffType SpriteTypeOf( ThemeParkIncStaffMember member ) => member.Role switch
 	{
-		ThemeParkIncStaffRole.Handyman => StaffType.Handyman,
-		ThemeParkIncStaffRole.Mechanic => StaffType.Mechanic,
 		ThemeParkIncStaffRole.Researcher => StaffType.Researcher,
+		ThemeParkIncStaffRole.Mechanic => StaffType.Mechanic,
 		ThemeParkIncStaffRole.Gardener => StaffSpriteRules.ThemeParkIncGardener,
-		_ => throw new ArgumentOutOfRangeException( nameof( role ), $"Theme Park Inc's {role}s are not placed in the park." )
-	};
-
-	/// <summary>The thing model of a placed member's thing (the kind byte +0x2: 5 a handyman, 4 a mechanic, 8 a researcher, 0x14 a gardener).</summary>
-	public static SaveThingModel ThingModelOf( ThemeParkIncStaffRole role ) => role switch
-	{
-		ThemeParkIncStaffRole.Handyman => SaveThingModel.Handyman,
-		ThemeParkIncStaffRole.Mechanic => SaveThingModel.Mechanic,
-		ThemeParkIncStaffRole.Researcher => SaveThingModel.Researcher,
-		ThemeParkIncStaffRole.Gardener => SaveThingModel.Gardener,
-		_ => throw new ArgumentOutOfRangeException( nameof( role ), $"Theme Park Inc's {role}s are not placed in the park." )
+		_ => StaffType.Handyman
 	};
 
 	/// <summary>
@@ -382,13 +368,15 @@ public sealed partial class ThemeParkIncStaffWorld
 		member.Sprite.Reset();
 		member.Sprite.Create( SpriteTypeOf( member ), VariantOf( member, SpriteBanks ), ProgramOf( IdleTemplate ), SpriteClockMilliseconds, SpriteBanks );
 		FollowChain( member );
-		// [BIN:TPI-EXE:0x5D9BC8 mechanic start] +0x5D8 and +0x5D4 = 0, then the setter 0x5DA150(0) (0x628180(0): the idle stamp 0, as the state is 0, the bonus 0 and template 3) before the search
-		if ( member.Role == ThemeParkIncStaffRole.Mechanic )
-			SetState( economy, member, Idle, economy.Turn );
 		if ( member.Role == ThemeParkIncStaffRole.Researcher )
 			StartResearcher( economy, member, economy.Turn );
 		else
+		{
+			// [BIN:TPI-EXE:0x5D9BC8 mechanic start] +0x5D8 and +0x5D4 = 0, then the setter 0x5DA150(0) (0x628180(0): the idle stamp 0, as the state is 0, the bonus 0 and template 3) before the search
+			if ( member.Role == ThemeParkIncStaffRole.Mechanic )
+				SetState( economy, member, Idle, economy.Turn );
 			Search( economy, member, economy.Turn );
+		}
 		FollowChain( member );
 	}
 
@@ -454,7 +442,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x63761C mechanic update] kind 4: the pre-update 0x5DA3B0 (a jump to the common 0x628050), then the state dispatch 0x5DA280
 	public void Update( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
-		if ( member.Navigation == null || !ThemeParkIncStaffMember.IsPlacedRole( member.Role ) || economy.TpiStaff is not { } staff )
+		if ( member.Navigation == null || economy.TpiStaff is not { } staff )
 			return;
 		member.LastUpdateTurn = turn;
 		(member.TurnFromX, member.TurnFromY, member.TurnTick) = (member.Navigation.X, member.Navigation.Y, Guests?.TickCount ?? -1);
@@ -463,6 +451,19 @@ public sealed partial class ThemeParkIncStaffWorld
 			// [BIN:TPI-EXE:0x637690 researcher update] kind 8: the pre-update 0x61B600 (the common 0x628050), then the dispatch 0x61B620
 			CommonPreUpdate( member );
 			DispatchResearcher( economy, staff.Settings, member, turn );
+		}
+		else if ( member.Role == ThemeParkIncStaffRole.Mechanic )
+		{
+			// the mechanic's pre-update is the common part alone (0x5DA3B0 jumps to 0x628050)
+			CommonPreUpdate( member );
+			DispatchMechanic( economy, staff.Settings, member, turn );
+		}
+		else if ( member.Role == ThemeParkIncStaffRole.Gardener )
+		{
+			// [BIN:TPI-EXE:0x63763E gardener update] kind 0x14: the pre-update 0x5D2820 (the common 0x628050, then the search period), then the dispatch 0x5D2A60
+			CommonPreUpdate( member );
+			PreUpdateGardener( economy, staff.Settings, member, turn );
+			DispatchGardener( economy, staff.Settings, member, turn );
 		}
 		else
 		{
@@ -517,15 +518,6 @@ public sealed partial class ThemeParkIncStaffWorld
 	private void PreUpdate( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		CommonPreUpdate( member );
-		// [BIN:TPI-EXE:0x63763E gardener update] kind 0x14: the pre-update 0x5D2820, then the state dispatch 0x5D2A60
-		if ( member.Role == ThemeParkIncStaffRole.Gardener )
-		{
-			PreUpdateGardener( economy, settings, member, turn );
-			return;
-		}
-		// the mechanic's pre-update is the common part alone (0x5DA3B0 jumps to 0x628050)
-		if ( member.Role != ThemeParkIncStaffRole.Handyman )
-			return;
 		var period = SearchPeriod( member.Experience, settings.MaxExperience );
 		var due = period == 0 || unchecked( (uint)turn ) % (uint)period == 0;
 		if ( member.State == Idle && due && FindLitter( economy, settings, member ) != 0 )
@@ -562,16 +554,6 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x5D5710 handyman dispatch] states 0..0x14 by the byte table 0x5D58C4 and the jump table 0x5D5898; above 0x14 the common handler 0x6287A0
 	private void Dispatch( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
-		if ( member.Role == ThemeParkIncStaffRole.Mechanic )
-		{
-			DispatchMechanic( economy, settings, member, turn );
-			return;
-		}
-		if ( member.Role == ThemeParkIncStaffRole.Gardener )
-		{
-			DispatchGardener( economy, settings, member, turn );
-			return;
-		}
 		switch ( member.State )
 		{
 			case Idle:

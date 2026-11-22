@@ -308,9 +308,10 @@ public sealed class StaffRenderer : Entity
 		{
 			if ( member.Navigation == null || member.Sprite.Output is not var (slot, step) )
 				continue;
-			if ( !ThemeParkIncStaffMember.IsPlacedRole( member.Role ) )
+			// the handymen and the mechanics are drawn; a researcher is not drawn here
+			if ( member.Role is not (ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic) )
 				continue;
-			var atlasIndex = sprites.AtlasFor( ThemeParkIncStaffWorld.StaffTypeOf( member.Role ), ThemeParkIncStaffWorld.VariantOf( member, sprites ) );
+			var atlasIndex = sprites.AtlasFor( ThemeParkIncStaffWorld.SpriteTypeOf( member ), ThemeParkIncStaffWorld.VariantOf( member, sprites ) );
 			if ( !HasAtlas( atlasIndex ) || slot >= sprites.Atlases[atlasIndex].Animations.Animations.Count )
 				continue;
 			var (frame, mirror) = FrameFor( sprites.Atlases[atlasIndex], slot, step, member.HeadingX, member.HeadingY, right, forward );

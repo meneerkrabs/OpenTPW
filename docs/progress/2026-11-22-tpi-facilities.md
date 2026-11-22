@@ -24,7 +24,15 @@
 - **Mechanics rest too (a change to the merged mechanics, #985).** The mechanic's dispatch byte table `0x5DA358` sends state 2 to `0x629EF0` and 3 to `0x62A1C0`, and state 0x23 (above 0x16) to the
   common handler `0x6287A0`, which sends it to the rest search `0x62CA90`; #985 had left these states out because no rest area existed. With the staff rooms buildable a tired mechanic would have
   entered state 2 and stayed there, so the mechanic's dispatch and `IsPortedState` now take them (test `AMechanicRestsLikeTheOthers`).
+- **Gardeners rest too (a change to the merged gardeners, #987).** The gardener's dispatch byte table `0x5D2B68` reads `00 01 02 03` for the states 0 to 3, so states 2 and 3 take the jump-table
+  entries 2 (`0x5D2B26` → `0x629EF0`) and 3 (`0x5D2B2F` → `0x62A1C0`); state 0x23 lies above 0x20 and goes to the common handler `0x6287A0` (`0x5D2B41`), whose byte table `0x628B10` sends it to
+  `0x62CA90`. #987 had left them out ("not reached") because no rest area existed; a tired gardener would have stopped in state 2 and his save would have been refused. The gardener's dispatch and
+  `IsPortedState` now take them (tests `AGardenerRestsLikeTheOthersAndARestSavedMidwayGoesOnAlike`, a save taken mid-rest that goes on as the uninterrupted run does, and
+  `AMechanicOrAGardenerBesideAFullRoomWaitsInTheRestSearch`, which pins both roles' rest-search case beside a full room).
 - **The finders walk the object list.** The rest-area and room finders now walk the economy's Theme Park Inc object list (#985), the order `0x62BA20` walks (world `+0x1EAB88`), instead of the thing pool's.
+  The walk builds its thing lookup once, so it stays linear in the list and the placed objects.
+- **Limits line.** The slice's limits line (all eleven languages, the setup note, the start-up notice, the web page and RUNNING.md) no longer says that no research room can be built: research
+  and training wait only for the missions that offer their rooms.
 - **Toilets and bins.** The toilets are placed and used; a use still wears nothing and the bins' fill is not kept (`[EXT:tpi-no-maintenance-wear]`). A new litter bin's script now takes
   `Standard.sam`'s construction words (`VAR_CAPACITY` 20, `VAR_DIRTY` 15, `VAR_FIRERISK` 5).
 - **Saves.** The asset manifest pins `facilities.sam` with the folders' archives. A layout checkpoint is version 5 and version 4 is refused by its version; a Science continuation whose manifest

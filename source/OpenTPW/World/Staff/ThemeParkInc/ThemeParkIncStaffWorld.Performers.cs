@@ -99,8 +99,9 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>The entertainer's state handler.</summary>
-	// [BIN:TPI-EXE:0x5D1E20 entertainer dispatch] states 0..0x17 by the byte table 0x5D1F70 and the jump table 0x5D1F58: 0 0x5D1F1D, 1 0x5D1EC7, 2 0x629EF0 and 3 0x62A1C0 (a rest area's, unreached: no Theme
-	// Park Inc object is one), 4..0x16 the common handler 0x6287A0 (no training state is reached: an entertainer learns nothing), 0x17 0x5D1E44
+	// [BIN:TPI-EXE:0x5D1E20 entertainer dispatch] states 0..0x17 by the byte table 0x5D1F70 (00 01 02 03, then 05 for 4..0x16, 04 for 0x17) and the jump table 0x5D1F58: 0 0x5D1F1D, 1 0x5D1EC7,
+	// 2 0x5D1F05 -> 0x629EF0 and 3 0x5D1F11 -> 0x62A1C0 (the rest area's, ThemeParkIncStaffWorld.Rest.cs), 4..0x16 and anything above 0x17 the common handler 0x6287A0 (entry 5, 0x5D1F4B; no training
+	// state is reached: an entertainer learns nothing), 0x17 0x5D1E44
 	private void DispatchEntertainer( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		switch ( member.State )
@@ -130,6 +131,17 @@ public sealed partial class ThemeParkIncStaffWorld
 					return;
 				Sound( member, PerformanceEndSound );
 				SearchEntertainer( economy, member, turn );
+				break;
+			// [BIN:TPI-EXE:0x5D1E20 entertainer rest states] the byte table 0x5D1F70 sends 2 to the jump-table entry 2 (0x5D1F05 -> 0x629EF0) and 3 to entry 3 (0x5D1F11 -> 0x62A1C0), the handyman's
+			// entries for the same states; 0x23 lies above 0x17 and goes to the common handler 0x6287A0, whose byte table 0x628B10 sends it (index 0x1F) to entry 10, 0x62897B -> 0x62CA90
+			case ToRestArea:
+				UpdateToRestArea( economy, settings, member, turn );
+				break;
+			case Resting:
+				UpdateResting( economy, settings, member, turn );
+				break;
+			case RestSearch:
+				UpdateRestSearch( economy, settings, member, turn );
 				break;
 		}
 	}
@@ -201,7 +213,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>The guard's pre-update and dispatch run in <see cref="Update"/>; his state handler.</summary>
-	// [BIN:TPI-EXE:0x5D3C60 guard dispatch] states 0..0x1E by the byte table 0x5D3DD8 and the jump table 0x5D3DB4: 0 0x5D3D7B, 1 0x5D3CEF, 2 0x629EF0 and 3 0x62A1C0 (a rest area's, unreached), 0x1A the chase
+	// [BIN:TPI-EXE:0x5D3C60 guard dispatch] states 0..0x1E by the byte table 0x5D3DD8 and the jump table 0x5D3DB4: 0 0x5D3D7B, 1 0x5D3CEF, 2 0x629EF0 and 3 0x62A1C0 (the rest area's), 0x1A the chase
 	// 0x5D4100, 0x1C the carry 0x5D4620, 0x1D 0x5D3CA0, 0x1E the first aid 0x5D43D0 (not ported, see the class remarks), every other state the common handler 0x6287A0 (training 7 and 8)
 	private void DispatchGuard( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
@@ -227,6 +239,18 @@ public sealed partial class ThemeParkIncStaffWorld
 				break;
 			case ThemeParkIncTraining.Training:
 				UpdateTraining( economy, settings, member, turn );
+				break;
+			// [BIN:TPI-EXE:0x5D3C60 guard rest states] the byte table 0x5D3DD8 (00 01 02 03, 08 for 4..0x19 and 0x1B, 04 05 06 07 for 0x1A, 0x1C, 0x1D, 0x1E) sends 2 to the jump-table entry 2
+			// (0x5D3D67 -> 0x629EF0) and 3 to entry 3 (0x5D3D71 -> 0x62A1C0), the handyman's entries for the same states; 0x23 lies above 0x1E and goes to the common handler 0x6287A0 (0x5D3DA7), whose
+			// byte table 0x628B10 sends it (index 0x1F) to entry 10, 0x62897B -> 0x62CA90
+			case ToRestArea:
+				UpdateToRestArea( economy, settings, member, turn );
+				break;
+			case Resting:
+				UpdateResting( economy, settings, member, turn );
+				break;
+			case RestSearch:
+				UpdateRestSearch( economy, settings, member, turn );
 				break;
 		}
 	}

@@ -345,12 +345,14 @@ public class ThemeParkIncPerformerTests
 	}
 
 	[TestMethod]
-	public void ARestingOrChasingStateIsNotAPortedGuardState()
+	public void AChasingStateIsNotAPortedGuardState()
 	{
-		// the chase, carry, after-release and first-aid states need the guests' Theme Park Inc states (docs/reverse/TPI-STAFF.md): a save holding one is refused
-		foreach ( var state in new[] { 2, 3, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E } )
+		// the chase, carry, after-release and first-aid states need the guests' Theme Park Inc states (docs/reverse/TPI-STAFF.md): a save holding one is refused; the rest states 2, 3 and 0x23 run
+		// as every role's do (ThemeParkIncRestTests)
+		foreach ( var state in new[] { 0x1A, 0x1B, 0x1C, 0x1D, 0x1E } )
 			Assert.IsFalse( ThemeParkIncStaffMember.IsPortedState( ThemeParkIncStaffRole.Guard, state ), $"guard state {state:X}" );
-		foreach ( var state in new[] { 0, 1, ThemeParkIncTraining.ToTrainingRoom, ThemeParkIncTraining.Training } )
+		foreach ( var state in new[] { 0, 1, ThemeParkIncTraining.ToTrainingRoom, ThemeParkIncTraining.Training, ThemeParkIncStaffWorld.ToRestArea, ThemeParkIncStaffWorld.Resting,
+			ThemeParkIncStaffWorld.RestSearch } )
 			Assert.IsTrue( ThemeParkIncStaffMember.IsPortedState( ThemeParkIncStaffRole.Guard, state ) );
 		Assert.IsTrue( ThemeParkIncStaffMember.IsPortedState( ThemeParkIncStaffRole.Entertainer, ThemeParkIncStaffWorld.Performing ) );
 		Assert.IsFalse( ThemeParkIncStaffMember.IsPortedState( ThemeParkIncStaffRole.Entertainer, ThemeParkIncTraining.Training ), "an entertainer learns nothing" );

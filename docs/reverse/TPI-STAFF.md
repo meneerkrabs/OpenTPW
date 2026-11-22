@@ -479,8 +479,8 @@ Park Inc routine at control word `0x007F`, moves them together. No label covers 
 Both are hired and dropped like the other roles (thing models 6 and 7 of the pool; the type codes follow the role order, §12.2). Static reading of `Game.exe`; the routines named were read
 at the addresses given and the entertainer's and guard's machines run natively in `tools/ppc-analysis/oracle_x86/tpi_performer_oracle.py`.
 
-- **Entertainer** (kind 6): pre-update `0x5D1960`, dispatch `0x5D1E20` (byte table `0x5D1F70`, jump table `0x5D1F58`: 0 → `0x5D1F1D`, 1 → `0x5D1EC7`, 2 and 3 the rest area's (unreached: no Theme Park Inc
-  object is a rest area), 4..0x16 the common handler, 0x17 → `0x5D1E44`).
+- **Entertainer** (kind 6): pre-update `0x5D1960`, dispatch `0x5D1E20` (byte table `0x5D1F70`, jump table `0x5D1F58`: 0 → `0x5D1F1D`, 1 → `0x5D1EC7`, 2 → `0x5D1F05` → `0x629EF0` and 3 → `0x5D1F11` →
+  `0x62A1C0`, the rest area's (§13), 4..0x16 and anything above 0x17 the common handler, 0x17 → `0x5D1E44`; the bytes are `00 01 02 03`, then `05` for 4..0x16 and `04` for 0x17).
   - State 0: a world draw whose low nibble 0 plays voice 0xA5 (`0x60BE90`), then the idle end `0x62CA10` (`stamp − trunc((1 − exp/MaxExperience) × −50)`, `0x62D810` kind 6 → the search `0x5D1A30`).
   - State 1: a draw for voice 0xA4, the walk step `0x60B440`: arrived or stuck searches, walking takes the moving step `0x62B3E0`.
   - State 0x17 (performing): the working step `0x62B4D0`, the work duration `0x62E4C0` (`Entertainer.MinWorkDuration` 10 to `MaxWorkDuration` 75, the normal form); past `+0x5D4 + duration` sound 0x87 at the
@@ -495,7 +495,7 @@ at the addresses given and the entertainer's and guard's machines run natively i
     gives template 0x13 when the theme index or the variant byte is nonzero, else 0x14; otherwise theme 2 with variant 1 gives 0x15, any other 0x16; the template, `+0x1B4 = 0x17`, `+0x5D4` = the world turn.
     The templates are the programs `0x9B04E4`, `0x9B0530`, `0x9B056C`, `0x9B05B8` of the table `0x9CDA94`: SLOT 4 (0x13, 0x14) or 0xA (0x15, 0x16), FRAME 0..3 (then back 2, 1 for 0x13 and 0x15), JMP.
   - Constructor `0x5D1380`: `0x626190` (kind 6), category 8 and the variant byte on the sprite, the base speed `0x62C970(0)`, **the cell effect** (below), `+0x5D4 = 0`, then the search.
-- **Guard** (kind 7): pre-update `0x5D3B40` (the cell effect with row 3), dispatch `0x5D3C60` (byte table `0x5D3DD8`, jump table `0x5D3DB4`), decision `0x5D3C10`, setter `0x5D3E70`, constructor `0x5D3140` with
+- **Guard** (kind 7): pre-update `0x5D3B40` (the cell effect with row 3), dispatch `0x5D3C60` (byte table `0x5D3DD8`, jump table `0x5D3DB4`: 2 → `0x5D3D67` → `0x629EF0`, 3 → `0x5D3D71` → `0x62A1C0`, the rest area's (§13); anything above 0x1E the common handler), decision `0x5D3C10`, setter `0x5D3E70`, constructor `0x5D3140` with
   `0x5D3230` (category 0xB). State 0: a draw for voice 0xA7, the idle end (→ `0x62D810` kind 7 → `0x5D3C10`). State 1: a draw for voice 0xA6, the walk step: walking takes the moving step, arrived or stuck runs
   the decision. The decision: the gate, then the world turn & 3 nonzero and the destination `0x609F70` set 1, else 0, both through the guard's setter (`0x60B3F0(0)`, the speed bonus 0, before `0x628180`).
   Guards learn ability 9 (`0x62B6C0`) through §12.2.
@@ -628,8 +628,9 @@ World's effort split:
 
 The facilities folders (docs/THEME-PARK-INC.md, "Facilities") bring one staff room per zone (Science 1400, Water 2420, Arabian 3418) with `UsageInfo.ChillsYouOut` 1. The thing builder sets the thing
 word `+0x42` bit 2 from the type record's `+0x1B0` (`0x5DB6E2`), so the staff rooms are the only rest areas (`ThemeParkIncRestTests.TheStaffRoomsAreTheOnlyRestAreasOfTheThreeZones`).
-`ThemeParkIncStaffWorld.Rest.cs` ports the rest for every role: the handyman's table (`0x5D58C4`), the mechanic's (`0x5DA358`), the researcher's (`0x61B774`) and the gardener's (`0x5D2B68`: the bytes `00 01 02 03` for states 0 to 3, the
-jump table `0x5D2B4C` entries 2 and 3 calling `0x629EF0` and `0x62A1C0`) send states 2 and 3 to `0x629EF0` and `0x62A1C0`, and the common handler (`0x6287A0`) sends 0x23 to `0x62CA90` (state − 4 = 0x1F
+`ThemeParkIncStaffWorld.Rest.cs` ports the rest for every role: the handyman's table (`0x5D58C4`), the mechanic's (`0x5DA358`), the researcher's (`0x61B774`), the gardener's (`0x5D2B68`: the bytes `00 01 02 03` for states 0 to 3, the
+jump table `0x5D2B4C` entries 2 and 3 calling `0x629EF0` and `0x62A1C0`), the entertainer's (`0x5D1F70`, jump table `0x5D1F58`: entries 2 and 3 at `0x5D1F05` and `0x5D1F11`) and the guard's
+(`0x5D3DD8`, jump table `0x5D3DB4`: entries 2 and 3 at `0x5D3D67` and `0x5D3D71`) send states 2 and 3 to `0x629EF0` and `0x62A1C0`, and the common handler (`0x6287A0`, reached by every role's dispatch for 0x23: above the handyman's 0x14, the researcher's 3, the mechanic's 0x16, the gardener's 0x20, the entertainer's 0x17 and the guard's 0x1E) sends 0x23 to `0x62CA90` (state − 4 = 0x1F
 in its byte table `0x628B10` is entry 10, `0x62897B`). The member's rest area (`+0x248`) is saved with him (`RestArea`). Read in this package (the WP4 notes, `research/tpi-staff/wp4-rest.md`, verified and
 corrected):
 

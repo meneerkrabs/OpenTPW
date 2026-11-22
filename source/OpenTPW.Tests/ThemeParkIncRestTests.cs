@@ -358,12 +358,71 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 	}
 
 	[DataTestMethod]
+	[DataRow( ThemeParkIncStaffRole.Entertainer )]
+	[DataRow( ThemeParkIncStaffRole.Guard )]
+	public void AnEntertainerOrAGuardRestsLikeTheOthersAndARestSavedMidwayGoesOnAlike( ThemeParkIncStaffRole role )
+	{
+		// [BIN:TPI-EXE:0x5D1E20 entertainer dispatch] the byte table 0x5D1F70 (00 01 02 03 ...) sends 2 to 0x5D1F05 -> 0x629EF0 and 3 to 0x5D1F11 -> 0x62A1C0, and 0x23 (above 0x17) to the common
+		// handler 0x6287A0; [BIN:TPI-EXE:0x5D3C60 guard dispatch] the byte table 0x5D3DD8 (00 01 02 03 ...) sends 2 to 0x5D3D67 -> 0x629EF0 and 3 to 0x5D3D71 -> 0x62A1C0, and 0x23 (above 0x1E) to the
+		// common handler, whose case is 0x62CA90: a tired entertainer or guard walks to a staff room and rests as the others do, and a save taken mid-rest continues
+		var rooms = new TestRooms();
+		var (economy, world, member) = Park( rooms, role );
+		var settings = economy.TpiStaff!.Settings;
+		foreach ( var state in new[] { ThemeParkIncStaffWorld.ToRestArea, ThemeParkIncStaffWorld.Resting, ThemeParkIncStaffWorld.RestSearch } )
+			Assert.IsTrue( ThemeParkIncStaffMember.IsPortedState( role, state ), $"state {state}" );
+		rooms.Areas.Add( Area( 40, 9 ) );
+		member.Energy = settings.RestLevel;
+		world.LookForWork( economy, settings, member, economy.Turn );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRestArea, 40), (member.State, member.RestArea), $"the {role}'s search runs the rest gate" );
+		Walk( economy, world, member, ThemeParkIncStaffWorld.ToRestArea );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.Resting, 1), (member.State, rooms.Occupancy( 40 )) );
+		Assert.IsTrue( ThemeParkIncStaffWorld.Hidden( member ), "a resting member is not drawn" );
+		var turn = economy.Turn + 1000;
+		for ( var step = 0; step < 5; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( ThemeParkIncStaffWorld.Resting, member.State, "still resting when the save is taken" );
+
+		var json = ParkSaveFile.Serialize( economy );
+		StringAssert.Contains( json, "\"RestArea\": 40" );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ), "the save round-trips exactly" );
+		var copy = restored.TpiStaff!.Members.Single( other => other.Id == member.Id );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.Resting, 40), (copy.State, copy.RestArea) );
+		var restoredRooms = new TestRooms();
+		restoredRooms.Areas.AddRange( rooms.Areas );
+		restoredRooms.Customers.AddRange( rooms.Customers );
+		foreach ( var (thing, count) in rooms.Occupants )
+			restoredRooms.Occupants[thing] = count;
+		var restoredWorld = new ThemeParkIncStaffWorld( Row( restored ) ) { Rooms = restoredRooms };
+		for ( var step = 0; step < 10000 && (member.State == ThemeParkIncStaffWorld.Resting || copy.State == ThemeParkIncStaffWorld.Resting); step++ )
+		{
+			turn++;
+			world.Update( economy, member, turn );
+			restoredWorld.Update( restored, copy, turn );
+		}
+		Assert.AreNotEqual( ThemeParkIncStaffWorld.Resting, member.State, "the rest ends and he goes back to work" );
+		Assert.AreEqual( (100f, 0, 0), (member.Energy, rooms.Occupancy( 40 ), member.RestArea) );
+		for ( var step = 0; step < 20; step++ )
+		{
+			turn++;
+			world.Update( economy, member, turn );
+			restoredWorld.Update( restored, copy, turn );
+		}
+		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ), "both runs end the same" );
+		Assert.AreEqual( (0, 0), (restoredRooms.Occupancy( 40 ), copy.RestArea) );
+		CollectionAssert.AreEqual( rooms.Customers, restoredRooms.Customers );
+	}
+
+	[DataTestMethod]
 	[DataRow( ThemeParkIncStaffRole.Mechanic )]
 	[DataRow( ThemeParkIncStaffRole.Gardener )]
+	[DataRow( ThemeParkIncStaffRole.Entertainer )]
+	[DataRow( ThemeParkIncStaffRole.Guard )]
 	public void AMechanicOrAGardenerBesideAFullRoomWaitsInTheRestSearch( ThemeParkIncStaffRole role )
 	{
-		// [BIN:TPI-EXE:0x5DA280 mechanic dispatch] [BIN:TPI-EXE:0x5D2A60 gardener dispatch] 0x23 lies above both byte tables and goes to the common handler 0x6287A0, whose case is 0x62CA90: the
-		// role's dispatch runs the rest search, so a member beside a full room waits there, taking the closing draw every step, and walks in once there is room
+		// [BIN:TPI-EXE:0x5DA280 mechanic dispatch] [BIN:TPI-EXE:0x5D2A60 gardener dispatch] [BIN:TPI-EXE:0x5D1E20 entertainer dispatch] [BIN:TPI-EXE:0x5D3C60 guard dispatch] 0x23 lies above every
+		// one of these byte tables and goes to the common handler 0x6287A0, whose case is 0x62CA90: the role's dispatch runs the rest search, so a member beside a full room waits there, taking the
+		// closing draw every step, and walks in once there is room
 		var rooms = new TestRooms();
 		var (economy, world, member) = Park( rooms, role );
 		var settings = economy.TpiStaff!.Settings;

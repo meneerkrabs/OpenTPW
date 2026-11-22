@@ -349,11 +349,19 @@ public partial class Level
 		var list = ThemeParkIncObjectListOf( world, instances );
 		economy.RestoreThemeParkIncObjectList( list );
 		// a thing of the list that no object of OpenTPW's is (the tool entry 1710 of the prebuilt) is still a thing of the original's park: its slot is held, so its id is not handed out again
-		// while the list names it ([BIN:TPI-EXE:0x5D6D40 park loader]: the loaded park keeps every saved thing)
+		// while the list names it
+		// [BIN:TPI-EXE:0x64D759 free list rebuild] after the thing list's ENOD the World loader rebuilds the free list from the slots no saved thing occupies (0xAA18C4 on, stride 20, the head
+		// 0xAD39A4), as tp.exe's 0x518D43, so every saved thing keeps its slot
+		// partial: Occupy puts the held slot at the newest place of the used list, not at the saved thing's place, and only the list's attraction things are held here (other saved things the
+		// slice does not rebuild keep the new world's slots; docs/reverse/TPI-STAFF.md)
 		var built = Objects.Objects.Select( item => item.ThingId ).ToHashSet();
 		foreach ( var key in list )
-			if ( key < 0 && !built.Contains( -key ) && Objects.Things is { } pool && pool.Occupy( -key, SaveThingModel.Attraction ) )
-				pool.Hold( -key );
+		{
+			if ( key > 0 || built.Contains( -key ) )
+				continue;
+			if ( Objects.Things is not { } pool || !pool.Occupy( -key, SaveThingModel.Attraction ) || !pool.Hold( -key ) )
+				throw new InvalidDataException( $"The Theme Park Inc save's object list names thing {-key}, which no object rebuilds and whose slot of the thing pool cannot be held." );
+		}
 	}
 
 	/// <summary>

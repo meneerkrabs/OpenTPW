@@ -118,6 +118,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 					? level.Objects.SavedThemeParkIncThingOf( item ) : 0 ).ToList();
 				Require( listed.SequenceEqual( chain ) && chain.Count == 24 && economy.ThemeParkIncObjectList.Count( key => key < 0 ) == 7,
 					$"the mechanics' object list is the saved chain with the seven things without an economy record ({string.Join( ",", economy.ThemeParkIncObjectList )})" );
+				// the tool entry 1710 (thing 26) is not rebuilt, and its slot is held as the original keeps the thing (Level.SeedThemeParkIncObjectList)
+				Require( level.Objects.Objects.All( item => item.ThingId != 26 ) && level.Things.IsHeld( 26 ) && level.Things.ModelOf( 26 ) == SaveThingModel.Attraction,
+					"the prebuilt's unbuilt thing 26 holds its attraction slot" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )

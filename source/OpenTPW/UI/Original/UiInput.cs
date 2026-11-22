@@ -22,7 +22,9 @@ public enum UiKeys
 	/// <summary>Theme Park Inc's Objectives key, a plain O (the key table row at <c>0x9A8A14</c>); only the Theme Park Inc HUD reads it.</summary>
 	Objectives = 512,
 	/// <summary>Theme Park Inc's message key, a plain M (the key table row at <c>0x9A89EC</c>); only the Theme Park Inc HUD reads it.</summary>
-	Messages = 1024
+	Messages = 1024,
+	/// <summary>The Delete key, which Theme Park Inc's tag tube window reads as its Delete button (<c>0x55193D</c>); only that window reads it.</summary>
+	Delete = 2048
 }
 
 /// <summary>
@@ -107,6 +109,8 @@ public sealed class UiInputSource
 		Map( Key.Space, UiKeys.Accept | UiKeys.Space );
 		Map( Key.Tab, UiKeys.Tab );
 		Map( Key.Escape, UiKeys.Back );
+		// [BIN:TPI-EXE:0x55193D tube delete key] the tag tube window's procedure takes message 0x1000A with 0x2E00 (VK_DELETE) as command 3004, its Delete button, with no modifier test
+		Map( Key.Delete, UiKeys.Delete );
 		// The original key table reserves Ctrl+P for the e-mail postcard (InputButton.SendEmailPostcard);
 		// pause is the plain P, so a held modifier keeps the pause key out of the combination's way.
 		if ( !keys.Contains( Key.ControlLeft ) && !keys.Contains( Key.ControlRight ) )

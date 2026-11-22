@@ -56,6 +56,11 @@ internal sealed class ThemeParkIncTagTubeWindow
 	private readonly Action close;
 	private readonly Action<int, int> goTo;
 	private readonly List<ThemeParkIncTagTubeRow> listed = new();
+
+	/// <summary>One empty tab-split cell per listed row: <see cref="DrawCell"/> draws the row itself; the list reads only the count.</summary>
+	private IReadOnlyList<string> rowCells => cellCache.Count == listed.Count ? cellCache : cellCache = Enumerable.Repeat( "\t", listed.Count ).ToArray();
+
+	private IReadOnlyList<string> cellCache = Array.Empty<string>();
 	private readonly Dictionary<ThemeParkIncTagTubeRow, (bool Lit, double Next)> flash = new( ReferenceEqualityComparer.Instance );
 	private readonly Dictionary<ThemeParkIncTagTubeRow, ThemeParkIncLetterWindow.Letter> letters = new( ReferenceEqualityComparer.Instance );
 	private UiScreen? screen;
@@ -158,7 +163,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 		list = screen.Add( new UiScrollList
 		{
 			Id = "list",
-			Rows = () => listed.Select( _ => "\t" ).ToList(),
+			Rows = () => rowCells,
 			Columns = new (float, Func<string>)[] { (0, () => ""), (dateHeader.Rect.X - inner.X, () => "") },
 			HeaderRow = false,
 			Background = false,

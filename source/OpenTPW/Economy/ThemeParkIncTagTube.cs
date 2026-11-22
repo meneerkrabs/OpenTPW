@@ -107,9 +107,6 @@ public sealed class ThemeParkIncTagTube
 	/// <summary>The advisor messages the counter posted (<see cref="FirstUnreadAdvice"/>, <see cref="UnreadAdvice"/>), oldest first; the client takes them.</summary>
 	internal List<int> AdviceRequests { get; } = new();
 
-	/// <summary>Raised when a row is filed in play (not on load): the native HUD's mail panel plays its chime then.</summary>
-	internal int FiledInPlay { get; private set; }
-
 	/// <summary>
 	/// Files <paramref name="row"/> (<c>0x636880</c>): no expiry flag, the expiry turn from <paramref name="turn"/>, the next serial; a load appends it, a game insert puts it at the head and
 	/// flags an older unflagged row it supersedes. An unread row then counts (<c>0x54F1A0</c>, silent on a load).
@@ -144,8 +141,6 @@ public sealed class ThemeParkIncTagTube
 		Revision++;
 		if ( !row.Read )
 			CountUnread( row.Category, silent: load );
-		if ( !load )
-			FiledInPlay++;
 	}
 
 	/// <summary>

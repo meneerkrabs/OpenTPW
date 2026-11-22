@@ -4,8 +4,10 @@ namespace OpenTPW;
 
 public sealed partial class ThemeParkIncHud
 {
-	/// <summary>The tag tube window's globals that outlive one opening (the window object <c>0xA60188</c>).</summary>
-	private readonly ThemeParkIncTagTubeSession tagTubeSession = new();
+	/// <summary>The tag tube window's globals that outlive one opening (the window object <c>0xA60188</c>), for the whole game session: new parks and loads keep them.</summary>
+	// [BIN:TPI-EXE:0x551190 tube window object] 0xA60188 is a static object: its constructor 0x551C60 runs once from the startup initializer stub 0x551190 (through 0x404458), so the sort key
+	// +0x68 survives every park the session builds or loads
+	private static readonly ThemeParkIncTagTubeSession tagTubeSession = new();
 
 	/// <summary>The open tag tube window (null when it is closed).</summary>
 	internal ThemeParkIncTagTubeWindow? TagTubeWindow { get; private set; }
@@ -49,10 +51,16 @@ public sealed partial class ThemeParkIncHud
 		TagTubeWindow = null;
 	}
 
-	/// <summary>The message key (<see cref="UiKeys.Messages"/>) with no other window open; a text field keeps the key.</summary>
+	/// <summary>
+	/// The message key (<see cref="UiKeys.Messages"/>) with no other window open; a text field keeps the key. While the tag tube window is open the Delete key presses its Delete button.
+	/// </summary>
 	private void UpdateTagTubeKey( UiInput input )
 	{
-		if ( !MenuOpen && !Input.TextEntryActive && input.Has( UiKeys.Messages ) )
+		if ( Input.TextEntryActive )
+			return;
+		if ( TagTubeWindow is { } window && TagTubeOpen && input.Has( UiKeys.Delete ) )
+			window.PressDelete();
+		else if ( !MenuOpen && input.Has( UiKeys.Messages ) )
 			OpenTagTube();
 	}
 

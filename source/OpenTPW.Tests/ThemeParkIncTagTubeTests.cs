@@ -234,6 +234,26 @@ public class ThemeParkIncTagTubeTests
 	}
 
 	[TestMethod]
+	public void ARowFiledWhileAnotherIsShownKeepsItsSelectionAndDeadline()
+	{
+		// [BIN:TPI-EXE:0x552CF0 tube refresh] the refresh clears the list's selection and refills it, but the shown row (+0x1C), its details and the read deadline (+0x5C) stay
+		var row = Row( 1, date: 0x7D00001 );
+		var (window, tube, _) = Window( row );
+		window.SelectRow( 0 );
+		window.Tick( 1000 );
+		tube.Insert( Row( 2, date: 0x7D00105 ), 0, load: false );
+		window.Tick( 1 );
+		CollectionAssert.AreEqual( new[] { 2, 1 }, window.ListedRows.Select( listed => listed.Tag ).ToArray(), "the new row is listed first" );
+		Assert.AreSame( row, window.Selected );
+		Assert.AreEqual( ("from1", "to", "subject1", "body1"), window.Details );
+		Assert.IsFalse( row.Read );
+		window.Tick( 1498 );
+		Assert.IsFalse( row.Read );
+		window.Tick( 1 );
+		Assert.IsTrue( row.Read, "the deadline set at the selection still reads it" );
+	}
+
+	[TestMethod]
 	public void ClosingReadsTheRowOnlyAfterHalfASecond()
 	{
 		var row = Row( 1 );

@@ -56,7 +56,7 @@ Window 3000, table `0x9BBC84` (`ThemeParkIncLayoutTables.TagTube`), builder `0x5
   while the window exists; otherwise it closes the HUD's window (a letter, the mission window) and registers itself. OpenTPW has the key and a text HUD button
   (`[EXT:tpi-text-hud]`) that says the window's title and the panel's unread number. Nothing pauses.
 - **The list** 3006 is sorted (attribute 0x211): column 0 the subject (`+0xC04`), column 1 the date (`+0xE24`, printed as UITEXT 956). The sort key `+0x68` starts
-  at -2 (the date, newest first) and survives the window; a header press turns the direction of its own column or sorts another column ascending (`0x85782C`).
+  at -2 (the date, newest first) and survives the window and every park of the game session (the window object `0xA60188` is static, built once by the startup initializer `0x551190`); a header press turns the direction of its own column or sorts another column ascending (`0x85782C`).
   Text compares as `wcscmp`; equal items keep their insert order. A read row is grey, an unread row white, and an unread row of a category above 0 flashes every
   300 ms in its category's colour (`0x5528B0`).
 - **The refresh** (`0x552CF0`, on the dirty byte) rebuilds the list and scrolls the previously selected row into view without selecting it; a non-empty list enables
@@ -85,3 +85,4 @@ checked, because the arrival's briefing and every objective letter would have be
 - The native mail panel's picture by category (control 0x47) and its chime (sound 0x1E of the bank `0xAE0124`), and the help button's advisor help (`0x503A40(0x1AF)`).
 - The body's scroll text (message 0x800 with the slider 3017).
 - The tag-definition rows (branch 0x18) and branch 0x1B of the row builder, which no ported sender posts.
+- Delete by key (`0x636B10`): it flags every unflagged row whose `+0xE14` is a removed thing's id (callers `0x618790`, `0x629040` and `0x63A1E0` on message 0x21). Every ported row has key 0, so no removal reaches one.

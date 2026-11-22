@@ -10,12 +10,13 @@ def node(kind, node_id, rect, children=(), hash_=None, help_=-1):
 
 
 class TpiLayoutTests(unittest.TestCase):
-    def test_tables_name_the_front_end_letter_and_mission_windows(self):
+    def test_tables_name_the_front_end_letter_mission_and_tube_windows(self):
         names = {name: (address, root_id) for name, address, root_id, _, _, _ in tpi.TABLES}
         self.assertEqual((0x9C0FBC, 0xC738), names['PersonnelFile'])
         self.assertEqual((0x9B18BC, 0xEA60), names['QuitConfirm'])
         self.assertEqual((0x9BE808, 0xCEC52), names['MissionWindow'])
         self.assertEqual((0x9B54CC, 0xC11FB), names['ChallengesWindow'])
+        self.assertEqual((0x9BBC84, 0xBB8), names['TagTube'])
         for name in names:
             self.assertIn(name, tpi.REQUIRED_MODELS)
             self.assertIn(name, tpi.REQUIRED_IDS)

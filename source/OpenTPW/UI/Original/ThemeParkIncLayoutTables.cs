@@ -204,4 +204,52 @@ public static class ThemeParkIncLayoutTables
 			new( 2, 0x1u, 0xC1212u, 1781, 46, 1864, 129, 279, -1, "b_help", null, null, System.Array.Empty<LayoutNode>() ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPI-EXE:0x9bbc84] layout table TagTube.</summary>
+	public static readonly LayoutTable TagTube = new( "TagTube", 0x9BBC84, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0xBB8u, 196, 38, 2028, 1318, -1, -1, "!window", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xBB9u, 1887, 46, 1970, 129, 1, -1, "b_close", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xBBAu, 1878, 1168, 1980, 1270, 0, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xBBBu, 295, 50, 1367, 130, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xBBCu, 240, 1168, 342, 1270, 78, -1, "b_delete", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xBBDu, 240, 173, 1981, 1155, -1, -1, "!f_plain", null, null, new LayoutNode[]
+			{
+				new( 7, 0x211u, 0xBBEu, 258, 260, 1013, 1140, -1, -1, "!list", null, new[] { 292, 423, 877, 1102 }, new LayoutNode[]
+				{
+					new( 2, 0x1u, 0x11u, 706, 295, 872, 401, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x1u, 0x10u, 291, 295, 693, 401, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 3, 0x10u, 0x1u, 903, 364, 973, 1034, -1, -1, null, "!slider", new[] { 903, 364, 973, 1034 }, new LayoutNode[]
+					{
+						new( 2, 0x21u, 0x2u, 903, 1034, 973, 1104, -1, -1, "b_vscrolldn", null, null, System.Array.Empty<LayoutNode>() ),
+						new( 2, 0x1u, 0x3u, 903, 767, 973, 869, -1, -1, "b_vscroller", null, null, System.Array.Empty<LayoutNode>() ),
+						new( 2, 0x21u, 0x1u, 903, 294, 973, 364, -1, -1, "b_vscrollup", null, null, System.Array.Empty<LayoutNode>() ),
+					} ),
+				} ),
+				new( 1, 0x1u, 0xBBFu, 315, 199, 712, 243, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xBC0u, 1034, 199, 1430, 243, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xBC1u, 1031, 260, 1967, 1140, -1, -1, "!frame", null, new[] { 1060, 447, 1847, 991 }, new LayoutNode[]
+				{
+					new( 6, 0x1u, 0xBC2u, 1786, 283, 1940, 436, -1, -1, "mugshot", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 1, 0x1u, 0xBC3u, 1057, 284, 1291, 329, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 1, 0x1u, 0xBC4u, 1300, 284, 1772, 329, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 1, 0x1u, 0xBC5u, 1057, 388, 1291, 433, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 1, 0x1u, 0xBC6u, 1300, 388, 1772, 433, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 1, 0x1u, 0xBC7u, 1057, 335, 1291, 380, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 1, 0x1u, 0xBC8u, 1300, 335, 1772, 380, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 3, 0x11u, 0xBC9u, 1861, 522, 1931, 914, -1, -1, null, "!slider", new[] { 1861, 522, 1931, 914 }, new LayoutNode[]
+					{
+						new( 2, 0x21u, 0x2u, 1861, 914, 1931, 985, -1, -1, "b_vscrolldn", null, null, System.Array.Empty<LayoutNode>() ),
+						new( 2, 0x1u, 0x3u, 1861, 667, 1931, 769, -1, -1, "b_vscroller", null, null, System.Array.Empty<LayoutNode>() ),
+						new( 2, 0x21u, 0x1u, 1861, 452, 1931, 522, -1, -1, "b_vscrollup", null, null, System.Array.Empty<LayoutNode>() ),
+					} ),
+					new( 1, 0x1u, 0xBCAu, 1182, 1036, 1930, 1081, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x1u, 0xBCBu, 1061, 1007, 1164, 1109, -1, -1, "b_goto", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 1, 0x1u, 0xBCCu, 335, 651, 835, 751, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 2, 0x1u, 0xBCDu, 1799, 46, 1882, 129, 279, -1, "b_help", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }

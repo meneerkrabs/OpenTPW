@@ -249,6 +249,35 @@ public class ThemeParkIncRepairTailTests
 		Assert.AreEqual( (false, false, false), (coaster.Runtime.IsOpen, state.IsOpen, coaster.Runtime.ClosedDueToWeather), "the coaster test closes it again" );
 	}
 
+	[TestMethod]
+	public void ARepairOfARideWhoseQueueIsCutOffClosesItAgain()
+	{
+		// [BIN:TPI-EXE:0x5E07B0 queue link] the queue branch (tp.exe's 0x004DE4A0): the back queue cell's link byte equal to its queue link fails the guard, which the repair tail closes at 0x5E2D34
+		foreach ( var connected in new[] { false, true } )
+		{
+			var world = World();
+			var (ride, state) = Place( world, RobotSwing );
+			var grid = new GuestPathGrid( 12, 12 );
+			for ( var x = 0; x < 10; x++ )
+				grid.SetPath( x, 0, true );
+			var visitors = ride.Visitors;
+			visitors.EntranceCell = (2, 0);
+			visitors.ExitCell = (2, 0);
+			visitors.QueueFrontCell = (2, 5);
+			visitors.QueueEntranceDirection = 2;
+			var writer = new QueueLineWriter( grid, visitors, ( x, y, pending ) => QueuePaths.CheckExtend( grid, visitors, x, y, pending ), ( x, y ) => QueuePaths.TryExtend( grid, visitors, x, y ),
+				( x, y ) => QueuePaths.RemoveFrom( grid, visitors, x, y ), () => 0 );
+			var tool = new CellBuildTool();
+			tool.Enter( writer, (2, 5) );
+			// a line ending on the path connects the queue; one stopping a cell short leaves its back unlinked
+			tool.Click( connected ? (2, 0) : (2, 1) );
+			Assert.AreEqual( connected, ParkGate.QueueConnected( grid, visitors ) );
+			Set( world.Level, "<Guests>k__BackingField", new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false } );
+			Repair( world, ride, state );
+			Assert.AreEqual( (connected, connected), (ride.Runtime.IsOpen, state.IsOpen), connected ? "a connected queue lets the ride open" : "a cut-off queue closes it again" );
+		}
+	}
+
 	// ---- The object list's things without an economy record ------------------------------------
 
 	[TestMethod]

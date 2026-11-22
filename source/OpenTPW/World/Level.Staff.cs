@@ -318,18 +318,11 @@ public partial class Level
 	// [BIN:TPI-EXE:0x5DB4C1 object cell words] +0x46 = +0x44 + the type's +0x5E8 turned by the angle (ThemeParkIncStaffWorld.EntranceWord, the drop's); a cell word of 0 or off the map has no cell
 	private ((int X, int Y) Thing, (int X, int Y)? Entrance)? TpiObjectCells( int instance )
 	{
-		foreach ( var (item, linked) in economyInstances )
-		{
-			if ( linked != instance || item.IsDeleted )
-				continue;
-			var settings = item.Entry.Settings;
-			var thing = new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
-				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
-			var word = ThemeParkIncStaffWorld.EntranceWord( thing );
-			var entrance = ThemeParkIncStaffWorld.CellOfWord( word );
-			return (item.ThingCell, word != 0 && Guests != null && Guests.Grid.Cells.InBounds( entrance.X, entrance.Y ) ? entrance : null);
-		}
-		return null;
+		if ( TpiObjectThing( instance ) is not { } thing )
+			return null;
+		var word = ThemeParkIncStaffWorld.EntranceWord( thing );
+		var entrance = ThemeParkIncStaffWorld.CellOfWord( word );
+		return (thing.ThingCell, word != 0 && Guests != null && Guests.Grid.Cells.InBounds( entrance.X, entrance.Y ) ? entrance : null);
 	}
 
 	/// <summary>
@@ -340,15 +333,11 @@ public partial class Level
 	// the angle (ThemeParkIncStaffWorld.FallbackDropWord, the drop's)
 	private ThemeParkIncStaffWorld.DropObject? TpiObjectThing( int instance )
 	{
-		foreach ( var (item, linked) in economyInstances )
-		{
-			if ( linked != instance || item.IsDeleted )
-				continue;
-			var settings = item.Entry.Settings;
-			return new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
-				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
-		}
-		return null;
+		if ( ObjectOfInstance( instance ) is not { IsDeleted: false } item )
+			return null;
+		var settings = item.Entry.Settings;
+		return new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
+			settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
 	}
 
 	/// <summary>

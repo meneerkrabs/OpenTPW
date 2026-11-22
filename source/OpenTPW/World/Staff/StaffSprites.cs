@@ -86,8 +86,11 @@ public static class StaffSpriteRules
 	public static int? BankLimitOf( IGraphicsSettings? settings ) =>
 		settings != null && settings.GetPresetValues( settings.Current.Preset ) != null ? BankLimit( settings.Detail.NumKids ) : null;
 
-	/// <summary>Whether tp.exe flags a role's folder for the limit (all but the entertainers' theme folders, 0x541310).</summary>
-	public static bool IsBankLimited( StaffType type ) => type != StaffType.Entertainer;
+	/// <summary>
+	/// Whether tp.exe flags a role's folder for the limit (all but the entertainers' theme folders, 0x541310). Theme Park Inc's gardeners are not limited: their folder holds one bank (Spr_gd), which
+	/// any limit (1 or 2) keeps whole, so no limit is applied to it rather than one Theme Park Inc's own loader was not read for.
+	/// </summary>
+	public static bool IsBankLimited( StaffType type ) => type != StaffType.Entertainer && type != ThemeParkIncGardener;
 
 	/// <summary>
 	/// Theme Park Inc's gardeners as a sprite bank role beside Theme Park World's five (<see cref="StaffType"/> holds Theme Park World's staff types only, so no economy, save or interface code meets
@@ -196,6 +199,9 @@ public sealed class StaffSpriteSet : IStaffSpriteBanks
 		var ranges = new (int First, int Count)[RoleCount];
 		foreach ( var type in new[] { StaffType.Handyman, StaffType.Mechanic, StaffType.Guard, StaffType.Researcher, StaffType.Entertainer, StaffSpriteRules.ThemeParkIncGardener } )
 		{
+			// the gardeners' folder is Theme Park Inc's (Generic\Gardeners); Theme Park World's data has none, so its levels do not probe for it
+			if ( type == StaffSpriteRules.ThemeParkIncGardener && !GameEditions.IsThemeParkInc )
+				continue;
 			if ( StaffSpriteRules.Banks( type, level ) is not { } set )
 				continue;
 			// [BIN:TPW-EXE:0x0046C730 staff tool enter] the hire and carry tools' sprite is script 0x15 (0x0074ED98, slot 6 frames 0-3 looping) of the role's sprite type (0x00475A10: mechanics 6, handymen 5, entertainers 4, guards 7, researchers 8; table 0x00763F88) with the candidate's variant (+0x11): the person's own bank

@@ -428,7 +428,10 @@ its object state is 3, and the attraction update (kind 3: `0x5E4790`, then the s
 - A condition unequal to `VAR_OLDSTATE` writes `VAR_OLDSTATE` = the condition, takes row `10 + old` off the thing's cell and puts row `10 + new` on it (the conditions 0..3 only, tables
   `0x5E5044` and `0x5E5054`); a dead plant also clears the advisor's queued notices 0x2C..0x2F about it (presentation).
 The destructor takes off the row of the **live** `VAR_CONDITION` (`0x5DE9D3`, table `0x5DEBF0`), not the row the update last moved, so a plant sold between a script change and its
-next update leaves the difference of the two rows on the cells, as in the original. Theme Park Inc's RegionFX table has 15 rows (`3,RegionFX,0,0,15` in the schema; rows 10 to 13 are the
+next update leaves the difference of the two rows on the cells, as in the original. The level keeps a sold plant linked to its object until the economy has sold it, so the sale
+reads the live condition from the plant's script (the remove tool's path). The script copies `VAR_CONDITION` into `VAR_OLDSTATE` before each change and follows each change with a
+`WAITANIM` of at least 300 script ms, longer than a 248 ms turn, so the update runs between two changes (a watering from 2 runs 2 → 1, an update, 1 → 0): at any save point
+`VAR_OLDSTATE` names the row on the cells, which is the row a load puts back. Theme Park Inc's RegionFX table has 15 rows (`3,RegionFX,0,0,15` in the schema; rows 10 to 13 are the
 plants'). A plant has no wear (`WearRate` 0) and no repair line (`RideBreakDown.Imminent` 0), so a dead plant (`+0x54` = 0) is no mechanic's job. The plants of the three worlds are
 features that neither provide relief nor hold litter (`ThemeParkIncPlantTests`).
 
@@ -451,7 +454,7 @@ and `+0x5D4` = 0, the removal message 10 subscribed, then the search. The thing 
   newest first). After the list the chosen plant is claimed (`0x5E3780`).
 - 0x1F: walking walks on; stuck goes idle with `+0x5D8` kept; arrived, his own claim (`0x5E37F0`) sets `+0x5D4` = the turn, template 0x19 and 0x20, another goes idle.
 - 0x20: the working step, the facing `0x609E60`, the work duration `0x62E4C0` (`Gardener.MinWorkDuration` 30 to `MaxWorkDuration` 5, the normal form); past `+0x5D4 + duration` the
-  watering ends (`0x5E31B0`: `VAR_WATER` = 1, `+0x54` = 100, the claim and the request cleared, the advisor's notices 0x2C..0x2F cleared), template 3 and state 0. No tiredness test.
+  watering ends (`0x5E31B0`: `VAR_WATER` = 1, `+0x54` = 100, the claim word `+0x72` and the request cleared (the claim turn `+0x74` keeps its stamp), the advisor's notices 0x2C..0x2F cleared), template 3 and state 0. No tiredness test.
 - State hook `0x5D29D0` (through `0x62AECD`): 0x1F and 0x20 as above, the others the common setter `0x628180`.
 - Claims: the validator `0x62B280` compares the claimant's `+0x5D8` with the object for kinds 4 and 0x14 (`0x62B2B3`), so a gardener on his way or watering keeps his claim past 100 turns.
 - Removal message `0x5D2480`: message 10 for his `+0x5D8` ("plant I was watering was deleted"): `+0x5D8` = 0, template 3 in state 0x20, state 0.
@@ -464,6 +467,12 @@ last heading under `[EXT:tpi-twp-guest-rules]`, D1); the destructor's claim rele
 (`[EXT:tpi-capability-gates]`, the advisor's other messages); the patrol area `0x6256A0` (WP15); the guests' fire prank on plants (`0x618F30`, `VAR_SETFIRE`, with the guests' Theme Park
 Inc pranks); the plant counts of the statistics (`0x5B4470`, `0x5B8960`); the handyman's bin finder's plant branch for ability 7 (`0x5D5FAC`, with the bins). No `rand()` call is reached:
 the gardener draws only the world generator, in the gate, the walking voice and the patrol.
+
+**Known divergence: x87 precision.** `0x5D2820` runs at the game thread's 24-bit control word (`0x007F`), but its search period goes through the handyman's shared helper
+`SearchPeriod`, which computes `trunc((1 − exp / MaxExperience) × 50)` at 53 bits, and so does the moving step `member.Step` (`0x62B4D0`). The two differ where the 53-bit product falls
+just below an integer: with `MaxExperience` 100000, experience 34000 gives 32 at 53 bits (32.99999999999999) and 33 at 24 bits (33.0), so the port searches every 32nd turn where the
+original searches every 33rd. The shared helpers stay at 53 bits here because the handyman's oracle pins them there; the planned 24-bit precision change, which re-checks every Theme
+Park Inc routine at control word `0x007F`, moves them together. No label covers this.
 
 ## 12. Staff HQ obstacle slots, training and research (November 21, 2026)
 

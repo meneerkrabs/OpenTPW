@@ -111,11 +111,13 @@ public sealed partial class ParkEconomy
 	internal int ThemeParkIncPlantOnFire( ParkObjectState item ) => ReadThemeParkIncScript( item, PlantOnFire );
 
 	/// <summary>
-	/// A gardener's watering ends (<c>0x5E31B0</c> on a plant): <c>VAR_WATER</c> = 1 (the script restores the condition), <c>+0x54</c> = 100, and the claim and the request clear.
+	/// A gardener's watering ends (<c>0x5E31B0</c> on a plant): <c>VAR_WATER</c> = 1 (the script restores the condition), <c>+0x54</c> = 100, and the claim word and the request clear (the claim
+	/// turn keeps its stamp).
 	/// </summary>
 	// [BIN:TPI-EXE:0x5E31B0 maintenance finish] +0x42 bit 1 (relief): VAR_WORN = 0, rows and notices; bit 0x40 (a bin): variable 1 = 1, rows 9 and 8; bit 0x1000 (0x5E32FA): 0x6B0780(inst, 1, 1)
 	// (VAR_WATER) and the advisor's queued notices 0x2C..0x2F about the plant cleared (0x64EA60 -> 0x636D10: [EXT:tpi-capability-gates], the advisor's other messages); then for every thing
-	// +0x54 = 100.0 (0x42C80000), the claim word +0x72 = 0 and the request +0x78 = 0 (0x5E3364..0x5E3371). The claim turn +0x74 is not written; nothing reads it while the claim word is 0
+	// +0x54 = 100.0 (0x42C80000), the claim word +0x72 = 0 and the request +0x78 = 0 (0x5E3364..0x5E3371). The claim turn +0x74 is not written: it keeps its stamp, which nothing reads while the
+	// claim word is 0 (0x5E37F0 returns at a zero word; the next claim 0x5E3780 writes both), and the save stores 0 for an unclaimed object
 	internal void FinishThemeParkIncWatering( ParkObjectState item )
 	{
 		if ( !IsThemeParkIncPlant( item ) )
@@ -123,7 +125,6 @@ public sealed partial class ParkEconomy
 		WriteThemeParkIncScript( item, PlantWater, 1 );
 		item.Repair = RideRepair.FullGauge;
 		item.MechanicId = 0;
-		item.ClaimTurn = 0;
 		item.MaintenanceRequested = false;
 	}
 

@@ -253,7 +253,7 @@ fee, the build list shows each object's price and a placed object's refusal (not
 science save's objects register uncharged, like an imported park's; its own economy is not restored. A layout checkpoint saves the layout only: the cash, calendar and
 loans start fresh in the new session, like the guests.
 
-**Staff (handymen, mechanics, gardeners and researchers).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner, a Mechanic or a Gardener: activating his row puts him in the hand, a click on a path or grass cell drops
+**Staff (handymen, mechanics, gardeners and researchers).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner, a Mechanic, a Researcher or a Gardener: activating his row puts him in the hand, a click on a path or grass cell drops
 him (the drop's cell tests and its redirect of a drop on an object to the object's entrance, exit or nearest path cell are the executable's, `0x4D4EB0`), and right-click or Esc cancels. A placed handyman runs Theme Park Inc's own state machine (states 0, 1, 0x0F and 0x10:
 idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, shown as notes), and the
 guests drop litter by Theme Park Inc's litter step (`0x614B71`). A placed mechanic runs Theme Park Inc's mechanic (states 0, 1, 21 and 22: idle, walk, to the ride and repair, with the

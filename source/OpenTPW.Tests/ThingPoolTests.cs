@@ -136,9 +136,28 @@ public class ThingPoolTests
 		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( ThingPool.Capacity + 1, SaveThingModel.Guest ) } ) );
 		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, SaveThingModel.Guest ), new ThingSlot( 5, SaveThingModel.Attraction ) } ) );
 		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, (SaveThingModel)0 ) } ) );
-		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, (SaveThingModel)20 ) } ) );
+		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, (SaveThingModel)21 ) } ) );
+		Assert.ThrowsException<InvalidDataException>( () => pool.Restore( new[] { new ThingSlot( 5, SaveThingModel.Gardener ) } ), "Theme Park World's thing kinds stop at 19" );
 		Assert.AreEqual( 0, pool.Count, "a refused load leaves the pool as it was" );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => pool.Allocate( (SaveThingModel)0 ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => pool.Allocate( SaveThingModel.Gardener ) );
+		Assert.IsFalse( pool.Occupy( 5, SaveThingModel.Gardener ) );
+		Assert.AreNotEqual( 0, ThingPool.Problems( new ThingPoolSnapshot { Used = new[] { new ThingSlotData( 5, 20 ) } } ).Count );
+	}
+
+	[TestMethod]
+	public void AThemeParkIncPoolTakesTheGardenersModelAndNoHigher()
+	{
+		var pool = new ThingPool { ThemeParkInc = true };
+		Assert.AreEqual( 1, pool.Allocate( SaveThingModel.Gardener ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => pool.Allocate( (SaveThingModel)21 ) );
+		var snapshot = pool.CaptureSnapshot();
+		Assert.AreEqual( 0, ThingPool.Problems( snapshot, themeParkInc: true ).Count );
+		Assert.AreNotEqual( 0, ThingPool.Problems( snapshot ).Count, "a Theme Park World save refuses model 20" );
+		var restored = new ThingPool { ThemeParkInc = true };
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( SaveThingModel.Gardener, restored.Capture().Single().Model );
+		Assert.ThrowsException<InvalidDataException>( () => new ThingPool().RestoreSnapshot( snapshot ) );
 	}
 
 	[TestMethod]

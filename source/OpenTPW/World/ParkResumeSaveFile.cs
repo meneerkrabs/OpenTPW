@@ -829,7 +829,8 @@ internal static class ParkResumeSaveFile
 			RequireThing( snapshot.Economy.TpiStaff?.Members.All( member => member?.World == null ) != false, "a staff member names a thing id but the save holds no thing pool" );
 			return;
 		}
-		var problems = ThingPool.Problems( snapshot.Things );
+		// a Theme Park Inc park (one with its staff) also holds the gardener's model 20
+		var problems = ThingPool.Problems( snapshot.Things, snapshot.Economy.TpiStaff != null );
 		RequireThing( problems.Count == 0, $"the thing pool: {(problems.Count == 0 ? "" : problems[0])}" );
 		var models = snapshot.Things.Used.ToDictionary( slot => slot.Id, slot => (SaveThingModel)slot.Model );
 		// a thing demolished or dismissed since the turn's last end still holds its slot, and nothing names it

@@ -915,8 +915,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) )
 			return null;
-		// a Theme Park Inc plant holds the row of the condition its update last noted (VAR_OLDSTATE): row 10 from its construction (0x5DB675), then the update's moves (0x5E4CB0); the script notes the
-		// condition there before it changes it, so the noted condition is the row's between two updates as well
+		// a Theme Park Inc plant holds the row of the condition its update last moved to: row 10 from its construction (0x5DB675), then the update's moves (0x5E4CB0), each of which writes that
+		// condition into VAR_OLDSTATE. vegetation.rse copies VAR_CONDITION into VAR_OLDSTATE before each change it makes (COPY VAR_OLDSTATE VAR_CONDITION) and follows each change with a WAITANIM of
+		// at least 300 script ms, longer than a 248 ms turn, so an update runs between two changes and VAR_OLDSTATE names the row on the cells at any save point, also between a script change and
+		// the next update (a watering 2 -> 1 -> 0 spans two updates, not one pass; ThemeParkIncPlantTests runs the script beside the update). Only a park whose turns stopped while its scripts ran on
+		// could see two changes between updates; the original's update would then move the wrong row as well
 		if ( IsThemeParkIncPlant( item ) )
 			return ReadThemeParkIncScript( item, PlantOldState ) is >= 0 and <= 3 and var noted ? PlantRow( noted ) : null;
 		if ( info.ProvidesRelief )

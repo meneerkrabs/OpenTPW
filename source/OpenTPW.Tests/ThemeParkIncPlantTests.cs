@@ -166,16 +166,133 @@ public class ThemeParkIncPlantTests
 		plant.Repair = 33;
 		economy.FinishThemeParkIncWatering( plant );
 		Assert.AreEqual( (1, 100.0, 0, false), (variables[ParkEconomy.PlantWater], plant.Repair, plant.MechanicId, plant.MaintenanceRequested) );
+		Assert.AreEqual( 40, plant.ClaimTurn, "the claim turn +0x74 is not written" );
 	}
 
 	[TestMethod]
-	public void ThePlantsScriptWatersAndWithersThroughItsConditions()
+	public void ThePlantsScriptRunsInTheVmThroughItsConditionsAndItsRowFollowsAtTheTurnRate()
 	{
-		// data\levels\vegetation.rse: VAR_WATER sets condition 2 back to 0 through 1 and condition 1 to 0; condition 3 (dead) stays
+		// data\levels\vegetation.rse in the script VM beside the engine's plant update at the turn rate (248 ms): the timer withers the plant 0 -> 1 -> 2, VAR_WATER brings 2 back through 1 to 0,
+		// and the timer withers it again to 3 (dead), where water no longer helps. Each change copies VAR_CONDITION into VAR_OLDSTATE first and is followed by a WAITANIM of at least 300 script ms,
+		// longer than a turn, so the engine's update runs between two changes: at every tick (a save point) the row VAR_OLDSTATE names is the row on the cells (ObjectEffectRow, which a load puts back)
 		var corpus = Retail();
 		var script = new RideScriptFile( new MemoryStream( corpus ) );
 		CollectionAssert.AreEqual( new[] { "VAR_CONDITION", "VAR_WATER", "VAR_TIMEOUT", "VAR_TIMER", "VAR_DEAD", "VAR_TEST", "VAR_RIDECLOSED", "VAR_BROKEN", "VAR_WORN", "VAR_RUNNING",
 			"VAR_OLDSTATE", "VAR_SETFIRE", "VAR_ONFIRE", "VAR_PRANKED", "VAR_SCALE" }, script.VariableNames.ToArray(), "the indexes the engine reads and writes" );
+		var plantEntry = ObjectCatalog.Load( "science" ).Entries.First( entry => entry.Settings.GetBool( "UsageInfo.RequiresWatering" ) );
+		GameEditions.Select( GameEdition.ThemeParkInc );
+		var runtime = new OriginalObjectRuntime( plantEntry );
+		var variables = runtime.Script!.Variables;
+		// the construction words (0x5DB850): VAR_TIMEOUT, VAR_TEST, VAR_SCALE; a short timeout keeps the run short (the timer is VAR_TIMEOUT x VAR_SCALE)
+		variables[2] = 2;
+		variables[5] = 0;
+		variables[ParkEconomy.PlantScale] = 1000;
+		var (economy, plant) = Economy( variables );
+		economy.PlaceObjectEffects( plant.Id, (20, 20) );
+		var engineRow = ParkEconomy.PlantHealthyRow;
+		var seen = new List<int> { 0 };
+		var elapsed = 0.0;
+		var nextTurn = ParkCalendar.TurnMilliseconds / 1000.0;
+		bool watered = false, waterAfterDeath = false;
+		for ( var tick = 0; tick < 200 * FixedStepClock.TicksPerSecond; tick++ )
+		{
+			runtime.Simulate( FixedStepClock.TickDuration );
+			elapsed += FixedStepClock.TickDuration;
+			Assert.AreNotEqual( RideVMState.Faulted, runtime.Script.State, runtime.Script.FaultMessage );
+			Assert.AreEqual( engineRow, economy.ObjectEffectRow( plant ), $"a save at {elapsed:F3} s restores the live row" );
+			if ( elapsed < nextTurn )
+				continue;
+			nextTurn += ParkCalendar.TurnMilliseconds / 1000.0;
+			// the scale stays 1000: no weather spell, so the wither is 1.0
+			economy.UpdateThemeParkIncPlant( plant );
+			var condition = variables[ParkEconomy.PlantCondition];
+			engineRow = ParkEconomy.PlantRow( condition );
+			if ( condition != seen[^1] )
+				seen.Add( condition );
+			if ( condition == 2 && !watered )
+			{
+				watered = true;
+				variables[ParkEconomy.PlantWater] = 1;
+			}
+			if ( condition == 3 && !waterAfterDeath )
+			{
+				waterAfterDeath = true;
+				variables[ParkEconomy.PlantWater] = 1;
+			}
+			if ( waterAfterDeath && variables[ParkEconomy.PlantWater] == 0 && elapsed > 5 && seen.Count >= 8 )
+				break;
+		}
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 1, 0, 1, 2, 3 }, seen, string.Join( ",", seen ) );
+		Assert.AreEqual( (3, 1, 0), (variables[ParkEconomy.PlantCondition], variables[ParkEconomy.PlantDead], variables[ParkEconomy.PlantWater]), "a dead plant takes the water and stays dead" );
+		Assert.AreEqual( ((short)-1, (short)1), (economy.Litter.Environment.At( 20, 20 ).Happiness, economy.Litter.Environment.At( 20, 20 ).Illness), "only the dead plant's row 13 is on the cells" );
+	}
+
+	[TestMethod]
+	public void APlantSoldThroughTheLevelTakesOffTheRowOfItsLiveCondition()
+	{
+		// [BIN:TPI-EXE:0x5DE9D3 plant row off] the remove tool's path: ParkObjects.Remove -> the level's ObjectRemoved -> the sale -> RemoveObjectEffects, which reads VAR_CONDITION from the plant's script
+		// through the level (ScriptVariablesOfInstance); the level unlinks the object only after the sale, so a dead plant takes off row 13, not row 10 (the read of an unlinked script answers 0)
+		Retail();
+		GameEditions.Select( GameEdition.ThemeParkInc );
+		var retail = ObjectCatalog.Load( "science" ).Entries.First( candidate => candidate.Settings.GetBool( "UsageInfo.RequiresWatering" ) );
+		// the retail plant's settings and shape over a textureless one-frame model (no GPU in the tests); its script is the shared vegetation.rse of the retail data (OriginalObjectRuntime.ScriptOf)
+		var root = Directory.CreateTempSubdirectory( "opentpw-tpi-plant-sale-" ).FullName;
+		var previousEntities = Entity.All;
+		Entity.All = new();
+		try
+		{
+			var bytes = Md2ModelFileTests.CreateGeometry();
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( bytes.AsSpan( 0x42 ), 1 ); System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( bytes.AsSpan( 0x44 ), 0 );
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( bytes.AsSpan( 0x268 ), 0 ); System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( bytes.AsSpan( 0x78 ), 0x264 );
+			foreach ( var at in new[] { 0x38, 0x3a, 0x3c, 0x3e, 0x4a } ) System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( bytes.AsSpan( at ), 0 );
+			File.WriteAllBytes( Path.Combine( root, "model.MD2" ), bytes );
+			var entry = new ObjectCatalogEntry( "science", retail.Category, retail.ArchivePath, retail.Settings, retail.Shape, "/model.MD2", null, null, Array.Empty<string>(),
+				Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
+			SellThroughTheLevel( entry );
+		}
+		finally
+		{
+			Entity.All = previousEntities;
+			Directory.Delete( root, true );
+		}
+	}
+
+	private static void SellThroughTheLevel( ObjectCatalogEntry entry )
+	{
+		var economy = new ParkEconomy( BalanceSettings.LoadThemeParkInc( "science" ), EconomyObjectCatalog.Load( "science", easy: false ), ParkGameMode.FullSimulation, 1,
+			EconomyRules.ThemeParkIncMoney );
+		var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+		void Set( string field, object? value ) => typeof( Level ).GetField( field, Private )!.SetValue( level, value );
+		Set( "<Park>k__BackingField", ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation ) );
+		var objects = new ParkObjects( ObjectCatalog.Load( "science" ), new SandboxParkGrid() );
+		Set( "<Objects>k__BackingField", objects );
+		Set( "economyInstances", new Dictionary<OriginalObject, int>() );
+		var plant = objects.Add( entry, 40, 40, 0 );
+		Assert.IsNotNull( plant.Runtime.Script, "the plant runs vegetation.rse" );
+		typeof( Level ).GetMethod( "AttachAdvisorProbes", Private )!.Invoke( level, null );
+		typeof( Level ).GetMethod( "ConnectObjectsToEconomy", Private )!.Invoke( level, null );
+		var instance = level.GetEconomyInstance( plant )!.Value;
+		Assert.IsTrue( economy.TryGetObject( instance, out var state ) );
+		var cell = state.EffectCell!.Value;
+		var healthy = economy.Litter.Environment.At( cell.X, cell.Y );
+		Assert.AreEqual( ((short)3, (short)-5), (healthy.Happiness, healthy.Illness), "the constructor's row 10" );
+		// the script reached the dead condition and the update moved the row: 13 is on the cells
+		var variables = plant.Runtime.Script!.Variables;
+		variables[ParkEconomy.PlantCondition] = 3;
+		variables[ParkEconomy.PlantDead] = 1;
+		economy.UpdateThemeParkIncPlant( state );
+		var dead = economy.Litter.Environment.At( cell.X, cell.Y );
+		Assert.AreEqual( ((short)-1, (short)1), (dead.Happiness, dead.Illness), "row 13" );
+		Assert.IsTrue( objects.Remove( plant ) );
+		Assert.IsFalse( economy.TryGetObject( instance, out _ ), "the remove tool sold the record" );
+		Assert.IsNull( level.GetEconomyInstance( plant ), "and the level unlinked the object after the sale" );
+		for ( var dx = -3; dx <= 3; dx++ )
+			for ( var dy = -3; dy <= 3; dy++ )
+			{
+				var left = economy.Litter.Environment.At( cell.X + dx, cell.Y + dy );
+				Assert.AreEqual( ((short)0, (short)0), (left.Happiness, left.Illness), $"nothing stays at ({cell.X + dx}, {cell.Y + dy})" );
+			}
 	}
 
 	[TestMethod]

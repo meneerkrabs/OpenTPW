@@ -123,7 +123,13 @@ public class ThemeParkIncGardenerTests
 		UseRetailData();
 		var sprites = StaffSpriteSet.Load( "science" );
 		Assert.AreEqual( 1, sprites.BankCount( StaffSpriteRules.ThemeParkIncGardener ) );
+		Assert.AreEqual( 1, StaffSpriteSet.Load( "science", bankLimit: 1 ).BankCount( StaffSpriteRules.ThemeParkIncGardener ), "the folder's one bank is whole under any limit" );
+		Assert.IsFalse( StaffSpriteRules.IsBankLimited( StaffSpriteRules.ThemeParkIncGardener ) );
 		Assert.IsTrue( sprites.AnimationsOf( StaffSpriteRules.ThemeParkIncGardener, 0 )!.Animations.Count > 4, "the walk, stand and work slots" );
+		// Theme Park World's levels do not probe for the gardeners' folder
+		GameEditions.Select( GameEdition.ThemeParkWorld );
+		Assert.AreEqual( 0, StaffSpriteSet.Load( "science" ).BankCount( StaffSpriteRules.ThemeParkIncGardener ) );
+		GameEditions.Select( GameEdition.ThemeParkInc );
 		var settings = ThemeParkIncStaffSettings.Read( BalanceSettings.LoadThemeParkInc( "science" ).Standard )!;
 		var gardener = settings.Roles[ThemeParkIncStaffRole.Gardener];
 		// data\levels\Standard.sam: Gardener.MinWorkDuration 30, MaxWorkDuration 5, MinDetectionRange 3, MaxDetectionRange 5 (0xA022D0..0xA022DC)
@@ -361,6 +367,42 @@ public class ThemeParkIncGardenerTests
 			"a gardener's thing keeps his plant word" );
 		Assert.IsFalse( ThemeParkIncStaff.IsValid( saved with { Members = saved.Members.Select( item => item with { World = item.World! with { State = ThemeParkIncStaffWorld.Repairing } } ).ToArray() } ),
 			"a mechanic's state is not a gardener's" );
+
+		// a gardener's plant and his claims are plants (his chooser reads only flag-0x1000 things), and no mechanic claims a plant
+		var ride = economy.RegisterExisting( economy.Catalog.Objects.First( info => !info.RequiresWatering ).InfoId );
+		// the loop above stepped the gardener's turns without the park's clock, so the stamps are brought back inside the save's own tick
+		var stamped = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
+		foreach ( var objectNode in stamped["Objects"]!.AsArray() )
+			objectNode!.AsObject()["ClaimTurn"] = 0;
+		foreach ( var memberNode in stamped["TpiStaff"]!["Members"]!.AsArray() )
+		{
+			var worldNode = memberNode!["World"]!.AsObject();
+			foreach ( var key in new[] { "WorkStamp", "ClaimStamp", "ClaimTurn" } )
+				if ( worldNode.ContainsKey( key ) )
+					worldNode[key] = 0;
+		}
+		var withRide = stamped.ToJsonString();
+		ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( withRide ) ), economy.Settings, economy.Catalog );
+		string Edit( Action<System.Text.Json.Nodes.JsonObject> edit )
+		{
+			var root = System.Text.Json.Nodes.JsonNode.Parse( withRide )!.AsObject();
+			edit( root );
+			return root.ToJsonString();
+		}
+		System.Text.Json.Nodes.JsonObject ObjectNode( System.Text.Json.Nodes.JsonObject root, int id ) =>
+			root["Objects"]!.AsArray().Select( item => item!.AsObject() ).Single( item => (int)item["Id"]! == id );
+		void Refused( string text, string because ) =>
+			Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( text ) ), economy.Settings, economy.Catalog ), because );
+		Refused( Edit( root =>
+		{
+			root["TpiStaff"]!["Members"]![0]!["World"]!["PlantId"] = ride.Id;
+			ObjectNode( root, plant.Id )["MechanicId"] = 0;
+			ObjectNode( root, ride.Id )["MechanicId"] = member.ThingId;
+		} ), "a gardener watering a ride" );
+		Refused( Edit( root =>
+		{
+			ObjectNode( root, ride.Id )["MechanicId"] = member.ThingId;
+		} ), "a gardener's claim on a ride" );
 	}
 
 	[TestMethod]

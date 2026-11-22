@@ -1186,6 +1186,27 @@ public static class ParkSaveFile
 		}
 	}
 
+	/// <summary>
+	/// A Theme Park Inc save's jobs against the catalogue: a placed gardener's plant and every object a gardener claims are plants (<c>UsageInfo.RequiresWatering</c>: his chooser takes only things
+	/// whose flag 0x1000 its dry test reads, 0x5D2DC0), and an object a mechanic claims is no plant (his finder skips them, 0x5DAAD0).
+	/// </summary>
+	private static void ValidateThemeParkIncJobKinds( Data data, IEconomyObjectCatalog catalog )
+	{
+		var placed = (data.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>()).Where( member => member.World != null ).ToList();
+		var objects = data.Objects.ToDictionary( item => item.Id );
+		bool IsPlant( int id ) => objects.TryGetValue( id, out var item ) && catalog.TryGet( item.InfoId, out var info ) && info.RequiresWatering;
+		foreach ( var member in placed.Where( member => member.Role == ThemeParkIncStaffRole.Gardener ) )
+			if ( member.World!.PlantId is { } plant && plant != 0 && !IsPlant( plant ) )
+				throw new InvalidDataException( $"Park save is inconsistent: Theme Park Inc gardener {member.Id}'s plant {plant} is no plant." );
+		foreach ( var item in data.Objects.Where( item => item.MechanicId != 0 ) )
+		{
+			var claimant = placed.FirstOrDefault( member => member.World!.ThingId == item.MechanicId && member.Role is ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Gardener )
+				?? throw new InvalidDataException( $"Park save is inconsistent: object {item.Id} is claimed by thing {item.MechanicId}, which is no placed Theme Park Inc mechanic or gardener." );
+			if ( claimant.Role == ThemeParkIncStaffRole.Gardener != IsPlant( item.Id ) )
+				throw new InvalidDataException( $"Park save is inconsistent: object {item.Id} is claimed by a Theme Park Inc {claimant.Role}, whose search does not take it." );
+		}
+	}
+
 	/// <summary>Validates a parsed economy save in place. Internal: the world-save envelope validates its embedded economy through these same rules.</summary>
 	internal static void Validate( Data data )
 	{
@@ -1330,6 +1351,8 @@ public static class ParkSaveFile
 			throw new InvalidDataException( $"Park save is for {data.Edition}, not {settings.Edition}." );
 		ValidateEdition( data );
 		var tpi = data.Edition == GameEdition.ThemeParkInc;
+		if ( tpi )
+			ValidateThemeParkIncJobKinds( data, catalog );
 		if ( tpi && (data.TpiWeather != null) != (settings.Weather != null) )
 			throw new InvalidDataException( "Park save weather does not match the Theme Park Inc settings." );
 		if ( data.Objectives.AdoptedChallenges is { } adopted )

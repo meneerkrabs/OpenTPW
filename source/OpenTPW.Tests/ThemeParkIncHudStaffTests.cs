@@ -92,7 +92,7 @@ public class ThemeParkIncHudStaffTests
 		Assert.IsTrue( panel.All( element => element.Visible ) );
 		Assert.AreEqual( scale, hud.TimeScale );
 		Assert.AreEqual( GameSpeed.Normal, hud.Speed );
-		Assert.AreEqual( "Choose a cleaner to hire him, then click the park to place him. The other roles come in a later version.", ((UiLabel)panel[1]).Text() );
+		Assert.AreEqual( "Choose a cleaner, a mechanic, a researcher or a gardener to hire him, then click the park to place him. The entertainers and the guards come in a later version.", ((UiLabel)panel[1]).Text() );
 		button.Clicked!();
 		Assert.IsTrue( panel.All( element => !element.Visible ) );
 	}

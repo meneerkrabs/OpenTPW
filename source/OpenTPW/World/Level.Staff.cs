@@ -346,7 +346,14 @@ public partial class Level
 		foreach ( var (item, instance) in economyInstances )
 			if ( Objects.SavedThemeParkIncThingOf( item ) is var thing and not 0 )
 				instances[thing] = instance;
-		economy.RestoreThemeParkIncObjectList( ThemeParkIncObjectListOf( world, instances ) );
+		var list = ThemeParkIncObjectListOf( world, instances );
+		economy.RestoreThemeParkIncObjectList( list );
+		// a thing of the list that no object of OpenTPW's is (the tool entry 1710 of the prebuilt) is still a thing of the original's park: its slot is held, so its id is not handed out again
+		// while the list names it ([BIN:TPI-EXE:0x5D6D40 park loader]: the loaded park keeps every saved thing)
+		var built = Objects.Objects.Select( item => item.ThingId ).ToHashSet();
+		foreach ( var key in list )
+			if ( key < 0 && !built.Contains( -key ) && Objects.Things is { } pool && pool.Occupy( -key, SaveThingModel.Attraction ) )
+				pool.Hold( -key );
 	}
 
 	/// <summary>

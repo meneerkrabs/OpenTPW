@@ -393,6 +393,19 @@ public class ThemeParkIncRepairTailTests
 		CollectionAssert.AreEqual( new[] { state.Id }, world.Economy.ThemeParkIncObjectList.ToArray(), "the record, not the negated id" );
 	}
 
+	[TestMethod]
+	public void AResumedObjectListMatchesItsWorldsThingsWithoutAnEconomyRecord()
+	{
+		// a placed object without a binding (an obstacle, thing 30) is on the list, and a held attraction slot (the prebuilt's tool entry, thing 26) may be; nothing else is named
+		var objects = new[] { (ThingId: 14, AttractionId: 1), (ThingId: 30, AttractionId: 2) };
+		var bound = new[] { 1 };
+		var held = new[] { 26 };
+		Assert.IsNull( ParkResumeSaveFile.ThemeParkIncObjectListProblem( new[] { -30, 5, -26 }, objects, bound, held ) );
+		StringAssert.Contains( ParkResumeSaveFile.ThemeParkIncObjectListProblem( new[] { -30, 5, -26, -40 }, objects, bound, held ), "names thing 40" );
+		StringAssert.Contains( ParkResumeSaveFile.ThemeParkIncObjectListProblem( new[] { -30, 5, -14 }, objects, bound, held ), "names thing 14" );
+		StringAssert.Contains( ParkResumeSaveFile.ThemeParkIncObjectListProblem( new[] { 5, -26 }, objects, bound, held ), "thing 30 has no economy record and is not on" );
+	}
+
 	// ---- The maintenance cancel -----------------------------------------------------------------
 
 	[TestMethod]

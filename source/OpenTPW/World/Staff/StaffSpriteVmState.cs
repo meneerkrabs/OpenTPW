@@ -9,7 +9,9 @@ public enum StaffSpriteProgram
 	/// <summary>The hire window's figure script (tp.exe <c>0x0074F758</c>, created by <c>0x0049BA00</c>): not a template of the table <c>0x0075A418</c>.</summary>
 	HireFigure = 30,
 	Performance0 = 256, Performance1 = 257, Performance2 = 258, Performance3 = 259,
-	Performance0Loop = 272, Performance1Loop = 273, Performance2Loop = 274, Performance3Loop = 275
+	Performance0Loop = 272, Performance1Loop = 273, Performance2Loop = 274, Performance3Loop = 275,
+	/// <summary>Theme Park Inc's entertainer templates 0x13 to 0x16 (the table <c>0x9CDA94</c>: programs <c>0x9B04E4</c>, <c>0x9B0530</c>, <c>0x9B056C</c> and <c>0x9B05B8</c>), which tp.exe's table has no counterpart of.</summary>
+	ThemeParkIncPerformanceA = 260, ThemeParkIncPerformanceB = 261, ThemeParkIncPerformanceC = 262, ThemeParkIncPerformanceD = 263
 }
 
 /// <summary>

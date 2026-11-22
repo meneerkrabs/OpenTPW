@@ -186,7 +186,7 @@ public sealed class ParkEconomyRuntime
 		if ( park.Save?.Statistics is { } statistics )
 			economy.StatisticsHistory.RestoreOriginal( statistics );
 		Log.Trace( $"Park economy: Theme Park Inc money rules; {park.LevelName} balance from {string.Join( ", ", settings.Standard.Sources )}; "
-			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, Theme Park Inc staff ({(economy.TpiStaff == null ? "none" : "cleaners, mechanics, researchers and gardeners only")}), Theme Park Inc challenges ({(economy.TpiChallenges == null ? "none" : "ported types only")}), no research in play (no research room can be built)." );
+			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, Theme Park Inc staff ({(economy.TpiStaff == null ? "none" : "all six roles, the guards without chase and first aid")}), Theme Park Inc challenges ({(economy.TpiChallenges == null ? "none" : "ported types only")}), research and training in play once a mission offers their rooms (the research room from mission 1, the training room from mission 2, or 1 after the obstacle research)." );
 		return new ParkEconomyRuntime( economy, import: null )
 		{
 			Start = new ParkStart( ParkStartKind.FullSimulation, ParkGameMode.FullSimulation, EasyBalance: false, ImportShippedSave: false ),

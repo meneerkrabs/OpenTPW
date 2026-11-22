@@ -98,6 +98,23 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
+	public void AGuardRunsToTheTrainingRoomWhereAHandymanWalks()
+	{
+		// [BIN:TPI-EXE:0x60B541 run test] the speed bonus 25 above the table's first word (0) and the class byte 7 runs (template 2); a handyman with the same bonus walks (template 1)
+		var economy = ScienceEconomy();
+		var world = new ThemeParkIncStaffWorld( Row( economy ) );
+		world.Rooms = new TestRooms { Training = new ThemeParkIncRoom( 500, (8, 5) ) };
+		foreach ( var (role, template) in new[] { (ThemeParkIncStaffRole.Guard, 2), (ThemeParkIncStaffRole.Handyman, 1) } )
+		{
+			var member = Hire( economy, world, (1, 5), experience: 20000, role );
+			Assert.AreEqual( ThemeParkIncTrainingChoice.Started, world.ChooseAbility( economy, member, 7, confirmed: false, economy.Turn ) );
+			Assert.AreEqual( 25, member.SpeedBonus );
+			world.Update( economy, member, economy.Turn + 1 );
+			Assert.AreEqual( (7, template), (member.State, member.Template), role.ToString() );
+		}
+	}
+
+	[TestMethod]
 	public void AHandymanWalksToTheRoomTrainsThenTheHqCountsAndSlotsHim()
 	{
 		// [BIN:TPI-EXE:0x628492 state 7 entry] [BIN:TPI-EXE:0x62A7C0 walk to training] [BIN:TPI-EXE:0x62AB90 training finish]

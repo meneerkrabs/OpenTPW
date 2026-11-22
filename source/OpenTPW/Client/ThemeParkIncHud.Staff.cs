@@ -199,7 +199,7 @@ public sealed partial class ThemeParkIncHud
 			staffRowActions[index]?.Invoke();
 	}
 
-	/// <summary>A candidate's row activated: a cleaner (handyman) goes to the hand for placing, another role is refused with a note.</summary>
+	/// <summary>A candidate's row activated: a staff member of any role goes to the hand for placing.</summary>
 	private void Hire( int slot )
 	{
 		var refusal = level.BeginTpiHire( slot );
@@ -208,11 +208,6 @@ public sealed partial class ThemeParkIncHud
 			CloseStaffPanel();
 			DisarmBuild();
 			PostMessage( T( OpenTpwText.TpiStaffPlaceHint ) );
-		}
-		else if ( refusal == "role not ported" )
-		{
-			PostMessage( T( OpenTpwText.TpiStaffRoleRefused ) );
-			GameAudio.PlayUi( GameAudio.ErrorEvent );
 		}
 	}
 

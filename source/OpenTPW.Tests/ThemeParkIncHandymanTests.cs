@@ -450,8 +450,16 @@ public class ThemeParkIncHandymanTests
 		Assert.AreSame( candidate, staff.Slots[slot], "the candidate stays in the pool" );
 		Assert.AreEqual( 0, staff.Members.Count );
 		Assert.IsFalse( staff.Capture().Placing.Any( placing => placing ), "no being-placed byte is saved" );
-		Assert.AreEqual( "role not ported", level.BeginTpiHire( Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index] is { } other && !ThemeParkIncStaffMember.IsPlacedRole( other.Role ) ) ) );
-		Assert.AreEqual( -1, level.TpiPlacingSlot, "a refused role starts no hire" );
+		// every role is hired the same way now: an entertainer or a guard in the pool goes to the hand too
+		foreach ( var role in new[] { ThemeParkIncStaffRole.Entertainer, ThemeParkIncStaffRole.Guard } )
+		{
+			var other = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).FirstOrDefault( index => staff.Slots[index]?.Role == role, -1 );
+			if ( other < 0 )
+				continue;
+			Assert.IsNull( level.BeginTpiHire( other ) );
+			Assert.AreEqual( other, level.TpiPlacingSlot );
+			level.CancelTpiHire();
+		}
 	}
 
 	[TestMethod]

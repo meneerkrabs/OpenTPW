@@ -93,16 +93,19 @@ public sealed class ParkEnvironment
 		return cells;
 	}
 
-	/// <summary>The cells that hold a residue, row by row: x, y and the five words (saves).</summary>
+	/// <summary>The cells that hold a residue, row by row: x, y and the five words (saves): the residue the grid holds and the removals' difference (<see cref="KeepRadiusResidue"/>) together.</summary>
 	public IEnumerable<int[]> ResidueCells()
 	{
-		if ( residue is not { } extra )
+		if ( residue is null && radiusDelta is null )
 			yield break;
+		var total = new short[Components];
 		for ( var cell = 0; cell < ParkLitter.MapSize * ParkLitter.MapSize; cell++ )
 		{
 			var index = cell * Components;
-			if ( extra.AsSpan( index, Components ).ContainsAnyExcept( (short)0 ) )
-				yield return [cell % ParkLitter.MapSize, cell / ParkLitter.MapSize, extra[index], extra[index + 1], extra[index + 2], extra[index + 3], extra[index + 4]];
+			for ( var component = 0; component < Components; component++ )
+				total[component] = unchecked( (short)((residue?[index + component] ?? 0) + (radiusDelta?[index + component] ?? 0)) );
+			if ( total.AsSpan().ContainsAnyExcept( (short)0 ) )
+				yield return [cell % ParkLitter.MapSize, cell / ParkLitter.MapSize, total[0], total[1], total[2], total[3], total[4]];
 		}
 	}
 
@@ -126,6 +129,7 @@ public sealed class ParkEnvironment
 			}
 		}
 		residue = any ? extra : null;
+		radiusDelta = null;
 	}
 
 	/// <summary>
@@ -136,12 +140,49 @@ public sealed class ParkEnvironment
 	// [BIN:TPW-EXE:0x004D8480 region writer] the add/remove wrappers 0x004D8440 / 0x004D8460 pass 1 / 0; sign +1 or −1; x0 = max(0, x − r), x1 = min(127, x + r), likewise y; for each cell and each of the five words: word += sign × coefficient / (|dx| + |dy| + 1) through idiv (the Mac 0xd73a0, docs/reverse/PPC-guests.md)
 	public void Apply( int index, int x, int y, bool add )
 	{
-		if ( (uint)index >= (uint)Effects.Length || (uint)x >= ParkLitter.MapSize || (uint)y >= ParkLitter.MapSize )
+		if ( (uint)index >= (uint)Effects.Length )
+			return;
+		Spread( index, x, y, Effects[index].Radius, add ? 1 : -1, words );
+	}
+
+	/// <summary>
+	/// Theme Park Inc's writer with the radius as an argument: the entertainers' and the guards' row goes down and comes off with the radius their experience gives, not the row's own (the cell's
+	/// <c>RegionFX[i].Radius</c> is unused for them).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D7770 region writer] (flag, row, cell word, radius): the wrappers 0x5D7500 and 0x5D7530 pass 1 and 0; the radius is the argument's low 16 bits (andl $0xFFFF), the square clipped to 0..127
+	// (signed), each coefficient of the row (words at 0x1E9104 + 12 × row) added as sign × coefficient / (|dx| + |dy| + 1) (idivl, toward zero) to the cell's five halfwords (0x1C1104, ten bytes a cell)
+	public void ApplyRadius( int index, int x, int y, bool add, int radius )
+	{
+		if ( (uint)index >= (uint)Effects.Length )
+			return;
+		Spread( index, x, y, radius & 0xFFFF, add ? 1 : -1, words );
+	}
+
+	/// <summary>
+	/// A source whose cell effect came off with another radius than it went down with leaves the difference in the grid (the original removes with the radius of the moment). The words hold it
+	/// (the writer ran as the original's), and a rebuild of the sources from their cells cannot reproduce it, so it is noted here as the part of the grid the sources do not explain: the effect of
+	/// <paramref name="oldRadius"/> less that of <paramref name="newRadius"/> at the cell. <see cref="ResidueCells"/> carries it into a save beside the residue the grid already had.
+	/// </summary>
+	public void KeepRadiusResidue( int index, int x, int y, int oldRadius, int newRadius )
+	{
+		if ( (uint)index >= (uint)Effects.Length || oldRadius == newRadius )
+			return;
+		radiusDelta ??= new short[words.Length];
+		Spread( index, x, y, oldRadius & 0xFFFF, 1, radiusDelta );
+		Spread( index, x, y, newRadius & 0xFFFF, -1, radiusDelta );
+		if ( radiusDelta.AsSpan().IndexOfAnyExcept( (short)0 ) < 0 )
+			radiusDelta = null;
+	}
+
+	/// <summary>The grid's part the sources do not explain, from the writer's removals with a changed radius (<see cref="KeepRadiusResidue"/>); null for none. It is not part of <see cref="At"/>.</summary>
+	private short[]? radiusDelta;
+
+	private void Spread( int index, int x, int y, int radius, int sign, short[] target )
+	{
+		if ( (uint)x >= ParkLitter.MapSize || (uint)y >= ParkLitter.MapSize )
 			return;
 		var effect = Effects[index];
-		var sign = add ? 1 : -1;
 		Span<int> coefficients = [effect.Happiness, effect.Illness, effect.Hunger, effect.Security, effect.Attraction];
-		var radius = effect.Radius;
 		for ( var cx = Math.Max( 0, x - radius ); cx <= Math.Min( ParkLitter.MapSize - 1, x + radius ); cx++ )
 		{
 			for ( var cy = Math.Max( 0, y - radius ); cy <= Math.Min( ParkLitter.MapSize - 1, y + radius ); cy++ )
@@ -149,7 +190,7 @@ public sealed class ParkEnvironment
 				var divisor = Math.Abs( cx - x ) + Math.Abs( cy - y ) + 1;
 				var cell = (cy * ParkLitter.MapSize + cx) * Components;
 				for ( var component = 0; component < Components; component++ )
-					words[cell + component] = unchecked( (short)(words[cell + component] + sign * coefficients[component] / divisor) );
+					target[cell + component] = unchecked( (short)(target[cell + component] + sign * coefficients[component] / divisor) );
 			}
 		}
 	}
@@ -159,5 +200,6 @@ public sealed class ParkEnvironment
 	{
 		Array.Clear( words );
 		residue = null;
+		radiusDelta = null;
 	}
 }

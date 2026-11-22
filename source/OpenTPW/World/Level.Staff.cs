@@ -186,7 +186,7 @@ public partial class Level
 	{
 		if ( Park?.Economy.TpiStaff == null || Guests == null )
 			return;
-		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests, ObjectCells = TpiObjectCells, ObjectThings = TpiObjectThing };
+		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests, ObjectCells = TpiObjectCells, ObjectThings = TpiObjectThing, ThemeIndex = ThemeParkIncStaffWorld.ThemeIndexOf( LevelName ) };
 		AttachThemeParkIncRooms();
 		AdoptTpiStaffThings();
 		// the members' sprites: Theme Park Inc's esprites.wad holds the handymen's bank under the folder Theme Park World's loader reads (Generic\Handymen, Spr_ha), found by name
@@ -221,19 +221,16 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman, a mechanic or a researcher goes to the hand until a drop or a cancel;
-	/// the other roles are refused. Null when the hire starts, else the refusal's reason.
+	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): every role goes to the hand until a drop or a cancel. Null when the hire starts,
+	/// else the refusal's reason.
 	/// </summary>
 	// [BIN:TPI-EXE:0x630D10 hire] the slot is marked as being placed and the park maximum check runs; the placement tool 0x93B61C then holds the candidate (its enter 0x4D4C20 makes the dangling sprite)
-	// [EXT:tpi-capability-gates] only the handyman, the mechanic and the researcher are ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
 	public string? BeginTpiHire( int slot )
 	{
 		if ( Park?.Economy.TpiStaff is not { } staff )
 			return "unavailable";
 		if ( slot < 0 || slot >= ThemeParkIncStaff.PoolSlots || staff.Slots[slot] is not { } candidate )
 			return "no candidate";
-		if ( !ThemeParkIncStaffMember.IsPlacedRole( candidate.Role ) )
-			return "role not ported";
 		if ( TpiStaffWorld == null )
 			return "unavailable";
 		CancelTpiHire();

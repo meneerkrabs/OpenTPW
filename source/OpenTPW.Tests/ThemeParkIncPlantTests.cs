@@ -217,6 +217,20 @@ public class ThemeParkIncPlantTests
 	}
 
 	[TestMethod]
+	public void NoPlantHasARepairLineSoADeadPlantIsNoMechanicsJob()
+	{
+		// [BIN:TPI-EXE:0x5E28A0 repair line] the mechanics' finder takes an object whose repair byte is below the type's RideBreakDown.Imminent (+0x3C8); a dead plant's +0x54 is 0 (0x5E4DD4), so a plant
+		// type with a line above 0 would be a mechanic's job: no shipped plant has one, and none wears (WearRate 0)
+		Retail();
+		foreach ( var world in new[] { "arabian", "science", "water" } )
+			foreach ( var info in EconomyObjectCatalog.Load( world, easy: false ).Objects.Where( info => info.RequiresWatering ) )
+			{
+				Assert.AreEqual( 0f, info.BreakdownImminent, $"{world} {info.Name}" );
+				Assert.IsTrue( info.Upgrades.All( level => level.WearRate == 0 ), $"{world} {info.Name}" );
+			}
+	}
+
+	[TestMethod]
 	public void TheShippedWithersAreTheVegetationKeys()
 	{
 		Retail();

@@ -89,11 +89,21 @@ public static class StaffSpriteRules
 	/// <summary>Whether tp.exe flags a role's folder for the limit (all but the entertainers' theme folders, 0x541310).</summary>
 	public static bool IsBankLimited( StaffType type ) => type != StaffType.Entertainer;
 
+	/// <summary>
+	/// Theme Park Inc's gardeners as a sprite bank role beside Theme Park World's five (<see cref="StaffType"/> holds Theme Park World's staff types only, so no economy, save or interface code meets
+	/// this value): <c>esprites.wad</c>'s <c>Generic\Gardeners</c> (<c>Spr_gd</c>), a folder Theme Park World's data does not have.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D228C gardener sprite] the gardener's constructor 0x5D2230 sets +0x34 = 0x12 and makes its source with the category 0x12 and its variant byte (0x5D1000(3, 0x12, variant)); the
+	// gardeners' bank in Theme Park Inc's esprites.wad is Generic\Gardeners, the only gardeners' folder (found by name, as the handymen's and mechanics')
+	public const StaffType ThemeParkIncGardener = (StaffType)5;
+
 	/// <summary>The sprite folder and banks of a role; entertainers belong to the level's theme (null for an unknown level).</summary>
 	public static StaffBankSet? Banks( StaffType type, string level )
 	{
 		switch ( type )
 		{
+			case ThemeParkIncGardener:
+				return new StaffBankSet( "/esprites/Generic/Gardeners", new[] { "SPR_GD" } );
 			case StaffType.Handyman:
 				return new StaffBankSet( "/esprites/Generic/Handymen", new[] { "SPR_HA" } );
 			case StaffType.Mechanic:
@@ -160,11 +170,11 @@ public static class StaffSpriteRules
 
 /// <summary>
 /// The decoded sprite banks of the staff roles of one level, in the order their atlas textures are bound: handymen, mechanics, guards, researchers, the theme's
-/// entertainers. Loaded through the same <see cref="GuestSpriteAtlas"/> path as the guests' kids.
+/// entertainers and Theme Park Inc's gardeners (none in Theme Park World's data). Loaded through the same <see cref="GuestSpriteAtlas"/> path as the guests' kids.
 /// </summary>
 public sealed class StaffSpriteSet : IStaffSpriteBanks
 {
-	private const int RoleCount = 5;
+	private const int RoleCount = 6;
 	private readonly (int First, int Count)[] ranges = new (int, int)[RoleCount];
 
 	/// <summary>The decoded banks; their atlas index is the texture slot the renderer binds.</summary>
@@ -184,7 +194,7 @@ public sealed class StaffSpriteSet : IStaffSpriteBanks
 	{
 		var atlases = new List<GuestSpriteAtlas>();
 		var ranges = new (int First, int Count)[RoleCount];
-		foreach ( var type in new[] { StaffType.Handyman, StaffType.Mechanic, StaffType.Guard, StaffType.Researcher, StaffType.Entertainer } )
+		foreach ( var type in new[] { StaffType.Handyman, StaffType.Mechanic, StaffType.Guard, StaffType.Researcher, StaffType.Entertainer, StaffSpriteRules.ThemeParkIncGardener } )
 		{
 			if ( StaffSpriteRules.Banks( type, level ) is not { } set )
 				continue;

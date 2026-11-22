@@ -25,7 +25,9 @@ public enum SaveThingModel
 	Weather = 15,
 	Bank = 16,
 	UIMsgReceiver = 17,
-	ChallengeSystem = 19
+	ChallengeSystem = 19,
+	/// <summary>Theme Park Inc's gardener (kind 0x14, the thing dispatch's <c>0x63763E</c>).</summary>
+	Gardener = 20
 }
 
 /// <summary>

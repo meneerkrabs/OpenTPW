@@ -74,6 +74,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? TpiRideWear { get; init; }
+		/// <summary>
+		/// The Theme Park Inc garden rules the save's plants and gardeners follow (<see cref="ThemeParkIncGardenRules"/>): written by a park with Theme Park Inc's staff. A Theme Park Inc save without it
+		/// was made before the gardeners and the plants' watering were ported (its plants ran no script) and is refused.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? TpiGardens { get; init; }
 		/// <summary>Theme Park Inc's object list, newest first (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): written by a park with Theme Park Inc's staff, with its ride wear.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int>? TpiObjectList { get; init; }
@@ -757,6 +763,7 @@ public static class ParkSaveFile
 			TpiMissions = park.TpiMissions?.Capture(),
 			TpiResearch = park.CaptureThemeParkIncResearch(),
 			TpiRideWear = park.TpiStaff != null ? ThemeParkIncRideWearRules : null,
+			TpiGardens = park.TpiStaff != null ? ThemeParkIncGardenRules : null,
 			TpiObjectList = park.TpiStaff != null ? park.ThemeParkIncObjectList.ToList() : null,
 			TpiCutscene = park.TpiCutscene?.Capture(),
 			Theme = park.Settings.Theme,
@@ -1116,6 +1123,10 @@ public static class ParkSaveFile
 			// park the ported rules would have made
 			if ( data.TpiStaff != null && data.TpiRideWear != ThemeParkIncRideWearRules )
 				throw new InvalidDataException( ThemeParkIncRideWearMissing );
+			// a Theme Park Inc park save from before the gardeners and the plants' watering is refused the same way: its plants ran no script (no vegetation.rse, so no condition, timer or construction
+			// words), so they are not the plants the ported rules would have kept
+			if ( data.TpiStaff != null && data.TpiGardens != ThemeParkIncGardenRules )
+				throw new InvalidDataException( ThemeParkIncGardensMissing );
 			if ( data.TpiStaff != null && !ParkEconomy.IsValidThemeParkIncObjectList( data.Objects.Select( item => item.Id ), data.TpiObjectList ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc object list." );
 			ValidateThemeParkIncJobs( data );
@@ -1129,7 +1140,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiObjectList != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiGardens != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1141,18 +1152,31 @@ public static class ParkSaveFile
 	/// <summary>The refusal of a Theme Park Inc save from before the mechanics and the ride wear.</summary>
 	public const string ThemeParkIncRideWearMissing = "This Theme Park Inc park was saved before OpenTPW kept the mechanics and the ride wear and cannot be continued; start a new game from the Personnel File.";
 
+	/// <summary>The rules version a Theme Park Inc save with its staff writes for its plants and gardeners (<see cref="Data.TpiGardens"/>).</summary>
+	public const int ThemeParkIncGardenRules = 1;
+
+	/// <summary>The refusal of a Theme Park Inc save from before the gardeners and the plants' watering.</summary>
+	public const string ThemeParkIncGardensMissing = "This Theme Park Inc park was saved before OpenTPW kept the gardeners and the plants' watering and cannot be continued; start a new game from the Personnel File.";
+
 	/// <summary>
-	/// A Theme Park Inc save's jobs: an object's claim names a placed mechanic's thing (0x5E3780 writes his thing id), and a placed mechanic's ride is an object of the save (the removal message
-	/// clears it, 0x5D9DD0); a mechanic at work (21 or 22) has one.
+	/// A Theme Park Inc save's jobs: an object's claim names a placed mechanic's or gardener's thing (0x5E3780 writes his thing id), a placed mechanic's ride and a placed gardener's plant are objects
+	/// of the save (the removal messages clear them, 0x5D9DD0 and 0x5D2480); a mechanic at work (21 or 22) and a gardener on his way or watering (0x1F or 0x20) have one.
 	/// </summary>
 	private static void ValidateThemeParkIncJobs( Data data )
 	{
-		var mechanics = (data.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>())
-			.Where( member => member.Role == ThemeParkIncStaffRole.Mechanic && member.World != null ).ToList();
+		var placed = (data.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>()).Where( member => member.World != null ).ToList();
+		var mechanics = placed.Where( member => member.Role == ThemeParkIncStaffRole.Mechanic ).ToList();
+		var gardeners = placed.Where( member => member.Role == ThemeParkIncStaffRole.Gardener ).ToList();
 		var ids = data.Objects.Select( item => item.Id ).ToHashSet();
 		foreach ( var item in data.Objects.Where( item => item.MechanicId != 0 ) )
-			if ( !mechanics.Any( member => member.World!.ThingId == item.MechanicId ) )
-				throw new InvalidDataException( $"Park save is inconsistent: object {item.Id} is claimed by thing {item.MechanicId}, which is no placed Theme Park Inc mechanic." );
+			if ( !mechanics.Concat( gardeners ).Any( member => member.World!.ThingId == item.MechanicId ) )
+				throw new InvalidDataException( $"Park save is inconsistent: object {item.Id} is claimed by thing {item.MechanicId}, which is no placed Theme Park Inc mechanic or gardener." );
+		foreach ( var member in gardeners )
+		{
+			var world = member.World!;
+			if ( world.PlantId is not { } plant || plant != 0 && !ids.Contains( plant ) || world.State is ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering && plant == 0 )
+				throw new InvalidDataException( $"Park save is inconsistent: Theme Park Inc gardener {member.Id}'s plant {world.PlantId} is not an object of the park." );
+		}
 		foreach ( var member in mechanics )
 		{
 			var world = member.World!;

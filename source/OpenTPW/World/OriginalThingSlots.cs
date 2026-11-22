@@ -21,7 +21,7 @@ public static class OriginalThingSlots
 			{
 				SaveThingModel.Attraction => objects.Contains( slot.Id ),
 				SaveThingModel.Guest => guests.Contains( slot.Id ),
-				SaveThingModel.Mechanic or SaveThingModel.Handyman or SaveThingModel.Entertainer or SaveThingModel.Guard or SaveThingModel.Researcher => staff.Contains( slot.Id ),
+				SaveThingModel.Mechanic or SaveThingModel.Handyman or SaveThingModel.Entertainer or SaveThingModel.Guard or SaveThingModel.Researcher or SaveThingModel.Gardener => staff.Contains( slot.Id ),
 				_ => true
 			};
 			if ( !built && pool.Hold( slot.Id ) )

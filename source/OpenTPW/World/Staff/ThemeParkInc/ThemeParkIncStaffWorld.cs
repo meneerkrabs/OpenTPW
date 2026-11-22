@@ -4,7 +4,8 @@ namespace OpenTPW;
 /// Theme Park Inc's staff in the park (docs/reverse/TPI-STAFF.md §11): the placed members' things and their state machines, beside Theme Park World's
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
 /// meters, day counters and search, and the training states 7 and 8; the mechanic runs 0, 1, 21 (to the ride) and 22 (repair) with the ride wear of ParkEconomy.UpdateThemeParkIncRide; the
-/// researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
+/// gardener runs 0, 1, 0x1F (to the plant) and 0x20 (watering) with the plants of ParkEconomy.UpdateThemeParkIncPlant; the mechanic and the gardener train as the handyman does; the researcher
+/// runs his states 0, 1, 24 (researching) and 25 (to his research room); the entertainer and the guard are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
 /// </summary>
 /// <remarks>
 /// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
@@ -73,7 +74,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	public static int VariantOf( ThemeParkIncStaffMember member, IStaffSpriteBanks? banks ) =>
 		banks?.BankCount( StaffTypeOf( member.Role ) ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
 
-	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (0xA) or the researchers' (0xC, <c>0x6902F0(0xC)</c>).</summary>
+	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (0xA), the researchers' (0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (0x12).</summary>
 	internal static StaffType SpriteTypeOf( ThemeParkIncStaffMember member ) => StaffTypeOf( member.Role );
 
 	/// <summary>The staff sprite set's role a placed member is drawn as.</summary>
@@ -82,15 +83,17 @@ public sealed partial class ThemeParkIncStaffWorld
 		ThemeParkIncStaffRole.Handyman => StaffType.Handyman,
 		ThemeParkIncStaffRole.Mechanic => StaffType.Mechanic,
 		ThemeParkIncStaffRole.Researcher => StaffType.Researcher,
+		ThemeParkIncStaffRole.Gardener => StaffSpriteRules.ThemeParkIncGardener,
 		_ => throw new ArgumentOutOfRangeException( nameof( role ), $"Theme Park Inc's {role}s are not placed in the park." )
 	};
 
-	/// <summary>The thing model of a placed member's thing (the kind byte +0x2: 5 a handyman, 4 a mechanic, 8 a researcher).</summary>
+	/// <summary>The thing model of a placed member's thing (the kind byte +0x2: 5 a handyman, 4 a mechanic, 8 a researcher, 0x14 a gardener).</summary>
 	public static SaveThingModel ThingModelOf( ThemeParkIncStaffRole role ) => role switch
 	{
 		ThemeParkIncStaffRole.Handyman => SaveThingModel.Handyman,
 		ThemeParkIncStaffRole.Mechanic => SaveThingModel.Mechanic,
 		ThemeParkIncStaffRole.Researcher => SaveThingModel.Researcher,
+		ThemeParkIncStaffRole.Gardener => SaveThingModel.Gardener,
 		_ => throw new ArgumentOutOfRangeException( nameof( role ), $"Theme Park Inc's {role}s are not placed in the park." )
 	};
 
@@ -347,7 +350,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		ArgumentNullException.ThrowIfNull( economy );
 		ArgumentNullException.ThrowIfNull( member );
 		if ( !ThemeParkIncStaffMember.IsPlacedRole( member.Role ) )
-			throw new InvalidOperationException( "Only Theme Park Inc handymen, mechanics and researchers are ported to the park ([EXT:tpi-capability-gates])." );
+			throw new InvalidOperationException( "Only Theme Park Inc handymen, mechanics, researchers and gardeners are ported to the park ([EXT:tpi-capability-gates])." );
 		if ( economy.TpiStaff is not { } staff )
 			throw new InvalidOperationException( "The park has no Theme Park Inc staff." );
 		var settings = staff.Settings;
@@ -369,6 +372,9 @@ public sealed partial class ThemeParkIncStaffWorld
 		member.LitterCell = 0;
 		member.RideId = 0;
 		member.JobTimer = 0;
+		// [BIN:TPI-EXE:0x5D22A3 gardener start] +0x5D0 = 0 and the gardener list's head (0x64F510), +0x5D8 and +0x5D4 = 0, template 3 on the sprite source (0x5D1000 with the category 0x12), the removal
+		// message 10 subscribed (0x436AC0), then the search 0x5D28C0 with no setter before it; the list (world +0x1EAB7E through +0x5D0, newest first) is the members' gardeners in their order
+		member.PlantId = 0;
 		member.Template = IdleTemplate;
 		member.DrawX = navigation.X / (float)Fixed16.One;
 		member.DrawY = navigation.Y / (float)Fixed16.One;
@@ -511,6 +517,12 @@ public sealed partial class ThemeParkIncStaffWorld
 	private void PreUpdate( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		CommonPreUpdate( member );
+		// [BIN:TPI-EXE:0x63763E gardener update] kind 0x14: the pre-update 0x5D2820, then the state dispatch 0x5D2A60
+		if ( member.Role == ThemeParkIncStaffRole.Gardener )
+		{
+			PreUpdateGardener( economy, settings, member, turn );
+			return;
+		}
 		// the mechanic's pre-update is the common part alone (0x5DA3B0 jumps to 0x628050)
 		if ( member.Role != ThemeParkIncStaffRole.Handyman )
 			return;
@@ -553,6 +565,11 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( member.Role == ThemeParkIncStaffRole.Mechanic )
 		{
 			DispatchMechanic( economy, settings, member, turn );
+			return;
+		}
+		if ( member.Role == ThemeParkIncStaffRole.Gardener )
+		{
+			DispatchGardener( economy, settings, member, turn );
 			return;
 		}
 		switch ( member.State )
@@ -688,11 +705,13 @@ public sealed partial class ThemeParkIncStaffWorld
 		SetState( economy, member, Patrol( economy, member ) ? Walking : Idle, turn );
 	}
 
-	/// <summary>The role's search: the handyman's 0x5D52A0 or the mechanic's 0x5DA3D0.</summary>
+	/// <summary>The role's search: the handyman's 0x5D52A0, the mechanic's 0x5DA3D0 or the gardener's 0x5D28C0.</summary>
 	internal void Search( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		if ( member.Role == ThemeParkIncStaffRole.Mechanic )
 			SearchMechanic( economy, member, turn );
+		else if ( member.Role == ThemeParkIncStaffRole.Gardener )
+			SearchGardener( economy, member, turn );
 		else
 			SearchHandyman( economy, member, turn );
 	}
@@ -748,7 +767,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>Looking for work (0x62D810): the role's search, then a member with low motivation who is now working stops again.</summary>
-	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0; then a motivation byte below MotivationPercentToStrike / 2 (cltd, sub, sar: toward zero) with the display state 2 or 7 looks for a
+	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0, kind 0x14 0x5D28C0 (the byte table 0x62D974's index 16: 0x62D844); then a motivation byte below MotivationPercentToStrike / 2 (cltd, sub, sar: toward zero) with the display state 2 or 7 looks for a
 	// rest area (0x62BA20: none) and sets 0 (0x628180(0) at 0x62D94D)
 	private void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
@@ -770,6 +789,11 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( member.Role == ThemeParkIncStaffRole.Mechanic && state is ToRide or Repairing )
 		{
 			SetMechanicState( economy, member, state );
+			return;
+		}
+		if ( member.Role == ThemeParkIncStaffRole.Gardener && state is ToPlant or Watering )
+		{
+			SetGardenerState( member, state, turn );
 			return;
 		}
 		switch ( state )

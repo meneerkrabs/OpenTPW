@@ -100,12 +100,12 @@ public class ThemeParkIncHudStaffTests
 	[TestMethod]
 	public void AnotherRolesRowIsRefusedWithANoteAndLeavesThePool()
 	{
-		// [EXT:tpi-capability-gates] only the handyman (the Cleaner) and the mechanic are ported to the park
+		// [EXT:tpi-capability-gates] only the handyman (the Cleaner), the mechanic, the researcher and the gardener are ported to the park
 		var staff = SyntheticStaff( (0, Candidate( 1, ThemeParkIncStaffRole.Guard, 7, 1200, 30 )), (2, Candidate( 2, ThemeParkIncStaffRole.Handyman, 3, 900, 12 )) );
 		var hud = BuildHud( Strings(), staff );
 		var before = staff.Slots.ToArray();
 		hud.ActivateStaffRow( 0 );
-		CollectionAssert.Contains( hud.Messages.ToArray(), "Only cleaners and mechanics can be hired in this version." );
+		CollectionAssert.Contains( hud.Messages.ToArray(), "Only cleaners, mechanics, scientists and gardeners can be hired in this version." );
 		CollectionAssert.AreEqual( before, staff.Slots.ToArray(), "a refused role stays in the pool" );
 	}
 

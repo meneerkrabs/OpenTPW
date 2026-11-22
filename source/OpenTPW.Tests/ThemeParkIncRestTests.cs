@@ -40,7 +40,9 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 	private static ThemeParkIncStaffMember Hire( ParkEconomy economy, ThemeParkIncStaffWorld world, ThemeParkIncStaffRole role, (int X, int Y) cell )
 	{
 		var staff = economy.TpiStaff!;
-		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index]?.Role == role );
+		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).FirstOrDefault( index => staff.Slots[index]?.Role == role, -1 );
+		if ( slot < 0 )
+			Assert.Inconclusive( $"The Science pool holds no {role}." );
 		Assert.IsTrue( staff.BeginHire( slot ) );
 		var member = staff.EndHire( slot, placed: true )!;
 		member.Experience = staff.Settings.MaxExperience / 2;
@@ -301,6 +303,88 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 		Assert.IsTrue( ThemeParkIncStaffMember.IsPortedState( ThemeParkIncStaffRole.Mechanic, ThemeParkIncStaffWorld.RestSearch ) );
 		Walk( economy, world, member, ThemeParkIncStaffWorld.Resting, 2000 );
 		Assert.AreNotEqual( ThemeParkIncStaffWorld.Resting, member.State, "the rest ends and he goes back to work" );
+	}
+
+	[TestMethod]
+	public void AGardenerRestsLikeTheOthersAndARestSavedMidwayGoesOnAlike()
+	{
+		// [BIN:TPI-EXE:0x5D2A60 gardener dispatch] the byte table 0x5D2B68 (00 01 02 03 ...) sends 2 to 0x629EF0 and 3 to 0x62A1C0, and 0x23 (above 0x20) to the common handler 0x6287A0, whose
+		// case is 0x62CA90: a tired gardener walks to a staff room and rests as the others do, and a save taken mid-rest continues
+		var rooms = new TestRooms();
+		var (economy, world, member) = Park( rooms, ThemeParkIncStaffRole.Gardener );
+		var settings = economy.TpiStaff!.Settings;
+		foreach ( var state in new[] { ThemeParkIncStaffWorld.ToRestArea, ThemeParkIncStaffWorld.Resting, ThemeParkIncStaffWorld.RestSearch } )
+			Assert.IsTrue( ThemeParkIncStaffMember.IsPortedState( ThemeParkIncStaffRole.Gardener, state ), $"state {state}" );
+		rooms.Areas.Add( Area( 40, 9 ) );
+		member.Energy = settings.RestLevel;
+		world.LookForWork( economy, settings, member, economy.Turn );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRestArea, 40), (member.State, member.RestArea), "the gardener's search (0x5D28C0) runs the rest gate" );
+		Walk( economy, world, member, ThemeParkIncStaffWorld.ToRestArea );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.Resting, 1), (member.State, rooms.Occupancy( 40 )) );
+		var turn = economy.Turn + 1000;
+		for ( var step = 0; step < 5; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( ThemeParkIncStaffWorld.Resting, member.State, "still resting when the save is taken" );
+
+		var json = ParkSaveFile.Serialize( economy );
+		StringAssert.Contains( json, "\"RestArea\": 40" );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ), "the save round-trips exactly" );
+		var copy = restored.TpiStaff!.Members.Single( other => other.Id == member.Id );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.Resting, 40), (copy.State, copy.RestArea) );
+		var restoredRooms = new TestRooms();
+		restoredRooms.Areas.AddRange( rooms.Areas );
+		restoredRooms.Customers.AddRange( rooms.Customers );
+		foreach ( var (thing, count) in rooms.Occupants )
+			restoredRooms.Occupants[thing] = count;
+		var restoredWorld = new ThemeParkIncStaffWorld( Row( restored ) ) { Rooms = restoredRooms };
+		for ( var step = 0; step < 10000 && (member.State == ThemeParkIncStaffWorld.Resting || copy.State == ThemeParkIncStaffWorld.Resting); step++ )
+		{
+			turn++;
+			world.Update( economy, member, turn );
+			restoredWorld.Update( restored, copy, turn );
+		}
+		Assert.AreNotEqual( ThemeParkIncStaffWorld.Resting, member.State, "the rest ends and he goes back to work" );
+		Assert.AreEqual( (100f, 0, 0), (member.Energy, rooms.Occupancy( 40 ), member.RestArea) );
+		for ( var step = 0; step < 20; step++ )
+		{
+			turn++;
+			world.Update( economy, member, turn );
+			restoredWorld.Update( restored, copy, turn );
+		}
+		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ), "both runs end the same" );
+		Assert.AreEqual( (0, 0), (restoredRooms.Occupancy( 40 ), copy.RestArea) );
+		CollectionAssert.AreEqual( rooms.Customers, restoredRooms.Customers );
+	}
+
+	[DataTestMethod]
+	[DataRow( ThemeParkIncStaffRole.Mechanic )]
+	[DataRow( ThemeParkIncStaffRole.Gardener )]
+	public void AMechanicOrAGardenerBesideAFullRoomWaitsInTheRestSearch( ThemeParkIncStaffRole role )
+	{
+		// [BIN:TPI-EXE:0x5DA280 mechanic dispatch] [BIN:TPI-EXE:0x5D2A60 gardener dispatch] 0x23 lies above both byte tables and goes to the common handler 0x6287A0, whose case is 0x62CA90: the
+		// role's dispatch runs the rest search, so a member beside a full room waits there, taking the closing draw every step, and walks in once there is room
+		var rooms = new TestRooms();
+		var (economy, world, member) = Park( rooms, role );
+		var settings = economy.TpiStaff!.Settings;
+		rooms.Areas.Add( Area( 40, 9 ) );
+		member.Energy = settings.RestLevel;
+		world.Search( economy, member, economy.Turn );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRestArea, 40), (member.State, member.RestArea) );
+		rooms.Occupants[40] = settings.StaffRoomCapacity;
+		Walk( economy, world, member, ThemeParkIncStaffWorld.ToRestArea );
+		Assert.AreEqual( ThemeParkIncStaffWorld.RestSearch, member.State );
+		var turn = economy.Turn + 1000;
+		for ( var step = 0; step < 3; step++ )
+		{
+			var before = economy.World.State;
+			world.Update( economy, member, ++turn );
+			Assert.AreEqual( ThemeParkIncStaffWorld.RestSearch, member.State, "he waits while the room is full" );
+			Assert.AreNotEqual( before, economy.World.State, "the rest search's closing draw (0x62CBCF)" );
+		}
+		rooms.Occupants[40] = 0;
+		world.Update( economy, member, ++turn );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRestArea, 40), (member.State, member.RestArea), "room again: the walk to it" );
 	}
 
 	[TestMethod]

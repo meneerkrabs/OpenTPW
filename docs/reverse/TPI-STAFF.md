@@ -508,9 +508,9 @@ at the addresses given and the entertainer's and guard's machines run natively i
   sources plus its residue is the live grid. The guests' needs phase reads the grid, so the entertainer cheers the cells around him and the guard's security row stays under the guests (Theme Park World's mechanism).
 - **Saves.** The member's thing keeps the state, the idle stamp, the performance start (`+0x5D4`), the speed words, the walk, the template and the cell effect (the cell word and the radius it went down with); the
   grid's residue is the environment residue the park save already has. A Theme Park Inc save made before the entertainers and the guards (no `TpiPerformers`) is refused with a start-again message before its assets
-  are checked (`ParkSaveFile.ValidateEdition`). Neither role claims an object, so the claim validators and `ValidateThemeParkIncJobKinds` refuse a claim by either (they accept mechanics and gardeners only).
+  are checked (`ParkSaveFile.ValidateEdition`). This is the standing policy for older Science saves (user decision 2026-11-21: refuse and document), not a fidelity necessity: such a save would be a valid park. Neither role claims an object, so the claim validators and `ValidateThemeParkIncJobKinds` refuse a claim by either (they accept mechanics and gardeners only).
 - **Sprites.** The entertainer's category 8 is the park's theme folder of `esprites.wad` (`Arabian`: Spr_ge and Spr_ph, `Science`: Spr_bu and Spr_sp, `Water`: Spr_fs and Spr_pg, `wIntro`: Spr_bu and Spr_sp);
-  the guard's category 0xB is `Generic\Guards` (Spr_gu). The variant is the candidate's sprite draw modulo the loaded count, as for the other roles. The staff renderer draws every role but the researcher.
+  the guard's category 0xB is `Generic\Guards` (Spr_gu). The entertainer keeps the candidate's sprite draw (variant = draw >> 2 modulo the loaded count, as for the handyman and the mechanic); the guard's start ignores it and takes his own: `0x5D3253` calls `0x6902F0(0xB)`, which draws the world once, `(R >> 2)` modulo the guards' loaded banks, right after the person start's base-speed draw. The staff renderer draws every role but the researcher.
 
 Not ported, with the reason:
 
@@ -521,12 +521,12 @@ Not ported, with the reason:
   the first aid's patient can be read from them without inventing a mapping. The release points are resolved (`KidRelease[0..1]` at `0xA02638`, from `levels/Standard.sam`, and the entrances `EntranceA/BPos` at
   `0xA025D0` and `0xA025D8`), the chase timer is `5 × 0x62E4C0` and the first aid's `5 ×` then 10, but the states stay unported. A guard in one of them is refused in a save, and no prank reaches the guards.
   `[EXT:tpi-capability-gates]` covers this.
-- **The guests' reaction to a performing entertainer** (`0x614D41..0x615414`: a performing entertainer in the guest's 3 × 3 cells turns the guest and writes its state through the jump table `0x615414`; the
+- **The guests' reaction to a performing entertainer** (in the guest's own update, so under `[EXT:tpi-twp-guest-rules]`; `0x614D41..0x615414`: a performing entertainer in the guest's 3 × 3 cells turns the guest and writes its state through the jump table `0x615414`; the
   amounts are unread) is not ported; only the row 0 cheer reaches the guests.
 - The effect's removal by the destructors (`0x4D4620`-like; staff cannot be fired or picked up yet), the dead routines `0x5D1BC0` and `0x5D18D0` (the "Ouch! You little git!" message; no reference anywhere in
   `Game.exe`), the duplicates `0x5D1C80` and `0x5D1CC0`, the voices' log lines, the advisor's message `0x3A` of the guard's constructor and the patrol area `0x6256A0` (WP15).
 - The shared 53-bit helpers (`SearchPeriod`, `IdleTerm`, `member.Step`) are used as for the gardener (see its known divergence); no new formula of the two roles has a float. No `rand()` call is reached
-  (the ranges `0x5D1960..0x5D1F60`, `0x5D3B40..0x5D3FB0`, `0x5D3230..0x5D3340` and `0x62CA10` hold none): the roles draw only the world generator.
+  (the ranges `0x5D1960..0x5D1F60`, `0x5D3B40..0x5D3FB0`, `0x5D3230..0x5D3340` and `0x62CA10` hold none): the roles draw only the world generator, including the guard's variant draw at his drop (the entertainer's drop draws none besides the person start's and his first search's).
 
 ## 12. Staff HQ obstacle slots, training and research (November 21, 2026)
 

@@ -82,7 +82,7 @@ public static class ParkSaveFile
 		public int? TpiGardens { get; init; }
 		/// <summary>
 		/// The Theme Park Inc performer rules the save's entertainers and guards follow (<see cref="ThemeParkIncPerformerRules"/>): written by a park with Theme Park Inc's staff. A Theme Park Inc save
-		/// without it was made before the entertainers and guards were ported (their cell effects were never on the grid) and is refused.
+		/// without it was made before the entertainers and guards were ported  and is refused.
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? TpiPerformers { get; init; }
@@ -1134,8 +1134,8 @@ public static class ParkSaveFile
 			// words), so they are not the plants the ported rules would have kept
 			if ( data.TpiStaff != null && data.TpiGardens != ThemeParkIncGardenRules )
 				throw new InvalidDataException( ThemeParkIncGardensMissing );
-			// a Theme Park Inc park save from before the entertainers and the guards is refused the same way: no entertainer's or guard's cell effect was ever on its grid, and its pool's sprite draws and
-			// world draws ran without theirs, so it is not the park the ported rules would have kept
+			// user decision 2026-11-21 (refuse and document): a Theme Park Inc park save from before the entertainers and the guards is refused like the older ones, not continued. It would be a valid park;
+			// the refusal is the standing policy for older Science saves, not a fidelity necessity
 			if ( data.TpiStaff != null && data.TpiPerformers != ThemeParkIncPerformerRules )
 				throw new InvalidDataException( ThemeParkIncPerformersMissing );
 			if ( data.TpiStaff != null && !ParkEconomy.IsValidThemeParkIncObjectList( data.Objects.Select( item => item.Id ), data.TpiObjectList ) )

@@ -108,7 +108,7 @@ public class ThemeParkIncHudStaffTests
 			var hud = BuildHud( Strings(), staff );
 			var before = staff.Slots.ToArray();
 			hud.ActivateStaffRow( 0 );
-			CollectionAssert.DoesNotContain( hud.Messages.ToArray(), SupplementaryStrings.Get( OpenTpwText.TpiStaffRoleRefused, "English" ) );
+			Assert.AreEqual( 0, hud.Messages.Count( message => message.Contains( "cannot be hired" ) ), "no row is refused for its role" );
 			CollectionAssert.AreEqual( before, staff.Slots.ToArray(), "a candidate stays in the pool until a drop" );
 		}
 	}

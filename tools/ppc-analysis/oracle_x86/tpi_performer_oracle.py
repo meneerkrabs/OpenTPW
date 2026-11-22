@@ -1,7 +1,7 @@
 """Theme Park Inc's entertainer and guard run in the x86 oracle sandbox and compared with the C# port's reading (ThemeParkIncStaffWorld.Performers, ParkEnvironment.ApplyRadius).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified Theme Park Inc no-CD Game.exe (OPENTPW_TPI_EXE, SHA-256 pinned) are needed, nothing here is shipped.
-Four routines run natively:
+Five routines run natively:
 - the pre-updates 0x5D1960 (entertainer, row 0) and 0x5D3B40 (guard, row 3) over a cell manager with the region grid (0x1C1104, ten bytes a cell) and the row table (0x1E9104, twelve bytes a row):
   0x609E20 (the stored cell word +0xE4), the lerp 0x62C900 and the region writer 0x5D7770 with its wrappers 0x5D7500 and 0x5D7530 run for real, the common step 0x628050 is stubbed and recorded.
   The grid's words and +0xE4 are compared with ParkEnvironment.ApplyRadius and ThemeParkIncStaffWorld.MoveEffect;
@@ -9,6 +9,8 @@ Four routines run natively:
   0x60B700 and the setter 0x5D1D30 are stubbed and recorded; the lerp runs for real. The draws taken, the finder's arguments and the setter's states are compared with SearchEntertainer;
 - the entertainer's setter 0x5D1D30 (the draw's remainder by the bank's performance count, the theme record's index, the variant byte): the template queued, the state and the stamp are compared
   with PerformanceTemplateOf;
+- the constructors 0x5D1380 and 0x5D3140/0x5D3230 (the base constructor, list, sprite, search and advisor calls stubbed): the world draws taken (the guard's 0x6902F0 variant draw, (R >> 2) mod the loaded banks; the
+  entertainer draws none) and the category and variant words;
 - the guard's decision 0x5D3C10: the gate, the destination and the setter 0x5D3E70 are stubbed and recorded and compared with DecideGuard.
 The pre-updates and the search have no x87; `--golden` prints native cases for the C# tests instead of the mismatch count.
 
@@ -32,9 +34,9 @@ MAX_EXPERIENCE, REST_RANGE = 0xA02260, {'entertainer': (0xA022EC, 0xA022F0), 'gu
 # the thunks the routines call through
 COMMON, GATE, TIRED, DRAW, FINDER_HEAD, FINDER, PATROL, THEME, SPAWN, SETTER = 0x40193D, 0x40628A, 0x40B25D, 0x40A92F, 0x40144C, 0x402734, 0x40BAA0, 0x40B46A, 0x406A5F, 0x40A768
 COUNT, CAREER, THEME_RECORD, BASE_SETTER, TEMPLATE, GUARD_SETTER = 0x409494, 0x40B528, 0x4098F4, 0x407A9F, 0x406A37, 0x406807
-REAL_THUNKS = (0x4081C0, 0x40B924, 0x407077, 0x4070DB, 0x404BE2)
+REAL_THUNKS = (0x4081C0, 0x40B924, 0x407077, 0x4070DB, 0x404BE2, 0x402680, 0x40389B, 0x403E3B)
 ALLOWED = [(0x5D1960, 0x5D19FA), (0x5D1A30, 0x5D1B68), (0x5D1D30, 0x5D1DDF), (0x5D3B40, 0x5D3BDA), (0x5D3C10, 0x5D3C4B), (0x609E20, 0x609E49), (0x62C900, 0x62C950),
-           (0x5D7500, 0x5D7517), (0x5D7530, 0x5D7547), (0x5D7770, 0x5D78F4)] + [(thunk, thunk + 5) for thunk in REAL_THUNKS]
+           (0x5D7500, 0x5D7517), (0x5D7530, 0x5D7547), (0x5D7770, 0x5D78F4), (0x5D1380, 0x5D14A3), (0x5D3140, 0x5D31CE), (0x5D3230, 0x5D3336), (0x690330 - 0x40, 0x690315), (0x629860, 0x629863)] + [(thunk, thunk + 5) for thunk in REAL_THUNKS]
 
 
 def signed(value: int) -> int:
@@ -151,13 +153,14 @@ def main(cases: int, golden: bool) -> int:
         return 0
 
     stubs = {
-        0x403E45: popper(lambda sb: 0, 0), COMMON: popper(record('common'), 0), GATE: popper(lambda sb: state['gate'], 0), TIRED: popper(lambda sb: state['tired'], 0), DRAW: popper(draw, 0),
+        0x403E45: popper(lambda sb: 0, 0), 0x401D66: popper(record('base'), 24), 0x405704: popper(lambda sb: 0, 4), 0x401A9B: popper(lambda sb: 0, 4), 0x40B028: popper(lambda sb: 0, 12),
+        0x402BC1: popper(lambda sb: 0, 4), 0x8934A0: popper(lambda sb: 0, 0), 0x4078E7: popper(lambda sb: 0x1000, 4), 0x40795F: popper(lambda sb: 0, 0), 0x40ACEA: popper(lambda sb: 0x2000, 8), 0x401960: popper(lambda sb: 0, 0), 0x402829: popper(record('search'), 0), COMMON: popper(record('common'), 0), GATE: popper(lambda sb: state['gate'], 0), TIRED: popper(lambda sb: state['tired'], 0), DRAW: popper(draw, 0),
         FINDER_HEAD: popper(lambda sb: 0x1234, 0), FINDER: popper(finder, 12), PATROL: popper(lambda sb: state['patrol'], 0), THEME: popper(lambda sb: state['theme_value'], 0),
         SPAWN: popper(record('spawn'), 12), SETTER: popper(setter, 4), GUARD_SETTER: popper(setter, 4), COUNT: popper(lambda sb: state['count'], 0),
         CAREER: popper(lambda sb: state['career'], 0), THEME_RECORD: popper(lambda sb: state['theme_record'], 4), BASE_SETTER: popper(setter, 4), TEMPLATE: popper(template, 4)}
     sandbox = Sandbox(image, ALLOWED, stubs=stubs, budget=3_000_000)
     rng = random.Random(21)
-    bad = {'move': 0, 'search': 0, 'setter': 0, 'guard': 0}
+    bad = {'move': 0, 'search': 0, 'setter': 0, 'guard': 0, 'ctor': 0}
     lines = []
     seen = {'moved': 0, 'found': 0, 'idle': 0, 'walk': 0, 'performing': 0, 'spawn': 0, 'gate': 0}
 
@@ -266,6 +269,33 @@ def main(cases: int, golden: bool) -> int:
             print(f'setter(target {target:#x}, count {count}, theme {theme}, variant {variant}, draw {draws[0]}): native {native}, port {port}')
         elif golden and index < 8:
             lines.append(f'setter target {target:#x} count {count} theme {theme} variant {variant} draw {draws[0]} -> {native}')
+        # ---- the constructors: the world draws they take
+        for role, entry in (('entertainer', 0x5D1380), ('guard', 0x5D3140)):
+            sandbox.reset()
+            turn = rng.randrange(0, 1000)
+            prepare_world(turn)
+            world_object = sandbox.read(WORLD_POINTER, 'I')
+            sandbox.write(0xAA1484, 'I', world_object)
+            count = rng.choice([1, 2, 3])
+            sandbox.write(0x9D7008 + 12 * 0xB, 'I', count)
+            sandbox.write(MAX_EXPERIENCE, 'i', 100000)
+            for number in REST_RANGE.values():
+                sandbox.write(number[0], 'i', 2)
+                sandbox.write(number[1], 'i', 5)
+            cells = sandbox.object(GRID + 0x28000 + 0x200)
+            sandbox.write(CELLS_POINTER, 'I', cells)
+            thing = sandbox.object(0x700, {0x5: ('B', 3), 0x7: ('B', 5), 0x210: ('i', 0)})
+            state.update(draws=[rng.randrange(0, 1 << 32) for _ in range(6)], taken=0, calls=[], gate=1, patrol=0, setters=[], tired=0, found=0)
+            sandbox.call(entry, args=(0, 0, 0, 0, 0, 0), this=thing)
+            if role == 'guard':
+                variant = sandbox.read(thing + 0x30, 'I')
+                expected_draws = 1
+                ok = state['taken'] == expected_draws and variant == (state['draws'][0] >> 2) % count and sandbox.read(thing + 0x34, 'I') == 0xB
+            else:
+                ok = state['taken'] == 0 and sandbox.read(thing + 0x34, 'I') == 8
+            if not ok:
+                bad['ctor'] += 1
+                print(f'{role} constructor: draws {state["taken"]}, variant {sandbox.read(thing + 0x30, "I")}')
         # ---- the guard's decision
         sandbox.reset()
         turn = rng.randrange(0, 1000)

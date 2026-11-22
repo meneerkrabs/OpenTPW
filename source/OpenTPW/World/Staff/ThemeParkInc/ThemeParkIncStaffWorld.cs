@@ -71,7 +71,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		_ => throw new ArgumentOutOfRangeException( nameof( template ), $"Theme Park Inc sprite template {template} is not ported." )
 	};
 
-	/// <summary>The bank a member is drawn from: the candidate's sprite draw, (R >> 2) mod the loaded banks of the role's category (9 handymen, 0xA mechanics), kept as a byte.</summary>
+	/// <summary>The bank a member is drawn from: the candidate's sprite draw (a guard's own constructor draw), (R >> 2) mod the loaded banks of the role's category (9 handymen, 0xA mechanics), kept as a byte.</summary>
 	// [BIN:TPI-EXE:0x6902F0 sprite variant] (draw >> 2) divided (unsigned) by the category's loaded count (0x9D7008 + 12 × category), the remainder; the candidate keeps its low byte (+0x10) and the
 	// member its variant word +0x30, which 0x5D1000 hands to the sprite; the count is the banks the level loaded from Generic\Handymen (one, Spr_ha, in the retail data)
 	// [BIN:TPI-EXE:0x5D9BB4 mechanic sprite] the mechanic's constructor makes its source with the category 0xA and the variant byte it was given (+0x30); esprites.wad holds the mechanics' bank
@@ -349,6 +349,10 @@ public sealed partial class ThemeParkIncStaffWorld
 		var settings = staff.Settings;
 		member.ThingId = things?.Allocate( ThingModelOf( member.Role ) ) ?? NextOwnThingId( staff );
 		member.BaseSpeed = GuestSpeed.BaseSpeeds[(int)(economy.World.NextWord() % 5)];
+		// [BIN:TPI-EXE:0x5D3253 guard variant] the guard's start ignores the byte the drop hands it and takes its own: 0x6902F0(0xB) draws the world once ((R >> 2) mod the guards' loaded banks), right after the
+		// person start's base-speed draw; the entertainer's constructor keeps the candidate's byte and draws nothing
+		if ( member.Role == ThemeParkIncStaffRole.Guard )
+			member.SpriteDraw = economy.World.NextWord();
 		member.SpeedBonus = 0;
 		member.Boost = 0;
 		member.SmoothedSpeed = 0;

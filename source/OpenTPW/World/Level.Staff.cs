@@ -231,8 +231,6 @@ public partial class Level
 			return "unavailable";
 		if ( slot < 0 || slot >= ThemeParkIncStaff.PoolSlots || staff.Slots[slot] is not { } candidate )
 			return "no candidate";
-		if ( !ThemeParkIncStaffMember.IsPlacedRole( candidate.Role ) )
-			return "role not ported";
 		if ( TpiStaffWorld == null )
 			return "unavailable";
 		CancelTpiHire();

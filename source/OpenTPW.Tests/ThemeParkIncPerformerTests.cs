@@ -61,6 +61,9 @@ public class ThemeParkIncPerformerTests
 	}
 
 	/// <summary>Hires the first pooled member of <paramref name="role"/> and drops him on <paramref name="cell"/>.</summary>
+	/// <summary>The world generator's state when the last <see cref="Hire"/> began its drop.</summary>
+	private static uint stateBeforeDrop;
+
 	private static ThemeParkIncStaffMember Hire( ParkEconomy economy, ThemeParkIncStaffWorld world, ThemeParkIncStaffRole role, (int X, int Y) cell, int? experience = null )
 	{
 		var staff = economy.TpiStaff!;
@@ -71,6 +74,7 @@ public class ThemeParkIncPerformerTests
 		var member = staff.EndHire( slot, placed: true )!;
 		if ( experience is { } value )
 			member.Experience = value;
+		stateBeforeDrop = economy.World.State;
 		world.Construct( economy, member, cell, null );
 		return member;
 	}
@@ -233,11 +237,9 @@ public class ThemeParkIncPerformerTests
 			Assert.AreEqual( ThemeParkIncStaffWorld.Performing, member.State, $"performing at {turn - started} of {duration}" );
 		}
 		Assert.IsFalse( world.Voices.Any( voice => voice.Event == ThemeParkIncStaffWorld.PerformanceEndSound ) );
-		var states = new HashSet<int>();
 		for ( var step = 0; step < 6 && member.State == ThemeParkIncStaffWorld.Performing && !world.Voices.Any( voice => voice.Event == ThemeParkIncStaffWorld.PerformanceEndSound ); step++ )
 			world.Update( economy, member, ++turn );
 		Assert.IsTrue( world.Voices.Any( voice => voice.Event == ThemeParkIncStaffWorld.PerformanceEndSound ), "the performance's end plays sound 0x87" );
-		_ = states;
 	}
 
 	[TestMethod]
@@ -280,12 +282,38 @@ public class ThemeParkIncPerformerTests
 		var member = Hire( economy, world, ThemeParkIncStaffRole.Entertainer, (3, 5), experience: 0 );
 		member.Energy = 0;
 		member.Happiness = 100;
-		var state = economy.World.State;
-		var probe = new WorldRng( state );
-		// the gate (0x62BBA0) takes its draw for the rest branch and returns; a tired one never reaches the % 3 draw
+		var probe = new WorldRng( economy.World.State );
+		// the gate (0x62BBA0) of a tired member draws for the rest branch (a draw whose low nibble 0 costs happiness) and sets him idle; the search returns, so the % 3 test never draws
+		member.State = ThemeParkIncStaffWorld.Walking;
 		world.Search( economy, member, 7 );
+		_ = probe.NextWord();
+		Assert.AreEqual( probe.State, economy.World.State, "one draw, the gate's, and none for the % 3 test" );
 		Assert.AreNotEqual( ThemeParkIncStaffWorld.Performing, member.State );
-		_ = probe;
+	}
+
+	[TestMethod]
+	public void AGuardDropDrawsTheWorldForHisVariantAndAnEntertainerDoesNot()
+	{
+		// [BIN:TPI-EXE:0x5D3253 guard variant] 0x6902F0(0xB) draws the world once after the person start's base-speed draw; the entertainer's constructor keeps the candidate's byte
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		var guard = Hire( economy, world, ThemeParkIncStaffRole.Guard, (3, 5), experience: 0 );
+		var probe = new WorldRng( stateBeforeDrop );
+		_ = probe.NextWord();
+		var variantDraw = probe.NextWord();
+		Assert.AreEqual( variantDraw, guard.SpriteDraw, "the guard's variant comes from his own draw" );
+		_ = probe.NextWord();
+		// base speed, variant, the gate's draw (happiness above 97); the decision at turn 0 idles without a patrol draw
+		Assert.AreEqual( probe.State, economy.World.State, "three draws in a guard's drop" );
+
+		var entertainer = Hire( economy, world, ThemeParkIncStaffRole.Entertainer, (6, 5), experience: 0 );
+		var candidateDraw = entertainer.SpriteDraw;
+		var after = new WorldRng( stateBeforeDrop );
+		for ( var draw = 0; draw < 4; draw++ )
+			_ = after.NextWord();
+		// base speed, the gate's draw, the % 3 draw and the setter's draw (no guests: the finder is not asked)
+		Assert.AreEqual( candidateDraw, entertainer.SpriteDraw );
+		Assert.AreEqual( after.State, economy.World.State, "four draws in an entertainer's drop, none for his variant" );
 	}
 
 	[TestMethod]

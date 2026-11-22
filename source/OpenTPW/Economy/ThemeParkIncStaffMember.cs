@@ -22,7 +22,8 @@ public sealed class ThemeParkIncStaffMember
 	public int Id { get; }
 	public ThemeParkIncStaffRole Role { get; }
 	public int NameIndex { get; }
-	public uint SpriteDraw { get; }
+	/// <summary>The sprite draw the variant comes from; a guard's constructor replaces the candidate's with its own world draw (0x6902F0).</summary>
+	public uint SpriteDraw { get; internal set; }
 	/// <summary><c>+0x210</c>.</summary>
 	public int Experience { get; internal set; }
 	/// <summary><c>mSalary</c> (+0x214), the wage paid every month.</summary>

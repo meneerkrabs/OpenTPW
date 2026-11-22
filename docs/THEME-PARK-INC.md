@@ -114,7 +114,21 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   `0x678B00` (x-major bytes, map border skipped). Paths, queues and objects are refused on unowned land, as the cell validator `0x67E320` refuses them; no fence is
   laid and the land is not drawn darker (Theme Park Inc's boundary drawing is not read). `Level.ApplyThemeParkIncExtent` grows the land by `extents/extent.NNN` for the
   mission controller, and the build list applies the catalogue's gate `0x57CA20`: the four special rides are hidden in every mission, and the mission number (0 until the career
-  runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused. The net worth counts the
+  runs) gates the thinking spaces and training rooms. In a park whose lab a park file brought (the Science prebuilt), the gate also hides every type whose object control is not
+  researched (`0x57CB66`): the Science build list of mission 0 offers no type an open research project still holds (1105, whose project is open, the info kiosk 1200, the security
+  camera 1421 and the others the prebuilt's controls leave unresearched). Such a type is unlocked by research: from mission 1 the facilities tab lists the research room (1404),
+  a hired researcher works in it, and a finished project marks its type researched (message 0x11), which lists it; a level project then follows for its next upgrade level.
+- **Facilities** (`levels/<zone>/facilities`, Science spells it `Facilities`): the object and economy catalogues read the folder with its `facilities.sam`, which gives every
+  facility `Info.WhichUIType` 5. Theme Park Inc's build panel lists type 5 in its fifth tab (`0x57A482`: the buttons `0x32DF`, `0x32DE`, `0x32DD`, `0x32E0` and `0x32E1` call the
+  list builder for the tabs 0, 1, 2, 3 and 5), so the text HUD's build window has a fifth button, Facilities. Each zone holds eight: two toilets, a litter bin, an info kiosk, a security
+  camera, a staff room, a research room and a training room (Science 3417, 1439, 1422, 1200, 1421, 1400, 1404, 1440; Water 2418, 2417, 2411, 2205, 2410, 2420, 2405, 2430; Arabian 3417,
+  3416, 3401, 3204, 3413, 3418, 3420, 3440). Science's female toilet reuses Arabian's id 3417; each zone has its own catalogue, so the ids never meet. A type with
+  `UsageInfo.SingleInstance` 1 (the research and training rooms) is refused at the list while one stands in the park, as the row activation `0x57CF60` refuses it with the sound
+  0x1D; the text HUD says why. The staff rooms are the rest areas (`UsageInfo.ChillsYouOut`, below). The toilets are placed and used, but a use wears nothing and the bins'
+  fill is not kept (`[EXT:tpi-no-maintenance-wear]`); a new litter bin's script takes `Standard.sam`'s construction words (`VAR_CAPACITY` 20, `VAR_DIRTY` 15, `VAR_FIRERISK` 5). The
+  science bin a Theme Park World park can borrow through the shipped `tpi-rides` mod (as a `space` feature with its own id 40003) is a different object in a different world: no Theme Park
+  Inc zone ever holds a mod's or an extension's object (`objects.json` names one of Theme Park World's four themes), so neither is listed twice. Not ported: the info kiosk's
+  `UsageInfo.IsInfoDesk` and the camera's `ConstrainCamera`, which nothing reads yet, and the row's grey draw (`0x57A399`). The continuation save keeps the land as a bit map, and a save written before it is refused. The net worth counts the
   owned squares only, by the cell-point rule `ParkEconomy.CellPoints` shares with Theme Park World. Theme Park Inc's own routine `0x5AFFB0` (thunk `0x404F34`) is the
   same: it skips a square whose word `+0x0E` has bit 0x40 (`0x67ECA0` with 0x40, `0x5B0017`), scores the types with the same predicates (`0x67F590`..`0x67F890`, the +10
   test `0x67F640` always false), skips an object in state 4 (`0x5E3970`) and adds the upgrade costs scaled by the repair byte. Only the layouts differ: 72-byte squares, the object record (upgrade costs at
@@ -146,8 +160,8 @@ for the separate `.tpilayout` format, exact state boundaries and verification li
 
 **Science continuation.** The desktop pause menu can [save and continue a solo Science park](PARK-SAVES.md#experimental-science-continuation-on-desktop) in OpenTPW's own format. This is separate from layout checkpoints and does not resume the original Science prebuilt's simulation state.
 
-**What it leaves out.** No staff apart from cleaners and researchers, no research or training in play (the research lab a park file brings and the training are ported, but the research and training
-rooms cannot be built: the Facilities folder is not in the slice's catalogue), no challenge whose value OpenTPW cannot measure, and no obstacle mission that can be completed (the
+**What it leaves out.** No staff apart from cleaners and researchers (research and training run in play once the career reaches the missions that list the research room, 1, and the
+training room, 2 or 1 after the obstacle research), no challenge whose value OpenTPW cannot measure, and no obstacle mission that can be completed (the
 money, the career and the mission controller run, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
@@ -258,11 +272,13 @@ him (the drop's cell tests and its redirect of a drop on an object to the object
 idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, shown as notes), and the
 guests drop litter by Theme Park Inc's litter step (`0x614B71`). A Researcher is hired and placed the same way and runs his own states (0 and 1, 25 to his research room, 24 researching). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen walk with Theme Park World's
 walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleaning and the litter bins' fill are unported, so the handymen sweep litter only
-(`[EXT:tpi-no-maintenance-wear]`). No Theme Park Inc object is a rest area, so a tired cleaner finds none, as in the original; strikes in the park, the wage negotiation, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11). Training (states 7 and 8: the walk to the training room, 300 updates, the reward, the cancel when the room goes), the staff HQ's twenty obstacle slots and the research lab of the Science prebuilt, with its panel as text HUD rows, are ported (docs/reverse/TPI-STAFF.md §12), but in play no training can start and no researcher can research yet: the research lab (1404) and the training room (1440) are Facilities, whose folder the slice's catalogue does not load, and the prebuilt Science park has neither room, so neither can be built. A researcher hired now finds no room and idles.
+(`[EXT:tpi-no-maintenance-wear]`). The staff rooms (Science 1400, Water 2420, Arabian 3418) are the rest areas: a tired member walks to the nearest one he reaches, rests until his energy is full
+and recovers his happiness and motivation, waits beside a full room, slacks there when his energy runs low near one, and goes there when his motivation drops (docs/reverse/TPI-STAFF.md §13).
+Strikes in the park, the wage negotiation, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11). Training (states 7 and 8: the walk to the training room, 300 updates, the reward, the cancel when the room goes), the staff HQ's twenty obstacle slots and the research lab of the Science prebuilt, with its panel as text HUD rows, are ported (docs/reverse/TPI-STAFF.md §12). The research room (1404) and the training room (1440) are facilities: the build list offers the research room from mission 1 and the training room from mission 2 (or mission 1 once the obstacle research is done), so a researcher hired in mission 0 finds no room and idles.
 The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`) and animate as their states ask (stand, walk, sweep).
 
 **What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
-upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below); an obstacle mission's completion, which needs the research and the staff HQ's slots, neither of which can happen while no staff room can be built ([below](#theme-park-inc-missions)); the shares game; Theme Park Inc's
+upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below); an obstacle mission whose staff requirements name a role that cannot be hired ([below](#theme-park-inc-missions)); the shares game; Theme Park Inc's
 weather presentation's sky; the advisor's other messages; the native park save formats (the player file `.GMS` is written on desktop). Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
 
@@ -314,8 +330,8 @@ countdown does (`0x5D0369`).
 
 **Few missions complete in play yet.** A mission without an obstacle completes through Proceed: at once, or at the end of the camera flight to its
 `ObstacleOpened` or `CutsceneObject` thing (message 0x29). An obstacle mission's Proceed posts 0x24 (the staff HQ rebuilds its slots, then the controller's flight opens the obstacle); its
-requirements also need the research (message 0x23, the lab's Park Expansion project) and the staff HQ's obstacle slots filled by trained staff. Both are ported, but neither can happen in play yet: the
-research and training rooms cannot be built (the Facilities folder is not in the slice's catalogue), so no project advances and nobody trains, and an obstacle mission's requirements stay unmet. The cheats extension's Skip Mission still runs the completion tick. What does
+requirements also need the research (message 0x23, the lab's Park Expansion project) and the staff HQ's obstacle slots filled by trained staff. Both are ported, and the research and training rooms are now
+built from the facilities tab, so a project advances and staff train in play; a requirement for a role the slice does not hire (only cleaners and researchers) stays unmet. The cheats extension's Skip Mission still runs the completion tick. What does
 not run yet besides: the challenges window (the text HUD's challenge panel stands in for its tab) and the tag tube that would file the "Objective Complete!" letter; the
 letter itself is composed (`ThemeParkIncObjectiveLetter`) but waits in `ParkEconomy.TpiObjectiveLetters`.
 

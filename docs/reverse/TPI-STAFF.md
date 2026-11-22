@@ -295,9 +295,9 @@ smoothing (`[EXT:tpi-twp-guest-rules]`, user-approved 2026-11-21 for the staff's
 guests' bin search, bin walk and bin arrival; the loo finder `0x5D6230` and the bin finder `0x5D5F10` find nothing to clean because Theme Park Inc's toilet wear and the bins' fill
 are unported (`[EXT:tpi-no-maintenance-wear]`, reworded: the handymen ship without loo and bin cleaning); the other roles are refused at the hire (`[EXT:tpi-capability-gates]`).
 
-The rest-area finder `0x62BA20` (in the gate, the slack test `0x62D650` on entering state 1 and the low-motivation check of `0x62D810`) answers none, exactly: its only test of a
-thing is the flag `+0x42` bit 2 (and `+0x7C` nonzero), which the thing builder sets only from the type record's `+0x1B0` (`UsageInfo.ChillsYouOut`, `0x5DB6E2`), and no object of
-Science, Water or Arabian sets that key (`ThemeParkIncHandymanTests.NoThemeParkIncObjectIsARestArea`). The walk to a rest area is therefore unreachable and not ported (WP4).
+The rest-area finder `0x62BA20` (in the gate, the slack test `0x62D650` on entering state 1 and the low-motivation check of `0x62D810`) tests a thing for the flag `+0x42` bit 2 (and `+0x7C`
+nonzero), which the thing builder sets only from the type record's `+0x1B0` (`UsageInfo.ChillsYouOut`, `0x5DB6E2`). Until the facilities were loaded no object of the catalogue set the key and
+the finder answered none; the staff rooms of the facilities folders set it, and the rest areas are ported in §13.
 
 Not read or not ported in this package (inert, no stand-in): strikes in the park (WP5: no role's strike flag is set); the wage negotiation (WP6); the drop fallback's scan
 of a 180 or 270 degree object covers the rectangle `0x5E9320` computes, which is not the turned footprint (ported as the executable has it); the thoughts and voices' presentation (`0x638960`, `0x60BE90`:
@@ -400,3 +400,43 @@ World's effort split:
   (user decision, 2026-11-21).
 - Not ported: the lab fill of a new zone (`0x61C9E0`, `rand() % 2 + 1` per project at `0x61FD50`): it waits for the user's decision at the zone package. Also not ported: the category efforts
   (computed, read by no tick), the lab-active messages 5/6 (advisor), the "project suspended" texts 300–304, and the per-object staff requirement lists of §12.1. Ride projects need a mechanic consultant, and mechanics are not hired in the slice yet.
+
+## 13. Rest areas (November 22, 2026)
+
+The facilities folders (docs/THEME-PARK-INC.md, "Facilities") bring one staff room per zone (Science 1400, Water 2420, Arabian 3418) with `UsageInfo.ChillsYouOut` 1. The thing builder sets the thing
+word `+0x42` bit 2 from the type record's `+0x1B0` (`0x5DB6E2`), so the staff rooms are the only rest areas (`ThemeParkIncRestTests.TheStaffRoomsAreTheOnlyRestAreasOfTheThreeZones`).
+`ThemeParkIncStaffWorld.Rest.cs` ports the rest for every role: the handyman's table (`0x5D58C4`) and the researcher's (`0x61B774`) send states 2 and 3 to `0x629EF0` and `0x62A1C0`, and the common
+handler (`0x6287A0`) sends 0x23 to `0x62CA90`. The member's rest area (`+0x248`) is saved with him (`RestArea`). Read in this package (the WP4 notes, `research/tpi-staff/wp4-rest.md`, verified and
+corrected):
+
+- **Finder** `0x62BA20`: the attraction list (`park+0x1EAB88`, next `+0x14`, newest first) for a thing with `+0x42 & 2` and `0x5E3C20` answering 0, which is the open word `mCanLoad` (`+0x7C`)
+  nonzero: the constructor sets it to 1 (`0x5DB5FB`) and closes only rides, shops and sideshows, so a built staff room is open. Key `dx² + dy²` of the absolute column and row differences of the
+  cell words (bytes `+5` and `+7`), unsigned `jae` against the best so far (`0xFFFFFFFF` to start), so the first of equal keys stays. No kind, capacity or route test. The thing being destroyed is off
+  the list while its messages go out.
+- **Tired gate** `0x62BCA9` (energy byte at most `RestLevel`): the finder, then the staff route to the centre of the area's entrance cell (`+0x46`, `0x62EAC0`). A route sets `+0x248` and state 2
+  and the gate answers 1, with no draw. No area or a refused route: "Staff member couldn't find a rest area", a world draw whose low nibble 0 costs `HappyHitCosNoRestArea`, and a working member (display 2)
+  is set to 0.
+- **Slack** `0x62D650`, run by the state setter's state 1 (`0x62822F`): an energy byte below `StaffSlackingEnergy` (signed), an area within `MinDistanceForSlacking` cells squared (unsigned), and a
+  route set `+0x248` and the setter stores state 2 instead of 1 (`0x62823C`). Motivation plays no part.
+- **Low motivation** `0x62D866`, the tail of every look for work: a motivation byte below `MotivationPercentToStrike / 2` (toward zero) with display state 2 or 7 walks to the nearest reachable area
+  (state 2), else stops (state 0). No draw.
+- **State 2** `0x629EF0` (entered with template 1): arrived, the area's script variable 0 against `StaffRoomCapacity` (signed). Full: the route back to its entrance (its result dropped), `+0x1A0 = 0`, state
+  0x23. Room: variable 0 + 1, the area's customer counts (`0x5E5DA0`: history `+0x110` and `+0x1278`, OpenTPW's customer ring and month count), state 3 and message 0xF. Stuck: "Staff member couldn't get to
+  his rest area", happiness − `HappyHitCosRoomInaccessible` (`0xA0225C`, not the no-rest-area constant), state 0. While walking: nothing, no moving step.
+- **State 3** `0x62A1C0` (entered by `0x62858A`: the thought stops and `0x5D1050` deletes the sprite source, so a resting member is not drawn): `ThemeParkIncStaffMember.Rest` (§6), and at an
+  energy byte of exactly 100 the rest end and a look for work.
+- **Rest end** `0x62C230`: message 0xF, variable 0 − 1 (no floor), `+0x248 = 0`, the sprite source made again in template 3, state 0.
+- **State 0x23** `0x62CA90` (entered like state 0; its display state is 2): `+0x248` = the finder's area; none sets 0 with no draw. With room in it: the finder again and a route set `+0x248` and
+  state 2 ("Staff: couldn't get to nearest rest area..." otherwise). Full: the walk step, and when it answers arrived or stuck two world draws give the fractions of the member's own cell (column, then
+  row) for the staff route. Then every branch, the successful one included, takes a world draw whose low nibble 0 costs `HappyHitCosNoRestArea`. The state stays 0x23 while the room is full, so the
+  member waits beside it.
+- **Removal** `0x626638` (message 0xA, every member in ascending handle order): a member resting in the removed area gets the rest end and then the nearest other area he reaches as `+0x248` (he walks
+  there in state 0); one walking to it gets `+0x248 = 0` and state 0; any other state nothing.
+- **Message 0xF** (`0x93E86C`, the member and 1 on arrival, 0 at the end) has one listener, `0x63A1E0` → `0x4F8A50` → `0x58DA50`/`0x58DB30`, which adds and removes the member in an interface list:
+  presentation, not ported.
+- The global words, read from the key table at `0x5994B4` (stride 0x3C): `RestLevel 0xA02254`, `HappyHitCosNoRestArea 0xA02258`, `HappyHitCosRoomInaccessible 0xA0225C`, the recuperation rates
+  `0xA02270`..`0xA0227C`, `StaffSlackingEnergy 0xA02294`, `MinDistanceForSlacking 0xA02298`, `StaffRoomCapacity 0xA0229C` (retail `RestLevel` 1, `StaffSlackingEnergy` 50, `MinDistanceForSlacking` 10,
+  `StaffRoomCapacity` 10).
+
+Open: the rest formula `ThemeParkIncStaffMember.Rest` keeps the x86 oracle's reading at the control word 0x27F (53-bit significand, `tpi_staff_formula_oracle.py`), while §12.3 reads the game thread at 0x7F
+(24-bit) after DDSCL_FPUSETUP; the moving step and the daily gain share that question. The removal's walk in state 0 and the debug notices (`0x4D15A0`, `0x4D15C0`) are as read; the notices are not shown.

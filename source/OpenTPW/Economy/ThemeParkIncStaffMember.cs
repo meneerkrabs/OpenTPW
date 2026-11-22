@@ -245,7 +245,7 @@ public sealed class ThemeParkIncStaffMember
 	/// <summary>The member's thing id in the park's thing pool (the handle the litter claim and the message order use); 0 until it is placed.</summary>
 	public int ThingId { get; internal set; }
 	/// <summary>The state word (+0x1B4): 0 idle, 1 walking (patrol), a handyman's 0x0F to litter and 0x10 sweeping, 7 to the training room and 8 training, a mechanic's 21 to the ride and 22
-	/// repairing, a researcher's 24 researching and 25 to his room (ThemeParkIncStaffWorld).</summary>
+	/// repairing (and his training's 7 and 8), a researcher's 24 researching and 25 to his room (ThemeParkIncStaffWorld).</summary>
 	public int State { get; internal set; }
 	/// <summary>The idle stamp (+0x23C): the turn an idle spell after a walk began, else 0.</summary>
 	public long IdleStamp { get; internal set; }
@@ -312,14 +312,14 @@ public sealed class ThemeParkIncStaffMember
 		or ThemeParkIncStaffRole.Gardener;
 
 	/// <summary>
-	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10 and a gardener's 0, 1, 0x1F and 0x20, each with the training states 7, 8, 0x25 and 0x26;
-	/// a mechanic's 0, 1, 21 and 22; a researcher's 0, 1, 24 and 25.
+	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10, a mechanic's 0, 1, 21 and 22 and a gardener's 0, 1, 0x1F and 0x20, each with the training
+	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25.
 	/// </summary>
 	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
 		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 || IsTrainingState( state ),
+		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Gardener => state is 0 or 1 or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering || IsTrainingState( state ),
-		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing,
 		ThemeParkIncStaffRole.Researcher => state is 0 or 1 or ThemeParkIncResearch.Researching or ThemeParkIncStaffWorld.ToResearchRoom,
 		_ => false
 	};

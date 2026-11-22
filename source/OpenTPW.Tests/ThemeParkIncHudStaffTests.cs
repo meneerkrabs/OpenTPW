@@ -105,7 +105,7 @@ public class ThemeParkIncHudStaffTests
 		var hud = BuildHud( Strings(), staff );
 		var before = staff.Slots.ToArray();
 		hud.ActivateStaffRow( 0 );
-		CollectionAssert.Contains( hud.Messages.ToArray(), "Only cleaners, mechanics, scientists and gardeners can be hired in this version." );
+		CollectionAssert.Contains( hud.Messages.ToArray(), "Only cleaners, mechanics, researchers and gardeners can be hired in this version." );
 		CollectionAssert.AreEqual( before, staff.Slots.ToArray(), "a refused role stays in the pool" );
 	}
 

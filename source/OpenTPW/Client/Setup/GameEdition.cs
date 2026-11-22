@@ -138,7 +138,7 @@ public sealed record EditionCapabilities
 		ParkSaves = false,
 		Sharing = false,
 		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar) plus the challenge system, whose offers wait for the missions OpenTPW does not run yet; "
-			+ "no staff apart from cleaners, mechanics and gardeners, research, other challenges, advisor apart from the weather forecasts, missions, Global Master Save, "
+			+ "no staff apart from cleaners, mechanics, researchers and gardeners, research in play (no research room can be built), other challenges, advisor apart from the weather forecasts, missions, Global Master Save, "
 			+ "COS files, native park saves or sharing, and no Theme Park Inc in-game interface (only its Personnel File start screen); "
 			+ "none of it is checked against the original game"
 	};
@@ -318,5 +318,5 @@ public static class GameEditions
 	/// <summary>One line for the start-up log: what the slice is and that it is not checked against the original game.</summary>
 	// [EXT:tpi-capability-gates] the slice's stated limits are OpenTPW's honest capability gates (a scope decision), not traced Theme Park Inc behaviour
 	public static string SliceNotice => "experimental Theme Park Inc slice: world, building, guests and money only; "
-		+ "no staff apart from cleaners, mechanics and gardeners, research, challenges, advisor apart from the weather forecasts, missions, Global Master Save, COS or Theme Park Inc in-game interface; original behaviour is not verified.";
+		+ "no staff apart from cleaners, mechanics, researchers and gardeners, research in play, challenges, advisor apart from the weather forecasts, missions, Global Master Save, COS or Theme Park Inc in-game interface; original behaviour is not verified.";
 }

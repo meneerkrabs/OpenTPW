@@ -36,6 +36,21 @@ internal static class ThemeParkIncLetterWindow
 	}
 
 	/// <summary>
+	/// A record's date as the letter window (<c>0x518C30</c>) and the tag tube's date column (<c>0x515890</c>) print it: UITEXT 956 with the day (0x29), the month byte plus one (0x2A) and
+	/// the year (0x2B) of the packed date (<see cref="ThemeParkIncTagTubeRow.Date"/>).
+	/// </summary>
+	internal static string FormatDate( UiStringTable strings, int packedDate )
+	{
+		var culture = System.Globalization.CultureInfo.InvariantCulture;
+		return strings.FormatByType( DateTemplate, new Dictionary<int, string>
+		{
+			[0x29] = (packedDate & 0xFF).ToString( culture ),
+			[0x2A] = (((packedDate >> 8) & 0xFF) + 1).ToString( culture ),
+			[0x2B] = (packedDate >> 16).ToString( culture )
+		} );
+	}
+
+	/// <summary>
 	/// The window over its layout table. <paramref name="dismiss"/> runs once, when the player closes the letter with its close, okay or
 	/// go-to button; help does nothing of its own. The go-to button, enabled when the letter has a target, then runs <paramref name="goTo"/>.
 	/// </summary>

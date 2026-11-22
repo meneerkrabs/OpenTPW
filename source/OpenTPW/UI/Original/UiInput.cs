@@ -20,7 +20,9 @@ public enum UiKeys
 	/// <summary>Set with <see cref="Accept"/> when it came from Space, which a text field types instead.</summary>
 	Space = 256,
 	/// <summary>Theme Park Inc's Objectives key, a plain O (the key table row at <c>0x9A8A14</c>); only the Theme Park Inc HUD reads it.</summary>
-	Objectives = 512
+	Objectives = 512,
+	/// <summary>Theme Park Inc's message key, a plain M (the key table row at <c>0x9A89EC</c>); only the Theme Park Inc HUD reads it.</summary>
+	Messages = 1024
 }
 
 /// <summary>
@@ -112,8 +114,12 @@ public sealed class UiInputSource
 			Map( Input.ChordKey( InputButton.Pause ), UiKeys.Pause );
 			// [BIN:TPI-EXE:0x9A8A14 objectives key] Theme Park Inc's key table (20-byte rows {key << 16 | id, modifier, name, handler, 0} from 0x9A8898) has the row
 			// {'O' (0x4F) << 16 | 0x14, modifier 0, "Objectives", 0x42F020}: the plain O, without Shift, Alt or Control, opens the mission window
+			// [BIN:TPI-EXE:0x9A89EC message key] the row before it, {'M' (0x4D) << 16 | 0x12, modifier 0, "message", 0x42EED0}: the plain M opens the tag tube window
 			if ( !keys.Contains( Key.ShiftLeft ) && !keys.Contains( Key.ShiftRight ) && !keys.Contains( Key.AltLeft ) && !keys.Contains( Key.AltRight ) )
+			{
 				Map( Key.O, UiKeys.Objectives );
+				Map( Key.M, UiKeys.Messages );
+			}
 		}
 		previousKeys = keys;
 		var window = mouse.Position;

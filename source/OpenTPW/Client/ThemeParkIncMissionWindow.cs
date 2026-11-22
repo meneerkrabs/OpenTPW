@@ -196,7 +196,9 @@ internal sealed class ThemeParkIncMissionWindow
 		Label( "obstacleTickets", table.Control( 0xCEC66 ).Rect, () => ObstacleLines.Tickets, slot7, white, wrap: true, visible: () => ObstacleGroupShown );
 		Label( "obstacleStatus", table.Control( 0xCEC67 ).Rect, () => ObstacleLines.Status, slot7, white, wrap: true, visible: () => ObstacleGroupShown );
 		// [BIN:TPI-EXE:0x55D6D0 staff list] the list 0xCEC64's column headers 0x10, 0x11 and 0x12: UITEXT 87, 88 and 89
-		// [EXT:tpi-capability-gates] the rows (0x55E020) are the staff HQ's obstacle slots, which belong to the staff roles OpenTPW does not port: the list has no rows
+		// [EXT:tpi-capability-gates] the rows (0x55E020: per slot up to the first of type 7, the staff type's name, the ability's name or UITEXT 0x72, the member's name or an empty row) and the list
+		// set-up's slot validation (0x55E1F0, which clears a slot whose member lost the ability and fills an empty one through the HQ's finders 0x634A40, 0x634980 and 0x6348C0) are not ported yet,
+		// although the HQ's slots now are (ThemeParkIncStaffHeadquarters): the list has no rows
 		var list = table.Control( 0xCEC64 );
 		foreach ( var (column, text) in new[] { (0x10u, StaffTypeHeader), (0x11u, AbilityHeader), (0x12u, EmployeeHeader) } )
 		{
@@ -465,7 +467,7 @@ internal sealed class ThemeParkIncMissionWindow
 	/// <summary>The obstacle group's lines in obstacle state 2 (<c>0x55D1B0</c>).</summary>
 	// [BIN:TPI-EXE:0x55D1B0 obstacle lines] 0xCEC65 = UITEXT 84; 0xCEC66 = with Obstacle.GoldenTickets n != 0: UITEXT 85, " " (0x9BBC54), STAT_TITLES 13 (n == 1) or 14 with n, else ""; 0xCEC67 = UITEXT 86,
 	// "\n", with n != 0 STAT_TITLES 15 with the career's tickets and "\n", then 93 when every one of the 20 slots (0x64E940 +0x14, stride 12) has +0 == 7 or word +8 != 0, else 92
-	// [EXT:tpi-capability-gates] the slots belong to the staff roles OpenTPW does not port: without them no slot is reported filled and the status says 92
+	// the slots are the staff HQ's (IThemeParkIncMissionWindowWorld.ObstacleStaffSlotsFilled, ThemeParkIncStaffHeadquarters.AllFilled); a park without the HQ says 92
 	public (string Heading, string Tickets, string Status) ComposeObstacleLines()
 	{
 		var career = Career;

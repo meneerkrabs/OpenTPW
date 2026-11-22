@@ -910,7 +910,10 @@ public partial class Level : IDisposable
 		if ( !GameEditions.IsThemeParkInc )
 			return cells;
 		if ( park.Save is { } save )
+		{
 			ThemeParkIncLand.ImportSaved( cells, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0 );
+			ThemeParkIncObstacles.ImportSavedCells( cells, save.Cells );
+		}
 		else if ( settings.EntranceA is { } entranceA && settings.EntranceB is { } entranceB )
 		{
 			var path = ThemeParkIncLand.HoardingsMapPath( park.LevelName );
@@ -1266,8 +1269,9 @@ public partial class Level : IDisposable
 	public void Update()
 	{
 		// the ride ends when it is deleted or loses what the view rides on (a coaster's train); the winning camera rides End and the loss camera the gate, which are no rides, until they go
-		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride ) && !ParkFinale.IsFinaleObject( riding.Ride ) && !IsGateObject( riding.Ride )) )
+		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride ) && !ParkFinale.IsFinaleObject( riding.Ride ) && !IsGateObject( riding.Ride ) && !IsThemeParkIncFlightThing( riding.Ride )) )
 			ExitRideView();
+		UpdateThemeParkIncArrival();
 		Camera.Update();
 		if ( ShowDeveloperPanels && !HidesInterface )
 			parkLayout.Draw();

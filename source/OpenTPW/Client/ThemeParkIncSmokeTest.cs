@@ -304,6 +304,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "the tools are away", () => Require( !Level.IsRemovingObjects && !Level.CellTool.IsActive, "Cancel puts the remove tool away" ) );
 		PlanHandyman();
 		PlanMechanic();
+		PlanGardener();
 		if ( flow.Level?.LevelName == "science" )
 			PlanChallenges();
 		Do( "round-trip Science state", () =>
@@ -714,6 +715,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 
 	private ThemeParkIncStaffMember? hiredHandyman;
 	private ThemeParkIncStaffMember? hiredMechanic;
+	private ThemeParkIncStaffMember? hiredGardener;
 	private long handymanDropTurn;
 	private int staffRow;
 
@@ -849,6 +851,45 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Mechanic ) > 0, "the mechanic's sprite source shows a frame of the mechanics' bank" );
 			var rides = Level.Park!.Economy.Objects.Where( item => item.Kind == ParkObjectKind.Ride ).ToList();
 			Log.Trace( $"Theme Park Inc slice smoke: mechanic {member.ThingId} in state {member.State} with ride {member.RideId}; ride repair {string.Join( ", ", rides.Select( item => $"{item.InfoId}:{item.Repair:0.##}/{item.LifeGauge:0.##}" ) )}." );
+		} );
+	}
+
+	/// <summary>
+	/// A gardener hired from the pool (when the pool holds one) and dropped beside the cleaner: the park's turns update him in a gardener state and his sprite shows a frame of the gardeners'
+	/// bank; every plant of the park runs vegetation.rse (the continuation check later covers him and the plants' scripts).
+	/// </summary>
+	private void PlanGardener()
+	{
+		Do( "every plant runs the vegetation script", () =>
+		{
+			var plants = Level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.Settings.GetBool( "UsageInfo.RequiresWatering" ) ).ToList();
+			Require( plants.All( item => item.Runtime.Script is { ScriptName: "Vegetation Feature" } ), "a Theme Park Inc plant runs data\\levels\\vegetation.rse (0x5DE61A)" );
+			Log.Trace( $"Theme Park Inc slice smoke: {plants.Count} plant(s) in the park, conditions {string.Join( ",", plants.Select( item => item.Runtime.Script!.Variables[ParkEconomy.PlantCondition] ) )}." );
+		} );
+		Do( "hire a gardener and drop him beside the cleaner", () =>
+		{
+			var staff = Level.Park!.Economy.TpiStaff!;
+			var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).FirstOrDefault( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Gardener, -1 );
+			if ( slot < 0 )
+			{
+				Log.Trace( "Theme Park Inc slice smoke: the pool holds no gardener; the gardener step is skipped." );
+				return;
+			}
+			Require( Level.BeginTpiHire( slot ) == null && Level.TpiPlacingSlot == slot, "a gardener's hire starts" );
+			var cell = hiredHandyman!.Navigation!.Cell;
+			hiredGardener = Level.DropTpiStaff( cell.X, cell.Y );
+			Require( hiredGardener is { Role: ThemeParkIncStaffRole.Gardener, Placed: true } && Level.Things.ModelOf( hiredGardener.ThingId ) == SaveThingModel.Gardener,
+				"the drop makes the gardener and his thing" );
+		} );
+		Wait( "the gardener works", 60 );
+		Do( "the gardener is updated by the park's turns", () =>
+		{
+			if ( hiredGardener is not { } member )
+				return;
+			Require( member.LastUpdateTurn > handymanDropTurn, "the thing sweep updated the gardener" );
+			Require( member.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering, "in a gardener state" );
+			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffSpriteRules.ThemeParkIncGardener ) > 0, "the gardener's sprite source shows a frame of the gardeners' bank" );
+			Log.Trace( $"Theme Park Inc slice smoke: gardener {member.ThingId} in state {member.State} with plant {member.PlantId}." );
 		} );
 	}
 

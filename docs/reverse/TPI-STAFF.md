@@ -241,7 +241,7 @@ Ported as an economy model, without the world simulation, and checked against th
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
-Not ported yet: the state machines of the roles other than the handyman, the mechanic and the researcher; slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
+Not ported yet: the state machines of the entertainer and the guard; slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.
@@ -404,6 +404,61 @@ Gated: the upgrade job (`+0x218` and training, WP14; the economy sells no upgrad
 stay under `[EXT:tpi-no-maintenance-wear]`, which no longer covers the rides. No `rand()` call is reached: the paths above draw only the world generator, in the gate and the
 patrol, as the handyman's.
 
+
+### Gardener and plants (WP10, November 22, 2026)
+
+Read from Game.exe (static; the plant update and the chooser run natively in `tools/ppc-analysis/oracle_x86/tpi_gardener_oracle.py`, which agrees with the port on 3000 random cases at the
+24-bit and the 53-bit control word). Ported in `ThemeParkIncStaffWorld.Gardeners.cs` and `ParkEconomy.ThemeParkIncPlants.cs`; tested in `ThemeParkIncGardenerTests` and
+`ThemeParkIncPlantTests`. `research/tpi-staff/gardener.md` (in the notes) was the starting point; every address below was read again.
+
+**Plants.** A type with `UsageInfo.RequiresWatering` (`+0x1AC`) gives its thing the flag `+0x42` bit 0x1000 and the RegionFX row 10 at the thing's cell (`0x5DB63F..0x5DB675`). The
+thing's script loader `0x5DE610` tests that flag first and loads `data\levels\vegetation.rse` (`0x9CEE9C` with `.rse`) instead of the type's own script (`0x5DE61A`); the constructor then writes
+`VAR_TIMEOUT` (2) = `Vegetation.TimeBetweenWaterings`, `VAR_TEST` (5) = `TestAnimation` and `VAR_SCALE` (14) = 1000 (`0x5DB850..0x5DB88A`). The script waits `VAR_TIMEOUT × VAR_SCALE`
+(`SETTIMER` after `MULT`) and then moves `VAR_CONDITION` from 0 (healthy) through 1 and 2 to 3 (dead, `VAR_DEAD` = 1), noting the old condition in `VAR_OLDSTATE`; `VAR_WATER` = 1
+brings 1 or 2 back to 0 (2 through 1) and restarts the timer, but not 3; `VAR_SETFIRE` and `VAR_ONFIRE` run the fire objects. A plant is not choosable (`Info.IsChoosable` 0), so
+its object state is 3, and the attraction update (kind 3: `0x5E4790`, then the state dispatch `0x5E4CB0`, `0x63760B`) runs the plant block `0x5E4CDE` on every turn:
+- `s = VAR_SCALE / 1000` (toward zero); the weather thing's state (`0x64EB80` → `+0x70`) 1 to 4 picks `Vegetation.HeatwaveWither`, `RainWither`, `StormWither` or `SnowWither`
+  (`0xA029A4..0xA029B0`, `+0xF44..+0xF50` of the Standard object), any other 1.0; a wither unequal to `s` writes `VAR_SCALE = ftol(wither × 1000.0f)` (`0x5E4D82`).
+- `+0x54 = (3 − VAR_CONDITION) × 33` as a float (99, 66, 33, 0), every update.
+- A condition unequal to `VAR_OLDSTATE` writes `VAR_OLDSTATE` = the condition, takes row `10 + old` off the thing's cell and puts row `10 + new` on it (the conditions 0..3 only, tables
+  `0x5E5044` and `0x5E5054`); a dead plant also clears the advisor's queued notices 0x2C..0x2F about it (presentation).
+The destructor takes off the row of the **live** `VAR_CONDITION` (`0x5DE9D3`, table `0x5DEBF0`), not the row the update last moved, so a plant sold between a script change and its
+next update leaves the difference of the two rows on the cells, as in the original. Theme Park Inc's RegionFX table has 15 rows (`3,RegionFX,0,0,15` in the schema; rows 10 to 13 are the
+plants'). A plant has no wear (`WearRate` 0) and no repair line (`RideBreakDown.Imminent` 0), so a dead plant (`+0x54` = 0) is no mechanic's job. The plants of the three worlds are
+features that neither provide relief nor hold litter (`ThemeParkIncPlantTests`).
+
+**Gardener.** Kind 0x14 (`SaveThingModel.Gardener`, 20), dropped through `0x4D4FB5` into the constructor `0x5D2230`: the person and member start `0x626190`, `+0x5D0` = 0 and the gardener list
+(`0x64F510`: world `+0x1EAB7E`, the members' gardeners newest first), the sprite category 0x12 (`+0x34`, `0x5D1000(3, 0x12, variant)`: `esprites.wad`'s `Generic\Gardeners`, `Spr_gd`), `+0x5D8`
+and `+0x5D4` = 0, the removal message 10 subscribed, then the search. The thing update `0x63763E` runs the pre-update `0x5D2820` and the dispatch `0x5D2A60`.
+- Pre-update: `0x628050`, then from state 0 the search on turns that `p = trunc((1 − exp / MaxExperience) × 50)` divides (every turn at `p` = 0); no finder runs first, unlike the
+  handyman's.
+- Dispatch (byte table `0x5D2B68`, jump table `0x5D2B4C`): 0 the idle end `0x62CA10` alone (no voice draw; look for work `0x62D810`, whose kind table `0x62D974` sends kind 0x14 to the
+  search `0x5D28C0`); 1 a world draw for the walking voice 0xA0 (1 in 16), the walk step: arrived or stuck searches, walking takes the moving step; 2 and 3 the rest area's (unreached:
+  no Theme Park Inc object is a rest area); 0x1F `0x5D2C70`; 0x20 `0x5D2ACE`; every other state, and anything above 0x20, the common handler `0x6287A0` (7 and 8: training).
+- Search `0x5D28C0`: the gate `0x62BBA0`; tired (`0x62B3B0`, "Too tired to water plants") goes to the tail with `+0x5D8` kept; else `+0x5D8` = the chooser's answer; a plant: "Gardener found dry
+  plant, walking there now", the maintenance request `0x5E3400(1)` unless already set (a plant only sets `+0x78`: no closing), the speed bonus 25 (`0x60B3F0(1)`), template 0xF and the
+  state 0x1F; none: the patrol `0x609F70` (state 1) or idle.
+- Chooser `0x5D2DC0`: the object list from its head (world `+0x1EAB88`, next `+0x14`; no cursor), each thing with `+0x43` bit 0x10; the claimant `0x5E37F0` (read twice) neither 0 nor his
+  thing id skips; the area `0x62C6B0`; `d = dx² + dy²` of the cells; `R` = the lerp of `Gardener.MinDetectionRange` and `MaxDetectionRange` (3 and 5) by experience; a plant that asked for
+  maintenance with `d` below the best and not burning (`0x5E3B20`: `VAR_ONFIRE`) is taken; otherwise a dry one (`0x5E3990`: `VAR_CONDITION` > 0 and alive or burning) with `d` below `R × R`
+  and not burning. A taken plant needs the drop's fallback `0x5E9320` (the path cell beside its footprint nearest the gardener; it writes that cell's queue link) and a route to it
+  (`0x62EAC0` → the staff route `0x62EB10`); then best = `d`. The dry branch never compares with the best, so the **last** dry plant in the list wins whatever its distance (the list is
+  newest first). After the list the chosen plant is claimed (`0x5E3780`).
+- 0x1F: walking walks on; stuck goes idle with `+0x5D8` kept; arrived, his own claim (`0x5E37F0`) sets `+0x5D4` = the turn, template 0x19 and 0x20, another goes idle.
+- 0x20: the working step, the facing `0x609E60`, the work duration `0x62E4C0` (`Gardener.MinWorkDuration` 30 to `MaxWorkDuration` 5, the normal form); past `+0x5D4 + duration` the
+  watering ends (`0x5E31B0`: `VAR_WATER` = 1, `+0x54` = 100, the claim and the request cleared, the advisor's notices 0x2C..0x2F cleared), template 3 and state 0. No tiredness test.
+- State hook `0x5D29D0` (through `0x62AECD`): 0x1F and 0x20 as above, the others the common setter `0x628180`.
+- Claims: the validator `0x62B280` compares the claimant's `+0x5D8` with the object for kinds 4 and 0x14 (`0x62B2B3`), so a gardener on his way or watering keeps his claim past 100 turns.
+- Removal message `0x5D2480`: message 10 for his `+0x5D8` ("plant I was watering was deleted"): `+0x5D8` = 0, template 3 in state 0x20, state 0.
+- Load `0x5D2510`: `mTimeStartedWatering` (`+0x5D4`), `mPlantToWater` (`+0x5D8`) and `mNext` (`+0x5D0`); the continuation save keeps `PlantId` and the work stamp.
+
+Training: the gardener learns abilities 10 to 14 (`0x62B6C0`) through §12.2 and fills a staff HQ slot that asks for one (the rebuild's staff type 5, the finder `0x6348C0`).
+
+Not ported (inert, no stand-in): the facing `0x609E60` (the heading word `+0x2C` from the queue link of his cell, in the 2048 units of `0x91E074`: presentation; he keeps his walk's
+last heading under `[EXT:tpi-twp-guest-rules]`, D1); the destructor's claim release `0x5D2430` → `0x5E37B0` (Theme Park Inc staff cannot be fired yet); the advisor's notices
+(`[EXT:tpi-capability-gates]`, the advisor's other messages); the patrol area `0x6256A0` (WP15); the guests' fire prank on plants (`0x618F30`, `VAR_SETFIRE`, with the guests' Theme Park
+Inc pranks); the plant counts of the statistics (`0x5B4470`, `0x5B8960`); the handyman's bin finder's plant branch for ability 7 (`0x5D5FAC`, with the bins). No `rand()` call is reached:
+the gardener draws only the world generator, in the gate, the walking voice and the patrol.
 
 ## 12. Staff HQ obstacle slots, training and research (November 21, 2026)
 

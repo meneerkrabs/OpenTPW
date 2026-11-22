@@ -851,7 +851,7 @@ internal static class ParkResumeSaveFile
 			Names( record!.ThingId, SaveThingModel.Attraction, record.X, record.Y );
 		foreach ( var member in members )
 			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), member.Id );
-		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: the handyman and the mechanic are placed)
+		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: the handyman, the mechanic, the researcher and the gardener are placed)
 		foreach ( var member in snapshot.Economy!.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>() )
 			if ( member?.World is { } world )
 				Names( world.ThingId, ThemeParkIncStaffMember.IsPlacedRole( member.Role ) ? ThemeParkIncStaffWorld.ThingModelOf( member.Role ) : SaveThingModel.Handyman, member.Id );
@@ -862,7 +862,7 @@ internal static class ParkResumeSaveFile
 		// a placeholder slot (a thing of an imported original save that OpenTPW does not rebuild) is named by no thing either
 		var placeholders = (snapshot.Things.Held ?? Array.Empty<int>()).ToHashSet();
 		RequireThing( !named.Overlaps( placeholders ), "a placeholder slot of the thing pool is named by a thing" );
-		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) && !pending.Contains( slot.Id ) && !placeholders.Contains( slot.Id ) );
+		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) or (int)SaveThingModel.Gardener && !pending.Contains( slot.Id ) && !placeholders.Contains( slot.Id ) );
 		RequireThing( held == named.Count || snapshot.Guests.SchemaVersion < GuestSimulationSnapshot.ThingPoolSchemaVersion, "the thing pool holds a guest, attraction or staff slot no thing names" );
 		if ( snapshot.Economy.TpiObjectList is { } list
 			&& ThemeParkIncObjectListProblem( list, objects.Select( record => (record!.ThingId, record.AttractionId) ), snapshot.EconomyBindings.Select( binding => binding!.AttractionId ),

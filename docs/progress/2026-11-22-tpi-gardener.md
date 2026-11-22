@@ -1,0 +1,20 @@
+## Theme Park Inc: gardeners water the plants (November 22, 2026)
+
+A Theme Park Inc park's plants now wither by their own script, and the player can hire a Gardener to water them. The Gardener is hired and dropped like the Cleaner and the Mechanic and runs Theme Park Inc's gardener state machine.
+
+- **Plants.** A thing that needs watering runs `data\levels\vegetation.rse` (`0x5DE61A`), so the Standard words the constructor writes (`TimeBetweenWaterings`, `TestAnimation` and the scale 1000) now land on a script. The script's timer moves the plant from healthy through two dry conditions to dead; water brings a dry plant back. The engine's plant update (`0x5E4CB0`) writes the weather's wither rate (`Vegetation.HeatwaveWither`, `RainWither`, `StormWither`, `SnowWither`) into the script's scale, sets the plant's gauge from its condition and moves its RegionFX row (rows 10 to 13 of Theme Park Inc's fifteen); the constructor puts row 10 down and the destructor takes off the row of the live condition (`0x5DB675`, `0x5DE9D3`).
+- **The gardener.** States 0, 1, 0x1F and 0x20 (idle, patrol, to the plant, watering) follow `0x5D2A60`, `0x5D2C70` and `0x5D2ACE`; the training states go through the common handler. His pre-update (`0x5D2820`) searches from idle every search period. The search (`0x5D28C0`) runs the gate, the tired test and the chooser (`0x5D2DC0`): over the object list, a plant whose claim is free or his, one that asked for maintenance and is nearer than the best, or a dry one within his detection range, neither burning, with a route to the path cell beside it (the drop's fallback `0x5E9320`); the last dry plant in the list wins whatever its distance, as in the original. He claims it, asks for its maintenance and walks there; his own claim lets him water it for the work duration, and the watering's end (`0x5E31B0`) writes `VAR_WATER`, fills the gauge and clears the claim and the request. A claim lapses after 100 turns when its gardener no longer targets the plant; removing the plant sends him idle (`0x5D2480`).
+- **Training.** A Gardener learns the abilities 10 to 14 and fills the staff HQ's slots that ask for them (needed by mission 1's obstacle).
+- **Sprites.** Gardeners are drawn with Theme Park Inc's own gardener sprites (`Generic\Gardeners`).
+- **Saves.** The Science continuation save keeps the gardeners, their plant and stamp, and the plants' scripts. A Theme Park Inc save made before this is refused with a message before its assets are checked.
+- **The mechanics.** This branch builds on the mechanics (#985): the gardener shares their object list, claim word and maintenance request, and a mechanic now trains through the common handler as well.
+
+Labels: `[EXT:tpi-capability-gates]` no longer covers the gardener; it still covers the entertainer and the guard, the advisor's notices and a patrol area smaller than the whole map (`0x6256A0`). Not ported, inert: the gardener's facing while watering (`0x609E60`, presentation), the destructor's claim release (staff cannot be fired yet) and the guests' fire prank on plants. No new approximation or label is added, and no CRT `rand()` draw is reached.
+
+Verified with these checks:
+
+- New tests for the plant script and its construction words, the plant update (rows, gauge, wither scale), the destructor's live-condition row, the dry and on-fire tests, the watering's end, the hire and drop, the chooser (range, requests, burning and dead plants, the last-in-list quirk, claims and their lapse), a tired gardener, the search period, the removal message, training into an HQ slot and a save round-trip and refusal; the Theme Park Inc, save, staff and resume filters pass with the retail data.
+- An x86 oracle (`tools/ppc-analysis/oracle_x86/tpi_gardener_oracle.py`) runs the executable's plant update and chooser in an emulator: 3000 cases, no mismatch at 24-bit and 53-bit precision.
+- The silent, offscreen Science smoke hires a Gardener, drops him in the park and sees him updated and drawn, and checks that every plant runs the vegetation script.
+
+The original game was not launched, and no binary or data is included.

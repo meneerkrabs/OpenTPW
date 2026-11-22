@@ -314,7 +314,7 @@ public sealed class ThingPool
 				problems.Add( "a used thing slot is missing" );
 			else if ( slot.Id is < 1 or > Capacity )
 				problems.Add( $"thing id {slot.Id} is outside the pool's 1..{Capacity}" );
-			else if ( slot.Model is < 1 or > 19 )
+			else if ( !IsThingModel( (SaveThingModel)slot.Model ) )
 				problems.Add( $"thing {slot.Id} has model {slot.Model}, which is not a thing model" );
 			else if ( !used.Add( slot.Id ) )
 				problems.Add( $"thing id {slot.Id} appears more than once" );
@@ -423,7 +423,8 @@ public sealed class ThingPool
 		}
 	}
 
-	private static bool IsThingModel( SaveThingModel value ) => (int)value is >= 1 and <= 19;
+	// [BIN:TPI-EXE:0x6375E0 thing dispatch] Theme Park Inc's thing kinds reach 0x14, the gardener (0x63763E); Theme Park World's stop at 19
+	private static bool IsThingModel( SaveThingModel value ) => (int)value is >= 1 and <= 19 || value == SaveThingModel.Gardener;
 
 	private static void ValidateModel( SaveThingModel value )
 	{

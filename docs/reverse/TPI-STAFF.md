@@ -351,7 +351,7 @@ the HQ before the mission controller.
   again, state 0), motivation 100, `TrainingExtraExperience` (5000) and then `StaffAgencies[agency].TrainingExperienceGainModifier` percent of the new experience, capped at MaxExperience, and a look
   for work. No wage change.
 - **A destroyed room** (`0x637C40`): the demolish runs at the click (the world click handler `0x4D30F8` → the cell-op engine `0x660D80` → `0x666DA0` → `0x6674E1`), and the destroy broadcasts message
-  0x21 and then the attraction's message 0xA (`0x5DE780`) through the dispatcher `0x436DD0`, which calls every listener at once in ascending thing handle order; only the thing's free waits for the
+  0x21 and then the attraction's message 0xA (`0x5DE780`, which first unlinks the room from the object list with `0x64F430`, so the room finders no longer see it) through the dispatcher `0x436DD0`, which calls every listener at once in ascending thing handle order; only the thing's free waits for the
   turn's tail (`0x649814`). OpenTPW's removal hook (`ParkObjects.ObjectRemoving`) runs at the same click (`ThemeParkIncStaffWorld.RoomDestroyed`).
 - **Cancel** `0x62E7A0` (the staff message 0xA for a removed training room, or state 8 entered with nothing chosen): nothing for a member learning nothing; else the ability in training is dropped,
   the room's variable 0 falls, a member in the room is shown again, the advisor's line 0x1C9, the letter of kind 0xD, state 0 and a look for work.

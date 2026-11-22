@@ -72,7 +72,9 @@ public partial class Level
 		{
 			var key = kind == ThemeParkIncRoomKind.Research ? "UsageInfo.ThinkingSpace" : "UsageInfo.TrainingRoom";
 			var order = level.Things.Capture().Select( ( slot, index ) => (slot.Id, index) ).ToDictionary( pair => pair.Id, pair => pair.index );
-			var room = level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue )
+			// a room being destroyed is no longer on the object list: the attraction's destroy unlinks it (0x64F430 at 0x5DE7C4) before it broadcasts message 0xA
+			var room = level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue
+					&& item.ThingId != level.tpiDestroyedRoom )
 				.OrderBy( item => order.TryGetValue( item.ThingId, out var index ) ? index : int.MaxValue ).ThenByDescending( item => item.ThingId ).FirstOrDefault();
 			if ( room == null )
 				return null;
@@ -92,28 +94,50 @@ public partial class Level
 
 	private bool tpiRoomsHooked;
 
-	/// <summary>Gives the Theme Park Inc staff world this level's rooms and tells it when a room goes.</summary>
+	/// <summary>The staff room being destroyed (its thing id) while its messages go out: it is off the object list by then (<see cref="ThemeParkIncRooms.First"/>), 0 otherwise.</summary>
+	private int tpiDestroyedRoom;
+
+	/// <summary>Gives the Theme Park Inc staff world this level's rooms and tells it when a room goes; the removal hook is installed once per level.</summary>
 	private void AttachThemeParkIncRooms()
 	{
 		if ( TpiStaffWorld is not { } world )
 			return;
 		world.Rooms = new ThemeParkIncRooms( this );
-		// [BIN:TPI-EXE:0x637C40 thing destroy] the player's demolish runs at the click: the world click handler (0x4D30F8) calls the cell-op engine 0x660D80, whose demolish (0x6633CE -> 0x666DA0, the scrap
-		// value 0x5E75F0) destroys the thing at 0x6674E1; 0x637C40 broadcasts message 0x21 and runs the class's destroy (kind 3: 0x5DE780, message 0xA) through the dispatcher 0x436DD0, which calls every
-		// subscriber's handler at once (0x436EB5 -> 0x637970); only the thing's free waits for the turn's tail ("Removing thing %d from thing list", 0x649814). So the staff and the lab hear the room's
-		// removal at the click, between two world updates, as ParkObjects.ObjectRemoving does (the room still listed)
 		if ( tpiRoomsHooked )
 			return;
 		tpiRoomsHooked = true;
-		Objects.ObjectRemoving += item =>
+		Objects.ObjectRemoving += OnThemeParkIncObjectRemoving;
+	}
+
+	/// <summary>The staff room kind of an object type by its UsageInfo flags (the thing word +0x42's 0x200 and 0x400, 0x5DB786): a research room, a training room, or none.</summary>
+	internal static ThemeParkIncRoomKind? ThemeParkIncRoomKindOf( ObjectSettings settings ) =>
+		settings.GetInt( "UsageInfo.ThinkingSpace" ) != 0 ? ThemeParkIncRoomKind.Research
+			: settings.GetInt( "UsageInfo.TrainingRoom" ) != 0 ? ThemeParkIncRoomKind.Training : null;
+
+	/// <summary>
+	/// An object being removed: a staff room's destroy messages reach the lab and the staff (<see cref="ThemeParkIncStaffWorld.RoomDestroyed"/>); an object without a thing id of the pool has no thing to
+	/// destroy and sends nothing.
+	/// </summary>
+	// [BIN:TPI-EXE:0x637C40 thing destroy] the player's demolish runs at the click: the world click handler (0x4D30F8) calls the cell-op engine 0x660D80, whose demolish (0x6633CE -> 0x666DA0, the scrap
+	// value 0x5E75F0) destroys the thing at 0x6674E1; 0x637C40 broadcasts message 0x21 and runs the class's destroy (kind 3: 0x5DE780, which unlinks the thing from the object list park+0x1EAB88 with
+	// 0x64F430 at 0x5DE7C4 and then broadcasts message 0xA) through the dispatcher 0x436DD0, which calls every subscriber's handler at once (0x436EB5 -> 0x637970); only the thing's free waits for the
+	// turn's tail ("Removing thing %d from thing list", 0x649814). So the staff and the lab hear the room's removal at the click, between two world updates, as ParkObjects.ObjectRemoving does; the room
+	// is left out of the room finders meanwhile (tpiDestroyedRoom), as the unlink leaves it out of the object list
+	private void OnThemeParkIncObjectRemoving( OriginalObject item )
+	{
+		if ( TpiStaffWorld is not { } staffWorld || Park?.Economy is not { } economy || item.ThingId is not (> 0 and <= ushort.MaxValue) )
+			return;
+		if ( ThemeParkIncRoomKindOf( item.Entry.Settings ) is not { } kind )
+			return;
+		tpiDestroyedRoom = item.ThingId;
+		try
 		{
-			if ( TpiStaffWorld is not { } staffWorld || Park?.Economy is not { } economy || item.ThingId is not (> 0 and <= ushort.MaxValue) )
-				return;
-			var kind = item.Entry.Settings.GetInt( "UsageInfo.ThinkingSpace" ) != 0 ? ThemeParkIncRoomKind.Research
-				: item.Entry.Settings.GetInt( "UsageInfo.TrainingRoom" ) != 0 ? ThemeParkIncRoomKind.Training : (ThemeParkIncRoomKind?)null;
-			if ( kind is { } room )
-				staffWorld.RoomDestroyed( economy, room, (ushort)item.ThingId, economy.Turn );
-		};
+			staffWorld.RoomDestroyed( economy, kind, (ushort)item.ThingId, economy.Turn );
+		}
+		finally
+		{
+			tpiDestroyedRoom = 0;
+		}
 	}
 
 	/// <summary>Whether the object type is researched (the object control's +0x10); every type in a park without a seeded lab.</summary>

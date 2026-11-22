@@ -62,9 +62,10 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( (0.005f, 1f), (research.SpeedScaleDown, research.CostScaleUp) );
 		Assert.AreEqual( new ThemeParkIncLabProject( 3, 0, 0, 2, 1105, 4, 0, 300f, 2, 0f ), research.Projects[1] );
 		Assert.IsFalse( research.IsResearched( 1105 ), "an open project's ride is not researched" );
-		Assert.IsTrue( research.IsResearched( 1400 ) && research.IsResearched( 1404 ), "the research and training rooms cost nothing to research" );
+		// facilities/resrch.wad (Info.Id 1404, UsageInfo.ThinkingSpace 1) and facilities/train_rm.wad (1440, UsageInfo.TrainingRoom 1)
+		Assert.IsTrue( research.IsResearched( 1404 ) && research.IsResearched( 1440 ), "the research and training rooms cost nothing to research" );
 		var world = Prebuilt();
-		Assert.IsFalse( world.Attractions.Any( attraction => attraction.InfoId is 1400 or 1404 ), "no prebuilt research or training room: the rooms' order is the player's building order" );
+		Assert.IsFalse( world.Attractions.Any( attraction => attraction.InfoId is 1404 or 1440 ), "no prebuilt research or training room: the rooms' order is the player's building order" );
 		// every control record of the park file, in its order, and every catalogue object has one whose researched byte the lab answers
 		CollectionAssert.AreEqual( world.ObjectControls!.Controls.Select( control => new ThemeParkIncObjectResearch( control.Id, control.Researched, (int)control.ResearchLevel ) ).ToArray(),
 			research.Controls.ToArray() );

@@ -50,10 +50,10 @@ public class ThemeParkIncMissionWindowTests
 		public bool? ObstacleStaffSlotsFilled { get; set; }
 		public string PlayerName { get; set; } = "Player";
 
-		// the economy's PressThemeParkIncMissionComplete without a staff HQ: message 0x24 reaches the controller alone
+		// the economy's PressThemeParkIncMissionComplete (ThemeParkIncMissionMet: a current zone and MetRequirements) without a staff HQ: message 0x24 reaches the controller alone
 		public bool PressComplete()
 		{
-			if ( !Missions.MetRequirements() )
+			if ( Missions.Career.CurrentZone == null || !Missions.MetRequirements() )
 				return false;
 			if ( Missions.Career.HasObstacle )
 				Missions.RemoveObstacle( CurrentObstacle );

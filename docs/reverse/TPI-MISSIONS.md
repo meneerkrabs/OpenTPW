@@ -188,8 +188,9 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   the challenges won (4) and the tickets held (15). In another zone at or above the required rank (also when none is required) it is 86 and 75 with the ending zone's
   name. Integer arguments print with `%d` (`0x8942E0`).
 - **Obstacle state 2 (`0x55D1B0`).** The details page shows the group `0xCEC63`: 84, the tickets line (85 and 13/14), and 86 with the tickets held and 93 or 92 by
-  the staff HQ's 20 slots. The slots are the staff HQ's (`ThemeParkIncStaffHeadquarters`); the staff list's rows (`0x55E020`) and the list set-up's
-  slot validation (`0x55E1F0`, which also refills empty slots through the HQ's finders) are not ported yet, so the list has only its headers 87 to 89 (`[EXT:tpi-capability-gates]`).
+  the staff HQ's 20 slots. The slots are the staff HQ's (`ThemeParkIncStaffHeadquarters`); the staff list's rows (`0x55E020`, which the window calls at
+  `0x55D45A`, `0x55D8F4` and `0x55DE83`) are not ported yet, so the list has only its headers 87 to 89 (`[EXT:tpi-capability-gates]`). The slot validation `0x55E1F0` is not the window's
+  (its callers are `0x586893`, `0x587113`, `0x5873E1` and `0x5874DC`, with the per-object table of `0x623EE0`).
 - **Proceed (`0x55BD79`).** Enabled by each refresh when MetRequirements (`0x55A620`) holds; a click without it does nothing. An obstacle mission posts message 0x24
   with the current obstacle (`park+0x1EAB6E`), which the dispatcher `0x436DD0` delivers at once in ascending thing handle order, to the staff HQ (`0x634D20`) and then the controller; any other runs
   OnMissionComplete (`0x5F0770`); the window closes. OpenTPW's window calls `ParkEconomy.PressThemeParkIncMissionComplete`, which sends 0x24 through `ThemeParkIncObstacleRemoved` to both. When the requirements are met at opening the builder

@@ -196,9 +196,9 @@ internal sealed class ThemeParkIncMissionWindow
 		Label( "obstacleTickets", table.Control( 0xCEC66 ).Rect, () => ObstacleLines.Tickets, slot7, white, wrap: true, visible: () => ObstacleGroupShown );
 		Label( "obstacleStatus", table.Control( 0xCEC67 ).Rect, () => ObstacleLines.Status, slot7, white, wrap: true, visible: () => ObstacleGroupShown );
 		// [BIN:TPI-EXE:0x55D6D0 staff list] the list 0xCEC64's column headers 0x10, 0x11 and 0x12: UITEXT 87, 88 and 89
-		// [EXT:tpi-capability-gates] the rows (0x55E020: per slot up to the first of type 7, the staff type's name, the ability's name or UITEXT 0x72, the member's name or an empty row) and the list
-		// set-up's slot validation (0x55E1F0, which clears a slot whose member lost the ability and fills an empty one through the HQ's finders 0x634A40, 0x634980 and 0x6348C0) are not ported yet,
-		// although the HQ's slots now are (ThemeParkIncStaffHeadquarters): the list has no rows
+		// [EXT:tpi-capability-gates] the rows (0x55E020, which the window calls at 0x55D45A, 0x55D8F4 and 0x55DE83: per slot up to the first of type 7, the staff type's name, the ability's name or
+		// UITEXT 0x72, the member's name or an empty row) are not ported yet, although the HQ's slots now are (ThemeParkIncStaffHeadquarters): the list has no rows. The slot validation 0x55E1F0 is not
+		// the window's: its callers are 0x586893, 0x587113, 0x5873E1 and 0x5874DC, with the per-object table of 0x623EE0
 		var list = table.Control( 0xCEC64 );
 		foreach ( var (column, text) in new[] { (0x10u, StaffTypeHeader), (0x11u, AbilityHeader), (0x12u, EmployeeHeader) } )
 		{

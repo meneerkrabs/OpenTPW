@@ -206,6 +206,100 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 		Assert.AreNotEqual( atClick.Economy.World.State, deferred.Economy.World.State, "the draw order decides the generator's state" );
 	}
 
+	private static void SetBacking( object target, string property, object value ) =>
+		target.GetType().GetField( "<" + property + ">k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( target, value );
+
+	[TestMethod]
+	public void TheLevelsRemovalHookFindsTheRoomByItsFlagsNeedsAThingIdAndIsInstalledOnce()
+	{
+		// [BIN:TPI-EXE:0x637C40 thing destroy] [BIN:TPI-EXE:0x5DB786 room flags] the level's hook (Level.OnThemeParkIncObjectRemoving) on its own ParkObjects, without a renderer: a level object
+		// built without its loader, given the park objects, the staff world and the economy
+		var economy = ScienceEconomy();
+		var grid = Row( economy );
+		var world = new ThemeParkIncStaffWorld( grid ) { Rooms = new TestRooms { Training = new ThemeParkIncRoom( 600, (2, 5) ) } };
+		var member = Hire( economy, world, (1, 5), experience: 20000 );
+		world.ChooseAbility( economy, member, 7, confirmed: false, economy.Turn );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 200 && member.State == 7; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( 8, member.State );
+
+		var root = System.IO.Directory.CreateTempSubdirectory( "opentpw-tpi-rooms" ).FullName;
+		Log ??= new();
+		var previousEntities = Entity.All;
+		Entity.All = new();
+		var (previousStarter, previousKiller) = (OriginalObjectRuntime.ParticleStarter, OriginalObjectRuntime.ParticleKiller);
+		OriginalObjectRuntime.ParticleStarter = _ => 1;
+		OriginalObjectRuntime.ParticleKiller = _ => { };
+		// the same one-frame model and empty script as ObjectParticleEffectTests: a placed object loads both
+		var model = Md2ModelFileTests.CreateGeometry();
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( 0x42 ), 1 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( 0x44 ), 0 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x268 ), 0 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( model.AsSpan( 0x78 ), 0x264 );
+		foreach ( var offset in new[] { 0x38, 0x3a, 0x3c, 0x3e, 0x4a } )
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( model.AsSpan( offset ), 0 );
+		System.IO.File.WriteAllBytes( System.IO.Path.Combine( root, "model.MD2" ), model );
+		System.IO.File.WriteAllBytes( System.IO.Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		try
+		{
+			ObjectCatalogEntry Entry( int id, string usage ) => new( "science", ObjectCategory.Ride, "/synthetic", new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {id}\n{usage}", "synthetic.sam" ) } ),
+				new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
+				new BaseFileSystem( root ), null );
+			var training = Entry( 1440, "UsageInfo.TrainingRoom 1\n" );
+			Assert.AreEqual( ThemeParkIncRoomKind.Training, Level.ThemeParkIncRoomKindOf( training.Settings ) );
+			Assert.AreEqual( ThemeParkIncRoomKind.Research, Level.ThemeParkIncRoomKindOf( Entry( 1404, "UsageInfo.ThinkingSpace 1\n" ).Settings ) );
+			Assert.IsNull( Level.ThemeParkIncRoomKindOf( Entry( 1105, "" ).Settings ), "a ride is no staff room" );
+
+			var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, null,
+				new object[] { "science", Array.Empty<ObjectCatalogEntry>() }, null )!;
+			var objects = new ParkObjects( catalog, new SandboxParkGrid(), new WorldSeed( 1 ) );
+			var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+			SetBacking( level, "Objects", objects );
+			SetBacking( level, "TpiStaffWorld", world );
+			var runtime = (ParkEconomyRuntime)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomyRuntime ) );
+			SetBacking( runtime, "Economy", economy );
+			SetBacking( level, "Park", runtime );
+			var attach = typeof( Level ).GetMethod( "AttachThemeParkIncRooms", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+			attach.Invoke( level, null );
+			attach.Invoke( level, null );
+
+			var older = objects.TryPlace( training, 9, 9, 0, out _ )!;
+			older.ThingId = 500;
+			var newer = objects.TryPlace( training, 12, 12, 0, out _ )!;
+			newer.ThingId = 600;
+			Assert.AreEqual( (ushort)600, world.Rooms!.First( ThemeParkIncRoomKind.Training )!.Value.Thing, "the newest room first" );
+			// the room being destroyed is off the object list while its messages go out (0x64F430 at 0x5DE7C4): the finder takes the other one
+			var destroyed = typeof( Level ).GetField( "tpiDestroyedRoom", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+			destroyed.SetValue( level, 600 );
+			Assert.AreEqual( (ushort)500, world.Rooms.First( ThemeParkIncRoomKind.Training )!.Value.Thing );
+			destroyed.SetValue( level, 0 );
+
+			// a room without a thing id of the pool has no thing to destroy: no message
+			var idless = objects.TryPlace( training, 3, 9, 0, out _ )!;
+			Assert.IsTrue( objects.Remove( idless ) );
+			Assert.AreEqual( (8, 0), (member.State, world.TrainingNotices.Count) );
+			// a ride's removal sends nothing either
+			var ride = objects.TryPlace( Entry( 1105, "" ), 6, 9, 0, out _ )!;
+			ride.ThingId = 700;
+			Assert.IsTrue( objects.Remove( ride ) );
+			Assert.AreEqual( 8, member.State );
+			// the training room's removal cancels the trainee once, though the hook was attached twice
+			Assert.IsTrue( objects.Remove( newer ) );
+			Assert.AreEqual( 1, world.TrainingNotices.Count( notice => !notice.Finished ), "one cancel: the hook is installed once" );
+			Assert.AreEqual( 0, member.LearningAbility );
+			Assert.AreEqual( 0, (int)destroyed.GetValue( level )!, "the destroyed room is cleared after its messages" );
+		}
+		finally
+		{
+			foreach ( var entity in Entity.All.ToArray() )
+				entity.Delete();
+			Entity.All = previousEntities;
+			(OriginalObjectRuntime.ParticleStarter, OriginalObjectRuntime.ParticleKiller) = (previousStarter, previousKiller);
+			System.IO.Directory.Delete( root, true );
+		}
+	}
+
 	[TestMethod]
 	public void AFailedRouteToTheTrainingRoomFallsBackToTheCellSteerOffThePaths()
 	{

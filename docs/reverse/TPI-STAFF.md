@@ -335,7 +335,9 @@ repair byte of 25 writes `VAR_WORN` = 1 on every update (`0x5E3990`). Two blocks
 
 The level wires the ride events itself (`Level.SetupThemeParkIncRideEvents`): a Theme Park Inc park runs no park gate (`[EXT:tpi-park-open]`), so the Theme Park World wiring in
 `SetupParkGate` does not run there. The economy's script writes reach the ride's script, a maintenance request closes the ride, and a finished repair runs the closing tail, whose
-guard is the reopening guard `ParkGate.MayOpen` over the level's path grid.
+guard is the reopening guard `ParkGate.MayOpen` over the level's path grid. A cancelled request (`0x5E3400` with argument 0, `MaintenanceCancelled`) is not wired: the only caller in
+OpenTPW is the ride window's call button (`ParkHud.Maintenance`), whose target test refuses any edition but Theme Park World, and the Theme Park Inc slice runs its own HUD, which has
+no call button, so no cancel can reach a Theme Park Inc park.
 
 **Wear tick `0x5E25B0`.** `Upgrades[level].WearRate` 0 returns; the script's `VAR_RUNNING` (variable 9) above 0 or `Info.RunsContinuously`; the turn & 0x3F zero. `VAR_ONRIDE`
 (variable 5) 0 gives the wear 0, else `0x5E21A0`: riders clamped to `0..MaxCapacity`; `s = 0.9 × speed / MaxSpeed` (the script's speed `+0xC0`, `0x6B0C30`), then `s + 0.1`, or
@@ -355,16 +357,21 @@ message 10 subscribed, the search). The update is the common pre-update (`0x5DA3
   list (world `+0x1EAB88`, next `+0x14`, newest first, `0x64F3E0`) and walks it round once; a candidate is broken down, below its line, called for (not a relief object, bin or
   plant), or (for a mechanic whose learnt ability `+0x218` is 1) upgrading, and unclaimed; the nearest by `dx² + dy²` of the cell bytes, first broken or called-for ones, then the
   others, the first met on a tie. `+0x218` is 0 from the member start and only training writes it, so no placed mechanic upgrades.
-- The object list (`ParkEconomy.ThemeParkIncObjectList`). `0x64F3E0` puts a new object at the head (`+0x14` = the old head, world `+0x1EAB88` = the new one). The save keeps the list:
-  the World variable `FirstObject` and each attraction's `mNext`. In the prebuilt Science park it holds 24 things, newest first (thing ids 37 down to 14: Info.Id 1414, 1413, 1413, 1403,
-  1101, 1798, 1750, 1703, 1700, 1701, 1702, 1710, 1707, 3708, 1709, 1706, 1705, 1110, 1170, 1160, 1180, 104, 103, 1601). OpenTPW imports the objects in the save's record order (the
-  four rides first, then 1403 to 1414 and 1101, then the fixed items), so the economy's instance ids do not give this order; and 7 of the 24 things are not built at all: 1700, 1701,
-  1702, 1703, 1750 and 1798 have no object archive in the catalogue and 1710 is a tool entry. Both matter to the walk: the cursor steps over every thing, so the list's length and
-  order decide which search finds nothing (the one whose previous start was the last thing) and which candidate a tie keeps. So the economy keeps the list itself: a park built from
-  the save takes the saved order (`Level.SeedThemeParkIncObjectList`), an imported object as its economy record and a thing OpenTPW does not build as its negated thing id; a new
-  object enters at the head and a removed one leaves (`0x64F430`); the Science continuation saves the list and the cursor, which may rest on such a thing. The seven things were saved
-  in state 3 with a full state of repair and no request, the object update skips state 3, and their `.sam` files declare no `RideBreakDown` keys, so they are never candidates. The
-  prebuilt's HQ cursor word is 0.
+- The object list (`ParkEconomy.ThemeParkIncObjectList`). The attraction constructor `0x5DB1B0` puts every attraction, obstacles included, at the head (`0x64F3E0`, called at `0x5DB28C`:
+  `+0x14` = the old head, world `+0x1EAB88` = the new one); the destroyer `0x637C40` → `0x5DE780` → `0x64F430` unlinks it. The save keeps the list: the World variable `FirstObject` and
+  each attraction's `mNext`. In the prebuilt Science park it holds 24 things, newest first (thing ids 37 down to 14: Info.Id 1414, 1413, 1413, 1403, 1101, 1798, 1750, 1703, 1700, 1701,
+  1702, 1710, 1707, 3708, 1709, 1706, 1705, 1110, 1170, 1160, 1180, 104, 103, 1601). OpenTPW imports the objects in the save's record order (the four rides first, then 1403 to 1414
+  and 1101, then the fixed items), so the economy's instance ids do not give this order; and 7 of the 24 things have no economy record: the obstacles 1700 to 1703, the Polar Zone gate
+  1750 and the camera path 1798 are not in the economy catalogue, and 1710 is a tool entry, which is not imported. Both matter to the walk: the cursor steps over every thing, so the
+  list's length and order decide which search finds nothing (the one whose previous start was the last thing) and which candidate a tie keeps. So the economy keeps the list itself:
+  a park built from the save takes the saved order (`Level.SeedThemeParkIncObjectList`, by the saved thing each imported object was built from), an object with an economy record as
+  that record and any other thing as its negated thing id. An object with a record enters at the head when the economy registers it and leaves with its sale; an obstacle's
+  `ReplaceWithID` replacement enters at the head as its thing id (`ThemeParkIncObstacleThings.Place`), and a thing without a record that is removed (an opened obstacle, the mission
+  controller's destroy) leaves through the level's removal handler. An id entered again drops its earlier entry first, and an object with a record that takes a freed thing id drops
+  that id's entry, so the list never holds a thing twice. The Science continuation saves the list and the cursor. The cursor may name a thing that is gone, as the HQ word does: the
+  finder reads an id it does not find as "start at the head", so a save accepts any cursor in the thing range (a negated id down to `-ThingPool.Capacity`), as it accepts a positive
+  cursor on a sold object. The seven things were saved in state 3 with a full state of repair and no request, the object update skips state 3, and their `.sam` files declare no
+  `RideBreakDown` keys, so they are never candidates. The prebuilt's HQ cursor word is 0.
 - Claimant `0x5E37F0`: a claim older than 100 turns lapses unless the claimant still targets the object (`0x62B280`: a mechanic's `+0x5D8`), and the claimant then goes idle.
 - To the ride `0x5DA650`: the claimant must be him ("UNUSUAL INCIDENT"); stuck clears `+0x5D8` and searches; arrived at a ride broken down, upgrading or called for sets 22,
   else searches with the ride kept.

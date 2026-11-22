@@ -1041,6 +1041,8 @@ public partial class Level : IDisposable
 	/// </summary>
 	// [BIN:TPI-EXE:0x5E3400 maintenance request] the request closes the ride itself (the open word +0x7C = 0, VAR_RIDECLOSED = 1 and the close model call); [BIN:TPI-EXE:0x5E2910 repair fully] the
 	// repair writes VAR_WORN and VAR_BREAKSTAT and runs the open and the closing tail 0x5E2C2E (OpenAfterThemeParkIncRepair); the wear tick 0x5E25B0 and the relief test 0x5E3990 write VAR_WORN
+	// a cancelled request (0x5E3400(0), MaintenanceCancelled) is not wired: its only source, the ride window's call button (ParkHud.Maintenance), refuses any edition but Theme Park World, and the
+	// Theme Park Inc slice's own HUD has no call button
 	private void SetupThemeParkIncRideEvents()
 	{
 		if ( Park == null )

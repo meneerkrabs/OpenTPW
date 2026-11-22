@@ -22,7 +22,7 @@ public class ThemeParkIncHudChallengeTests
 		"Challenges[2].Type 2\nChallenges[2].TargetTime 60\nChallenges[2].TargetVal 30\nChallenges[2].ScriptIndex 2\n"
 		+ "Challenges[18].Type 41\nChallenges[18].TargetTime 90\nChallenges[18].TriggerData 3\nChallenges[18].CheckAtEndOnly 1\nChallenges[18].GracePeriodLimit 31\nChallenges[18].ScriptIndex 18\n";
 
-	private static ParkEconomy Economy()
+	internal static ParkEconomy Economy()
 	{
 		var settings = BalanceSettings.ForThemeParkInc( new SamSettings( new[] { SamDocument.Parse( Standard, "Standard.sam" ) } ), "science",
 			new SamSettings( new[] { SamDocument.Parse( ChallengesSam, "Challenges.sam" ) } ) );
@@ -32,7 +32,7 @@ public class ThemeParkIncHudChallengeTests
 	private static UiStringTable Strings() => new( "English", new string[1], new[] { "" }, new string[1], new string[1],
 		challengeTitles: Enumerable.Range( 0, 30 ).Select( index => $"Title{index}" ).ToArray() );
 
-	private static ThemeParkIncHud BuildHud( ParkEconomy economy )
+	internal static ThemeParkIncHud BuildHud( ParkEconomy economy, GameSpeed speed = GameSpeed.Normal )
 	{
 		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), BindingFlags.NonPublic | BindingFlags.Instance, null,
 			new object[] { "science", Array.Empty<ObjectCatalogEntry>() }, null )!;
@@ -42,7 +42,7 @@ public class ThemeParkIncHudChallengeTests
 		var runtime = (ParkEconomyRuntime)RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomyRuntime ) );
 		Set( runtime, "Economy", economy );
 		Set( level, "Park", runtime );
-		return new ThemeParkIncHud( level, Strings(), new ThemeParkIncHudHost() );
+		return new ThemeParkIncHud( level, Strings(), new ThemeParkIncHudHost(), speed );
 	}
 
 	private static void Set( object target, string property, object value ) =>

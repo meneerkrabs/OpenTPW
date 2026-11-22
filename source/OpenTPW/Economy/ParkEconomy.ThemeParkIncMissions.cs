@@ -20,8 +20,6 @@ public interface IThemeParkIncMissionWorld
 	void DestroyThing( ushort thing );
 	/// <summary>Loads <c>extents/extent.NNN</c> (<c>0x678B00</c>).</summary>
 	void LoadExtent( int index );
-	/// <summary>The cutscene thing's camera flight (<c>0x5D0400</c>).</summary>
-	void PlayCamera( ThemeParkIncCameraRequest request );
 }
 
 public sealed partial class ParkEconomy
@@ -41,8 +39,28 @@ public sealed partial class ParkEconomy
 	/// </summary>
 	internal List<int> TpiObjectiveLetters { get; } = new();
 
-	/// <summary>The latest <see cref="MaxTpiMissionNotices"/> camera flights the controller asked for (the cutscene thing is not ported: nothing plays them). Not saved.</summary>
+	/// <summary>The latest <see cref="MaxTpiMissionNotices"/> camera flights the controller asked for (<see cref="TpiCutscene"/> plays them). Not saved.</summary>
 	internal List<ThemeParkIncCameraRequest> TpiCameraRequests { get; } = new();
+
+	/// <summary>The latest <see cref="MaxTpiMissionNotices"/> camera ends (message 0x29: the thing and the result). Not saved.</summary>
+	internal List<ThemeParkIncCameraEnd> TpiCameraEnds { get; } = new();
+
+	/// <summary>The first briefings the zone arrival's end posted (<c>0x5CD6E0(0x5C, 5, 1)</c>); their window is not built. Not saved: the career's <c>+0x20</c> byte records it.</summary>
+	internal int TpiIntroductionLetters { get; private set; }
+
+	/// <summary>Theme Park Inc's cutscene thing (park thing class 22, <c>CUTS</c>): the camera flights; null wherever <see cref="TpiMissions"/> is.</summary>
+	public ThemeParkIncCutscene? TpiCutscene { get; private set; }
+
+	/// <summary>The world the cutscene's flights use (a level's things and ride view); null in a headless economy.</summary>
+	internal IThemeParkIncCutsceneWorld? TpiCutsceneWorld
+	{
+		get => TpiCutscene?.World;
+		set
+		{
+			if ( TpiCutscene != null )
+				TpiCutscene.World = value;
+		}
+	}
 
 	/// <summary>The letters and camera requests kept.</summary>
 	internal const int MaxTpiMissionNotices = 32;
@@ -59,8 +77,34 @@ public sealed partial class ParkEconomy
 	private void CreateThemeParkIncMissions()
 	{
 		// [EXT:headless-economy] a headless economy over settings without the zones' global.sam (tests and tools) has no zone records: its controller starts no statistics
-		if ( TpiCareer is { } career )
-			TpiMissions = new ThemeParkIncMissionController( career, new ThemeParkIncMissionHost( this ), Turn, startStatistics: !TpiHeadlessCareer );
+		if ( TpiCareer is not { } career )
+			return;
+		TpiMissions = new ThemeParkIncMissionController( career, new ThemeParkIncMissionHost( this ), Turn, startStatistics: !TpiHeadlessCareer );
+		// [BIN:TPI-EXE:0x64860F cutscene thing] the factory builds the cutscene thing just before the mission controller; every camera end posts message 0x29 to it (0x5D0996)
+		TpiCutscene = new ThemeParkIncCutscene( ThemeParkIncCameraFinished )
+		{
+			ArrivalEnded = () => TpiMissions?.IntroductionEnded(),
+			ViewedZone = () => new ThemeParkIncMissionHost( this ).ViewedZone
+		};
+	}
+
+	/// <summary>Message 0x29 from the cutscene thing: the mission controller's camera end.</summary>
+	private void ThemeParkIncCameraFinished( ThemeParkIncCameraEnd end )
+	{
+		AddTpiMissionNotice( TpiCameraEnds, end );
+		TpiMissions?.CameraFinished( Turn );
+	}
+
+	/// <summary>
+	/// The zone arrival's flyover when a Theme Park Inc world is entered (<c>0x6A43D8</c>): the viewed zone's camera path flies while the park clock is on its first day. False when nothing flew.
+	/// </summary>
+	// [BIN:TPI-EXE:0x608C70 days since start] the clock's turn time (world +0x1EAB40 × rate / 4 × 10 000 000) from the clock's base, divided by the day 0xC92A69C000
+	internal bool StartThemeParkIncArrival()
+	{
+		if ( TpiCutscene is not { } cutscene )
+			return false;
+		var days = (ThemeParkIncChallenges.Now( Turn ) - ThemeParkIncChallenges.Now( 0 )) / ThemeParkIncMissionController.Day;
+		return cutscene.PlayArrival( new ThemeParkIncMissionHost( this ).ViewedZone, days, type => TpiMissionWorld?.FindAttraction( type ) ?? 0 );
 	}
 
 	/// <summary>
@@ -75,11 +119,60 @@ public sealed partial class ParkEconomy
 		TpiMissions = attached;
 	}
 
-	/// <summary>The controller's thing update: once per world update pass, before the challenge system's (it is the newer thing), not in a lost park.</summary>
-	private void UpdateThemeParkIncMissions( long turn ) => TpiMissions!.Update( turn );
+	/// <summary>The controller's thing update, then the cutscene thing's: once per world update pass, before the challenge system's (they are the newer things), not in a lost park.</summary>
+	// [BIN:TPI-EXE:0x6495C1 thing pass] newest first: the mission controller (0x648633), then the cutscene thing (0x64860F, update 0x5D02F0), then the challenge system
+	private void UpdateThemeParkIncMissions( long turn )
+	{
+		TpiMissions!.Update( turn );
+		TpiCutscene?.Update();
+	}
 
 	/// <summary>The mission's requirements are met (<c>0x55A620</c>): the mission window's complete button would be enabled.</summary>
 	public bool ThemeParkIncMissionMet => TpiMissions is { } missions && TpiCareer?.CurrentZone != null && missions.MetRequirements();
+
+	/// <summary>
+	/// The mission window's complete button: when the requirements are met, an obstacle mission posts message 0x24 with the current obstacle (the controller flies the camera to it, and the flight's end opens
+	/// it and completes the mission), any other mission runs OnMissionComplete (its <c>Completion.ObstacleOpened</c> camera, or the tick at once). False, and nothing done, when the requirements are not met;
+	/// the window closes either way.
+	/// </summary>
+	// [BIN:TPI-EXE:0x55BD79 complete button] 0x55A620 false: nothing; HasObstacle (0x5F0190): message 0x24 (0x436140, vtbl 0x93A3D0) with park+0x1EAB6E; else the controller's 0x5F0770; then the window is destroyed
+	// (0x85049F(.., 4, 0, 0)) and 0xA61810 = 0
+	public bool PressThemeParkIncMissionComplete()
+	{
+		if ( !ThemeParkIncMissionMet )
+			return false;
+		var missions = TpiMissions!;
+		if ( TpiCareer!.HasObstacle )
+			missions.RemoveObstacle( TpiMissionWorld?.CurrentObstacle ?? 0 );
+		else
+			missions.OnMissionComplete( Turn );
+		return true;
+	}
+
+	/// <summary>The park as the mission window reads it; null without a mission controller.</summary>
+	internal IThemeParkIncMissionWindowWorld? TpiMissionWindowWorld( string playerName ) => TpiMissions == null ? null : new ThemeParkIncMissionWindowWorld( this, playerName );
+
+	private sealed class ThemeParkIncMissionWindowWorld( ParkEconomy economy, string playerName ) : IThemeParkIncMissionWindowWorld
+	{
+		public ThemeParkIncMissionController Missions => economy.TpiMissions!;
+
+		public long Turn => economy.Turn;
+
+		public ushort CurrentObstacle => economy.TpiMissionWorld?.CurrentObstacle ?? 0;
+
+		// [BIN:TPI-EXE:0x61EB30 obstacle project] the research manager's first project of kind 5 whose progress is below its effort (stride 0x24 from +0x8C, count +0x24E8), or -1;
+		// [BIN:TPI-EXE:0x61E5E0 project progress] -1 gives 0, else progress × 100 / effort (100 at an effort of 0.1 or less), at most 100
+		// [EXT:tpi-capability-gates] Theme Park Inc's research is not ported and the controller registers no obstacle project (EnsureObstacleResearch): there is none, so 0
+		public int ObstacleResearchPercent => 0;
+
+		// [BIN:TPI-EXE:0x55C8B0 researchers] the researcher list head word park+0x1EAB84 (TPI-STAFF), set while a researcher is employed
+		public bool ResearchersHired => economy.TpiStaff?.OfRole( ThemeParkIncStaffRole.Researcher ).Any() ?? false;
+
+		// the staff HQ's slot table is not modelled ([EXT:tpi-capability-gates] at ThemeParkIncMissionController.MetRequirements)
+		public bool? ObstacleStaffSlotsFilled => null;
+
+		public string PlayerName => playerName;
+	}
 
 	private sealed class ThemeParkIncMissionHost( ParkEconomy economy ) : IThemeParkIncMissionHost
 	{
@@ -135,8 +228,10 @@ public sealed partial class ParkEconomy
 		public void PlayCamera( ThemeParkIncCameraRequest request )
 		{
 			AddTpiMissionNotice( economy.TpiCameraRequests, request );
-			economy.TpiMissionWorld?.PlayCamera( request );
+			economy.TpiCutscene?.Play( request.Thing, request.Animation, request.Mode );
 		}
+
+		public void PostIntroductionLetter() => economy.TpiIntroductionLetters++;
 
 		// [BIN:TPI-EXE:0x61CBF0 obstacle research] the research lab adds a kind-5 project for the mission's obstacle (HasObstacle, a current obstacle thing, the zone's type range, obstacle state 1,
 		// no such project yet)

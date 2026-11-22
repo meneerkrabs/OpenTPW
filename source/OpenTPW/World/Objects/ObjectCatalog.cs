@@ -13,7 +13,9 @@ public enum ObjectCategory
 	Shop,
 	Sideshow,
 	Feature,
-	Upgrade
+	Upgrade,
+	/// <summary>Theme Park Inc's <c>obstacles</c> folder: the mission obstacles and the camera paths (docs/reverse/TPI-MISSIONS.md); Theme Park World levels have none.</summary>
+	Obstacle
 }
 
 /// <summary>Raw values of one <c>Upgrades[n]</c> level (cost, capacity, duration, ...), as the .sam layers give them.</summary>
@@ -229,7 +231,7 @@ public sealed class ObjectCatalogEntry
 }
 
 /// <summary>
-/// Every object of one theme: the archives under <c>/levels/&lt;theme&gt;/{rides,shops,sideshow,features,upgrades}</c>,
+/// Every object of one theme: the archives under <c>/levels/&lt;theme&gt;/{rides,shops,sideshow,features,upgrades}</c> (and Theme Park Inc's <c>obstacles</c>),
 /// each identified by the <c>Info.Id</c> of its .sam (the same ids the TPWI save records use).
 /// </summary>
 public sealed class ObjectCatalog
@@ -242,10 +244,13 @@ public sealed class ObjectCatalog
 		("shops", ObjectCategory.Shop, "Shops.sam"),
 		("sideshow", ObjectCategory.Sideshow, "SideShow.sam"),
 		("features", ObjectCategory.Feature, "Features.sam"),
-		("upgrades", ObjectCategory.Upgrade, "Upgrades.sam")
+		("upgrades", ObjectCategory.Upgrade, "Upgrades.sam"),
+		// [BIN:TPI-EXE:0x647BF0 obstacle placement] Theme Park Inc's object infos include the types of levels/<zone>/obstacles/*.wad (the placement walks every info of the zone, 0x43C6B0/0x43C6D0, and
+		// reads IsObstacle, IsCameraPath and IsOutsideFeature); the folder has no defaults file
+		("obstacles", ObjectCategory.Obstacle, "Obstacles.sam")
 	};
 
-	private static readonly ObjectCategory[] OriginalScanOrder = { ObjectCategory.Ride, ObjectCategory.Feature, ObjectCategory.Upgrade, ObjectCategory.Shop, ObjectCategory.Sideshow };
+	private static readonly ObjectCategory[] OriginalScanOrder = { ObjectCategory.Ride, ObjectCategory.Feature, ObjectCategory.Upgrade, ObjectCategory.Shop, ObjectCategory.Sideshow, ObjectCategory.Obstacle };
 
 	// Keyed by the file system instance, not its root: entries keep the instance they were read from, and
 	// a replaced FileSystem (setup, tests) with the same root must not hand out entries of the old one.
@@ -581,7 +586,12 @@ public sealed class ObjectCatalog
 		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
 		if ( easyFile != null )
 			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
-		// [BIN:TPI-EXE:0x6B0780 script variable setter] Theme Park Inc's executable never writes a script variable from its engine: the bounds-checked setter 0x6B0780 exists but no code calls it, and the only writes to a script's variable array are the interpreter's own 17 operand-destination tails (0x6AB48D and siblings). The read-only slots a modded object's script tests — capacity, duration, ride-closed, worn, break status, special, the staff room's closed — therefore stay 0 in the original too, and the scripts only ever clear the ones they also read (VAR_BOMB, VAR_FPBYPASS, VAR_USE, VAR_EMPTY). A guest's litter still arms a bin's first variable by name (Level.SetBinTrigger), which is Theme Park World's rule
+		// [BIN:TPI-EXE:0x6B0780 script variable setter] Theme Park Inc's bounds-checked setter of a script variable (thunk 0x4028EC) has 89 call sites: the attraction constructor's writes at a new thing (0x5DB7F1..0x5DB88A:
+		// a litter bin's variables 3, 11 and 12 and a plant's 2, 5 and 14 from Standard.sam, ThemeParkIncConstructionWords, written by ParkObjects in a Theme Park Inc world), its duration and closing writes
+		// (0x5DB99D, 0x5DBBF4), the camera flight (0x5D0619, 0x5D0938), the ride view's entry (0x5E5BD5), the open, repair, queue, plant, staff and visitor handlers
+		// [BIN:TPW-EXE:0x55A0B0 script variable setter] Theme Park World's setter has 45 direct call sites and its constructor (0x4DB090) writes only the duration (0x4DB633) and the closing (0x4DB779): it sets the
+		// litter flag (0x4DB3FB) but writes no bin variable, and has no watering flag, so a Theme Park Inc object a mod brings into a Theme Park World park keeps those variables at 0 (RIDES-045, retired). A guest's
+		// litter still arms a bin's first variable by name (Level.SetBinTrigger), which is Theme Park World's rule
 		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)
 		// the designers' own Info.Name, before objects.json puts a name over it (the key a Theme Park Inc string table is matched by, ObjectNames.ApplyThemeParkIncNames)
 		var ownName = modObject != null ? new ObjectSettings( layers )["Info.Name"] : null;
@@ -590,7 +600,9 @@ public sealed class ObjectCatalog
 		var settings = new ObjectSettings( layers );
 		// [DATA:<object>.sam:Info.Shape]
 		var shapeRows = settings.GetBlock( "Info.Shape" );
-		var shape = shapeRows == null || shapeRows.All( row => row.Trim().Length == 0 ) ? ObjectShape.Single : new ObjectShape( shapeRows );
+		// an obstacle's Info.Shape is a Theme Park Inc map grid (H, X, %: ThemeParkIncMapGrid), which the placement writes to the cells (ThemeParkIncObstacles); the object itself is a fixed item
+		// (Info.DontApplyOffset) and has no footprint of its own
+		var shape = category == ObjectCategory.Obstacle || shapeRows == null || shapeRows.All( row => row.Trim().Length == 0 ) ? ObjectShape.Single : new ObjectShape( shapeRows );
 
 		var models = files.Where( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ).OrderBy( file => file, StringComparer.OrdinalIgnoreCase ).ToArray();
 		var model = models.FirstOrDefault( file => string.Equals( Path.GetFileNameWithoutExtension( file ), name, StringComparison.OrdinalIgnoreCase ) )

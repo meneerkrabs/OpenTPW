@@ -161,8 +161,8 @@ listed `0x538F30` as the Get Promoted dialog. That dialog is the obstacle and ti
 ## 5. Not ported yet
 
 - **The mission controller** is ported since November 21, 2026 ([TPI-MISSIONS.md](TPI-MISSIONS.md)): the exit statistics, the requirements, the messages and the
-  completion tick with its extent, next obstacle and statistics. Still open there: the camera flights, the obstacles as world things and their opening,
-  the end sequence and message 0x2C.
+  completion tick with its extent, next obstacle and statistics. The camera flights and the obstacles as world things followed (§5, §6 there); still
+  open: the end sequence and message 0x2C.
 - **The mission window**, the prebuilt-park choice of `+0x50`, the zone switch and the per-zone park files.
 - **The meaning of some fields:** `+0x20..+0x29` beyond `+0x20`, `+0x58`, the history, the zone records' `+0x04`/`+0x0A` fields, and the
   `0xA6C0A0` and `0xAA0180` objects.

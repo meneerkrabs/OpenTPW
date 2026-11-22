@@ -97,7 +97,17 @@ public class ThemeParkIncLayoutCheckpointTests
 			StringAssert.Contains(message, $"version {version}");
 			StringAssert.Contains(message, "owned land");
 		}
-		Assert.AreEqual(3, ThemeParkIncLayoutCheckpoint.CurrentVersion);
+		Assert.AreEqual(4, ThemeParkIncLayoutCheckpoint.CurrentVersion);
+	}
+
+	[TestMethod]
+	public void CheckpointsWrittenBeforeTheObstaclesWereKeptAreRefusedByVersion()
+	{
+		// version 3 was written by a catalogue without Theme Park Inc's obstacles: the version is refused with its reason before any asset comparison
+		var old = Checkpoint() with { Version = 3 };
+		var message = Assert.ThrowsException<InvalidDataException>(() => ThemeParkIncLayoutCheckpoint.Deserialize(ParkResumeJson.Serialize(old))).Message;
+		StringAssert.Contains(message, "version 3");
+		StringAssert.Contains(message, "obstacles");
 	}
 
 	[TestMethod]

@@ -305,6 +305,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		PlanHandyman();
 		PlanMechanic();
 		PlanGardener();
+		PlanPerformers();
 		if ( flow.Level?.LevelName == "science" )
 			PlanFacilities();
 		if ( flow.Level?.LevelName == "science" )
@@ -717,7 +718,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 
 	private ThemeParkIncStaffMember? hiredHandyman;
 	private ThemeParkIncStaffMember? hiredMechanic;
-	private ThemeParkIncStaffMember? hiredGardener;
+	private ThemeParkIncStaffMember? hiredGardener, hiredEntertainer, hiredGuard;
 	private long handymanDropTurn;
 	private int staffRow;
 
@@ -977,6 +978,54 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( member.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering, "in a gardener state" );
 			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffSpriteRules.ThemeParkIncGardener ) > 0, "the gardener's sprite source shows a frame of the gardeners' bank" );
 			Log.Trace( $"Theme Park Inc slice smoke: gardener {member.ThingId} in state {member.State} with plant {member.PlantId}." );
+		} );
+	}
+
+	/// <summary>Hires an entertainer and a guard, drops them beside the cleaner and sees them updated, their cell effects on the grid and their sprites showing a frame.</summary>
+	private void PlanPerformers()
+	{
+		Do( "hire an entertainer and a guard and drop them beside the cleaner", () =>
+		{
+			var staff = Level.Park!.Economy.TpiStaff!;
+			ThemeParkIncStaffMember? Hire( ThemeParkIncStaffRole role )
+			{
+				var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).FirstOrDefault( index => staff.Slots[index]?.Role == role, -1 );
+				if ( slot < 0 )
+				{
+					Log.Trace( $"Theme Park Inc slice smoke: the pool holds no {role}; its step is skipped." );
+					return null;
+				}
+				Require( Level.BeginTpiHire( slot ) == null && Level.TpiPlacingSlot == slot, $"a {role}'s hire starts" );
+				var cell = hiredHandyman!.Navigation!.Cell;
+				var member = Level.DropTpiStaff( cell.X, cell.Y );
+				Require( member is { Placed: true } && member.Role == role && Level.Things.ModelOf( member.ThingId ) == ThemeParkIncStaffWorld.ThingModelOf( role ), $"the drop makes the {role} and his thing" );
+				return member;
+			}
+			hiredEntertainer = Hire( ThemeParkIncStaffRole.Entertainer );
+			hiredGuard = Hire( ThemeParkIncStaffRole.Guard );
+		} );
+		Wait( "the entertainer and the guard work", 60 );
+		Do( "the entertainer and the guard are updated by the park's turns", () =>
+		{
+			var grid = Level.Park!.Economy.Litter.Environment;
+			if ( hiredEntertainer is { } entertainer )
+			{
+				Require( entertainer.LastUpdateTurn > handymanDropTurn, "the thing sweep updated the entertainer" );
+				Require( entertainer.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking or ThemeParkIncStaffWorld.Performing, "in an entertainer state" );
+				Require( entertainer.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Entertainer ) > 0, "the entertainer's sprite source shows a frame of the theme's bank" );
+				var cell = ThemeParkIncStaffWorld.CellOfWord( (ushort)entertainer.EffectCell );
+				Require( grid.At( cell.X, cell.Y ).Happiness != 0, "the entertainer's row 0 is on his cell" );
+				Log.Trace( $"Theme Park Inc slice smoke: entertainer {entertainer.ThingId} in state {entertainer.State}, effect radius {entertainer.EffectRadius}." );
+			}
+			if ( hiredGuard is { } guard )
+			{
+				Require( guard.LastUpdateTurn > handymanDropTurn, "the thing sweep updated the guard" );
+				Require( guard.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking, "in a guard state" );
+				Require( guard.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Guard ) > 0, "the guard's sprite source shows a frame of the guards' bank" );
+				var cell = ThemeParkIncStaffWorld.CellOfWord( (ushort)guard.EffectCell );
+				Require( grid.At( cell.X, cell.Y ).Security != 0, "the guard's row 3 is on his cell" );
+				Log.Trace( $"Theme Park Inc slice smoke: guard {guard.ThingId} in state {guard.State}, effect radius {guard.EffectRadius}." );
+			}
 		} );
 	}
 

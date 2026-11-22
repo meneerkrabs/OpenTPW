@@ -22,7 +22,8 @@ public sealed class ThemeParkIncStaffMember
 	public int Id { get; }
 	public ThemeParkIncStaffRole Role { get; }
 	public int NameIndex { get; }
-	public uint SpriteDraw { get; }
+	/// <summary>The sprite draw the variant comes from; a guard's constructor replaces the candidate's with its own world draw (0x6902F0).</summary>
+	public uint SpriteDraw { get; internal set; }
 	/// <summary><c>+0x210</c>.</summary>
 	public int Experience { get; internal set; }
 	/// <summary><c>mSalary</c> (+0x214), the wage paid every month.</summary>
@@ -261,6 +262,13 @@ public sealed class ThemeParkIncStaffMember
 	public long JobTimer { get; internal set; }
 	/// <summary>A gardener's plant (+0x5D8, <c>mPlantToWater</c>, the thing the chooser found) as the plant's economy instance id; 0 for none. His work stamp is <see cref="WorkStamp"/> (+0x5D4).</summary>
 	public int PlantId { get; internal set; }
+	/// <summary>
+	/// An entertainer's or a guard's cell effect (+0xE4, the cell word 0x609E20 last saw him on) and the radius the effect went down with: the row 0 (entertainers) or 3 (guards) of the region
+	/// grid is on that cell with that radius (0x5D1960, 0x5D3B40); 0 for another role.
+	/// </summary>
+	public int EffectCell { get; internal set; }
+	/// <summary>The radius of the effect on <see cref="EffectCell"/> (the argument of 0x5D7500 at the moment it went down).</summary>
+	public int EffectRadius { get; internal set; }
 	/// <summary>The base speed word (+0xD4).</summary>
 	public int BaseSpeed { get; internal set; }
 	/// <summary>The speed bonus word (+0xD6): 25 on the walk to a job, else 0.</summary>
@@ -305,26 +313,30 @@ public sealed class ThemeParkIncStaffMember
 			Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, RideId, JobTimer ),
 		ThemeParkIncStaffRole.Gardener => new( ThingId, State, IdleStamp, WorkStamp, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 },
 			Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, PlantId: PlantId ),
+		ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard => new( ThingId, State, IdleStamp, WorkStamp, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed,
+			new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, EffectCell: EffectCell, EffectRadius: EffectRadius ),
 		_ => new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template,
 			ParkSaveFile.NavigationData.Capture( navigation ), CellSerial )
 	};
 
-	/// <summary>The roles <see cref="ThemeParkIncStaffWorld"/> places in the park: the handyman, the mechanic, the researcher and the gardener.</summary>
-	public static bool IsPlacedRole( ThemeParkIncStaffRole role ) => role is ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher
-		or ThemeParkIncStaffRole.Gardener;
+	/// <summary>The roles <see cref="ThemeParkIncStaffWorld"/> places in the park: every role.</summary>
+	public static bool IsPlacedRole( ThemeParkIncStaffRole role ) => Enum.IsDefined( role );
 
 	/// <summary>
 	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10, a mechanic's 0, 1, 21 and 22 and a gardener's 0, 1, 0x1F and 0x20, each with the training
-	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25; and for all four the rest states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area).
+	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25; an entertainer's 0, 1 and 0x17; a guard's 0 and 1 with the training states; and for all six the rest
+	/// states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area).
 	/// </summary>
 	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
-		ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher or ThemeParkIncStaffRole.Gardener
-			when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch => true,
+		ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher or ThemeParkIncStaffRole.Gardener or ThemeParkIncStaffRole.Entertainer
+			or ThemeParkIncStaffRole.Guard when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch => true,
 		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Gardener => state is 0 or 1 or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Researcher => state is 0 or 1 or ThemeParkIncResearch.Researching or ThemeParkIncStaffWorld.ToResearchRoom,
+		ThemeParkIncStaffRole.Entertainer => state is 0 or 1 or ThemeParkIncStaffWorld.Performing,
+		ThemeParkIncStaffRole.Guard => state is 0 or 1 || IsTrainingState( state ),
 		_ => false
 	};
 
@@ -342,12 +354,21 @@ public sealed class ThemeParkIncStaffMember
 		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && world.CellSerial >= 0 && world.Navigation is { IsValid: true }
 		&& role switch
 		{
-			ThemeParkIncStaffRole.Mechanic => world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0
+			ThemeParkIncStaffRole.Mechanic => world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.EffectCell == null && world.EffectRadius == null
 				&& world.Template is 1 or 3 or 0xF or 0x1A && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			ThemeParkIncStaffRole.Gardener => world.PlantId is >= 0 && world.RideId == null && world.JobTimer == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or 0x19
+			ThemeParkIncStaffRole.Gardener => world.PlantId is >= 0 && world.RideId == null && world.JobTimer == null && world.LitterCell == 0 && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 3 or 0xF or 0x19
 				&& area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.Template is 1 or 2 or 3 or 0xF or 0x19
+			// an entertainer or a guard keeps his cell effect (0x609E20's cell word and the radius it went down with); the entertainer's performing template is 0x13..0x16, no other role has an effect
+			ThemeParkIncStaffRole.Entertainer => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or (>= 0x13 and <= 0x16)
+				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
+			ThemeParkIncStaffRole.Guard => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 2 or 3 or 0xF
+				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
+			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 2 or 3 or 0xF or 0x19
 		};
+
+	/// <summary>An entertainer's or a guard's cell effect: a cell word of the map and a radius that is the writer's 16-bit argument.</summary>
+	private static bool IsValidEffect( ThemeParkIncStaffWorldSnapshot world ) =>
+		world.EffectCell is >= 1 and <= ParkLitter.MapSize * ParkLitter.MapSize && world.EffectRadius is >= 0 and <= ushort.MaxValue;
 
 	/// <summary>Restores the saved thing (a valid one, <see cref="IsValidWorld"/>), or leaves the member unplaced.</summary>
 	internal void RestoreWorld( ThemeParkIncStaffWorldSnapshot? world )
@@ -362,6 +383,8 @@ public sealed class ThemeParkIncStaffMember
 		RideId = world.RideId ?? 0;
 		JobTimer = world.JobTimer ?? 0;
 		PlantId = world.PlantId ?? 0;
+		EffectCell = world.EffectCell ?? 0;
+		EffectRadius = world.EffectRadius ?? 0;
 		BaseSpeed = world.BaseSpeed;
 		SpeedBonus = world.SpeedBonus;
 		Boost = (ushort)world.Boost;

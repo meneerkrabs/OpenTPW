@@ -61,12 +61,14 @@ public sealed class StaffSpriteState
 	public const int FirstPerformanceTemplate = 13;
 
 	/// <summary>Whether a template number is one the staff programs know (the wrapper's pending word).</summary>
-	public static bool IsKnownTemplate( int template ) => template is 1 or 2 or 3 or 9 or 10 or (>= 13 and <= 16) or (>= 17 and <= 25);
+	public static bool IsKnownTemplate( int template ) => template is 1 or 2 or 3 or 9 or 10 or (>= 13 and <= 16) or (>= 17 and <= 25)
+		|| GameEditions.IsThemeParkInc && template is >= (int)StaffSpriteProgram.ThemeParkIncPerformanceA and <= (int)StaffSpriteProgram.ThemeParkIncPerformanceD;
 
 	/// <summary>The program a non-performance template number runs, null for another number.</summary>
 	public static StaffSpriteProgram? ProgramOf( int template ) => template switch
 	{
 		1 or 2 or 3 or 9 or 10 or (>= 17 and <= 25) => (StaffSpriteProgram)template,
+		>= (int)StaffSpriteProgram.ThemeParkIncPerformanceA and <= (int)StaffSpriteProgram.ThemeParkIncPerformanceD when GameEditions.IsThemeParkInc => (StaffSpriteProgram)template,
 		_ => null
 	};
 
@@ -199,10 +201,13 @@ public sealed class StaffSpriteState
 		Require( source.Interval is >= 1 and <= SpritePlayer.LongestInterval );
 		Require( source.OutputValid <= 1 );
 		var programs = StaffSpritePrograms.Builtin;
-		Require( programs.Contains( new StaffSpritePc( source.CurrentPc ) ) && programs.Contains( new StaffSpritePc( source.RestartPc ) ) );
-		Require( source.LastPc == 0 || programs.Contains( new StaffSpritePc( source.LastPc ) ) );
+		// Theme Park Inc's performance programs (260 to 263) are built in for every edition, but only a Theme Park Inc park's entertainers run them
+		bool Known( uint word ) => programs.Contains( new StaffSpritePc( word ) )
+			&& (GameEditions.IsThemeParkInc || new StaffSpritePc( word ).Program is < StaffSpriteProgram.ThemeParkIncPerformanceA or > StaffSpriteProgram.ThemeParkIncPerformanceD);
+		Require( Known( source.CurrentPc ) && Known( source.RestartPc ) );
+		Require( source.LastPc == 0 || Known( source.LastPc ) );
 		foreach ( var word in source.Stack )
-			Require( word == 0 || programs.Contains( new StaffSpritePc( word ) ) );
+			Require( word == 0 || Known( word ) );
 		var registers = source.Registers;
 		Require( registers[(int)StaffSpriteRegister.Kind] <= 8 && registers[(int)StaffSpriteRegister.Variant] <= int.MaxValue );
 		Require( registers[(int)StaffSpriteRegister.Slot] < SpriteAnimationFile.SlotCount );

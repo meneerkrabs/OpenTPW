@@ -294,7 +294,7 @@ public sealed class StaffRenderer : Entity
 	}
 
 	/// <summary>
-	/// Theme Park Inc's placed members in the sprite pass: each is drawn from its role's bank (handymen, mechanics) of its variant at the slot and frame its sprite source shows, turned by its heading and the camera, at its
+	/// Theme Park Inc's placed members in the sprite pass: each is drawn from its role's bank (handymen, mechanics, gardeners, entertainers, guards) of its variant at the slot and frame its sprite source shows, turned by its heading and the camera, at its
 	/// interpolated point (as Theme Park World's members are).
 	/// </summary>
 	// [BIN:TPI-EXE:0x5D4980 handyman sprite] the handyman's source is made with the category 9 (handymen) and the variant byte +0x30 (0x5D1000 -> 0x4E4810 with the table 0x9CDA94); [EXT:tpi-twp-guest-rules] the
@@ -308,8 +308,8 @@ public sealed class StaffRenderer : Entity
 		{
 			if ( member.Navigation == null || member.Sprite.Output is not var (slot, step) )
 				continue;
-			// the handymen and the mechanics are drawn; a researcher is not drawn here
-			if ( member.Role is not (ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic) )
+			// the handymen, mechanics, gardeners, entertainers and guards are drawn; a researcher is not drawn here
+			if ( member.Role == ThemeParkIncStaffRole.Researcher )
 				continue;
 			var atlasIndex = sprites.AtlasFor( ThemeParkIncStaffWorld.SpriteTypeOf( member ), ThemeParkIncStaffWorld.VariantOf( member, sprites ) );
 			if ( !HasAtlas( atlasIndex ) || slot >= sprites.Atlases[atlasIndex].Animations.Animations.Count )

@@ -5,8 +5,9 @@ namespace OpenTPW;
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
 /// meters, day counters and search, and the training states 7 and 8; the mechanic runs 0, 1, 21 (to the ride) and 22 (repair) with the ride wear of ParkEconomy.UpdateThemeParkIncRide; the
 /// researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the gardener runs 0, 1, 0x1F (to the plant) and 0x20 (watering) with the training states and the plants of
-/// ParkEconomy.UpdateThemeParkIncPlant (ThemeParkIncStaffWorld.Gardeners); all four also run the rest states 2, 3 and 0x23 (ThemeParkIncStaffWorld.Rest.cs); the other roles are refused at the hire
-/// (<c>[EXT:tpi-capability-gates]</c>).
+/// ParkEconomy.UpdateThemeParkIncPlant (ThemeParkIncStaffWorld.Gardeners); the entertainer runs 0, 1 and 0x17 (performing) and the guard 0 and 1 with the training states, each with his row on the
+/// region grid (ThemeParkIncStaffWorld.Performers; the guard's chase and first aid are not ported, <c>[EXT:tpi-capability-gates]</c>); all six also run the rest states 2, 3 and 0x23
+/// (ThemeParkIncStaffWorld.Rest.cs).
 /// </summary>
 /// <remarks>
 /// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
@@ -64,10 +65,14 @@ public sealed partial class ThemeParkIncStaffWorld
 		WalkTemplate => StaffSpriteEvents.Patrol,
 		WorkTemplate => StaffSpriteEvents.Sweep,
 		RepairTemplate => StaffSpriteEvents.Repair,
+		PerformanceTemplateA => (int)StaffSpriteProgram.ThemeParkIncPerformanceA,
+		PerformanceTemplateB => (int)StaffSpriteProgram.ThemeParkIncPerformanceB,
+		PerformanceTemplateC => (int)StaffSpriteProgram.ThemeParkIncPerformanceC,
+		PerformanceTemplateD => (int)StaffSpriteProgram.ThemeParkIncPerformanceD,
 		_ => throw new ArgumentOutOfRangeException( nameof( template ), $"Theme Park Inc sprite template {template} is not ported." )
 	};
 
-	/// <summary>The bank a member is drawn from: the candidate's sprite draw, (R >> 2) mod the loaded banks of the role's category (9 handymen, 0xA mechanics), kept as a byte.</summary>
+	/// <summary>The bank a member is drawn from: the candidate's sprite draw (a guard's own constructor draw), (R >> 2) mod the loaded banks of the role's category (9 handymen, 0xA mechanics), kept as a byte.</summary>
 	// [BIN:TPI-EXE:0x6902F0 sprite variant] (draw >> 2) divided (unsigned) by the category's loaded count (0x9D7008 + 12 × category), the remainder; the candidate keeps its low byte (+0x10) and the
 	// member its variant word +0x30, which 0x5D1000 hands to the sprite; the count is the banks the level loaded from Generic\Handymen (one, Spr_ha, in the retail data)
 	// [BIN:TPI-EXE:0x5D9BB4 mechanic sprite] the mechanic's constructor makes its source with the category 0xA and the variant byte it was given (+0x30); esprites.wad holds the mechanics' bank
@@ -75,9 +80,11 @@ public sealed partial class ThemeParkIncStaffWorld
 	public static int VariantOf( ThemeParkIncStaffMember member, IStaffSpriteBanks? banks ) =>
 		banks?.BankCount( SpriteTypeOf( member ) ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
 
-	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (category 0xA), the researchers' (category 0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (category 0x12, <c>Generic\Gardeners</c>).</summary>
+	/// <summary>The sprite bank family of a member's role: the entertainers' (category 8, the level's theme folder), the handymen's (category 9), the mechanics' (category 0xA), the guards' (category 0xB), the researchers' (category 0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (category 0x12, <c>Generic\Gardeners</c>).</summary>
 	internal static StaffType SpriteTypeOf( ThemeParkIncStaffMember member ) => member.Role switch
 	{
+		ThemeParkIncStaffRole.Entertainer => StaffType.Entertainer,
+		ThemeParkIncStaffRole.Guard => StaffType.Guard,
 		ThemeParkIncStaffRole.Researcher => StaffType.Researcher,
 		ThemeParkIncStaffRole.Mechanic => StaffType.Mechanic,
 		ThemeParkIncStaffRole.Gardener => StaffSpriteRules.ThemeParkIncGardener,
@@ -337,12 +344,16 @@ public sealed partial class ThemeParkIncStaffWorld
 		ArgumentNullException.ThrowIfNull( economy );
 		ArgumentNullException.ThrowIfNull( member );
 		if ( !ThemeParkIncStaffMember.IsPlacedRole( member.Role ) )
-			throw new InvalidOperationException( "Only Theme Park Inc handymen, mechanics, researchers and gardeners are ported to the park ([EXT:tpi-capability-gates])." );
+			throw new InvalidOperationException( $"Theme Park Inc role {member.Role} is not a role of the park." );
 		if ( economy.TpiStaff is not { } staff )
 			throw new InvalidOperationException( "The park has no Theme Park Inc staff." );
 		var settings = staff.Settings;
 		member.ThingId = things?.Allocate( ThingModelOf( member.Role ) ) ?? NextOwnThingId( staff );
 		member.BaseSpeed = GuestSpeed.BaseSpeeds[(int)(economy.World.NextWord() % 5)];
+		// [BIN:TPI-EXE:0x5D3253 guard variant] the guard's start ignores the byte the drop hands it and takes its own: 0x6902F0(0xB) draws the world once ((R >> 2) mod the guards' loaded banks), right after the
+		// person start's base-speed draw; the entertainer's constructor keeps the candidate's byte and draws nothing
+		if ( member.Role == ThemeParkIncStaffRole.Guard )
+			member.SpriteDraw = economy.World.NextWord();
 		member.SpeedBonus = 0;
 		member.Boost = 0;
 		member.SmoothedSpeed = 0;
@@ -371,6 +382,8 @@ public sealed partial class ThemeParkIncStaffWorld
 		FollowChain( member );
 		if ( member.Role == ThemeParkIncStaffRole.Researcher )
 			StartResearcher( economy, member, economy.Turn );
+		else if ( member.Role is ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard )
+			StartPerformer( economy, member, economy.Turn );
 		else
 		{
 			// [BIN:TPI-EXE:0x5D9BC8 mechanic start] +0x5D8 and +0x5D4 = 0, then the setter 0x5DA150(0) (0x628180(0): the idle stamp 0, as the state is 0, the bonus 0 and template 3) before the search
@@ -465,6 +478,17 @@ public sealed partial class ThemeParkIncStaffWorld
 			CommonPreUpdate( member );
 			PreUpdateGardener( economy, staff.Settings, member, turn );
 			DispatchGardener( economy, staff.Settings, member, turn );
+		}
+		else if ( member.Role is ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard )
+		{
+			// [BIN:TPI-EXE:0x637651 entertainer update] kind 6: the pre-update 0x5D1960 (the cell effect, then the common 0x628050), then the dispatch 0x5D1E20
+			// [BIN:TPI-EXE:0x637660 guard update] kind 7: the pre-update 0x5D3B40 (the same with row 3), then the dispatch 0x5D3C60
+			MoveEffect( economy, staff.Settings, member );
+			CommonPreUpdate( member );
+			if ( member.Role == ThemeParkIncStaffRole.Entertainer )
+				DispatchEntertainer( economy, staff.Settings, member, turn );
+			else
+				DispatchGuard( economy, staff.Settings, member, turn );
 		}
 		else
 		{
@@ -698,13 +722,17 @@ public sealed partial class ThemeParkIncStaffWorld
 		SetState( economy, member, Patrol( economy, member ) ? Walking : Idle, turn );
 	}
 
-	/// <summary>The role's search: the handyman's 0x5D52A0, the mechanic's 0x5DA3D0 or the gardener's 0x5D28C0.</summary>
+	/// <summary>The role's search: the handyman's 0x5D52A0, the mechanic's 0x5DA3D0, the gardener's 0x5D28C0, the entertainer's 0x5D1A30 or the guard's decision 0x5D3C10.</summary>
 	internal void Search( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		if ( member.Role == ThemeParkIncStaffRole.Mechanic )
 			SearchMechanic( economy, member, turn );
 		else if ( member.Role == ThemeParkIncStaffRole.Gardener )
 			SearchGardener( economy, member, turn );
+		else if ( member.Role == ThemeParkIncStaffRole.Entertainer )
+			SearchEntertainer( economy, member, turn );
+		else if ( member.Role == ThemeParkIncStaffRole.Guard )
+			DecideGuard( economy, member, turn );
 		else
 			SearchHandyman( economy, member, turn );
 	}
@@ -747,10 +775,10 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>Looking for work (0x62D810): the role's search, then a member with low motivation who is now working walks to a rest area or stops (<see cref="LowMotivationRest"/>).</summary>
-	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0, kind 0x14 0x5D28C0 (the byte table 0x62D974's index 16: 0x62D844), kind 8 0x61B820; then the low-motivation rest 0x62D866
+	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0, kind 6 0x5D1A30 (0x62D832), kind 7 0x5D3C10 (0x62D84D), kind 0x14 0x5D28C0 (the byte table 0x62D974's index 16: 0x62D844), kind 8 0x61B820; then the low-motivation rest 0x62D866
 	internal void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
-		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 4 0x5DA3D0, kind 5 0x5D52A0, kind 0x14 0x5D28C0, kind 8 0x61B820
+		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 4 0x5DA3D0, kind 5 0x5D52A0, kind 6 0x5D1A30, kind 7 0x5D3C10, kind 0x14 0x5D28C0, kind 8 0x61B820
 		if ( member.Role == ThemeParkIncStaffRole.Researcher )
 			SearchResearchRoom( economy, settings, member, turn );
 		else
@@ -863,12 +891,15 @@ public sealed partial class ThemeParkIncStaffWorld
 		// doubled without the run, as tp.exe's 0x004FA3F8
 		if ( result == WalkResult.Walking )
 		{
-			if ( !member.Sprite.RestartsAt( StaffSpriteEvents.Walk ) )
+			// 0x60B541: the speed bonus +0xD6 above the table's first word (0x9CFB20, 0) and the class byte 7 (a guard) runs; no other staff role does
+			var run = member.Role == ThemeParkIncStaffRole.Guard && unchecked( (ushort)member.SpeedBonus ) > unchecked( (ushort)BonusTable[0] );
+			var (template, program) = run ? (2, StaffSpriteEvents.Run) : (1, StaffSpriteEvents.Walk);
+			if ( !member.Sprite.RestartsAt( program ) )
 			{
-				member.Template = 1;
-				member.Sprite.QueueTemplate( StaffSpriteEvents.Walk );
+				member.Template = template;
+				member.Sprite.QueueTemplate( program );
 			}
-			member.Sprite.QueueInterval( GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, run: false ) );
+			member.Sprite.QueueInterval( GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, run ) );
 		}
 		return result;
 	}

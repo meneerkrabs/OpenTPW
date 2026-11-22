@@ -710,6 +710,8 @@ public partial class Level : IDisposable
 			else
 			{
 				SetupThemeParkIncStaff();
+				SetupThemeParkIncRideEvents();
+				SeedThemeParkIncObjectList();
 				SeedThemeParkIncCurrentObstacle();
 				SeedThemeParkIncHqAndLab();
 				AttachThemeParkIncMissionWorld();
@@ -1035,6 +1037,32 @@ public partial class Level : IDisposable
 	}
 
 	/// <summary>
+	/// Wires a Theme Park Inc park's ride events (its park runs no gate, so <see cref="SetupParkGate"/> does not run): the economy's script writes reach the ride's script, a maintenance request
+	/// closes the ride and a mechanic's finished repair opens it through the repair tail.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5E3400 maintenance request] the request closes the ride itself (the open word +0x7C = 0, VAR_RIDECLOSED = 1 and the close model call); [BIN:TPI-EXE:0x5E2910 repair fully] the
+	// repair writes VAR_WORN and VAR_BREAKSTAT and runs the open and the closing tail 0x5E2C2E (OpenAfterThemeParkIncRepair); the wear tick 0x5E25B0 and the relief test 0x5E3990 write VAR_WORN
+	// [BIN:TPI-EXE:0x5E3509 maintenance cancel] the cancel 0x5E3400(0) opens the ride through 0x5E1DC0 whatever its guard says (the guard only logs "Opening non-openable ride"); the text HUD has no
+	// ride panel ([EXT:tpi-text-hud]: the native panel's call 0x5562E0, cancel 0x5563F0 and toggle 0x50FCD0 are not ported), but the shared RequestMaintenanceCommand (the co-op call button) runs
+	// the request (while a mechanic is placed, the panel button's state 0x5511FB) and the cancel
+	private void SetupThemeParkIncRideEvents()
+	{
+		if ( Park == null )
+			return;
+		Park.EventRaised += item =>
+		{
+			if ( item.Kind == ParkEventKind.RideScriptVariable && Enum.IsDefined( (RideVariables)item.InfoId ) )
+				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
+			else if ( item.Kind == ParkEventKind.RideRepaired )
+				OpenAfterThemeParkIncRepair( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.MaintenanceRequested )
+				CloseForUpgrade( item.InstanceId, upgrade: false );
+			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
+				OpenAfterClean( item.InstanceId );
+		};
+	}
+
+	/// <summary>
 	/// An installed upgrade replaces the ride's balloon sprite: level 1 or 2 hangs a new one over the ride's front cell, level 3 none (tp.exe 0x4DF8F0, <see cref="UpgradeBalloonRenderer"/>).
 	/// </summary>
 	private void HangUpgradeBalloon( int instance, int level )
@@ -1158,6 +1186,37 @@ public partial class Level : IDisposable
 			runtime.Hoarding.StartOpenFade();
 			runtime.Close();
 		}
+	}
+
+	/// <summary>
+	/// Theme Park Inc's repair opens the ride and then closes it again when it may not stay open: its reopening guard fails (a queue cut off, a coaster that refuses guests, the park closed, the
+	/// running spell closing it, or a running ride-closing challenge for its type) and no running challenge holds it open; then a spell that closes it closes it, and a coaster that refuses
+	/// guests closes it.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5E2C2E repair tail] the open 0x5E1DC0 (its own guard only logs "Opening non-openable ride"): the open word +0x7C = 1, VAR_RIDECLOSED = 0, SetState(0); then the guard again
+	// (0x5E2C35..0x5E2D2E): state 1 or 4, the request +0x78, state 2, the queue link 0x5E07B0 false, 0x5C8B70 (a running challenge of type 42 while the type's +0x218, UsageInfo.SpecialIngredient,
+	// is 1) true, the park closed (world +0x1EAB44, 0x64FA30), the spell's ClosedDuring word 1, or track type 3 (+0x14C) with the coaster test 0x485BB0 false reach the close at 0x5E2D34 unless
+	// 0x5C8BE0 (a running challenge of type 46 while the type's WhichUIType +0x70 is 0) holds it: "Closing...", +0x7C = 0, +0x80 = 0, VAR_RIDECLOSED = 1 and the close model call; then
+	// 0x5E2DE8 (CloseForWeatherAfterRepair) and the coaster test again (0x5E2EEB..0x5E2FB7)
+	// [BIN:TPI-EXE:0x5E07B0 queue link] the queue branch (+0x42 bit 8, Info.HasQueue) is Theme Park World's 0x004DE4A0 instruction for instruction (the back of the queue 0x5E0550 ≙ 0x004DE130,
+	// its front 0x5E03C0 ≙ 0x004DE040, the step 0x5E0A50 ≙ 0x004DE670, the link bytes 0x65CB00 and 0x65CC40 ≙ 0x522770 and 0x522850, over 0x48-byte cell records), so ParkGate.QueueConnected
+	// answers it; every Theme Park Inc object that wears, and so every one a mechanic repairs, has Info.HasQueue 1 (ThemeParkIncMechanicTests), so the branch without a queue is not reached
+	private void OpenAfterThemeParkIncRepair( int instance )
+	{
+		if ( AttractionRuntimeOf( instance ) is not { } runtime || Park?.Economy is not { } economy )
+			return;
+		runtime.Open();
+		var weather = economy.TpiWeatherState;
+		var record = EconomyStateOf( runtime );
+		var info = record != null && economy.Catalog.TryGet( record.InfoId, out var known ) ? known : null;
+		bool Running( int type ) => economy.TpiChallenges?.Slots.Any( slot => slot.Type == type && slot.Status == ThemeParkIncChallengeStatus.Running ) == true;
+		var mayOpen = ParkGate.MayOpen( Guests, runtime, record ) && !(info?.SpecialIngredient == 1 && Running( 42 )) && economy.IsParkOpen && !runtime.WeatherCloses( weather );
+		if ( !mayOpen && !(info?.WhichUIType == 0 && Running( 46 )) )
+			runtime.Close();
+		runtime.CloseForWeatherAfterRepair( weather );
+		if ( runtime.Coaster is { AcceptsGuests: false } )
+			runtime.Close();
+		SyncOpenState( runtime );
 	}
 
 	/// <summary>Walkable path cell next to (or nearest to) a footprint; the prototype Totem has no catalog entrance cell yet.</summary>

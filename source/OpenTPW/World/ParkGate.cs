@@ -250,7 +250,13 @@ public sealed class ParkGate
 	/// <see cref="MayOpen(OriginalObjectRuntime)"/> with <paramref name="record"/> as the ride's economy record: [EXT:online-coop-commands] a guest's window asks it of the record it projects
 	/// a waiting action onto (C4b-2), the queue and the circuit as they stand.
 	/// </summary>
-	internal bool MayOpen( OriginalObjectRuntime item, ParkObjectState? record )
+	internal bool MayOpen( OriginalObjectRuntime item, ParkObjectState? record ) => MayOpen( guests, item, record );
+
+	/// <summary>
+	/// <see cref="MayOpen(OriginalObjectRuntime, ParkObjectState?)"/> over <paramref name="guests"/>' path grid, for a level without a park door: Theme Park Inc's repair tail asks the same guard
+	/// (<c>0x5E2C35</c>: states 1, 4 and 2, the request, the queue link <c>0x5E07B0</c> and the coaster test), and its park runs no gate ([EXT:tpi-park-open]).
+	/// </summary>
+	internal static bool MayOpen( GuestSimulation? guests, OriginalObjectRuntime item, ParkObjectState? record )
 	{
 		// [BIN:TPW-EXE:0x004DF290 reopen guard state] the guard reads the state word +0x19C (never VAR_BROKEN): the shared word of the ride's record, or the bridge's own for an object without one
 		var state = record is { } ? ParkEconomy.ObjectState( record )

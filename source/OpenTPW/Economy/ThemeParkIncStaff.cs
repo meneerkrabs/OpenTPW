@@ -10,10 +10,13 @@ public sealed record ThemeParkIncStaffMemberSnapshot( int Id, ThemeParkIncStaffR
 
 /// <summary>
 /// A placed Theme Park Inc staff member's thing as saved: its thing id, state word (+0x1B4), idle stamp (+0x23C), work stamp (+0x5D4), litter target (+0x5D8, a cell word), speed words
-/// (+0xD4 base, +0xD6 bonus, +0xD8 boost) and smoothed speed (+0xDC), patrol rectangle (+0x24C..+0x258), the sprite template it last queued (+0x20), its walk and its cell-chain entry number.
+/// (+0xD4 base, +0xD6 bonus, +0xD8 boost) and smoothed speed (+0xDC), patrol rectangle (+0x24C..+0x258), the sprite template it last queued (+0x20), its walk and its cell-chain entry number;
+/// a mechanic's ride (+0x5D8, the ride's economy instance) and job timer (+0x5D4) instead of the litter target and the work stamp.
 /// </summary>
 public sealed record ThemeParkIncStaffWorldSnapshot( int ThingId, int State, long IdleStamp, long WorkStamp, int LitterCell, int BaseSpeed, int SpeedBonus, int Boost, float SmoothedSpeed,
-	int[] PatrolArea, int Template, ParkSaveFile.NavigationData? Navigation, long CellSerial );
+	int[] PatrolArea, int Template, ParkSaveFile.NavigationData? Navigation, long CellSerial,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] int? RideId = null,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] long? JobTimer = null );
 
 /// <summary>
 /// The saved Theme Park Inc staff: the 32 pool slots with their being-placed bytes, the members in list order, the park-maximum flags and hired counts of the last

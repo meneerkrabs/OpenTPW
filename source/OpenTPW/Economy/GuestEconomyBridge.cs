@@ -40,7 +40,9 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 			var attraction = Guests.Attractions.FirstOrDefault( candidate => candidate.AttractionId == attractionId );
 			if ( attraction == null )
 				break;
-			operation = new RideOperation( attraction.IsRunning, attraction.RidersOnBoard, attraction.Speed );
+			// [BIN:TPI-EXE:0x5E2602 wear tick running] Theme Park Inc's wear tick takes the ride as running while VAR_RUNNING is above 0 (testl, jg); Theme Park World's wear step keeps its nonzero test
+			var running = Economy().TpiStaff != null ? attraction.RunningVariable > 0 : attraction.IsRunning;
+			operation = new RideOperation( running, attraction.RidersOnBoard, attraction.Speed );
 			return true;
 		}
 		operation = default;

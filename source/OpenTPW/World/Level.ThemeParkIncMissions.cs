@@ -40,8 +40,13 @@ public partial class Level
 		public int? TypeOf( ushort thing ) => level.ThemeParkIncThing( thing )?.Entry.InfoId;
 
 		// RIDES-040 (tagged at ParkObjects' restore of the fixed scene records): the replacement is a fixed item (Info.DontApplyOffset 1, like every obstacle) and is drawn from the sentinel anchor (0, 0) as the prebuilt's fixed scene records are
-		public void Place( int type ) => level.Objects.Add( level.Objects.Catalog.Find( type )
-			?? throw new InvalidDataException( $"An obstacle is replaced with type {type}, which no object archive of {level.LevelName} declares." ), 0, 0, 0 );
+		// [BIN:TPI-EXE:0x5DB28C object list] the replacement's constructor 0x5DB1B0 puts the new attraction at the object list's head (0x64F3E0); it has no economy record, so it enters as its thing id
+		public void Place( int type )
+		{
+			var item = level.Objects.Add( level.Objects.Catalog.Find( type )
+				?? throw new InvalidDataException( $"An obstacle is replaced with type {type}, which no object archive of {level.LevelName} declares." ), 0, 0, 0 );
+			level.Park?.Economy.AddThemeParkIncThing( item.ThingId );
+		}
 
 		public void Destroy( ushort thing )
 		{

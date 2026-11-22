@@ -84,6 +84,10 @@ python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/orac
 
 `tpi_staff_candidate_oracle.py` runs Theme Park Inc's staff candidate constructor `0x6302C0` with the real expected wage and name draw, the settings words it reads written into the image and its outside calls stubbed (scripted world and `rand()` words, name-taken answers), and compares the record with the port `ThemeParkIncStaffCandidates.Generate` reads (500 cases over the six roles, random agency rows and keys, no mismatch); `--golden` prints native cases.
 
+## Theme Park Inc's ride wear and the mechanic's repair timer
+
+`tpi_ride_wear_oracle.py` runs the wear amount `0x5E21A0`, the wear tick `0x5E25B0` and the mechanic's setter `0x5DA150` (state 0x16, the repair timer, with the real work duration `0x62E4C0`) of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) on a synthetic ride thing, type record and mechanic, with the script reads, the type lookup and the advice chain stubbed, and compares the repair and life singles, the `VAR_WORN` write and the timer with the reading `ParkEconomy.ThemeParkIncRides` and `ThemeParkIncStaffWorld` port at the control words `0x7F` and `0x27F` (2000 cases by default, no mismatch). `--golden` prints native wear-amount and wear-tick cases (the first ten, then the first clamped repair, clamped life, worn ride and wearing special ride), which `ThemeParkIncMechanicTests` pins as numbers. See [TPI-STAFF.md](../../../docs/reverse/TPI-STAFF.md), "Mechanics and ride wear".
+
 ## Theme Park Inc's weather spell roll (round 10, package K)
 
 `tpi_weather_roll_oracle.py` runs the spell roll `0x642770` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with the calendar reads and the CRT `rand()` stubbed and synthetic table and quality words, and compares the spell record with the model `ThemeParkIncWeatherSpells` ports (3000 random cases, no mismatch; ARRIVAL-008, `[EXT:tpi-weather-spell-seed]`).

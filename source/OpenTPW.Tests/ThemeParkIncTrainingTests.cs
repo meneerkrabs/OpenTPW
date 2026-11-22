@@ -31,10 +31,11 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 		return grid;
 	}
 
-	private static ThemeParkIncStaffMember Hire( ParkEconomy economy, ThemeParkIncStaffWorld world, (int X, int Y) cell, int experience )
+	private static ThemeParkIncStaffMember Hire( ParkEconomy economy, ThemeParkIncStaffWorld world, (int X, int Y) cell, int experience,
+		ThemeParkIncStaffRole role = ThemeParkIncStaffRole.Handyman )
 	{
 		var staff = economy.TpiStaff!;
-		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Handyman );
+		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index]?.Role == role );
 		Assert.IsTrue( staff.BeginHire( slot ) );
 		var member = staff.EndHire( slot, placed: true )!;
 		member.Experience = experience;
@@ -266,8 +267,10 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 
 			var older = objects.TryPlace( training, 9, 9, 0, out _ )!;
 			older.ThingId = 500;
+			economy.AddThemeParkIncThing( 500 );
 			var newer = objects.TryPlace( training, 12, 12, 0, out _ )!;
 			newer.ThingId = 600;
+			economy.AddThemeParkIncThing( 600 );
 			Assert.AreEqual( (ushort)600, world.Rooms!.First( ThemeParkIncRoomKind.Training )!.Value.Thing, "the newest room first" );
 			// the room being destroyed is off the object list while its messages go out (0x64F430 at 0x5DE7C4): the finder takes the other one
 			var destroyed = typeof( Level ).GetField( "tpiDestroyedRoom", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
@@ -325,6 +328,40 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 		rooms.Training = new ThemeParkIncRoom( 502, (10, 5) );
 		world.ChooseAbility( economy, second, 7, confirmed: false, turn );
 		Assert.AreEqual( (7, 0), (second.State, second.Navigation!.Mask) );
+	}
+
+	[TestMethod]
+	public void AMechanicTrainsThroughTheCommonHandlerAndASaveInTheRoomContinues()
+	{
+		// [BIN:TPI-EXE:0x5DA280 mechanic dispatch] every mechanic state outside 0..3, 21 and 22 goes to the common handler 0x6287A0 (byte table 0x5DA358, entry 6, 0x5DA333), whose 7 (0x62A7C0) and
+		// 8 (0x62AA50) are the training's; a mechanic learns Ride Upgrading (1) as a handyman learns his abilities
+		var economy = ScienceEconomy();
+		var world = new ThemeParkIncStaffWorld( Row( economy ) ) { Rooms = new TestRooms { Training = new ThemeParkIncRoom( 500, (8, 5) ) } };
+		var member = Hire( economy, world, (1, 5), experience: 20000, ThemeParkIncStaffRole.Mechanic );
+		Assert.AreEqual( ThemeParkIncTrainingChoice.Started, world.ChooseAbility( economy, member, 1, confirmed: false, economy.Turn ) );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 400 && member.State == ThemeParkIncTraining.ToTrainingRoom; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( ThemeParkIncTraining.Training, member.State, "he walked to the room" );
+		for ( var step = 0; step < 100; step++ )
+			world.Update( economy, member, ++turn );
+		// the save in the room: the staff snapshot and the park save take the mechanic's training state
+		var snapshot = JsonSerializer.Deserialize<ThemeParkIncStaffSnapshot>( JsonSerializer.Serialize( economy.TpiStaff!.Capture() ) )!;
+		Assert.IsTrue( ThemeParkIncStaff.IsValid( snapshot ), "a mechanic in the training room is a valid save" );
+		var json = ParkSaveFile.Serialize( economy );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog );
+		var back = restored.TpiStaff!.Members.Single( saved => saved.Id == member.Id );
+		Assert.AreEqual( (ThemeParkIncTraining.Training, 1, member.TrainingProgress), (back.State, back.LearningAbility, back.TrainingProgress) );
+		var restoredWorld = new ThemeParkIncStaffWorld( Row( restored ) ) { Rooms = new TestRooms { Training = new ThemeParkIncRoom( 500, (8, 5) ) } };
+		for ( var step = 0; step < 400 && (member.State == ThemeParkIncTraining.Training || back.State == ThemeParkIncTraining.Training); step++ )
+		{
+			turn++;
+			world.Update( economy, member, turn );
+			restoredWorld.Update( restored, back, turn );
+		}
+		Assert.AreEqual( (1, 1), (member.Ability, back.Ability), "both learnt Ride Upgrading" );
+		Assert.IsTrue( member.State is not (ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training), "and went back to work" );
+		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ), "the continued park is the park that went on" );
 	}
 
 	[TestMethod]

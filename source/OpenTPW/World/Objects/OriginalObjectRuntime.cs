@@ -297,6 +297,20 @@ public sealed partial class OriginalObjectRuntime
 		}
 	}
 
+	/// <summary>Whether the running Theme Park Inc spell closes this attraction (its <c>ClosedDuring*</c> word is 1).</summary>
+	internal bool WeatherCloses( int weatherState ) => ClosedDuring( weatherState ) == 1;
+
+	/// <summary>The repair's weather close (Theme Park Inc <c>0x5E2DE8</c>): a spell that closes the attraction closes it again and sets the flag, whatever the flag held.</summary>
+	// [BIN:TPI-EXE:0x5E2DE8 repair weather close] the weather thing's state 1..4 picks the type word (+0x100..+0x10C); 1 logs "Closing...", clears the open word +0x7C and +0x80, writes VAR_RIDECLOSED = 1,
+	// the close model call, and sets +0x41 = 1 (0x5E2EE7)
+	internal void CloseForWeatherAfterRepair( int weatherState )
+	{
+		if ( !WeatherCloses( weatherState ) )
+			return;
+		Close();
+		ClosedDueToWeather = true;
+	}
+
 	// [BIN:TPW-EXE:0x004DF300 close model call] every closing that writes the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (0x004DF300, 0x004DF150, 0x004DFE30(1), the repair tail's re-close at 0x004DFD3E, SetState 1, 2 and 4, a built object with a queue at 0x004DB712) calls 0x00454550(1) after it: the hoarding rises with the closed set unless another set stands
 	public void Close() => Close( modelCall: true );
 

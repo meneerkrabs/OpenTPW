@@ -73,6 +73,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( Rules.ThemeParkInc && settings.ThemeParkIncStaff is { } staffSettings )
 		{
 			TpiStaff = new ThemeParkIncStaff( staffSettings, TpiStaffNameText );
+			tpiObjectList = new();
 			// [BIN:TPI-EXE:0x630CB0 opening pool] the new-world init (0x6482BA -> 0x5D65B0 -> 0x630CB0) fills the opening pool from the world generator and stamps it with the turn,
 			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
 			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
@@ -591,9 +592,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
 	internal void UpdateThings( long turn )
 	{
-		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff and research
+		// [EXT:tpi-money-only] a park without Theme Park World's staff runs none of this: the staff, the research lab and Theme Park World's ride update are refused with the staff and research; a
+		// Theme Park Inc park with its own staff wears its rides by its own rules (UpdateThemeParkIncRide) and its mechanics repair them (ThemeParkIncStaffWorld)
 		if ( !Rules.Staff )
 		{
+			// a Theme Park Inc park with its staff wears its rides (UpdateThemeParkIncRide); without a host sweep the headless order is this one ([EXT:headless-economy])
+			if ( TpiStaff != null )
+				UpdateRides( turn );
 			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system and mission controller are things of the world pass (0x6375E0 -> 0x5C7930, 0x5EF520) whatever the staff
 			if ( TpiChallenges != null || TpiMissions != null )
 				UpdateChallenges( turn );
@@ -703,6 +708,15 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) )
 			return false;
+		// a park with Theme Park Inc's staff runs Theme Park Inc's request and cancel (0x5E3400), which its own ride panel calls (0x5562E0, 0x5563F0, 0x50FCD0)
+		if ( TpiStaff != null )
+		{
+			if ( on )
+				RequestThemeParkIncMaintenance( item );
+			else
+				CancelThemeParkIncMaintenance( item );
+			return true;
+		}
 		if ( item.MaintenanceRequested == on )
 			return true;
 		item.MaintenanceRequested = on;
@@ -1106,6 +1120,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>One object's update of a park turn (the body of <see cref="UpdateRides"/>): the wear step, the breakdown check and the relief objects' worn report.</summary>
 	internal void UpdateRide( ParkObjectState item, long turn )
 	{
+		// a Theme Park Inc park with its staff runs Theme Park Inc's own object update (UpdateThemeParkIncRide)
+		if ( TpiStaff != null )
+		{
+			UpdateThemeParkIncRide( item, turn );
+			return;
+		}
 		// [BIN:TPW-EXE:0x004DB4FB object state] a thing whose type record is choosable (Info.IsChoosable, +0x32 bit 4) starts in state 0, any other in state 3, which the update skips
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || !info.IsChoosable )
 			return;
@@ -1392,7 +1412,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) || !Catalog.TryGet( item.InfoId, out var info ) || !info.ProvidesRelief )
 			return false;
-		// [EXT:tpi-no-maintenance-wear] without staff nobody cleans a toilet (the handymen are refused), so a use wears none: the gauge stays full and the toilet stays usable (see also the ride wear in UpdateThings and the litter in ParkEconomyRuntime.AttachLitter)
+		// [EXT:tpi-no-maintenance-wear] Theme Park Inc's toilet wear and loo cleaning are unported (its handymen sweep litter only), so a use wears none: the gauge stays full and the toilet stays
+		// usable (see also the litter in ParkEconomyRuntime.AttachLitter; the rides wear by Theme Park Inc's rules with its staff, UpdateThemeParkIncRide)
 		if ( !Rules.Staff )
 			return false;
 		if ( OnlineVisit )
@@ -2294,7 +2315,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 		};
 		// [BIN:TPW-EXE:0x004DB4FB object state] the constructor stores 0 for a choosable type and 3 for any other (SetState at 0x4DB508)
 		item.StoredState = info.IsChoosable ? RideObjectStates.Idle : RideObjectStates.NotAnAttraction;
+		// Theme Park Inc's constructor starts the life gauge at the type's working life (ThemeParkIncStartingLife); its wear runs only with its staff, so the gauge is set with them
+		if ( TpiStaff != null )
+			item.LifeGauge = ThemeParkIncStartingLife( info );
 		objects.Add( item.Id, item );
+		// [BIN:TPI-EXE:0x64F3E0 object list] a new Theme Park Inc object enters the object list at its head
+		tpiObjectList?.Insert( 0, item.Id );
 		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
@@ -2309,6 +2335,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 	private void ReleaseJobsOn( int instanceId )
 	{
 		StaffWorld?.ObjectRemoved( this, instanceId );
+		// Theme Park Inc's mechanics hear the removal message (0x5D9DD0)
+		if ( TpiStaff != null )
+			ThemeParkIncStaffWorld.ObjectRemoved( TpiStaff, instanceId, Turn );
 		foreach ( var member in Staff.Members )
 		{
 			if ( member.AssignedInstanceId == instanceId )
@@ -2361,6 +2390,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var value = ScrapValue( item );
 		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
+		tpiObjectList?.Remove( instanceId );
+		UnlinkThemeParkIncThing( instanceId );
 		ReleaseJobsOn( instanceId );
 		Post( LedgerCategory.OtherIncome, value );
 		Raise( ParkEventKind.ObjectSold, value, instanceId, item.InfoId );
@@ -2373,6 +2404,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var item = RequireObject( instanceId );
 		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
+		tpiObjectList?.Remove( instanceId );
+		UnlinkThemeParkIncThing( instanceId );
 		ReleaseJobsOn( instanceId );
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
 	}
@@ -3236,6 +3269,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		NextObjectId = nextObjectId;
 		DroppedAdmissions = droppedAdmissions;
 		objects.Clear();
+		tpiThingIds.Clear();
 		foreach ( var item in restoredObjects )
 		{
 			if ( !Catalog.TryGet( item.InfoId, out _ ) )
@@ -3244,6 +3278,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 			objects.Add( item.Id, item );
 			HookStateWord( item );
 		}
+		// the objects in the order they were built, newest first, until the save's own list is restored (RestoreThemeParkIncObjectList)
+		if ( tpiObjectList != null )
+			tpiObjectList = objects.Keys.OrderByDescending( id => id ).ToList();
 		loans.Clear();
 		loans.AddRange( restoredLoans );
 		takenOffers.Clear();

@@ -286,6 +286,24 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
+	public void AMechanicRestsLikeTheOthers()
+	{
+		// [BIN:TPI-EXE:0x5DA358 mechanic dispatch] states 2 and 3 go to 0x629EF0 and 0x62A1C0, 0x23 to the common handler
+		var rooms = new TestRooms();
+		var (economy, world, member) = Park( rooms, ThemeParkIncStaffRole.Mechanic );
+		var settings = economy.TpiStaff!.Settings;
+		rooms.Areas.Add( Area( 40, 9 ) );
+		member.Energy = settings.RestLevel;
+		world.LookForWork( economy, settings, member, economy.Turn );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRestArea, 40), (member.State, member.RestArea), "the mechanic's search runs the rest gate" );
+		Walk( economy, world, member, ThemeParkIncStaffWorld.ToRestArea );
+		Assert.AreEqual( ThemeParkIncStaffWorld.Resting, member.State );
+		Assert.IsTrue( ThemeParkIncStaffMember.IsPortedState( ThemeParkIncStaffRole.Mechanic, ThemeParkIncStaffWorld.RestSearch ) );
+		Walk( economy, world, member, ThemeParkIncStaffWorld.Resting, 2000 );
+		Assert.AreNotEqual( ThemeParkIncStaffWorld.Resting, member.State, "the rest ends and he goes back to work" );
+	}
+
+	[TestMethod]
 	public void TheLevelsRestAreasFollowTheObjectListAndTheOpenWord()
 	{
 		// [BIN:TPI-EXE:0x62BA20 rest-area finder] the attraction list newest first, a thing with +0x42 & 2 and the open word; the level's IThemeParkIncRooms on placed objects of synthetic types
@@ -325,13 +343,16 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 			Backing( level, "Park", runtime );
 			typeof( Level ).GetMethod( "AttachThemeParkIncRooms", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, null );
 
-			// the things in their pool's order: the newest thing heads the list, as the object list's (0x637100, 0x64F3E0)
+			// each thing enters the object list at its head (0x64F3E0), as these synthetic objects have no economy record: by its negated thing id
 			var first = objects.TryPlace( staffRoom, 3, 9, 0, out _ )!;
 			first.ThingId = level.Things.Allocate( SaveThingModel.Attraction );
+			economy.AddThemeParkIncThing( first.ThingId );
 			var second = objects.TryPlace( staffRoom, 9, 9, 0, out _ )!;
 			second.ThingId = level.Things.Allocate( SaveThingModel.Attraction );
+			economy.AddThemeParkIncThing( second.ThingId );
 			var ride = objects.TryPlace( Entry( 1105, "" ), 6, 12, 0, out _ )!;
 			ride.ThingId = level.Things.Allocate( SaveThingModel.Attraction );
+			economy.AddThemeParkIncThing( ride.ThingId );
 			var areas = world.Rooms!.RestAreas();
 			CollectionAssert.AreEqual( new[] { (ushort)second.ThingId, (ushort)first.ThingId }, areas.Select( area => area.Thing ).ToArray(), "the staff rooms only, newest first" );
 			Assert.AreEqual( second.ThingCell, areas[0].Cell );
@@ -342,6 +363,10 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 			// the room being destroyed is off the list while its messages go out
 			typeof( Level ).GetField( "tpiDestroyedRoom", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, first.ThingId );
 			CollectionAssert.AreEqual( new[] { (ushort)second.ThingId }, world.Rooms.RestAreas().Select( area => area.Thing ).ToArray() );
+			typeof( Level ).GetField( "tpiDestroyedRoom", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, 0 );
+			// the finder walks the object list, not the thing pool: a saved list that names the older room first puts it first, and First() follows the same order
+			economy.RestoreThemeParkIncObjectList( new[] { -ride.ThingId, -first.ThingId, -second.ThingId } );
+			CollectionAssert.AreEqual( new[] { (ushort)first.ThingId, (ushort)second.ThingId }, world.Rooms.RestAreas().Select( area => area.Thing ).ToArray(), "the object list's order, not the pool's" );
 		}
 		finally
 		{

@@ -186,7 +186,7 @@ public partial class Level
 	{
 		if ( Park?.Economy.TpiStaff == null || Guests == null )
 			return;
-		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
+		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests, ObjectCells = TpiObjectCells };
 		AttachThemeParkIncRooms();
 		AdoptTpiStaffThings();
 		// the members' sprites: Theme Park Inc's esprites.wad holds the handymen's bank under the folder Theme Park World's loader reads (Generic\Handymen, Spr_ha), found by name
@@ -221,18 +221,18 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman or a researcher goes to the hand until a drop or a cancel; the other roles are
-	/// refused. Null when the hire starts, else the refusal's reason.
+	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman, a mechanic or a researcher goes to the hand until a drop or a cancel;
+	/// the other roles are refused. Null when the hire starts, else the refusal's reason.
 	/// </summary>
 	// [BIN:TPI-EXE:0x630D10 hire] the slot is marked as being placed and the park maximum check runs; the placement tool 0x93B61C then holds the candidate (its enter 0x4D4C20 makes the dangling sprite)
-	// [EXT:tpi-capability-gates] only the handyman and the researcher are ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
+	// [EXT:tpi-capability-gates] only the handyman, the mechanic and the researcher are ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
 	public string? BeginTpiHire( int slot )
 	{
 		if ( Park?.Economy.TpiStaff is not { } staff )
 			return "unavailable";
 		if ( slot < 0 || slot >= ThemeParkIncStaff.PoolSlots || staff.Slots[slot] is not { } candidate )
 			return "no candidate";
-		if ( candidate.Role is not (ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Researcher) )
+		if ( !ThemeParkIncStaffMember.IsPlacedRole( candidate.Role ) )
 			return "role not ported";
 		if ( TpiStaffWorld == null )
 			return "unavailable";
@@ -309,6 +309,80 @@ public partial class Level
 				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
 		}
 		return null;
+	}
+
+	/// <summary>
+	/// An economy object's cells for the Theme Park Inc mechanic's search: its thing cell (the finder's distance) and its entrance cell (the thing's word +0x46, the search's walk target), from
+	/// the placed object linked to the instance.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DB4C1 object cell words] +0x46 = +0x44 + the type's +0x5E8 turned by the angle (ThemeParkIncStaffWorld.EntranceWord, the drop's); a cell word of 0 or off the map has no cell
+	private ((int X, int Y) Thing, (int X, int Y)? Entrance)? TpiObjectCells( int instance )
+	{
+		foreach ( var (item, linked) in economyInstances )
+		{
+			if ( linked != instance || item.IsDeleted )
+				continue;
+			var settings = item.Entry.Settings;
+			var thing = new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
+				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
+			var word = ThemeParkIncStaffWorld.EntranceWord( thing );
+			var entrance = ThemeParkIncStaffWorld.CellOfWord( word );
+			return (item.ThingCell, word != 0 && Guests != null && Guests.Grid.Cells.InBounds( entrance.X, entrance.Y ) ? entrance : null);
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// A park built from a Theme Park Inc save takes the saved object list's order (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): from the World variable <c>FirstObject</c> along each
+	/// attraction thing's <c>mNext</c>, an object with an economy record by its economy instance and any other thing by its negated thing id. A continuation restores its own list.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DAAD0 ride finder] the finder walks the list from world +0x1EAB88 through each object's +0x14, the loader's FirstObject and mNext (0x64BC00, 0x5DC430); in the prebuilt Science
+	// park the list holds 24 things, newest first, of which 17 have an economy record (their record order is not the list's order) and 7 have none: the obstacles, lake, gate and camera path of
+	// Info.Id 1700, 1701, 1702, 1703, 1750 and 1798 (not in the economy catalogue) and the fixed item 1710 (a tool entry, not imported)
+	private void SeedThemeParkIncObjectList()
+	{
+		if ( resumeState != null || Park?.Economy is not { TpiStaff: not null } economy || OriginalPark?.Save?.ThemeParkIncWorld is not { } world )
+			return;
+		var instances = new Dictionary<int, int>();
+		foreach ( var (item, instance) in economyInstances )
+			if ( Objects.SavedThemeParkIncThingOf( item ) is var thing and not 0 )
+				instances[thing] = instance;
+		var list = ThemeParkIncObjectListOf( world, instances );
+		economy.RestoreThemeParkIncObjectList( list );
+		// a thing of the list that no object of OpenTPW's is (the tool entry 1710 of the prebuilt) is still a thing of the original's park: its slot is held, so its id is not handed out again
+		// while the list names it
+		// [BIN:TPI-EXE:0x64D759 free list rebuild] after the thing list's ENOD the World loader rebuilds the free list from the slots no saved thing occupies (0xAA18C4 on, stride 20, the head
+		// 0xAD39A4), as tp.exe's 0x518D43, so every saved thing keeps its slot
+		// partial: Occupy puts the held slot at the newest place of the used list, not at the saved thing's place, and only the list's attraction things are held here (other saved things the
+		// slice does not rebuild keep the new world's slots; docs/reverse/TPI-STAFF.md)
+		var built = Objects.Objects.Select( item => item.ThingId ).ToHashSet();
+		foreach ( var key in list )
+		{
+			if ( key > 0 || built.Contains( -key ) )
+				continue;
+			if ( Objects.Things is not { } pool || !pool.Occupy( -key, SaveThingModel.Attraction ) || !pool.Hold( -key ) )
+				throw new InvalidDataException( $"The Theme Park Inc save's object list names thing {-key}, which no object rebuilds and whose slot of the thing pool cannot be held." );
+		}
+	}
+
+	/// <summary>
+	/// The saved object list of a Theme Park Inc World, newest first: the thing an imported object was built from as its economy instance (<paramref name="instances"/>, by saved thing id),
+	/// any other thing as its negated thing id. Refused when the list does not read or an imported object's thing is not on it.
+	/// </summary>
+	internal static List<int> ThemeParkIncObjectListOf( ThemeParkIncSaveWorld world, IReadOnlyDictionary<int, int> instances )
+	{
+		var attractions = world.Attractions.ToDictionary( attraction => attraction.Id );
+		var list = new List<int>();
+		var seen = new HashSet<int>();
+		for ( int thing = world.Variables.FirstObject; thing != 0; thing = attractions[thing].Next )
+		{
+			if ( !attractions.ContainsKey( thing ) || !seen.Add( thing ) )
+				throw new InvalidDataException( $"The Theme Park Inc save's object list reaches thing {thing}, which is {(seen.Contains( thing ) ? "met twice" : "no attraction")}." );
+			list.Add( instances.TryGetValue( thing, out var instance ) ? instance : -thing );
+		}
+		if ( instances.Keys.FirstOrDefault( thing => !seen.Contains( thing ) ) is var missing and not 0 )
+			throw new InvalidDataException( $"The Theme Park Inc save's object list does not hold thing {missing}, which an imported object was built from." );
+		return list;
 	}
 
 	/// <summary>The staff sprites this level loaded (null until it did, and in a level without an original park).</summary>

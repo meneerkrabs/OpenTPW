@@ -235,6 +235,8 @@ public interface IRideVisitorBridge
 	bool ReliefWornOut { get; }
 	/// <summary>The ride script's <c>VAR_RUNNING</c> is non-zero.</summary>
 	bool IsRunning { get; }
+	/// <summary>The ride script's <c>VAR_RUNNING</c> as the script holds it (Theme Park Inc's wear tick tests it above 0); a host without the value reports 1 while <see cref="IsRunning"/>.</summary>
+	int RunningVariable => IsRunning ? 1 : 0;
 	/// <summary>The ride script's <c>VAR_ONRIDE</c>.</summary>
 	int RidersOnBoard { get; }
 	/// <summary>The ride's operating speed.</summary>

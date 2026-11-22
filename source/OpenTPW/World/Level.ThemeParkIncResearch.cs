@@ -66,7 +66,7 @@ public partial class Level
 	{
 		// [BIN:TPI-EXE:0x5DB786 room flags] the attraction builder sets the thing's +0x42 |= 0x200 when the type record's +0x1B4 (UsageInfo.ThinkingSpace) is nonzero and |= 0x400 when +0x1B8
 		// (UsageInfo.TrainingRoom) is; [BIN:TPI-EXE:0x64F3E0 object list] the builder pushes the thing onto the front of the object list park+0x1EAB88 (the World variable FirstObject), as 0x637100 pushes
-		// it onto the thing list: an object built in the park is first on both, so the thing list's order (Level.ThemeParkIncAttractionsOf) is the object list's for every room a player builds; no
+		// it onto the thing list: an object built in the park is first on both, and the finders walk that list (ObjectList below); no
 		// prebuilt Theme Park Inc park holds a research or training room (ThemeParkIncTrainingTests)
 		public ThemeParkIncRoom? First( ThemeParkIncRoomKind kind )
 		{
@@ -82,15 +82,23 @@ public partial class Level
 			.Select( item => new ThemeParkIncRestArea( (ushort)item.ThingId, item.ThingCell, Entrance( item ), item.Runtime.IsOpen ) ).ToArray();
 
 		/// <summary>
-		/// The live objects whose type sets <paramref name="key"/>, in the object list's order (park+0x1EAB88): newest first, as the thing list (Level.ThemeParkIncAttractionsOf). A thing being destroyed is
-		/// no longer on the list: the attraction's destroy unlinks it (0x64F430 at 0x5DE7C4) before it broadcasts message 0xA.
+		/// The live objects whose type sets <paramref name="key"/>, in the object list's order (<see cref="ParkEconomy.ThemeParkIncObjectList"/>, park+0x1EAB88, newest first), which the finders
+		/// 0x62BA20 walk. A thing being destroyed is no longer on the list: the attraction's destroy unlinks it (0x64F430 at 0x5DE7C4) before it broadcasts message 0xA.
 		/// </summary>
 		private IEnumerable<OriginalObject> ObjectList( string key )
 		{
-			var order = level.Things.Capture().Select( ( slot, index ) => (slot.Id, index) ).ToDictionary( pair => pair.Id, pair => pair.index );
-			return level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue
-					&& item.ThingId != level.tpiDestroyedRoom )
-				.OrderBy( item => order.TryGetValue( item.ThingId, out var index ) ? index : int.MaxValue ).ThenByDescending( item => item.ThingId );
+			if ( level.Park?.Economy is not { } economy )
+				yield break;
+			var byInstance = new Dictionary<int, OriginalObject>();
+			foreach ( var (item, instance) in level.economyInstances ?? new() )
+				byInstance[instance] = item;
+			foreach ( var entry in economy.ThemeParkIncObjectList )
+			{
+				// an object with an economy record is listed by its instance, any other attraction thing by its negated thing id
+				var item = entry > 0 ? byInstance.GetValueOrDefault( entry ) : level.Objects.Objects.FirstOrDefault( candidate => candidate.ThingId == -entry );
+				if ( item is { IsDeleted: false } && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue && item.ThingId != level.tpiDestroyedRoom )
+					yield return item;
+			}
 		}
 
 		/// <summary>A room's entrance cell (its thing's word +0x46).</summary>

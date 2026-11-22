@@ -370,17 +370,10 @@ public class ThemeParkIncGardenerTests
 
 		// a gardener's plant and his claims are plants (his chooser reads only flag-0x1000 things), and no mechanic claims a plant
 		var ride = economy.RegisterExisting( economy.Catalog.Objects.First( info => !info.RequiresWatering ).InfoId );
-		// the loop above stepped the gardener's turns without the park's clock, so the stamps are brought back inside the save's own tick
+		// the loop above stepped the gardener's turns without the park's clock, so the objects' claim turns (the only stamps checked against the save's tick) are brought back inside it
 		var stamped = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
 		foreach ( var objectNode in stamped["Objects"]!.AsArray() )
 			objectNode!.AsObject()["ClaimTurn"] = 0;
-		foreach ( var memberNode in stamped["TpiStaff"]!["Members"]!.AsArray() )
-		{
-			var worldNode = memberNode!["World"]!.AsObject();
-			foreach ( var key in new[] { "WorkStamp", "ClaimStamp", "ClaimTurn" } )
-				if ( worldNode.ContainsKey( key ) )
-					worldNode[key] = 0;
-		}
 		var withRide = stamped.ToJsonString();
 		ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( withRide ) ), economy.Settings, economy.Catalog );
 		string Edit( Action<System.Text.Json.Nodes.JsonObject> edit )
@@ -391,18 +384,20 @@ public class ThemeParkIncGardenerTests
 		}
 		System.Text.Json.Nodes.JsonObject ObjectNode( System.Text.Json.Nodes.JsonObject root, int id ) =>
 			root["Objects"]!.AsArray().Select( item => item!.AsObject() ).Single( item => (int)item["Id"]! == id );
-		void Refused( string text, string because ) =>
-			Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( text ) ), economy.Settings, economy.Catalog ), because );
+		// the job-kind check's own message, so a refusal from another validator does not pass for it
+		void Refused( string text, string expected, string because ) =>
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( text ) ), economy.Settings, economy.Catalog ), because ).Message,
+				expected, because );
 		Refused( Edit( root =>
 		{
 			root["TpiStaff"]!["Members"]![0]!["World"]!["PlantId"] = ride.Id;
 			ObjectNode( root, plant.Id )["MechanicId"] = 0;
 			ObjectNode( root, ride.Id )["MechanicId"] = member.ThingId;
-		} ), "a gardener watering a ride" );
+		} ), "is no plant", "a gardener watering a ride" );
 		Refused( Edit( root =>
 		{
 			ObjectNode( root, ride.Id )["MechanicId"] = member.ThingId;
-		} ), "a gardener's claim on a ride" );
+		} ), "whose search does not take it", "a gardener's claim on a ride" );
 	}
 
 	[TestMethod]

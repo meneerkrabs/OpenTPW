@@ -90,6 +90,7 @@ public static class StaffSpriteRules
 	/// Whether tp.exe flags a role's folder for the limit (all but the entertainers' theme folders, 0x541310). Theme Park Inc's gardeners are not limited: their folder holds one bank (Spr_gd), which
 	/// any limit (1 or 2) keeps whole, so no limit is applied to it rather than one Theme Park Inc's own loader was not read for.
 	/// </summary>
+	// the gardeners' exemption rests on Theme Park Inc's retail esprites.wad, whose Generic\Gardeners folder holds one bank (Spr_gd), so no limit would cut it
 	public static bool IsBankLimited( StaffType type ) => type != StaffType.Entertainer && type != ThemeParkIncGardener;
 
 	/// <summary>

@@ -550,7 +550,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			var economy = Level.Park!.Economy;
 			Require( economy.TpiCutscene is { Flying: false, OverlayOpen: false, ClockRate: null } && Level.RideView == null && Camera.Mode is ParkCameraMode, "the skip ended the flight and left the ride view" );
 			Require( economy.TpiCameraEnds.LastOrDefault() is { Result: 1, Mode: ThemeParkIncCutscene.ArrivalMode } && economy.TpiCutscene.MissionWindowRequests == 1, "message 0x29 carried the trigger and the mission window was asked for" );
-			Require( economy.TpiIntroductionLetters == 1 && economy.TpiCareer!.ObjectiveLetterPosted, "the arrival's end posted mission 0's first briefing" );
+			Require( economy.TpiTagTube!.Listed.Count( row => row.Source == ThemeParkIncLetterSource.Introduction && !row.Read ) == 1 && economy.TpiCareer!.ObjectiveLetterPosted,
+				"the arrival's end filed mission 0's first briefing as an unread tube row" );
 		} );
 		Wait( "the HUD comes back", 2 );
 		Do( "the countdown opened the mission window", () => Require( Hud.MissionWindowOpen && Hud.Stack.Top?.Name == ThemeParkIncMissionWindow.ScreenName, "the arrival's end opens the first briefing (0x5D0369)" ) );

@@ -218,7 +218,7 @@ public sealed partial class ParkEconomy
 			if ( economy.TpiCareer!.FiringLine > 0 )
 				economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Lost ) );
 			else
-				economy.TpiPendingMail = ThemeParkIncAdviceMail.ChallengeLost;
+				economy.PostThemeParkIncMail( ThemeParkIncAdviceMail.ChallengeLost );
 		}
 
 		public void Offered( int index ) => economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Offered ) );

@@ -6,7 +6,7 @@ namespace OpenTPW;
 public sealed record ThemeParkIncStaffMemberSnapshot( int Id, ThemeParkIncStaffRole Role, int NameIndex, uint SpriteDraw, int Experience, int Salary, int Agency,
 	float Happiness, float Motivation, float Energy, int WageShortfall, int WageDemandDay, uint[] DayCounters,
 	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ThemeParkIncStaffWorldSnapshot? World = null,
-	int Ability = 0, int LearningAbility = 0, int TrainingProgress = 0, int ChosenAbility = 0, int HqSlot = -1, bool Listed = false, int ResearchRoom = 0, long ResearchStamp = 0 );
+	int Ability = 0, int LearningAbility = 0, int TrainingProgress = 0, int ChosenAbility = 0, int HqSlot = -1, bool Listed = false, int ResearchRoom = 0, long ResearchStamp = 0, int RestArea = 0 );
 
 /// <summary>
 /// A placed Theme Park Inc staff member's thing as saved: its thing id, state word (+0x1B4), idle stamp (+0x23C), work stamp (+0x5D4), litter target (+0x5D8, a cell word), speed words
@@ -413,7 +413,7 @@ public sealed class ThemeParkIncStaff
 		(ThemeParkIncHireCandidate?[])slots.Clone(), (bool[])placing.Clone(),
 		members.Select( member => new ThemeParkIncStaffMemberSnapshot( member.Id, member.Role, member.NameIndex, member.SpriteDraw, member.Experience, member.Salary,
 			member.Agency, member.Happiness, member.Motivation, member.Energy, member.WageShortfall, member.WageDemandDay, member.CaptureDayCounters(), member.CaptureWorld(),
-			member.Ability, member.LearningAbility, member.TrainingProgress, member.ChosenAbility, member.HqSlot, member.Listed, member.ResearchRoom, member.ResearchStamp ) ).ToArray(),
+			member.Ability, member.LearningAbility, member.TrainingProgress, member.ChosenAbility, member.HqSlot, member.Listed, member.ResearchRoom, member.ResearchStamp, member.RestArea ) ).ToArray(),
 		(bool[])atParkMaximum.Clone(), (int[])hired.Clone(), PoolStamp, openingPoolMade, NextId, (StrikeRecord[])strikes.Clone(), StrikeForced, LastWageDemandDay, Hq.Capture() );
 
 	/// <summary>Whether a saved staff snapshot can come from this model: the array sizes, known roles, ids below the next id and unique.</summary>
@@ -435,7 +435,7 @@ public sealed class ThemeParkIncStaff
 				&& member.DayCounters is { Length: 9 } && ThemeParkIncStaffMember.IsValidWorld( member.Role, member.World )
 				&& member.Ability is >= 0 and < ThemeParkIncCareer.AbilityCount && member.LearningAbility is >= 0 and < ThemeParkIncCareer.AbilityCount
 				&& member.ChosenAbility is >= 0 and < ThemeParkIncCareer.AbilityCount && member.HqSlot is >= -1 and < ThemeParkIncStaffHeadquarters.SlotCount
-				&& member.ResearchRoom is >= 0 and <= ushort.MaxValue && member.ResearchStamp >= 0 )
+				&& member.ResearchRoom is >= 0 and <= ushort.MaxValue && member.ResearchStamp >= 0 && member.RestArea is >= 0 and <= ushort.MaxValue )
 			&& state.Hq != null && ThemeParkIncStaffHeadquarters.IsValid( state.Hq )
 			&& state.Members.Where( member => member.World != null ).Select( member => member.World!.ThingId ).Distinct().Count() == state.Members.Count( member => member.World != null );
 	}
@@ -467,7 +467,8 @@ public sealed class ThemeParkIncStaff
 				HqSlot = saved.HqSlot,
 				Listed = saved.Listed,
 				ResearchRoom = saved.ResearchRoom,
-				ResearchStamp = saved.ResearchStamp
+				ResearchStamp = saved.ResearchStamp,
+				RestArea = saved.RestArea
 			};
 			member.RestoreDayCounters( saved.DayCounters );
 			member.RestoreWorld( saved.World );

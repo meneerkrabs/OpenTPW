@@ -3,8 +3,8 @@ namespace OpenTPW;
 /// <summary>
 /// Theme Park Inc's staff in the park (docs/reverse/TPI-STAFF.md §11): the placed members' things and their state machines, beside Theme Park World's
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
-/// meters, day counters and search, and the training states 7 and 8; the researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the other roles are refused at the hire
-/// (<c>[EXT:tpi-capability-gates]</c>).
+/// meters, day counters and search, and the training states 7 and 8; the researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); both run the rest states 2, 3 and 0x23
+/// (ThemeParkIncStaffWorld.Rest.cs); the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
 /// </summary>
 /// <remarks>
 /// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
@@ -488,8 +488,8 @@ public sealed partial class ThemeParkIncStaffWorld
 			Search( economy, member, turn );
 	}
 
-	/// <summary>Whether the member is inside a room without a sprite source: training (state 8 and its suspended 0x25) or a researcher researching (state 24).</summary>
-	internal static bool Hidden( ThemeParkIncStaffMember member ) => member.State is ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended
+	/// <summary>Whether the member is inside a room without a sprite source: training (state 8 and its suspended 0x25), resting (state 3) or a researcher researching (state 24).</summary>
+	internal static bool Hidden( ThemeParkIncStaffMember member ) => member.State is ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended or Resting
 		|| member.Role == ThemeParkIncStaffRole.Researcher && member.State == ThemeParkIncResearch.Researching;
 
 	/// <summary>The handyman's search period and idle wait: trunc((1 − experience / MaxExperience) × 50).</summary>
@@ -515,7 +515,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>The handyman's state handler.</summary>
-	// [BIN:TPI-EXE:0x5D5710 handyman dispatch] states 0..0x14 by the byte table 0x5D58C4 and the jump table 0x5D5898; above 0x14 the common handler 0x6287A0
+	// [BIN:TPI-EXE:0x5D5710 handyman dispatch] states 0..0x14 by the byte table 0x5D58C4 and the jump table 0x5D5898 (2 -> 0x629EF0, 3 -> 0x62A1C0); above 0x14 the common handler 0x6287A0 (0x23 ->
+	// 0x62CA90)
 	private void Dispatch( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		switch ( member.State )
@@ -548,6 +549,15 @@ public sealed partial class ThemeParkIncStaffWorld
 				break;
 			case ThemeParkIncTraining.Training:
 				UpdateTraining( economy, settings, member, turn );
+				break;
+			case ToRestArea:
+				UpdateToRestArea( economy, settings, member, turn );
+				break;
+			case Resting:
+				UpdateResting( economy, settings, member, turn );
+				break;
+			case RestSearch:
+				UpdateRestSearch( economy, settings, member, turn );
 				break;
 		}
 	}
@@ -666,15 +676,11 @@ public sealed partial class ThemeParkIncStaffWorld
 
 	/// <summary>
 	/// The strike and rest gate (0x62BBA0) before every search: true when it set the member's state. A comfortable member's base speed follows his energy and his mood may show; a tired
-	/// one looks for a rest area (none: no Theme Park Inc object is one), may lose happiness and, while working, stops.
+	/// one walks to the nearest rest area he reaches (the staff rooms, <see cref="TiredGate"/>), or may lose happiness and, while working, stops.
 	/// </summary>
-	// [BIN:TPI-EXE:0x62BA20 rest-area finder] walks the thing list (W+0x1EAB88, next +0x14) for a thing with flag +0x42 bit 2 and +0x7C nonzero, the nearest by squared cell distance, the
-	// first on a tie; the only writer of that bit is the thing builder from the type record's +0x1B0 (UsageInfo.ChillsYouOut, 0x5DB6E2), and no Science, Water or Arabian object sets the key
-	// (ThemeParkIncHandymanTests.NoThemeParkIncObjectIsARestArea), so the finder answers none in every Theme Park Inc park and is exact as "none"; the walk to a rest area is unreachable
 	// [BIN:TPI-EXE:0x62BBA0 strike gate] the strike branch needs the role's strike flag (HQ +0x160 + 12 × code, 0x634210) and 0x64FA50 == 1: the role strikes only through the month's strike
 	// consideration, which a park does not run yet (strikes in the world are a later package), so no record is active and the branch is not taken
-	// [BIN:TPI-EXE:0x62BC88 rest branch] energy byte (ftol & 0xFF) at most RestLevel: the thought 0x18, the rest-area finder 0x62BA20 ("Staff member couldn't find a rest area"), then a world draw whose low nibble 0 adds -HappyHitCosNoRestArea to happiness (0x60D0D0, clamped), then a working member (display 2) is set
-	// to 0 and the gate answers 1
+	// [BIN:TPI-EXE:0x62BC88 rest branch] energy byte (ftol & 0xFF) at most RestLevel (0xA02254): the rest branch (TiredGate)
 	// [BIN:TPI-EXE:0x62BD8D comfortable branch] energy byte above RestLevel: +0xD4 = lerp(exp, 0, MaxExperience, w, MaxSpeedDifference + w) with w = 140 at 100, else the word at 0x9CFB28 by the
 	// tens; happiness byte at most 10 asks for the thought 0x17, above 97 a world draw whose low nibble 0 asks for 0x16 (presentation)
 	// [BIN:TPI-EXE:0x62BE2B gate end] +0x27E is 0 for every member but a researcher listed for a room (only 0x62E240 writes it; the constructors clear it), so the gate answers 0
@@ -682,16 +688,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	{
 		var energy = (int)(long)member.Energy & 0xFF;
 		if ( energy <= settings.RestLevel )
-		{
-			if ( (economy.World.NextWord() & 0xF) == 0 )
-				member.AddHappiness( -(float)settings.HappyHitNoRestArea );
-			if ( DisplayCategory( member ) == 2 )
-			{
-				SetState( economy, member, Idle, turn );
-				return true;
-			}
-			return false;
-		}
+			return TiredGate( economy, settings, member, turn );
 		var w = energy >= 100 ? 140 : EnergySpeeds[energy / 10];
 		member.BaseSpeed = ThemeParkIncStaffSettings.Lerp( member.Experience, 0, settings.MaxExperience, w, settings.MaxSpeedDifference + w ) & 0xFFFF;
 		var happiness = (int)(long)member.Happiness & 0xFF;
@@ -701,24 +698,23 @@ public sealed partial class ThemeParkIncStaffWorld
 		return false;
 	}
 
-	/// <summary>Looking for work (0x62D810): the role's search, then a member with low motivation who is now working stops again.</summary>
-	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0; then a motivation byte below MotivationPercentToStrike / 2 (cltd, sub, sar: toward zero) with the display state 2 or 7 looks for a
-	// rest area (0x62BA20: none) and sets 0 (0x628180(0) at 0x62D94D)
-	private void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
+	/// <summary>Looking for work (0x62D810): the role's search, then a member with low motivation who is now working walks to a rest area or stops (<see cref="LowMotivationRest"/>).</summary>
+	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 8 0x61B820; then the low-motivation rest 0x62D866
+	internal void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 5 0x5D52A0, kind 8 0x61B820
 		if ( member.Role == ThemeParkIncStaffRole.Researcher )
 			SearchResearchRoom( economy, settings, member, turn );
 		else
 			Search( economy, member, turn );
-		if ( ((int)(long)member.Motivation & 0xFF) < settings.MotivationPercentToStrike / 2 && DisplayCategory( member ) is 2 or 7 )
-			SetState( economy, member, Idle, turn );
+		LowMotivationRest( economy, settings, member, turn );
 	}
 
 	/// <summary>The handyman's state setter (0x5D5630) and the common one it falls back to (0x628180).</summary>
 	// [BIN:TPI-EXE:0x5D5630 handyman state setter] 0x0F, 0x11, 0x13: 0x60B3F0(1) and template 0xF; 0x10, 0x12, 0x14: +0x5D4 = the turn and template 0x19; the others through 0x628180
-	// [BIN:TPI-EXE:0x628180 staff state setter] 0 (and 0x23): +0x23C = the turn after state 1, else 0, then 0x60B3F0(0) and template 3 (0x60B6E0); 1: the slack test 0x62D650 (energy byte below
-	// StaffSlackingEnergy looks for a rest area, 0x62BA20: none, so it answers false and no draw is taken), then template 0xF; the state is stored last (0x6285CD)
+	// [BIN:TPI-EXE:0x628180 staff state setter] the byte table 0x62862C and the jump table 0x6285E8: 0 (and 0x23): +0x23C = the turn after state 1, else 0, then 0x60B3F0(0) and template 3 (0x60B6E0);
+	// 1: the slack test 0x62D650, which on success sets 2 (0x62823C) and leaves without storing 1, else template 0xF; 2 (0x6281F4): template 1; 3 (0x62858A): the thought stops (0x638D10, presentation)
+	// and 0x5D1050 deletes the sprite source; the state is stored last (0x6285CD)
 	internal void SetState( ParkEconomy economy, ThemeParkIncStaffMember member, int state, long turn )
 	{
 		switch ( state )
@@ -731,13 +727,24 @@ public sealed partial class ThemeParkIncStaffWorld
 				member.WorkStamp = turn;
 				RequestTemplate( member, WorkTemplate );
 				break;
-			case 0 or 0x23:
+			case 0 or RestSearch:
 				member.IdleStamp = member.State == Walking ? turn : 0;
 				member.SpeedBonus = BonusTable[0];
 				RequestTemplate( member, IdleTemplate );
 				break;
 			case Walking:
+				if ( Slack( economy, economy.TpiStaff!.Settings, member ) )
+				{
+					SetState( economy, member, ToRestArea, turn );
+					return;
+				}
 				RequestTemplate( member, WalkTemplate );
+				break;
+			case ToRestArea:
+				RequestTemplate( member, 1 );
+				break;
+			case Resting:
+				member.Sprite.Delete();
 				break;
 			case ThemeParkIncTraining.ToTrainingRoom:
 				EnterToTrainingRoom( economy, member );

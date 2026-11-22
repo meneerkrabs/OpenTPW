@@ -283,8 +283,8 @@ public class SaveWorldTests
 		Assert.AreEqual( world.Cells.EndOffset + 4, world.Things[0].Offset, "Used Thing Head follows the map" );
 		Assert.AreEqual( (int)world.UsedThingHead, world.Things[0].Id );
 		Assert.AreEqual( world.Things.Count, world.Things.Select( thing => thing.Id ).Distinct().Count() );
-		// Every model with a serializer occurs; singletons once.
-		foreach ( var model in Enum.GetValues<SaveThingModel>() )
+		// Every model with a serializer occurs; singletons once. The gardener (model 20) is Theme Park Inc's only, so a Theme Park World save never holds one.
+		foreach ( var model in Enum.GetValues<SaveThingModel>().Where( model => model != SaveThingModel.Gardener ) )
 			Assert.IsTrue( world.OfModel( model ).Any(), model.ToString() );
 		foreach ( var model in new[] { SaveThingModel.StaffHq, SaveThingModel.MechanicHq, SaveThingModel.AdvisorController, SaveThingModel.TagSystem, SaveThingModel.ParkAnalyser,
 			SaveThingModel.ResearchLab, SaveThingModel.Weather, SaveThingModel.Bank, SaveThingModel.UIMsgReceiver, SaveThingModel.ChallengeSystem } )

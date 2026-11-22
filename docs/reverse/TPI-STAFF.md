@@ -465,11 +465,11 @@ Training: the gardener learns abilities 10 to 14 (`0x62B6C0`) through §12.2 and
 Not ported (inert, no stand-in): the facing `0x609E60` (the heading word `+0x2C` from the queue link of his cell, in the 2048 units of `0x91E074`: presentation; he keeps his walk's
 last heading under `[EXT:tpi-twp-guest-rules]`, D1); the destructor's claim release `0x5D2430` → `0x5E37B0` (Theme Park Inc staff cannot be fired yet); the advisor's notices
 (`[EXT:tpi-capability-gates]`, the advisor's other messages); the patrol area `0x6256A0` (WP15); the guests' fire prank on plants (`0x618F30`, `VAR_SETFIRE`, with the guests' Theme Park
-Inc pranks); the plant counts of the statistics (`0x5B4470`, `0x5B8960`); the handyman's bin finder's plant branch for ability 7 (`0x5D5FAC`, with the bins). No `rand()` call is reached:
+Inc pranks); the plant counts of the statistics (`0x5B4470`, `0x5B8960`); the handyman's bin finder's plant branch for ability 7 (`0x5D5FAC`, with the bins, whose fill is unported: `[EXT:tpi-no-maintenance-wear]`). No `rand()` call is reached:
 the gardener draws only the world generator, in the gate, the walking voice and the patrol.
 
 **Known divergence: x87 precision.** `0x5D2820` runs at the game thread's 24-bit control word (`0x007F`), but its search period goes through the handyman's shared helper
-`SearchPeriod`, which computes `trunc((1 − exp / MaxExperience) × 50)` at 53 bits, and so does the moving step `member.Step` (`0x62B4D0`). The two differ where the 53-bit product falls
+`SearchPeriod`, which computes `trunc((1 − exp / MaxExperience) × 50)` at 53 bits, and so does the step `member.Step` (the moving step `0x62B3E0` and the working step `0x62B4D0`, which are identical). The two differ where the 53-bit product falls
 just below an integer: with `MaxExperience` 100000, experience 34000 gives 32 at 53 bits (32.99999999999999) and 33 at 24 bits (33.0), so the port searches every 32nd turn where the
 original searches every 33rd. The shared helpers stay at 53 bits here because the handyman's oracle pins them there; the planned 24-bit precision change, which re-checks every Theme
 Park Inc routine at control word `0x007F`, moves them together. No label covers this.

@@ -2245,8 +2245,8 @@ public partial class Level
 	{
 		InitializeCatalogueBinding( item, instance, economyInstances.ContainsKey( item ) );
 		economyInstances[item] = instance;
-		// a Theme Park Inc thing id taken again by an object with an economy record: the list holds the record, not the id (ParkEconomy.ThemeParkIncObjectList)
-		Park?.Economy.RemoveThemeParkIncThing( item.ThingId );
+		// a Theme Park Inc object's thing id: the object list holds the record, not the id, and a mechanic cursor on the id follows it (ParkEconomy.LinkThemeParkIncThing)
+		Park?.Economy.LinkThemeParkIncThing( instance, item.ThingId );
 		Park?.Guests?.Link( item.Visitors.AttractionId, instance );
 		// a toilet, a camera or a fireworks object spreads its RegionFX row where it stands (its thing's cell)
 		Park?.Economy.PlaceObjectEffects( instance, (item.Placement.X, item.Placement.Y) );

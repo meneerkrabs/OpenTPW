@@ -442,6 +442,21 @@ public class ThemeParkIncMechanicTests
 	}
 
 	[TestMethod]
+	public void ACancelledRequestSendsItsClaimantIdleWithHisTargetKept()
+	{
+		// [BIN:TPI-EXE:0x5E3509 maintenance cancel] the claim word nonzero: the claimant's common setter 0x628180(0), which keeps his +0x5D8, and +0x72 = +0x74 = 0
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		economy.TryBuild( RobotSwing, out var swing );
+		swing!.Repair = 9.9;
+		// the drop's search takes the ride, claims it and requests its maintenance
+		var member = HireMechanic( economy, world, (2, 5) );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRide, true, member.ThingId), (member.State, swing.MaintenanceRequested, swing.MechanicId) );
+		economy.CancelThemeParkIncMaintenance( swing );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.Idle, swing.Id, false, 0, 0L), (member.State, member.RideId, swing.MaintenanceRequested, swing.MechanicId, swing.ClaimTurn) );
+	}
+
+	[TestMethod]
 	public void AClaimOlderThanAHundredTurnsLapsesWhenItsClaimantLooksElsewhere()
 	{
 		// [BIN:TPI-EXE:0x5E37F0 claimant] past +0x74 + 100 a claimant whose +0x5D8 is not the ride loses the claim and goes idle (0x628180(0))

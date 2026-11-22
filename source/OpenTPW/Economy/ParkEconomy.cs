@@ -704,6 +704,15 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) )
 			return false;
+		// a park with Theme Park Inc's staff runs Theme Park Inc's request and cancel (0x5E3400), which its own ride panel calls (0x5562E0, 0x5563F0, 0x50FCD0)
+		if ( TpiStaff != null )
+		{
+			if ( on )
+				RequestThemeParkIncMaintenance( item );
+			else
+				CancelThemeParkIncMaintenance( item );
+			return true;
+		}
 		if ( item.MaintenanceRequested == on )
 			return true;
 		item.MaintenanceRequested = on;
@@ -2377,6 +2386,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
 		tpiObjectList?.Remove( instanceId );
+		UnlinkThemeParkIncThing( instanceId );
 		ReleaseJobsOn( instanceId );
 		Post( LedgerCategory.OtherIncome, value );
 		Raise( ParkEventKind.ObjectSold, value, instanceId, item.InfoId );
@@ -2390,6 +2400,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		RemoveObjectEffects( item );
 		objects.Remove( instanceId );
 		tpiObjectList?.Remove( instanceId );
+		UnlinkThemeParkIncThing( instanceId );
 		ReleaseJobsOn( instanceId );
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
 	}
@@ -3243,6 +3254,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		NextObjectId = nextObjectId;
 		DroppedAdmissions = droppedAdmissions;
 		objects.Clear();
+		tpiThingIds.Clear();
 		foreach ( var item in restoredObjects )
 		{
 			if ( !Catalog.TryGet( item.InfoId, out _ ) )

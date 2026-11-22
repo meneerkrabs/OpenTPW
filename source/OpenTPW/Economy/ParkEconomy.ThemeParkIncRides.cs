@@ -132,6 +132,37 @@ public sealed partial class ParkEconomy
 	}
 
 	/// <summary>
+	/// The maintenance request's cancel (<c>0x5E3400(0)</c>): nothing when no request is set; else the request clears and, unless the object is a bin or a plant, it opens whatever its state (the
+	/// host opens it on <see cref="ParkEventKind.MaintenanceCancelled"/>) and its state goes to 0; then a claim on it ends and its claimant goes idle.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5E3509 maintenance cancel] "Object %d: has cancelled its request for maintenance"; +0x78 zero returns; +0x78 = 0; +0x42 bit 0x40 (UsageInfo.HoldsLitter) or bit 0x1000
+	// (UsageInfo.RequiresWatering) skips the open 0x5E1DC0, whose guard (states 1, 4 and 2, the request, the queue link, challenge 42, the park closed, the spell, the coaster test) only logs "Opening
+	// non-openable ride": the open word +0x7C = 1, VAR_RIDECLOSED = 0 and SetState(0) (0x5E5160 stores the state at once); then the claim word +0x72 nonzero: the claimant's common setter
+	// 0x628180(0) (his target +0x5D8 is kept) and +0x72 = 0, +0x74 = 0. Its callers are the ride panel's cancel button (0x5563F0, beside the call 0x5562E0 with 1, on the panel's object 0xA60384)
+	// and the toggle 0x50FCD0 (sete on its flag); the shared co-op call button issues it through RequestMaintenance
+	internal void CancelThemeParkIncMaintenance( ParkObjectState item )
+	{
+		if ( !item.MaintenanceRequested )
+			return;
+		item.MaintenanceRequested = false;
+		if ( !(Catalog.TryGet( item.InfoId, out var info ) && (info.HoldsLitter || info.RequiresWatering)) )
+		{
+			if ( ObjectState( item ) == RideObjectStates.Upgrading )
+				throw new InvalidOperationException( "A Theme Park Inc upgrade needs a mechanic trained in Ride Upgrading, which is not ported." );
+			// SetState(0): a broken or condemned ride's state word goes to 0 (its script's VAR_BROKEN turns it back into state 1 at the next ride update, 0x5E5960)
+			item.IsBrokenDown = false;
+			Raise( ParkEventKind.MaintenanceCancelled, 0, item.Id, item.InfoId );
+		}
+		if ( item.MechanicId != 0 )
+		{
+			if ( TpiStaff != null )
+				ThemeParkIncStaffWorld.ClaimantReleased( TpiStaff, item.MechanicId, Turn );
+			item.MechanicId = 0;
+			item.ClaimTurn = 0;
+		}
+	}
+
+	/// <summary>
 	/// A mechanic's repair ends (<c>0x5E2910</c>, a ride not being upgraded): the state of repair is full, VAR_WORN and VAR_BREAKSTAT clear, the claim and the request clear, and the ride
 	/// opens (the host opens it on <see cref="ParkEventKind.RideRepaired"/> and runs the repair's closing tail).
 	/// </summary>
@@ -196,8 +227,34 @@ public sealed partial class ParkEconomy
 		tpiObjectList.Insert( 0, -thingId );
 	}
 
-	/// <summary>An attraction thing without an economy record leaves the object list (<c>0x64F430</c>); also when the id is taken by an object with an economy record.</summary>
+	/// <summary>An attraction thing without an economy record leaves the object list (<c>0x64F430</c>).</summary>
 	internal void RemoveThemeParkIncThing( int thingId ) => tpiObjectList?.Remove( -thingId );
+
+	/// <summary>The thing id of each object with an economy record (the level links them), so the mechanic cursor can follow a thing id as the original's HQ word does.</summary>
+	private readonly Dictionary<int, int> tpiThingIds = new();
+
+	/// <summary>
+	/// The level links an object with an economy record to its thing id: an entry of that id in the object list goes (a freed id taken again), and a mechanic cursor naming the id names the
+	/// object now.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DAAD0 ride finder] the HQ word +0x14 is a thing id: a cursor left on a destroyed thing finds that id again once a new thing takes it (the free list hands the slot back last in,
+	// first out), and the search then starts at its successor; the port names a thing without an economy record by its negated id and an object with one by its instance, so the cursor is remapped
+	internal void LinkThemeParkIncThing( int instance, int thingId )
+	{
+		if ( tpiObjectList == null || thingId is < 1 or > ThingPool.Capacity )
+			return;
+		tpiObjectList.Remove( -thingId );
+		if ( MechanicCursor == -thingId )
+			MechanicCursor = instance;
+		tpiThingIds[instance] = thingId;
+	}
+
+	/// <summary>A sold or removed object: a mechanic cursor on it keeps its thing id (the HQ word does not change), which a new thing taking the id is then found under.</summary>
+	private void UnlinkThemeParkIncThing( int instance )
+	{
+		if ( tpiThingIds.Remove( instance, out var thingId ) && MechanicCursor == instance )
+			MechanicCursor = -thingId;
+	}
 
 	/// <summary>
 	/// Whether <paramref name="keys"/> is an object list of a park holding <paramref name="objectIds"/>: every object exactly once, and otherwise only distinct negated thing ids

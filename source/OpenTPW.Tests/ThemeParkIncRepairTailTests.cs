@@ -314,6 +314,118 @@ public class ThemeParkIncRepairTailTests
 		CollectionAssert.AreEqual( new[] { -replacement.ThingId, ride.Id }, world.Economy.ThemeParkIncObjectList.ToArray() );
 	}
 
+	/// <summary>The level of <see cref="World"/> with a thing pool and a catalogue of synthetic objects (an obstacle 1703, its replacement 1704 and a ride 1101), and the object list's hooks wired.</summary>
+	private (ParkObjects Objects, ThingPool Pool, ObjectCatalogEntry Lake, ObjectCatalogEntry Drained, ObjectCatalogEntry Swing) Things( Fixture world )
+	{
+		var lake = CheatsRideVehicleTests.SyntheticRide( root, 1703, "lake", "" );
+		var drained = CheatsRideVehicleTests.SyntheticRide( root, 1704, "dlake", "" );
+		var swing = CheatsRideVehicleTests.SyntheticRide( root, RobotSwing, "swing", "" );
+		var catalog = (ObjectCatalog)typeof( ObjectCatalog ).GetConstructor( Private, null, new[] { typeof( string ), typeof( IReadOnlyList<ObjectCatalogEntry> ) }, null )!
+			.Invoke( new object[] { "science", new[] { lake, drained, swing } } );
+		var pool = new ThingPool();
+		pool.AllocateWorldSetup();
+		var objects = new ParkObjects( catalog, new SandboxParkGrid() ) { Things = pool };
+		Set( world.Level, "<Objects>k__BackingField", objects );
+		typeof( Level ).GetMethod( "ConnectObjectsToEconomy", Private )!.Invoke( world.Level, null );
+		return (objects, pool, lake, drained, swing);
+	}
+
+	/// <summary>Builds <paramref name="entry"/> as the level's build flow does: the object (its thing id from the pool), its economy record and the link.</summary>
+	private static (OriginalObject Item, ParkObjectState State) Build( Fixture world, ParkObjects objects, ObjectCatalogEntry entry )
+	{
+		var item = objects.Add( entry, 6, 6, 0 );
+		var state = world.Economy.RegisterExisting( entry.InfoId );
+		typeof( Level ).GetMethod( "LinkEconomy", Private )!.Invoke( world.Level, new object[] { item, state.Id } );
+		return (item, state);
+	}
+
+	[TestMethod]
+	public void TheMechanicCursorFollowsAThingIdTakenAgainByARide()
+	{
+		// [BIN:TPI-EXE:0x5DAAD0 ride finder] the HQ word +0x14 is a thing id: left on a destroyed obstacle, it finds the id again once a new ride takes the slot (last in, first out), and the
+		// search starts at that ride's successor
+		var world = World();
+		var (objects, pool, lake, _, swing) = Things( world );
+		var (_, old) = Build( world, objects, swing );
+		var obstacle = objects.Add( lake, 3, 3, 0 );
+		world.Economy.AddThemeParkIncThing( obstacle.ThingId );
+		var thing = obstacle.ThingId;
+		world.Economy.MechanicCursor = -thing;
+		objects.Remove( obstacle );
+		pool.DestroyQueued();
+		Assert.IsFalse( pool.IsUsed( thing ) );
+		CollectionAssert.AreEqual( new[] { old.Id }, world.Economy.ThemeParkIncObjectList.ToArray(), "the obstacle left the list" );
+		var (ride, state) = Build( world, objects, swing );
+		Assert.AreEqual( thing, ride.ThingId, "the new ride takes the freed id" );
+		Assert.AreEqual( state.Id, world.Economy.MechanicCursor, "the cursor names the ride now" );
+		CollectionAssert.AreEqual( new[] { state.Id, old.Id }, world.Economy.ThemeParkIncObjectList.ToArray() );
+		// a sold ride's id: the cursor keeps the id, and the next object to take it is found under it
+		world.Economy.MechanicCursor = state.Id;
+		objects.Remove( ride );
+		Assert.AreEqual( -thing, world.Economy.MechanicCursor, "the cursor keeps the sold ride's thing id" );
+		pool.DestroyQueued();
+		var (again, againState) = Build( world, objects, swing );
+		Assert.AreEqual( (thing, againState.Id), (again.ThingId, world.Economy.MechanicCursor) );
+		// an obstacle's replacement taking the id: the cursor's negated id is on the list again
+		world.Economy.MechanicCursor = againState.Id;
+		objects.Remove( again );
+		pool.DestroyQueued();
+		var replacement = objects.Add( lake, 3, 3, 0 );
+		world.Economy.AddThemeParkIncThing( replacement.ThingId );
+		Assert.AreEqual( (thing, -thing), (replacement.ThingId, world.Economy.MechanicCursor) );
+		CollectionAssert.AreEqual( new[] { -thing, old.Id }, world.Economy.ThemeParkIncObjectList.ToArray() );
+	}
+
+	[TestMethod]
+	public void AnIdTakenByARideLeavesNoNegatedEntryBehind()
+	{
+		// the guard's economy branch: a ride that takes an id the list still names (a thing removed without the list being told) replaces the entry, so neither stays twice
+		var world = World();
+		var (objects, pool, lake, _, swing) = Things( world );
+		var obstacle = objects.Add( lake, 3, 3, 0 );
+		var thing = obstacle.ThingId;
+		world.Economy.AddThemeParkIncThing( thing );
+		// the slot freed behind the list's back
+		pool.QueueDestroy( thing );
+		pool.DestroyQueued();
+		var (ride, state) = Build( world, objects, swing );
+		Assert.AreEqual( thing, ride.ThingId );
+		CollectionAssert.AreEqual( new[] { state.Id }, world.Economy.ThemeParkIncObjectList.ToArray(), "the record, not the negated id" );
+	}
+
+	// ---- The maintenance cancel -----------------------------------------------------------------
+
+	[TestMethod]
+	public void ACancelledRequestOpensTheRideWhateverItsGuardAndEndsTheClaim()
+	{
+		// [BIN:TPI-EXE:0x5E3509 maintenance cancel] +0x78 = 0; the open 0x5E1DC0 whatever the guard (here a closed park) and SetState(0); the claimant goes idle and the claim clears
+		var world = World();
+		var (ride, state) = Place( world, RobotSwing );
+		world.Economy.RequestThemeParkIncMaintenance( state );
+		Assert.IsFalse( ride.Runtime.IsOpen );
+		world.Economy.ClosePark();
+		state.MechanicId = 77;
+		state.ClaimTurn = 5;
+		state.IsBrokenDown = true;
+		// the shared command's path (the co-op call button): RequestMaintenance with off
+		Assert.IsTrue( world.Economy.RequestMaintenance( state.Id, on: false ) );
+		Assert.AreEqual( (false, true, true, false, 0, 0L), (state.MaintenanceRequested, ride.Runtime.IsOpen, state.IsOpen, state.IsBrokenDown, state.MechanicId, state.ClaimTurn) );
+		// a second cancel finds no request and does nothing
+		ride.Runtime.Close();
+		world.Economy.RequestMaintenance( state.Id, on: false );
+		Assert.IsFalse( ride.Runtime.IsOpen );
+		// the request through the same path closes the ride as the search's request does
+		ride.Runtime.Open();
+		world.Economy.RequestMaintenance( state.Id, on: true );
+		Assert.AreEqual( (true, false), (state.MaintenanceRequested, ride.Runtime.IsOpen) );
+		// a bin's cancel clears the request and opens nothing
+		var (bin, binState) = Place( world, Bin );
+		world.Economy.RequestThemeParkIncMaintenance( binState );
+		bin.Runtime.Close();
+		world.Economy.RequestMaintenance( binState.Id, on: false );
+		Assert.AreEqual( (false, false), (binState.MaintenanceRequested, bin.Runtime.IsOpen) );
+	}
+
 	// ---- The relief object's worn report --------------------------------------------------------
 
 	[TestMethod]

@@ -268,6 +268,13 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x5DA1DF repair timer] (u8)ftol(+0x54); ecx = 100 - byte; imul ebx (D); the magic 0x51EB851F, sar 5 and the sign bit: a signed division by 100
 	public static int RepairTimer( int workDuration, float stateOfRepair ) => unchecked( (100 - RideBreakdownRules.GaugeByte( stateOfRepair )) * workDuration ) / 100;
 
+	/// <summary>A cancelled maintenance request ends its claim (<c>0x5E3400(0)</c>): the claimant goes idle by the common setter <c>0x628180(0)</c>, keeping his target.</summary>
+	internal static void ClaimantReleased( ThemeParkIncStaff staff, int thingId, long turn )
+	{
+		if ( staff.Members.FirstOrDefault( member => member.Navigation != null && member.ThingId == thingId ) is { } claimant )
+			EnterIdle( claimant, turn );
+	}
+
 	/// <summary>
 	/// The removal message (10) a mechanic hears (0x5D9DD0): when the removed object is his ride, he forgets it and goes idle. Called for every placed mechanic when the economy removes an object.
 	/// </summary>

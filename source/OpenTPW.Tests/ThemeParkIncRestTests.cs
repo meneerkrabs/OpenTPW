@@ -418,7 +418,7 @@ public class ThemeParkIncRestTests : ThemeParkIncScienceTestBase
 	[DataRow( ThemeParkIncStaffRole.Gardener )]
 	[DataRow( ThemeParkIncStaffRole.Entertainer )]
 	[DataRow( ThemeParkIncStaffRole.Guard )]
-	public void AMechanicOrAGardenerBesideAFullRoomWaitsInTheRestSearch( ThemeParkIncStaffRole role )
+	public void AStaffMemberBesideAFullRoomWaitsInTheRestSearch( ThemeParkIncStaffRole role )
 	{
 		// [BIN:TPI-EXE:0x5DA280 mechanic dispatch] [BIN:TPI-EXE:0x5D2A60 gardener dispatch] [BIN:TPI-EXE:0x5D1E20 entertainer dispatch] [BIN:TPI-EXE:0x5D3C60 guard dispatch] 0x23 lies above every
 		// one of these byte tables and goes to the common handler 0x6287A0, whose case is 0x62CA90: the role's dispatch runs the rest search, so a member beside a full room waits there, taking the

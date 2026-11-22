@@ -60,10 +60,13 @@ public class ThemeParkIncPerformerTests
 		return new( grid );
 	}
 
-	/// <summary>Hires the first pooled member of <paramref name="role"/> and drops him on <paramref name="cell"/>.</summary>
 	/// <summary>The world generator's state when the last <see cref="Hire"/> began its drop.</summary>
 	private static uint stateBeforeDrop;
 
+	/// <summary>The hired candidate's sprite draw before the last <see cref="Hire"/>'s drop ran the constructor.</summary>
+	private static uint spriteDrawBeforeDrop;
+
+	/// <summary>Hires the first pooled member of <paramref name="role"/> and drops him on <paramref name="cell"/>.</summary>
 	private static ThemeParkIncStaffMember Hire( ParkEconomy economy, ThemeParkIncStaffWorld world, ThemeParkIncStaffRole role, (int X, int Y) cell, int? experience = null )
 	{
 		var staff = economy.TpiStaff!;
@@ -75,6 +78,7 @@ public class ThemeParkIncPerformerTests
 		if ( experience is { } value )
 			member.Experience = value;
 		stateBeforeDrop = economy.World.State;
+		spriteDrawBeforeDrop = member.SpriteDraw;
 		world.Construct( economy, member, cell, null );
 		return member;
 	}
@@ -292,6 +296,25 @@ public class ThemeParkIncPerformerTests
 	}
 
 	[TestMethod]
+	public void ATiredWalkingEntertainerSkipsTheThreeWayDrawAndIdles()
+	{
+		// the search 0x5D1A30 of a tired member skips the world draw % 3 and the finder; with no rest area the gate's draw and the tail's setter draw are the only two (turn % 4 == 0 idles)
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		world.GuestFinder = ( _, _ ) => true;
+		var member = Hire( economy, world, ThemeParkIncStaffRole.Entertainer, (3, 5), experience: 0 );
+		member.Energy = 0;
+		member.Happiness = 100;
+		member.State = ThemeParkIncStaffWorld.Walking;
+		var probe = new WorldRng( economy.World.State );
+		world.Search( economy, member, 8 );
+		_ = probe.NextWord();
+		_ = probe.NextWord();
+		Assert.AreEqual( probe.State, economy.World.State, "the gate's draw and the setter's, none for the % 3 test" );
+		Assert.AreEqual( ThemeParkIncStaffWorld.Idle, member.State );
+	}
+
+	[TestMethod]
 	public void AGuardDropDrawsTheWorldForHisVariantAndAnEntertainerDoesNot()
 	{
 		// [BIN:TPI-EXE:0x5D3253 guard variant] 0x6902F0(0xB) draws the world once after the person start's base-speed draw; the entertainer's constructor keeps the candidate's byte
@@ -307,12 +330,12 @@ public class ThemeParkIncPerformerTests
 		Assert.AreEqual( probe.State, economy.World.State, "three draws in a guard's drop" );
 
 		var entertainer = Hire( economy, world, ThemeParkIncStaffRole.Entertainer, (6, 5), experience: 0 );
-		var candidateDraw = entertainer.SpriteDraw;
+		var candidateDraw = spriteDrawBeforeDrop;
 		var after = new WorldRng( stateBeforeDrop );
 		for ( var draw = 0; draw < 4; draw++ )
 			_ = after.NextWord();
 		// base speed, the gate's draw, the % 3 draw and the setter's draw (no guests: the finder is not asked)
-		Assert.AreEqual( candidateDraw, entertainer.SpriteDraw );
+		Assert.AreEqual( candidateDraw, entertainer.SpriteDraw, "the entertainer keeps the candidate's sprite draw (0x5D1380 draws none)" );
 		Assert.AreEqual( after.State, economy.World.State, "four draws in an entertainer's drop, none for his variant" );
 	}
 

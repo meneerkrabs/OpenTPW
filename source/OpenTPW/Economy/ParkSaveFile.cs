@@ -82,7 +82,7 @@ public static class ParkSaveFile
 		public int? TpiGardens { get; init; }
 		/// <summary>
 		/// The Theme Park Inc performer rules the save's entertainers and guards follow (<see cref="ThemeParkIncPerformerRules"/>): written by a park with Theme Park Inc's staff. A Theme Park Inc save
-		/// without it was made before the entertainers and guards were ported  and is refused.
+		/// without it was made before the entertainers and guards were ported and is refused.
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? TpiPerformers { get; init; }

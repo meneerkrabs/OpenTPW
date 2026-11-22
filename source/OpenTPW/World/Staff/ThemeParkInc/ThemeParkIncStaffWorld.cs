@@ -775,10 +775,10 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>Looking for work (0x62D810): the role's search, then a member with low motivation who is now working walks to a rest area or stops (<see cref="LowMotivationRest"/>).</summary>
-	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0, kind 0x14 0x5D28C0 (the byte table 0x62D974's index 16: 0x62D844), kind 8 0x61B820; then the low-motivation rest 0x62D866
+	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0, kind 6 0x5D1A30 (0x62D832), kind 7 0x5D3C10 (0x62D84D), kind 0x14 0x5D28C0 (the byte table 0x62D974's index 16: 0x62D844), kind 8 0x61B820; then the low-motivation rest 0x62D866
 	internal void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
-		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 4 0x5DA3D0, kind 5 0x5D52A0, kind 0x14 0x5D28C0, kind 8 0x61B820
+		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 4 0x5DA3D0, kind 5 0x5D52A0, kind 6 0x5D1A30, kind 7 0x5D3C10, kind 0x14 0x5D28C0, kind 8 0x61B820
 		if ( member.Role == ThemeParkIncStaffRole.Researcher )
 			SearchResearchRoom( economy, settings, member, turn );
 		else

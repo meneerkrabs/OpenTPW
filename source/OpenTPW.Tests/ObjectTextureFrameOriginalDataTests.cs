@@ -226,10 +226,11 @@ public class ObjectTextureFrameOriginalDataTests
 						}
 					}
 				}
-			Assert.AreEqual( 230, applied );
-			Assert.AreEqual( 101, decoded.Count );
-			CollectionAssert.AreEqual( new[] { "science/tvsim:39:3:lt1.tga" }, missing.ToArray(), "pin the retail missing art so loader regressions fail" );
 			Console.WriteLine( $"TPI texture frames: {applied} in-range tracks; {decoded.Count} unique keyed textures decoded. Missing: {string.Join( "; ", missing )}" );
+			// 230 tracks and 101 textures before #983 to #988 added folders to the Theme Park Inc catalogue; the missing art is unchanged
+			Assert.AreEqual( 298, applied );
+			Assert.AreEqual( 141, decoded.Count );
+			CollectionAssert.AreEqual( new[] { "science/tvsim:39:3:lt1.tga" }, missing.ToArray(), "pin the retail missing art so loader regressions fail" );
 		}
 		finally
 		{

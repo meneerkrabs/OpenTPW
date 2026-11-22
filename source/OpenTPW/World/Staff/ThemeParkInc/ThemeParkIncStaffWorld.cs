@@ -5,7 +5,8 @@ namespace OpenTPW;
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
 /// meters, day counters and search, and the training states 7 and 8; the mechanic runs 0, 1, 21 (to the ride) and 22 (repair) with the ride wear of ParkEconomy.UpdateThemeParkIncRide; the
 /// researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the gardener runs 0, 1, 0x1F (to the plant) and 0x20 (watering) with the training states and the plants of
-/// ParkEconomy.UpdateThemeParkIncPlant (ThemeParkIncStaffWorld.Gardeners); the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
+/// ParkEconomy.UpdateThemeParkIncPlant (ThemeParkIncStaffWorld.Gardeners); the entertainer runs 0, 1 and 0x17 (performing) and the guard 0 and 1 with the training states, each with his row on the
+/// region grid (ThemeParkIncStaffWorld.Performers; the guard's chase and first aid are not ported, <c>[EXT:tpi-capability-gates]</c>).
 /// </summary>
 /// <remarks>
 /// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not

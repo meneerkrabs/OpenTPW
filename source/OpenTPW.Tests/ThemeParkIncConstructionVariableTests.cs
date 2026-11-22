@@ -56,12 +56,12 @@ public class ThemeParkIncConstructionVariableTests
 	public void TheScienceLitterBinsScriptTakesItsCapacityDirtAndFireRisk()
 	{
 		ThemeParkIncObstacleTests.UseTpiData();
-		// the litter bin is a facility (levels/science/Facilities/litbin), a folder the object catalogue does not read yet: its own .sam and script are read here
-		var files = FileSystem.GetFiles( "/levels/science/Facilities/litbin" ).ToArray();
-		var sam = files.Single( file => file.EndsWith( ".sam", StringComparison.OrdinalIgnoreCase ) );
-		var settings = new ObjectSettings( new[] { ObjectSettingsFile.Load( FileSystem, sam ) } );
+		// the litter bin is a facility (levels/science/Facilities/litbin, Info.Id 1422), which the object catalogue loads with the folder's facilities.sam under it
+		var bin = ObjectCatalog.Load( "science" ).Get( 1422 );
+		Assert.AreEqual( (ObjectCategory.Facility, "litbin", true), (bin.Category, bin.ArchiveName, bin.IsBuildable) );
+		var settings = bin.Settings;
 		Assert.IsTrue( settings.GetBool( "UsageInfo.HoldsLitter" ), "the Science litter bin holds litter (thing flag 0x40)" );
-		using var stream = FileSystem.OpenRead( files.Single( file => file.EndsWith( ".rse", StringComparison.OrdinalIgnoreCase ) ) );
+		using var stream = FileSystem.OpenRead( bin.ScriptPath! );
 		var script = new RideVM( stream );
 		var names = script.Script.VariableNames;
 		Assert.AreEqual( ("VAR_CAPACITY", "VAR_DIRTY", "VAR_FIRERISK"), (names[3], names[11], names[12]) );

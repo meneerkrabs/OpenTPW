@@ -409,22 +409,6 @@ public class ThemeParkIncHandymanTests
 
 	// ---- The rest-area finder and the hire on a level ----------------------------------------
 
-	[TestMethod]
-	public void NoThemeParkIncObjectIsARestArea()
-	{
-		// [BIN:TPI-EXE:0x62BA20 rest-area finder] its only thing test is the flag +0x42 bit 2, which the thing builder sets only from the type record's +0x1B0 (UsageInfo.ChillsYouOut, 0x5DB6E2):
-		// no object of the three worlds sets the key, so the finder answers none in every Theme Park Inc park and the handyman's "no rest area" is exact
-		_ = ScienceEconomy();
-		foreach ( var world in new[] { "science", "water", "arabian" } )
-		{
-			var objects = ObjectCatalog.Load( world ).Entries;
-			Assert.IsTrue( objects.Count > 0, world );
-			var resting = objects.Where( entry => entry.Settings.Values.Any( pair => pair.Key.Equals( "UsageInfo.ChillsYouOut", StringComparison.OrdinalIgnoreCase ) && pair.Value.Trim() != "0" ) ).Select( entry => entry.SettingsName ).ToArray();
-			Assert.AreEqual( 0, resting.Length, $"{world}: {string.Join( ", ", resting )}" );
-			Assert.IsFalse( EconomyObjectCatalog.Load( world, easy: false ).Objects.Any( info => info.ChillsYouOut ), world );
-		}
-	}
-
 	private static void Set( object target, string field, object? value ) =>
 		target.GetType().GetField( field, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
 

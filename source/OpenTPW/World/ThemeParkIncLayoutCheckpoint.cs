@@ -17,8 +17,8 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 
 	public const string FormatName = "opentpw-tpi-layout";
 	// version 3 keeps Theme Park Inc's owned land (PR #978); versions 1 and 2 never recorded it. Version 4: the catalogue holds the obstacles (and the asset manifest their folders), which a
-	// version-3 layout was saved without
-	public const int CurrentVersion = 4;
+	// version-3 layout was saved without. Version 5: the catalogue holds the facilities (and the manifest their folders and facilities.sam), which a version-4 layout was saved without
+	public const int CurrentVersion = 5;
 	public const string FreshSession = "new-session";
 	public const int MaximumFileSize = ParkResumeSaveFile.MaximumFileSize;
 
@@ -94,14 +94,17 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 			using var document = JsonDocument.Parse(bytes.ToArray(), new JsonDocumentOptions { MaxDepth = 32 });
 			RejectDuplicates(document.RootElement);
 			// a checkpoint written before Theme Park Inc's land was kept (version 1 or 2) would restore every square as owned, which the original never reaches; one written before the obstacles
-			// (version 3) lacks their assets
+			// (version 3) or the facilities (version 4) lacks their assets
 			if (document.RootElement.ValueKind == JsonValueKind.Object &&
 				document.RootElement.TryGetProperty(nameof(Version), out var version) &&
-				version.ValueKind == JsonValueKind.Number && version.TryGetInt32(out var number) && number is 1 or 2 or 3)
-				throw new InvalidDataException(number == 3
-					// a version-3 checkpoint was saved by a catalogue without the obstacles: its asset manifest would only fail the comparison with an asset it does not expect
-					? "The checkpoint is version 3, saved before Theme Park Inc's obstacles were kept, and cannot be loaded; save the layout again."
-					: $"The checkpoint is version {number}, saved before Theme Park Inc's owned land was kept, and cannot be loaded; save the layout again.");
+				version.ValueKind == JsonValueKind.Number && version.TryGetInt32(out var number) && number is 1 or 2 or 3 or 4)
+				throw new InvalidDataException(number switch
+				{
+					// a version-3 or version-4 checkpoint was saved by a catalogue without the obstacles or the facilities: its asset manifest would only fail the comparison with assets it does not expect
+					3 => "The checkpoint is version 3, saved before Theme Park Inc's obstacles were kept, and cannot be loaded; save the layout again.",
+					4 => "The checkpoint is version 4, saved before Theme Park Inc's facilities were kept, and cannot be loaded; save the layout again.",
+					_ => $"The checkpoint is version {number}, saved before Theme Park Inc's owned land was kept, and cannot be loaded; save the layout again."
+				});
 			var snapshot = ParkResumeJson.Deserialize<ThemeParkIncLayoutCheckpoint>(bytes);
 			snapshot.ValidateShape();
 			return snapshot;

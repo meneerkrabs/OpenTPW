@@ -61,8 +61,8 @@ public interface IHudParkStatus
 	bool IsAvailable( BuildItem item );
 }
 
-/// <summary>Build-menu categories; the values are the original <c>Info.WhichUIType</c> (0 rides, 1 shops, 2 sideshows, 3 features).</summary>
-public enum BuildCategory { Rides = 0, Shops = 1, Sideshows = 2, Features = 3 }
+/// <summary>Build-menu categories; the values are the original <c>Info.WhichUIType</c> (0 rides, 1 shops, 2 sideshows, 3 features, 5 Theme Park Inc's facilities).</summary>
+public enum BuildCategory { Rides = 0, Shops = 1, Sideshows = 2, Features = 3, Facilities = 5 }
 
 /// <summary>A buyable object in the build menu.</summary>
 /// <param name="InfoId">Original <c>Info.Id</c> of the object (economy catalogue key).</param>

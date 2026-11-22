@@ -49,14 +49,14 @@ const paths = files => files.map(([path]) => path);
 // A small Theme Park Inc install, as a folder chosen on the page lists it: the install (with Data) or Data itself.
 const install = [
 	'Ver.txt', 'levels/Standard.sam',
-	'levels/arabian/rides/tbounce.wad', 'levels/Arabian/Facilities/litbin.wad', 'levels/science/rides/robot.wad', 'levels/science/shops/drinks.wad', 'levels/water/rides/boat.wad', 'levels/water/features/atm.wad',
+	'levels/arabian/rides/tbounce.wad', 'levels/science/Facilities/litbin.wad', 'levels/science/rides/robot.wad', 'levels/science/shops/drinks.wad', 'levels/water/rides/boat.wad', 'levels/water/features/atm.wad',
 	'levels/arabian/Sharetex.wad', 'levels/science/sharetex.wad', 'levels/water/sharetex.wad', 'levels/science/ssharete.wad', 'levels/science/Sound/ride.sdt', 'global/sound/catalog.sdt',
 	// not needed by a mod: music, terrain, speech, movies, the interface, the other worlds' loose files
 	'levels/arabian/Music/theme.sdt', 'levels/arabian/terrain.wad', 'levels/water/2dmap.tga', 'global/Speech/speechHD.SDT', 'movies/intro.mpg', 'ui.wad', 'levels/arabian/queue.wad',
 ];
 const asInstall = install.map(path => file(`Data/${path}`));
 const asData = install.map(path => file(path));
-const needed = ['Data/Ver.txt', 'Data/levels/Standard.sam', 'Data/levels/arabian/rides/tbounce.wad', 'Data/levels/Arabian/Facilities/litbin.wad', 'Data/levels/science/rides/robot.wad', 'Data/levels/science/shops/drinks.wad',
+const needed = ['Data/Ver.txt', 'Data/levels/Standard.sam', 'Data/levels/arabian/rides/tbounce.wad', 'Data/levels/science/Facilities/litbin.wad', 'Data/levels/science/rides/robot.wad', 'Data/levels/science/shops/drinks.wad',
 	'Data/levels/water/rides/boat.wad', 'Data/levels/water/features/atm.wad', 'Data/levels/arabian/Sharetex.wad', 'Data/levels/science/sharetex.wad', 'Data/levels/water/sharetex.wad', 'Data/levels/science/ssharete.wad',
 	'Data/levels/science/Sound/ride.sdt', 'Data/global/sound/catalog.sdt'];
 

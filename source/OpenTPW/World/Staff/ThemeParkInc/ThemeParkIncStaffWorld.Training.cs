@@ -12,7 +12,12 @@ public enum ThemeParkIncRoomKind
 /// <summary>A staff room: its thing and its entrance cell (thing word <c>+0x46</c>), the cell whose centre the staff walk to.</summary>
 public readonly record struct ThemeParkIncRoom( ushort Thing, (int X, int Y) Entrance );
 
-/// <summary>The park's staff rooms as the staff read them: the first room of a kind and the room's script variable 0, its occupancy.</summary>
+/// <summary>
+/// A rest area as the rest-area finder reads it: its thing, the thing's cell (its bytes <c>+5</c> and <c>+7</c>), its entrance cell (<c>+0x46</c>) and its open word (<c>mCanLoad</c>, <c>+0x7C</c>).
+/// </summary>
+public readonly record struct ThemeParkIncRestArea( ushort Thing, (int X, int Y) Cell, (int X, int Y) Entrance, bool CanLoad );
+
+/// <summary>The park's staff rooms as the staff read them: the first room of a kind, the rest areas, and a room's script variable 0, its occupancy.</summary>
 public interface IThemeParkIncRooms
 {
 	/// <summary>The first thing of the attraction list (<c>park+0x1EAB88</c>, newest first) whose flag word marks <paramref name="kind"/>; null for none.</summary>
@@ -20,6 +25,18 @@ public interface IThemeParkIncRooms
 
 	/// <summary>Adds <paramref name="delta"/> to variable 0 of the room thing's script instance (<c>0x6B0740</c>, <c>0x6B0C90</c>, <c>0x6B0780</c>), when it has one.</summary>
 	void AddOccupancy( ushort thing, int delta );
+
+	/// <summary>
+	/// Every thing of the attraction list (<c>park+0x1EAB88</c>, in its order) whose flag word has the rest-area bit (<c>+0x42</c> bit 2, <c>UsageInfo.ChillsYouOut</c>); none by default (a world without
+	/// rest areas).
+	/// </summary>
+	IReadOnlyList<ThemeParkIncRestArea> RestAreas() => [];
+
+	/// <summary>Variable 0 of the room thing's script instance (<c>0x6B0740</c>, <c>0x6B0C90</c>), its occupancy; 0 when it has none.</summary>
+	int Occupancy( ushort thing ) => 0;
+
+	/// <summary>A customer of the room thing (<c>0x5E5DA0</c>): its daily and monthly customer counts rise.</summary>
+	void RecordCustomer( ushort thing ) { }
 }
 
 public sealed partial class ThemeParkIncStaffWorld

@@ -55,6 +55,8 @@ public sealed class ThemeParkIncStaffMember
 	public int ResearchRoom { get; internal set; }
 	/// <summary>The turn the researcher entered his research room (+0x278, <c>mTimeStartedResearching</c>).</summary>
 	public long ResearchStamp { get; internal set; }
+	/// <summary>The rest area the member walks to, waits by or rests in (+0x248): its thing, 0 for none.</summary>
+	public int RestArea { get; internal set; }
 
 	/// <summary>Hires <paramref name="candidate"/>: its role, name, experience, wage as the salary, agency and look.</summary>
 	public static ThemeParkIncStaffMember Hire( ThemeParkIncHireCandidate candidate, int id ) =>
@@ -313,10 +315,12 @@ public sealed class ThemeParkIncStaffMember
 
 	/// <summary>
 	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10, a mechanic's 0, 1, 21 and 22 and a gardener's 0, 1, 0x1F and 0x20, each with the training
-	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25.
+	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25; and for all four the rest states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area).
 	/// </summary>
 	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
+		ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher or ThemeParkIncStaffRole.Gardener
+			when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch => true,
 		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Gardener => state is 0 or 1 or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering || IsTrainingState( state ),

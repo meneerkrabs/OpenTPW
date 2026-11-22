@@ -7,7 +7,7 @@ the next table starts); that scan is not part of this script, whose ``--check`` 
 encrypted, so its tables are not readable statically.
 
 Phase 1 of the Theme Park Inc front end needs the first two tables; the in-game letter window the third; the mission window the
-next two; the tag tube the last:
+next two; the tag tube the sixth; the wage demand window and the wage negotiation dialog the last two:
 
 * ``PersonnelFile`` 0x9C0FBC: the start menu. Builder 0x56ADB0 (``CreateWindow`` 0x84DEA0 over this table), handler
   0x568CE0/0x568D40. Window ``!window_s``, four ``filetab`` player slots, the ``filepage`` label areas, the name box
@@ -33,6 +33,16 @@ next two; the tag tube the last:
   the From/To/Subject pairs (0xBC3/0xBC4, 0xBC7/0xBC8, 0xBC5/0xBC6), the ``mugshot`` 0xBC2, the body scroll bar 0xBC9,
   the footer 0xBCA and ``b_goto`` 0xBCB, the empty-list label 0xBCC and the ``b_close``, ``b_okay``, ``b_delete`` and
   ``b_help`` buttons (0xBB9, 0xBBA, 0xBBC, 0xBCD).
+* ``WageDemand`` 0x9C9F64: the wage demand window a wage demand row's go-to opens (builder 0x59ABB0, procedure 0x59A900
+  through 0x40CCAC): the title 0xCA199, the member's picture frame 0xCA198 and name frame 0xCA187, the demand text frame 0xCA186,
+  the statistics frame 0xCA188 with its label and value pairs (0xCA18C..0xCA196) and the three bars (type 9: 0xCA189, 0xCA18A,
+  0xCA18B), the "Your Offer" label 0xCA197 over the ``varibox`` 0xCA185 (``b_minus`` 2, ``b_plus`` 1 and its value field 3, the
+  layout command 19), and the ``b_fire`` 0xCA183, ``b_okay`` 0xCA184, ``b_close`` 0xCA182, ``b_cancel`` (-2) and ``b_help``
+  0xCA19A buttons.
+* ``WageNegotiation`` 0x9BE518: the wage negotiation results dialog (builder 0x559C40, procedure 0x559860 through 0x559DA0):
+  the title 0xB28A, the member's picture 0xB289, the body frame 0xB286 with the name label pair 0xB287/0xB288, the ``b_okay``
+  0xB28B, ``b_close`` 0xB285 and ``b_help`` 0xB291 buttons, and the choice panel 0xB28C with its two ``checkbox2`` toggles
+  (0xB28D accept the demand, 0xB28E let them leave) and their labels 0xB28F and 0xB290.
 
 A model hash is the root-name hash of ``UiModels.RootNameKey``; the names are resolved from the game's ui.wad and an
 unresolved or ambiguous hash is an error. Rectangles are (left, top, right, bottom) in the 2048 x 1536 virtual canvas.
@@ -62,6 +72,8 @@ TABLES = [
     ('MissionWindow', 0x9BE808, 0xCEC52, (196, 38, 2028, 1318), 0x9BECCC, 34),
     ('ChallengesWindow', 0x9B54CC, 0xC11FB, (196, 38, 2028, 1318), 0x9B5924, 30),
     ('TagTube', 0x9BBC84, 0xBB8, (196, 38, 2028, 1318), 0x9BC08C, 31),
+    ('WageDemand', 0x9C9F64, 0xCA181, (453, 191, 1771, 1165), 0x9CA38A, 30),
+    ('WageNegotiation', 0x9BE518, 0xB284, (453, 430, 1772, 926), 0x9BE740, 14),
 ]
 
 # Controls the C# reads by model name or id; a table that lacks one is an error.
@@ -74,6 +86,8 @@ REQUIRED_MODELS = {
     'ChallengesWindow': ['!window', 'tab_text', '!listnarrow', 'b_ltoggle10'],
     'TagTube': ['!window', '!f_plain', '!frame', '!list', 'mugshot', 'b_close', 'b_okay', 'b_delete', 'b_goto', 'b_help',
                 'b_vscrollup', 'b_vscroller', 'b_vscrolldn'],
+    'WageDemand': ['!window', '!frame', 'varibox', 'b_minus', 'b_plus', 'b_fire', 'b_okay', 'b_close', 'b_cancel', 'b_help'],
+    'WageNegotiation': ['!window', '!frame', '!f_plain', 'checkbox2', 'b_okay', 'b_close', 'b_help'],
 }
 REQUIRED_IDS = {
     'PersonnelFile': [0xC73D, 0xC73E, 0xC73F, 0xC740, 0xC754, 0xC755, 0xC759, 0xC73A, 0xC75B, 0xC758, 0xC757, 0xC75C, 0xC75E],
@@ -82,6 +96,8 @@ REQUIRED_IDS = {
     'MissionWindow': list(range(0xCEC53, 0xCEC6C)) + [0xFFFFFFFE],
     'ChallengesWindow': [0xC1200, 0xC1202, 0xC120E],
     'TagTube': list(range(0xBB8, 0xBCE)) + [0x10, 0x11],
+    'WageDemand': list(range(0xCA181, 0xCA19B)) + [1, 2, 3, 0xFFFFFFFE],
+    'WageNegotiation': list(range(0xB284, 0xB292)),
 }
 
 

@@ -822,7 +822,8 @@ public sealed class ParkObjects
 			if ( !IsImportedObject( entry ) )
 				continue;
 			var thingId = Things != null ? SavedThingId( attraction.Id ) : 0;
-			Register( new OriginalObject( entry, ComputePlacement( entry, 0, 0, 0 ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			var unrecorded = Register( new OriginalObject( entry, ComputePlacement( entry, 0, 0, 0 ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			savedThemeParkIncThings[unrecorded] = attraction.Id;
 			count++;
 		}
 		yield return (count, 1);

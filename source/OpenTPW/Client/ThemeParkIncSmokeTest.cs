@@ -109,6 +109,15 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 					&& new[] { 1702, 1701, 1703, 1750, 1798 }.All( type => level.Objects.Objects.Any( item => item.Entry.InfoId == type && item.ThingId == prebuilt.Attractions.Single( attraction => attraction.InfoId == type ).Id ) ),
 					"the obstacles and the camera path are things of the world with their saved ids" );
 				Require( level.Guests?.Grid.Cells is { } obstacleCells && obstacleCells.ObstacleFlagAt( 41, 48 ) && obstacleCells.RawTypeAt( 41, 48 ) == 8, "the 1700 gate's footprint is a hole with the obstacle flag" );
+				// the import, the economy links and Level.SeedThemeParkIncObjectList: the mechanics' object list is the saved chain (FirstObject along mNext), an object with an economy record as
+				// its record and any other thing as its negated thing id
+				var chain = new List<int>();
+				for ( int thing = prebuilt.Variables.FirstObject; thing != 0 && chain.Count <= prebuilt.Attractions.Count; thing = prebuilt.FindAttraction( thing )!.Next )
+					chain.Add( thing );
+				var listed = economy.ThemeParkIncObjectList.Select( key => key < 0 ? -key : level.Objects.Objects.FirstOrDefault( item => level.GetEconomyInstance( item ) == key ) is { } item
+					? level.Objects.SavedThemeParkIncThingOf( item ) : 0 ).ToList();
+				Require( listed.SequenceEqual( chain ) && chain.Count == 24 && economy.ThemeParkIncObjectList.Count( key => key < 0 ) == 7,
+					$"the mechanics' object list is the saved chain with the seven things without an economy record ({string.Join( ",", economy.ThemeParkIncObjectList )})" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )

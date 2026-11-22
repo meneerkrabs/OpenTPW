@@ -1250,8 +1250,9 @@ public static class ParkSaveFile
 		if ( data.Research.RecentItems is { } recentItems )
 			SaveRecentResearch.Validate( recentItems );
 		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == (data.Edition == GameEdition.ThemeParkInc ? 0 : 5) && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
-		// a Theme Park Inc cursor may rest on a thing OpenTPW does not build (a negated thing id of its object list)
-		Require( data.MechanicCursor >= 0 || data.TpiObjectList?.Contains( data.MechanicCursor ) == true, "mechanic cursor" );
+		// a Theme Park Inc cursor may name a thing without an economy record (a negated thing id), as a positive one may name a sold object: the HQ word keeps a dead thing's id, which the finder
+		// 0x5DAAD0 reads as "not in the list" and so starts at the head
+		Require( data.MechanicCursor >= (data.TpiObjectList != null ? -ThingPool.Capacity : 0), "mechanic cursor" );
 		Require( data.Research.CheatAvailable is not { } cheatAvailable || cheatAvailable.Count > 0 && cheatAvailable.Distinct().Count() == cheatAvailable.Count, "research cheat" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );

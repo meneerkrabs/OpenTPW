@@ -333,11 +333,11 @@ public partial class Level
 
 	/// <summary>
 	/// A park built from a Theme Park Inc save takes the saved object list's order (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): from the World variable <c>FirstObject</c> along each
-	/// attraction thing's <c>mNext</c>, an imported object by its economy instance and a thing OpenTPW does not build by its negated thing id. A continuation restores its own list.
+	/// attraction thing's <c>mNext</c>, an object with an economy record by its economy instance and any other thing by its negated thing id. A continuation restores its own list.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5DAAD0 ride finder] the finder walks the list from world +0x1EAB88 through each object's +0x14, the loader's FirstObject and mNext (0x64BC00, 0x5DC430); in the prebuilt Science
-	// park the list holds 24 things, newest first, of which 17 are imported objects (their record order is not the list's order) and 7 are not built: the things of Info.Id 1700, 1701, 1702,
-	// 1703, 1750 and 1798 (no object archive in the catalogue) and the fixed item 1710 (a tool entry)
+	// park the list holds 24 things, newest first, of which 17 have an economy record (their record order is not the list's order) and 7 have none: the obstacles, lake, gate and camera path of
+	// Info.Id 1700, 1701, 1702, 1703, 1750 and 1798 (not in the economy catalogue) and the fixed item 1710 (a tool entry, not imported)
 	private void SeedThemeParkIncObjectList()
 	{
 		if ( resumeState != null || Park?.Economy is not { TpiStaff: not null } economy || OriginalPark?.Save?.ThemeParkIncWorld is not { } world )

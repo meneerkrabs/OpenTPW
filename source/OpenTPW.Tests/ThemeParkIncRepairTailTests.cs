@@ -249,6 +249,42 @@ public class ThemeParkIncRepairTailTests
 		Assert.AreEqual( (false, false, false), (coaster.Runtime.IsOpen, state.IsOpen, coaster.Runtime.ClosedDueToWeather), "the coaster test closes it again" );
 	}
 
+	// ---- The object list's things without an economy record ------------------------------------
+
+	[TestMethod]
+	public void AnObstacleReplacedOnItsOpeningLeavesTheListWithTheReplacementAtTheHead()
+	{
+		// [BIN:TPI-EXE:0x5E8D80 obstacle replacement] ReplaceWithID constructs the replacement (0x5DB1B0, which puts it at the list's head through 0x64F3E0 at 0x5DB28C), then destroys the obstacle
+		// (0x637C40 -> 0x5DE780 -> 0x64F430 unlinks it); neither has an economy record, so both are their thing ids in ParkEconomy.ThemeParkIncObjectList
+		var world = World();
+		var lake = CheatsRideVehicleTests.SyntheticRide( root, 1703, "lake", "" );
+		var drained = CheatsRideVehicleTests.SyntheticRide( root, 1704, "dlake", "" );
+		var catalog = (ObjectCatalog)typeof( ObjectCatalog ).GetConstructor( Private, null, new[] { typeof( string ), typeof( IReadOnlyList<ObjectCatalogEntry> ) }, null )!
+			.Invoke( new object[] { "science", new[] { lake, drained } } );
+		var pool = new ThingPool();
+		pool.AllocateWorldSetup();
+		var objects = new ParkObjects( catalog, new SandboxParkGrid() ) { Things = pool };
+		Set( world.Level, "<Objects>k__BackingField", objects );
+		typeof( Level ).GetMethod( "ConnectObjectsToEconomy", Private )!.Invoke( world.Level, null );
+		var obstacle = objects.Add( lake, 3, 3, 0 );
+		world.Economy.AddThemeParkIncThing( obstacle.ThingId );
+		var (_, ride) = Place( world, RobotSwing );
+		CollectionAssert.AreEqual( new[] { ride.Id, -obstacle.ThingId }, world.Economy.ThemeParkIncObjectList.ToArray() );
+		var things = (IThemeParkIncObstacleThings)Activator.CreateInstance( typeof( Level ).GetNestedType( "ThemeParkIncObstacleThings", BindingFlags.NonPublic )!, world.Level )!;
+		var type = new ThemeParkIncObstacleType( 1703, "lake", null, ThemeParkIncMapGrid.Parse( new[] { "." }, "after" ), 0, 0, true, 0, false, 0, false, false, 5, 5, 0, 0, false, 1704, false );
+		Assert.AreEqual( ThemeParkIncObstacleFate.Replaced,
+			ThemeParkIncObstacles.OpenThing( new ParkCellMap( 128, 128 ), new Dictionary<int, ThemeParkIncObstacleType> { [1703] = type }, things, (ushort)obstacle.ThingId ) );
+		var replacement = objects.Objects.Single( item => item.Entry.InfoId == 1704 );
+		Assert.IsTrue( obstacle.IsDeleted );
+		CollectionAssert.AreEqual( new[] { -replacement.ThingId, ride.Id }, world.Economy.ThemeParkIncObjectList.ToArray(), "the replacement at the head, the obstacle gone" );
+		// the continuation save takes the list as the game left it
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( world.Economy ) ) ), world.Economy.Settings, world.Economy.Catalog );
+		CollectionAssert.AreEqual( world.Economy.ThemeParkIncObjectList.ToArray(), restored.ThemeParkIncObjectList.ToArray() );
+		// a thing id taken again enters once: the earlier entry goes first
+		world.Economy.AddThemeParkIncThing( replacement.ThingId );
+		CollectionAssert.AreEqual( new[] { -replacement.ThingId, ride.Id }, world.Economy.ThemeParkIncObjectList.ToArray() );
+	}
+
 	// ---- The relief object's worn report --------------------------------------------------------
 
 	[TestMethod]

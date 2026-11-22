@@ -347,10 +347,10 @@ public class ThemeParkIncMechanicTests
 	}
 
 	[TestMethod]
-	public void TheFinderWalksTheObjectListWithTheThingsOpenTpwDoesNotBuild()
+	public void TheFinderWalksTheObjectListWithTheThingsThatHaveNoEconomyRecord()
 	{
-		// [BIN:TPI-EXE:0x5DAAD0 ride finder] the cursor moves on from the previous start; a start past the list's end (0) finds nothing. A thing OpenTPW does not build (a negated thing id)
-		// is a step of the walk like any object, so it changes when a search finds nothing
+		// [BIN:TPI-EXE:0x5DAAD0 ride finder] the cursor moves on from the previous start; a start past the list's end (0) finds nothing. A thing without an economy record (a negated thing
+		// id) is a step of the walk like any object, so it changes when a search finds nothing
 		foreach ( var withThing in new[] { false, true } )
 		{
 			var economy = ScienceEconomy();
@@ -382,7 +382,7 @@ public class ThemeParkIncMechanicTests
 		var json = ParkSaveFile.Serialize( economy );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog );
 		CollectionAssert.AreEqual( new[] { first.Id, -32, second.Id }, restored.ThemeParkIncObjectList.ToArray() );
-		Assert.AreEqual( -32, restored.MechanicCursor, "the cursor may rest on a thing OpenTPW does not build" );
+		Assert.AreEqual( -32, restored.MechanicCursor, "the cursor may rest on a thing without an economy record" );
 		economy.Sell( first.Id );
 		CollectionAssert.AreEqual( new[] { -32, second.Id }, economy.ThemeParkIncObjectList.ToArray(), "a sold object leaves the list" );
 		foreach ( var broken in new[] { new[] { first.Id, second.Id, -32, -32 }, new[] { -32 }, new[] { first.Id, second.Id, 0, -32 }, new[] { first.Id, second.Id, 9999, -32 } } )
@@ -392,10 +392,19 @@ public class ThemeParkIncMechanicTests
 			Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog ),
 				$"[{string.Join( ", ", broken )}]" );
 		}
-		var cursor = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
-		cursor["MechanicCursor"] = -5;
-		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( cursor.ToJsonString() ) ), economy.Settings, economy.Catalog ),
-			"a cursor on a thing the list does not hold" );
+		// the HQ word may keep a dead thing's id (0x5DAAD0 reads one it does not find as "start at the head"), as a positive cursor may name a sold object; only an id outside the thing range is refused
+		Restored( cursor: -5 );
+		Assert.ThrowsException<InvalidDataException>( () => Restored( cursor: -ThingPool.Capacity - 1 ), "a cursor outside the thing range" );
+		Assert.ThrowsException<InvalidDataException>( () => Restored( list: new[] { first.Id, second.Id, -ThingPool.Capacity - 1 } ), "a thing id outside the pool" );
+		ParkEconomy Restored( int? cursor = null, int[]? list = null )
+		{
+			var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
+			if ( cursor is { } word )
+				node["MechanicCursor"] = word;
+			if ( list != null )
+				node["TpiObjectList"] = new System.Text.Json.Nodes.JsonArray( list.Select( key => (System.Text.Json.Nodes.JsonNode?)key ).ToArray() );
+			return ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog );
+		}
 		var missing = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
 		missing.Remove( "TpiObjectList" );
 		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( missing.ToJsonString() ) ), economy.Settings, economy.Catalog ) );
@@ -420,8 +429,16 @@ public class ThemeParkIncMechanicTests
 		CollectionAssert.AreEqual( new[] { 1414, 1413, 1413, 1403, 1101, -32, -31, -30, -29, -28, -27, -26, 1707, 3708, 1709, 1706, 1705, 1110, 1170, 1160, 1180, 104, 103, 1601 }, list );
 		Assert.AreNotEqual( string.Join( ",", list.Where( key => key > 0 ) ),
 			string.Join( ",", instances.Values.OrderByDescending( id => id ).Select( id => economy.TryGetObject( id, out var item ) ? item.InfoId : 0 ) ), "the record order is not the list's" );
-		var looped = park.Save.ThemeParkIncWorld!;
-		Assert.ThrowsException<InvalidDataException>( () => Level.ThemeParkIncObjectListOf( looped, new Dictionary<int, int>( instances ) { [99] = 1 } ), "an imported object off the list" );
+		var saved = park.Save.ThemeParkIncWorld!;
+		Assert.ThrowsException<InvalidDataException>( () => Level.ThemeParkIncObjectListOf( saved, new Dictionary<int, int>( instances ) { [99] = 1 } ), "an imported object off the list" );
+		// a chain whose mNext leads back to a thing met before (the Science list's oldest thing, 14, pointing at the newest, 37) is refused, not walked for ever
+		var attractions = saved.Attractions.ToList();
+		var oldest = attractions.FindIndex( attraction => attraction.Id == 14 );
+		attractions[oldest] = attractions[oldest] with { Next = 37 };
+		var looped = (ThemeParkIncSaveWorld)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ThemeParkIncSaveWorld ) );
+		foreach ( var field in typeof( ThemeParkIncSaveWorld ).GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic ) )
+			field.SetValue( looped, field.Name == "<Attractions>k__BackingField" ? attractions.AsReadOnly() : field.GetValue( saved ) );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Level.ThemeParkIncObjectListOf( looped, instances ) ).Message, "met twice" );
 	}
 
 	[TestMethod]

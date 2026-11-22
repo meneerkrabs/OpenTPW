@@ -175,17 +175,33 @@ public sealed partial class ParkEconomy
 
 	/// <summary>
 	/// Theme Park Inc's object list (world <c>+0x1EAB88</c>, linked through each object's word <c>+0x14</c>), newest first, which the mechanics' ride finder walks
-	/// (<see cref="ThemeParkIncStaffWorld.FindRide"/>): an economy object by its instance id, and a thing of the original's park that OpenTPW does not build by its saved thing id negated, so the
-	/// finder's cursor steps over it as the original's does. Empty without Theme Park Inc's staff.
+	/// (<see cref="ThemeParkIncStaffWorld.FindRide"/>): an object with an economy record by its instance id, and an attraction thing without one (an obstacle, a camera path, a tool entry) by its
+	/// thing id negated, so the finder's cursor steps over it as the original's does. Empty without Theme Park Inc's staff.
 	/// </summary>
-	// [BIN:TPI-EXE:0x64F3E0 object list] a new object enters the list at its head (AddObject) and a removed one leaves it (Sell, Remove); a park built from a save takes the saved list (the World
+	// [BIN:TPI-EXE:0x64F3E0 object list] the attraction constructor 0x5DB1B0 puts every attraction, obstacles included, at the list's head (the call at 0x5DB28C): an economy record in AddObject, a thing
+	// without one in AddThemeParkIncThing; the destroyer 0x637C40 -> 0x5DE780 -> 0x64F430 unlinks it (Sell, Remove, RemoveThemeParkIncThing); a park built from a save takes the saved list (the World
 	// variable FirstObject and the attractions' mNext words, Level.SeedThemeParkIncObjectList), a continuation its own (ParkSaveFile)
 	internal IReadOnlyList<int> ThemeParkIncObjectList => tpiObjectList ?? (IReadOnlyList<int>)Array.Empty<int>();
 	private List<int>? tpiObjectList;
 
 	/// <summary>
+	/// An attraction thing without an economy record enters the object list at its head (<c>0x64F3E0</c>), as its negated thing id; an entry the id left behind (a freed id taken again) is dropped
+	/// first, so the list never holds an id twice.
+	/// </summary>
+	internal void AddThemeParkIncThing( int thingId )
+	{
+		if ( tpiObjectList == null || thingId is < 1 or > ThingPool.Capacity )
+			return;
+		tpiObjectList.Remove( -thingId );
+		tpiObjectList.Insert( 0, -thingId );
+	}
+
+	/// <summary>An attraction thing without an economy record leaves the object list (<c>0x64F430</c>); also when the id is taken by an object with an economy record.</summary>
+	internal void RemoveThemeParkIncThing( int thingId ) => tpiObjectList?.Remove( -thingId );
+
+	/// <summary>
 	/// Whether <paramref name="keys"/> is an object list of a park holding <paramref name="objectIds"/>: every object exactly once, and otherwise only distinct negated thing ids
-	/// (1 to 65535).
+	/// (1 to <see cref="ThingPool.Capacity"/>).
 	/// </summary>
 	internal static bool IsValidThemeParkIncObjectList( IEnumerable<int> objectIds, IReadOnlyList<int>? keys )
 	{
@@ -194,7 +210,7 @@ public sealed partial class ParkEconomy
 		var ids = objectIds.ToHashSet();
 		var seen = new HashSet<int>();
 		foreach ( var key in keys )
-			if ( key == 0 || key < -ushort.MaxValue || !seen.Add( key ) || key > 0 && !ids.Contains( key ) )
+			if ( key == 0 || key < -ThingPool.Capacity || !seen.Add( key ) || key > 0 && !ids.Contains( key ) )
 				return false;
 		return ids.All( seen.Contains );
 	}

@@ -2057,6 +2057,10 @@ public partial class Level
 		Objects.ObjectRemoved += item =>
 		{
 			var linked = economyInstances.Remove( item, out var instance );
+			// [BIN:TPI-EXE:0x64F430 object list] a Theme Park Inc attraction without an economy record (an obstacle, a replacement) leaves the object list as its thing id; one with a record leaves
+			// it with the record's sale
+			if ( !linked )
+				Park.Economy.RemoveThemeParkIncThing( item.ThingId );
 			// a guest walking to a removed bin gets the removal message (tp.exe 0x004FB360); bins are known by their economy instance
 			if ( linked && item.Entry.Settings.GetBool( "UsageInfo.HoldsLitter" ) )
 				Guests?.BinRemoved( instance );
@@ -2241,6 +2245,8 @@ public partial class Level
 	{
 		InitializeCatalogueBinding( item, instance, economyInstances.ContainsKey( item ) );
 		economyInstances[item] = instance;
+		// a Theme Park Inc thing id taken again by an object with an economy record: the list holds the record, not the id (ParkEconomy.ThemeParkIncObjectList)
+		Park?.Economy.RemoveThemeParkIncThing( item.ThingId );
 		Park?.Guests?.Link( item.Visitors.AttractionId, instance );
 		// a toilet, a camera or a fireworks object spreads its RegionFX row where it stands (its thing's cell)
 		Park?.Economy.PlaceObjectEffects( instance, (item.Placement.X, item.Placement.Y) );

@@ -61,12 +61,12 @@ public sealed class StaffSpriteState
 	public const int FirstPerformanceTemplate = 13;
 
 	/// <summary>Whether a template number is one the staff programs know (the wrapper's pending word).</summary>
-	public static bool IsKnownTemplate( int template ) => template is 1 or 2 or 3 or 9 or 10 or (>= 13 and <= 16) or (>= 17 and <= 25);
+	public static bool IsKnownTemplate( int template ) => template is 1 or 2 or 3 or 9 or 10 or (>= 13 and <= 16) or (>= 17 and <= 25) or (>= (int)StaffSpriteProgram.ThemeParkIncPerformanceA and <= (int)StaffSpriteProgram.ThemeParkIncPerformanceD);
 
 	/// <summary>The program a non-performance template number runs, null for another number.</summary>
 	public static StaffSpriteProgram? ProgramOf( int template ) => template switch
 	{
-		1 or 2 or 3 or 9 or 10 or (>= 17 and <= 25) => (StaffSpriteProgram)template,
+		1 or 2 or 3 or 9 or 10 or (>= 17 and <= 25) or (>= (int)StaffSpriteProgram.ThemeParkIncPerformanceA and <= (int)StaffSpriteProgram.ThemeParkIncPerformanceD) => (StaffSpriteProgram)template,
 		_ => null
 	};
 

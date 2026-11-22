@@ -63,6 +63,10 @@ public sealed partial class ThemeParkIncStaffWorld
 		WalkTemplate => StaffSpriteEvents.Patrol,
 		WorkTemplate => StaffSpriteEvents.Sweep,
 		RepairTemplate => StaffSpriteEvents.Repair,
+		PerformanceTemplateA => (int)StaffSpriteProgram.ThemeParkIncPerformanceA,
+		PerformanceTemplateB => (int)StaffSpriteProgram.ThemeParkIncPerformanceB,
+		PerformanceTemplateC => (int)StaffSpriteProgram.ThemeParkIncPerformanceC,
+		PerformanceTemplateD => (int)StaffSpriteProgram.ThemeParkIncPerformanceD,
 		_ => throw new ArgumentOutOfRangeException( nameof( template ), $"Theme Park Inc sprite template {template} is not ported." )
 	};
 
@@ -74,9 +78,11 @@ public sealed partial class ThemeParkIncStaffWorld
 	public static int VariantOf( ThemeParkIncStaffMember member, IStaffSpriteBanks? banks ) =>
 		banks?.BankCount( SpriteTypeOf( member ) ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
 
-	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (category 0xA), the researchers' (category 0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (category 0x12, <c>Generic\Gardeners</c>).</summary>
+	/// <summary>The sprite bank family of a member's role: the entertainers' (category 8, the level's theme folder), the handymen's (category 9), the mechanics' (category 0xA), the guards' (category 0xB), the researchers' (category 0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (category 0x12, <c>Generic\Gardeners</c>).</summary>
 	internal static StaffType SpriteTypeOf( ThemeParkIncStaffMember member ) => member.Role switch
 	{
+		ThemeParkIncStaffRole.Entertainer => StaffType.Entertainer,
+		ThemeParkIncStaffRole.Guard => StaffType.Guard,
 		ThemeParkIncStaffRole.Researcher => StaffType.Researcher,
 		ThemeParkIncStaffRole.Mechanic => StaffType.Mechanic,
 		ThemeParkIncStaffRole.Gardener => StaffSpriteRules.ThemeParkIncGardener,
@@ -336,7 +342,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		ArgumentNullException.ThrowIfNull( economy );
 		ArgumentNullException.ThrowIfNull( member );
 		if ( !ThemeParkIncStaffMember.IsPlacedRole( member.Role ) )
-			throw new InvalidOperationException( "Only Theme Park Inc handymen, mechanics, researchers and gardeners are ported to the park ([EXT:tpi-capability-gates])." );
+			throw new InvalidOperationException( $"Theme Park Inc role {member.Role} is not a role of the park." );
 		if ( economy.TpiStaff is not { } staff )
 			throw new InvalidOperationException( "The park has no Theme Park Inc staff." );
 		var settings = staff.Settings;
@@ -370,6 +376,8 @@ public sealed partial class ThemeParkIncStaffWorld
 		FollowChain( member );
 		if ( member.Role == ThemeParkIncStaffRole.Researcher )
 			StartResearcher( economy, member, economy.Turn );
+		else if ( member.Role is ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard )
+			StartPerformer( economy, member, economy.Turn );
 		else
 		{
 			// [BIN:TPI-EXE:0x5D9BC8 mechanic start] +0x5D8 and +0x5D4 = 0, then the setter 0x5DA150(0) (0x628180(0): the idle stamp 0, as the state is 0, the bonus 0 and template 3) before the search
@@ -464,6 +472,17 @@ public sealed partial class ThemeParkIncStaffWorld
 			CommonPreUpdate( member );
 			PreUpdateGardener( economy, staff.Settings, member, turn );
 			DispatchGardener( economy, staff.Settings, member, turn );
+		}
+		else if ( member.Role is ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard )
+		{
+			// [BIN:TPI-EXE:0x637651 entertainer update] kind 6: the pre-update 0x5D1960 (the cell effect, then the common 0x628050), then the dispatch 0x5D1E20
+			// [BIN:TPI-EXE:0x637660 guard update] kind 7: the pre-update 0x5D3B40 (the same with row 3), then the dispatch 0x5D3C60
+			MoveEffect( economy, staff.Settings, member );
+			CommonPreUpdate( member );
+			if ( member.Role == ThemeParkIncStaffRole.Entertainer )
+				DispatchEntertainer( economy, staff.Settings, member, turn );
+			else
+				DispatchGuard( economy, staff.Settings, member, turn );
 		}
 		else
 		{
@@ -687,13 +706,17 @@ public sealed partial class ThemeParkIncStaffWorld
 		SetState( economy, member, Patrol( economy, member ) ? Walking : Idle, turn );
 	}
 
-	/// <summary>The role's search: the handyman's 0x5D52A0, the mechanic's 0x5DA3D0 or the gardener's 0x5D28C0.</summary>
+	/// <summary>The role's search: the handyman's 0x5D52A0, the mechanic's 0x5DA3D0, the gardener's 0x5D28C0, the entertainer's 0x5D1A30 or the guard's decision 0x5D3C10.</summary>
 	internal void Search( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		if ( member.Role == ThemeParkIncStaffRole.Mechanic )
 			SearchMechanic( economy, member, turn );
 		else if ( member.Role == ThemeParkIncStaffRole.Gardener )
 			SearchGardener( economy, member, turn );
+		else if ( member.Role == ThemeParkIncStaffRole.Entertainer )
+			SearchEntertainer( economy, member, turn );
+		else if ( member.Role == ThemeParkIncStaffRole.Guard )
+			DecideGuard( economy, member, turn );
 		else
 			SearchHandyman( economy, member, turn );
 	}

@@ -116,6 +116,17 @@ public static class StaffSpriteRules
 			case StaffType.Researcher:
 				return new StaffBankSet( "/esprites/Generic/Researchers", new[] { "SPR_RE" } );
 			default:
+				// [BIN:TPI-EXE:0x5D13E7 entertainer sprite] the entertainer's constructor 0x5D1380 sets +0x34 = 8 and makes its source with the category 8 and its variant byte (0x5D1000(3, 8, variant)); the
+				// entertainers' banks in Theme Park Inc's esprites.wad are one per theme folder (Arabian Spr_ph, Science Spr_bu, Water Spr_fs, wIntro Spr_bu), as Theme Park World's are three
+				if ( GameEditions.IsThemeParkInc )
+					return level.ToLowerInvariant() switch
+					{
+						"arabian" => new StaffBankSet( "/esprites/Arabian/Entertainers", new[] { "SPR_GE", "SPR_PH" } ),
+						"science" => new StaffBankSet( "/esprites/Science/Entertainers", new[] { "SPR_BU", "SPR_SP" } ),
+						"water" => new StaffBankSet( "/esprites/Water/Entertainers", new[] { "SPR_FS", "SPR_PG" } ),
+						"wintro" => new StaffBankSet( "/esprites/wIntro/Entertainers", new[] { "SPR_BU", "SPR_SP" } ),
+						_ => null
+					};
 				var theme = ThemeFolder( level );
 				if ( theme == null )
 					return null;

@@ -899,12 +899,21 @@ public sealed partial class ParkEconomy : IParkEconomy
 		return (records, different);
 	}
 
-	/// <summary>A load rebuilt the environment grid from the litter alone: the saved entertainers and guards put their rows back.</summary>
+	/// <summary>
+	/// A load rebuilt the environment grid from the litter alone: the saved entertainers and guards put their rows back, Theme Park Inc's with the cell and the radius they went down with (the
+	/// residue a changed radius left in the live grid is the save's, <see cref="ParkEnvironment.RestoreResidue"/>).
+	/// </summary>
 	internal void ApplyStaffEffects()
 	{
 		foreach ( var member in Staff.Members )
 			if ( EffectRow( member.Type ) is { } row && member.EffectCell is { } cell )
 				Litter.Environment.Apply( row, cell.X, cell.Y, add: true );
+		if ( TpiStaff != null )
+			foreach ( var member in TpiStaff.Members.Where( member => member.Placed && member.Role is ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard ) )
+			{
+				var cell = ThemeParkIncStaffWorld.CellOfWord( (ushort)member.EffectCell );
+				Litter.Environment.ApplyRadius( member.Role == ThemeParkIncStaffRole.Entertainer ? RegionEffect.Entertainer : RegionEffect.Guard, cell.X, cell.Y, add: true, member.EffectRadius );
+			}
 	}
 
 	/// <summary>

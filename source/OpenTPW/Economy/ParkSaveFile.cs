@@ -80,6 +80,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? TpiGardens { get; init; }
+		/// <summary>
+		/// The Theme Park Inc performer rules the save's entertainers and guards follow (<see cref="ThemeParkIncPerformerRules"/>): written by a park with Theme Park Inc's staff. A Theme Park Inc save
+		/// without it was made before the entertainers and guards were ported (their cell effects were never on the grid) and is refused.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? TpiPerformers { get; init; }
 		/// <summary>Theme Park Inc's object list, newest first (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): written by a park with Theme Park Inc's staff, with its ride wear.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int>? TpiObjectList { get; init; }
@@ -763,6 +769,7 @@ public static class ParkSaveFile
 			TpiMissions = park.TpiMissions?.Capture(),
 			TpiRideWear = park.TpiStaff != null ? ThemeParkIncRideWearRules : null,
 			TpiGardens = park.TpiStaff != null ? ThemeParkIncGardenRules : null,
+			TpiPerformers = park.TpiStaff != null ? ThemeParkIncPerformerRules : null,
 			TpiObjectList = park.TpiStaff != null ? park.ThemeParkIncObjectList.ToList() : null,
 			TpiResearch = park.CaptureThemeParkIncResearch(),
 			TpiCutscene = park.TpiCutscene?.Capture(),
@@ -1127,6 +1134,10 @@ public static class ParkSaveFile
 			// words), so they are not the plants the ported rules would have kept
 			if ( data.TpiStaff != null && data.TpiGardens != ThemeParkIncGardenRules )
 				throw new InvalidDataException( ThemeParkIncGardensMissing );
+			// a Theme Park Inc park save from before the entertainers and the guards is refused the same way: no entertainer's or guard's cell effect was ever on its grid, and its pool's sprite draws and
+			// world draws ran without theirs, so it is not the park the ported rules would have kept
+			if ( data.TpiStaff != null && data.TpiPerformers != ThemeParkIncPerformerRules )
+				throw new InvalidDataException( ThemeParkIncPerformersMissing );
 			if ( data.TpiStaff != null && !ParkEconomy.IsValidThemeParkIncObjectList( data.Objects.Select( item => item.Id ), data.TpiObjectList ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc object list." );
 			ValidateThemeParkIncJobs( data );
@@ -1140,7 +1151,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiGardens != null || data.TpiObjectList != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiGardens != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1154,6 +1165,12 @@ public static class ParkSaveFile
 
 	/// <summary>The rules version a Theme Park Inc save with its staff writes for its plants and gardeners (<see cref="Data.TpiGardens"/>).</summary>
 	public const int ThemeParkIncGardenRules = 1;
+
+	/// <summary>The rules version a Theme Park Inc save with its staff writes for its entertainers and guards (<see cref="Data.TpiPerformers"/>).</summary>
+	public const int ThemeParkIncPerformerRules = 1;
+
+	/// <summary>The refusal of a Theme Park Inc save from before the entertainers and the guards.</summary>
+	public const string ThemeParkIncPerformersMissing = "This Theme Park Inc park was saved before OpenTPW kept the entertainers and the guards and cannot be continued; start a new game from the Personnel File.";
 
 	/// <summary>The refusal of a Theme Park Inc save from before the gardeners and the plants' watering.</summary>
 	public const string ThemeParkIncGardensMissing = "This Theme Park Inc park was saved before OpenTPW kept the gardeners and the plants' watering and cannot be continued; start a new game from the Personnel File.";

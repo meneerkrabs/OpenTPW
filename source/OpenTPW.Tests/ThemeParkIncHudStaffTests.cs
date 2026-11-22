@@ -92,21 +92,25 @@ public class ThemeParkIncHudStaffTests
 		Assert.IsTrue( panel.All( element => element.Visible ) );
 		Assert.AreEqual( scale, hud.TimeScale );
 		Assert.AreEqual( GameSpeed.Normal, hud.Speed );
-		Assert.AreEqual( "Choose a cleaner, a mechanic, a researcher or a gardener to hire him, then click the park to place him. The entertainers and the guards come in a later version.", ((UiLabel)panel[1]).Text() );
+		Assert.AreEqual( "Choose a staff member to hire him, then click the park to place him. Guards do not chase troublemakers or give first aid yet.", ((UiLabel)panel[1]).Text() );
 		button.Clicked!();
 		Assert.IsTrue( panel.All( element => !element.Visible ) );
 	}
 
 	[TestMethod]
-	public void AnotherRolesRowIsRefusedWithANoteAndLeavesThePool()
+	public void EveryRolesRowIsOfferedToTheHireWithoutARoleRefusal()
 	{
-		// [EXT:tpi-capability-gates] only the handyman (the Cleaner), the mechanic, the researcher and the gardener are ported to the park
-		var staff = SyntheticStaff( (0, Candidate( 1, ThemeParkIncStaffRole.Guard, 7, 1200, 30 )), (2, Candidate( 2, ThemeParkIncStaffRole.Handyman, 3, 900, 12 )) );
-		var hud = BuildHud( Strings(), staff );
-		var before = staff.Slots.ToArray();
-		hud.ActivateStaffRow( 0 );
-		CollectionAssert.Contains( hud.Messages.ToArray(), "Only cleaners, mechanics, researchers and gardeners can be hired in this version." );
-		CollectionAssert.AreEqual( before, staff.Slots.ToArray(), "a refused role stays in the pool" );
+		// every role (the Cleaner, the Engineer, the Entertainer, the Guard, the Scientist and the Gardener) is placed in the park now: no row is refused for its role
+		foreach ( var role in Enum.GetValues<ThemeParkIncStaffRole>() )
+		{
+			Assert.IsTrue( ThemeParkIncStaffMember.IsPlacedRole( role ), $"{role} is placed in the park" );
+			var staff = SyntheticStaff( (0, Candidate( 1, role, 7, 1200, 30 )) );
+			var hud = BuildHud( Strings(), staff );
+			var before = staff.Slots.ToArray();
+			hud.ActivateStaffRow( 0 );
+			CollectionAssert.DoesNotContain( hud.Messages.ToArray(), SupplementaryStrings.Get( OpenTpwText.TpiStaffRoleRefused, "English" ) );
+			CollectionAssert.AreEqual( before, staff.Slots.ToArray(), "a candidate stays in the pool until a drop" );
+		}
 	}
 
 	[TestMethod]

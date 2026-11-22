@@ -58,7 +58,8 @@ internal static class StaffSpritePrograms
 		StaffSpriteProgram.Research or StaffSpriteProgram.Sweep or StaffSpriteProgram.Repair or StaffSpriteProgram.Strike or
 		StaffSpriteProgram.State6 or StaffSpriteProgram.Dangling or StaffSpriteProgram.Catch or StaffSpriteProgram.Hold or
 		StaffSpriteProgram.Template24 or StaffSpriteProgram.Template25 or StaffSpriteProgram.HireFigure or StaffSpriteProgram.Performance0 or
-		StaffSpriteProgram.Performance1 or StaffSpriteProgram.Performance2 or StaffSpriteProgram.Performance3;
+		StaffSpriteProgram.Performance1 or StaffSpriteProgram.Performance2 or StaffSpriteProgram.Performance3 or StaffSpriteProgram.ThemeParkIncPerformanceA or
+		StaffSpriteProgram.ThemeParkIncPerformanceB or StaffSpriteProgram.ThemeParkIncPerformanceC or StaffSpriteProgram.ThemeParkIncPerformanceD;
 
 	// [BIN:TPW-EXE:0x0075A418 bounded staff graphs] SET flags, SLOT, FRAME yields, and semantic JMP; catch hands off to hold
 	// Deliberately independent of StaffScripts: its flattened frame formula remains a separate test oracle.
@@ -84,6 +85,11 @@ internal static class StaffSpritePrograms
 		Ordinary( StaffSpriteProgram.Dangling, 6, Enumerable.Range( 0, 4 ) );
 		Ordinary( StaffSpriteProgram.Catch, 7, Enumerable.Range( 0, 8 ), StaffSpriteProgram.Hold );
 		Ordinary( StaffSpriteProgram.Hold, 8, Enumerable.Range( 0, 8 ) );
+		// [BIN:TPI-EXE:0x9B04E4 entertainer performances] SET 0x10 = 0x1200, SLOT 4 (A, B) or 0xA (C, D), FRAME 0..3 and, for A and C, back 2 and 1, JMP to the program's start
+		Ordinary( StaffSpriteProgram.ThemeParkIncPerformanceA, 4, new[] { 0, 1, 2, 3, 2, 1 } );
+		Ordinary( StaffSpriteProgram.ThemeParkIncPerformanceB, 4, new[] { 0, 1, 2, 3 } );
+		Ordinary( StaffSpriteProgram.ThemeParkIncPerformanceC, 0xA, new[] { 0, 1, 2, 3, 2, 1 } );
+		Ordinary( StaffSpriteProgram.ThemeParkIncPerformanceD, 0xA, new[] { 0, 1, 2, 3 } );
 		// Guard release queues template 24. Template 25 is decoded, but its staff gameplay caller is not established.
 		// [BIN:TPW-EXE:0x004D6A50 guard release] escort completion/stuck queues template 24 before releasing the guest
 		Ordinary( StaffSpriteProgram.Template24, 9, Enumerable.Range( 0, 8 ), StaffSpriteProgram.Stand );

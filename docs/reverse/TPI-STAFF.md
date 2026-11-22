@@ -179,8 +179,8 @@ Receivers of message 0x17 and the advisor cues `0x636B90`: unread.
 |---|---|---|---|
 | mechanic search | `0x4DA5B0` | `0x5DA3D0` | target `+0x5D8` (TPW `+0x218`); extra check `0x62C6B0(ride)` before "found a ride" (`0x5DA447`); notice text 0x43 vs 0x46; extra branch `0x5E3400(1)` on the ride after `0x5E3950/0x5E3B70/0x5E28A0` (`0x5DA4EF..0x5DA514`); state 21 vs 12. Arrival `0x5DA650` ≙ `0x4DA732`, fix anim `0x5DA7C0` ≙ `0x4DA824`. Ride wear/breakdown rules (attraction side): see "Mechanics and ride wear" in §11 |
 | handyman | `0x4D73C0` family | `0x5D4BA0..0x5D6230` | adds **litter bins** ("dirty or burning bin" `0x5D553B`, `mBinToClean`); litter/toilet strings match (`0x5D5502` ≙ `0x4D730F`, `0x5D5B89` ≙ `0x4D7743`, `0x5D59FC` ≙ `0x4D75B1`); range/period §5. Littering `0x5D8C80` ≙ `0x4D93A5`, removal `0x5D90D0` ≙ `0x4D961B` |
-| entertainer | `0x4D4810` | `0x5D1A30` search, `0x5D1BC0` performance | performance length from `0x62E4C0` (TPW `0x785398+16g`, `0x4D484A`); constant search range (§5); new "Ouch! You little git!" `0x5D18DC`. `HappinessEffectOnCell` unreferenced in TPI |
-| guard / pranks | `0x4D6410`; HQ prank msg 0x0E `0x508A30` | HQ msg 0x0E `0x6323F9` (same strings and security-level test), nearest guard `0x6343C0` ≙ `0x5099C0`, chase `0x5D3960`.. | new first aid (`mPatientId`, `mFirstAidTimestamp`), prosecution stamp, two **release points** ("can't get to either release point" `0x5D42CC`) instead of TPW's ticket-booth keys (absent in TPI data); "Too tired to chase kids" exists only in TPW (`0x4D627F`) |
+| entertainer | `0x4D4810` | `0x5D1A30` search, `0x5D1BC0` performance | performance length from `0x62E4C0` (TPW `0x785398+16g`, `0x4D484A`); constant search range (§5); new "Ouch! You little git!" `0x5D18DC`. `HappinessEffectOnCell` unreferenced in TPI. Ported (see "Entertainer and guard" in §11) |
+| guard / pranks | `0x4D6410`; HQ prank msg 0x0E `0x508A30` | HQ msg 0x0E `0x6323F9` (same strings and security-level test), nearest guard `0x6343C0` ≙ `0x5099C0`, chase `0x5D3960`.. | new first aid (`mPatientId`, `mFirstAidTimestamp`), prosecution stamp, two **release points** ("can't get to either release point" `0x5D42CC`) instead of TPW's ticket-booth keys (absent in TPI data); "Too tired to chase kids" exists only in TPW (`0x4D627F`). Ported without the chase and first aid (see "Entertainer and guard" in §11) |
 | researcher | `0x5025F3`.. | `0x61AEC0`..`0x61B94F`, `0x62DF50` | research ability via `0x62E4C0` (§5); research rooms; lab body differs (§9) |
 | gardener | — | `0x5D2480..0x5D2F00` | new; pool keys borrowed from handymen (§2) |
 
@@ -241,7 +241,7 @@ Ported as an economy model, without the world simulation, and checked against th
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
-Not ported yet: the state machines of the roles other than the handyman, the mechanic, the researcher and the gardener; slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
+Not ported yet: the guard's chase, carry and first aid (see "Entertainer and guard" below); slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.
@@ -293,7 +293,7 @@ refuses its staff capability, so its staff world is not built in a Theme Park In
 Labels: the walk step `0x60B440`, the route search behind the staff route `0x62EB10` (SetDest `0x63E3A0`), the patrol destination `0x609F70` and the speed step `0x60BC90` use Theme Park World's walk, wander and speed
 smoothing (`[EXT:tpi-twp-guest-rules]`, user-approved 2026-11-21 for the staff's walk; WP0 found D1/D2/D5 differences and read `0x609F70` as a call skeleton only), as do the
 guests' bin search, bin walk and bin arrival; the loo finder `0x5D6230` and the bin finder `0x5D5F10` find nothing to clean because Theme Park Inc's toilet wear and the bins' fill
-are unported (`[EXT:tpi-no-maintenance-wear]`, reworded: the handymen ship without loo and bin cleaning); the other roles are refused at the hire (`[EXT:tpi-capability-gates]`).
+are unported (`[EXT:tpi-no-maintenance-wear]`, reworded: the handymen ship without loo and bin cleaning); every role is hired since the entertainer and the guard (WP11, WP12).
 
 The rest-area finder `0x62BA20` (in the gate, the slack test `0x62D650` on entering state 1 and the low-motivation check of `0x62D810`) answers none, exactly: its only test of a
 thing is the flag `+0x42` bit 2 (and `+0x7C` nonzero), which the thing builder sets only from the type record's `+0x1B0` (`UsageInfo.ChillsYouOut`, `0x5DB6E2`), and no object of
@@ -473,6 +473,60 @@ the gardener draws only the world generator, in the gate, the walking voice and 
 just below an integer: with `MaxExperience` 100000, experience 34000 gives 32 at 53 bits (32.99999999999999) and 33 at 24 bits (33.0), so the port searches every 32nd turn where the
 original searches every 33rd. The shared helpers stay at 53 bits here because the handyman's oracle pins them there; the planned 24-bit precision change, which re-checks every Theme
 Park Inc routine at control word `0x007F`, moves them together. No label covers this.
+
+### Entertainer and guard (WP11, WP12, November 22, 2026)
+
+Both are hired and dropped like the other roles (thing models 6 and 7 of the pool; the type codes follow the role order, §12.2). Static reading of `Game.exe`; the routines named were read
+at the addresses given and the entertainer's and guard's machines run natively in `tools/ppc-analysis/oracle_x86/tpi_performer_oracle.py`.
+
+- **Entertainer** (kind 6): pre-update `0x5D1960`, dispatch `0x5D1E20` (byte table `0x5D1F70`, jump table `0x5D1F58`: 0 → `0x5D1F1D`, 1 → `0x5D1EC7`, 2 and 3 the rest area's (unreached: no Theme Park Inc
+  object is a rest area), 4..0x16 the common handler, 0x17 → `0x5D1E44`).
+  - State 0: a world draw whose low nibble 0 plays voice 0xA5 (`0x60BE90`), then the idle end `0x62CA10` (`stamp − trunc((1 − exp/MaxExperience) × −50)`, `0x62D810` kind 6 → the search `0x5D1A30`).
+  - State 1: a draw for voice 0xA4, the walk step `0x60B440`: arrived or stuck searches, walking takes the moving step `0x62B3E0`.
+  - State 0x17 (performing): the working step `0x62B4D0`, the work duration `0x62E4C0` (`Entertainer.MinWorkDuration` 10 to `MaxWorkDuration` 75, the normal form); past `+0x5D4 + duration` sound 0x87 at the
+    sprite (`0x4E3D90`, `0x652860`) and the search. 0x13..0x16 are not states but the performance templates the setter queues.
+  - Search `0x5D1A30`: the gate `0x62BBA0` first; unless tired (`0x62B3B0`, "Too tired to entertain": no draw), the radius `0x62C900(0, MaxExperience, exp, MaxActiveRange, MaxActiveRange)` (always
+    `Entertainer.MaxActiveRange` 5), a world draw % 3 == 0 and the finder `0x5B1B20(kind 1, cell word, radius)` (the square clipped to the map, the first thing of kind 1: a guest) set 0x17 through the
+    setter; the tail: the world turn & 3 == 0 sets 0, else the destination `0x609F70` sets 1, none leaves the state. A performing member whose `0x42A8D0` ("a dodgy version of GetCurrentTheme": the word
+    `0xA0656C` mapped 0→4, 1→1, 2→2, 3→3, else 1) is 1 with variant 1 or 2 with variant 0 spawns a visual effect (`0x60B700` → `0x65BD10`, a pool slot, no draw): presentation, not ported.
+  - Setter `0x5D1D30`, used by his search and constructor only (the base code's `0x628180` calls it never; `0x62D9F0`, the by-kind setter, is reached from the picked-up states only): it draws **once from the
+    world whatever the state** (`R`, before the state is looked at), `n = 0x690330(+0x34, +0x30)` the bank's performance count (`+0x20C`, a world without banks takes 1) and the theme record's index
+    (`0x42A3B0`, `0x74F4B0`, `+0x64`: the position of the park's theme in the table `0x9D53B4` "arabian", "science", "water", "wIntro", "Unknown"); a state other than 0x17 goes to `0x628180`; 0x17: `R % n == 0`
+    gives template 0x13 when the theme index or the variant byte is nonzero, else 0x14; otherwise theme 2 with variant 1 gives 0x15, any other 0x16; the template, `+0x1B4 = 0x17`, `+0x5D4` = the world turn.
+    The templates are the programs `0x9B04E4`, `0x9B0530`, `0x9B056C`, `0x9B05B8` of the table `0x9CDA94`: SLOT 4 (0x13, 0x14) or 0xA (0x15, 0x16), FRAME 0..3 (then back 2, 1 for 0x13 and 0x15), JMP.
+  - Constructor `0x5D1380`: `0x626190` (kind 6), category 8 and the variant byte on the sprite, the base speed `0x62C970(0)`, **the cell effect** (below), `+0x5D4 = 0`, then the search.
+- **Guard** (kind 7): pre-update `0x5D3B40` (the cell effect with row 3), dispatch `0x5D3C60` (byte table `0x5D3DD8`, jump table `0x5D3DB4`), decision `0x5D3C10`, setter `0x5D3E70`, constructor `0x5D3140` with
+  `0x5D3230` (category 0xB). State 0: a draw for voice 0xA7, the idle end (→ `0x62D810` kind 7 → `0x5D3C10`). State 1: a draw for voice 0xA6, the walk step: walking takes the moving step, arrived or stuck runs
+  the decision. The decision: the gate, then the world turn & 3 nonzero and the destination `0x609F70` set 1, else 0, both through the guard's setter (`0x60B3F0(0)`, the speed bonus 0, before `0x628180`).
+  Guards learn ability 9 (`0x62B6C0`) through §12.2.
+- **The cell effect.** The person constructor stores the cell word `(y << 7) + x + 1` at `+0xE4` (`0x608F74`); the constructors put the row down (`0x5D7500(row, cell, radius)`, row 0 for the entertainer, 3 for the guard,
+  radius `0x62C900(0, MaxExperience, exp, Min, Max)` with `Entertainer.MinActiveRange`/`MaxActiveRange` 2 and 5, `Guard.MinDetectionRange`/`MaxDetectionRange` 5 and 10 at `0xA022EC`/`0xA022F0` and `0xA02314`/`0xA02318`).
+  The pre-update runs `0x609E20`, which hands the stored word and stores the current one; when they differ the row comes off the old cell (`0x5D7530`) and goes down on the new one with the radius of the moment. The
+  writer `0x5D7770(flag, row, cell, radius)` takes the radius as an argument (its low 16 bits, not the row's own `RegionFX[i].Radius`) and adds `sign × coefficient / (|dx| + |dy| + 1)` (`idiv`, toward zero) to the
+  five halfwords of each cell of the clipped square. Experience grows by the day, so a removal can run with a larger radius than the add it undoes and leave the difference in the grid (the guard's security reaches nine
+  cells out; the entertainer's happiness 2 is 0 beyond one cell, so his radius never shows). `ParkEnvironment.ApplyRadius` is the writer; the difference is kept (`KeepRadiusResidue`) so that a save's rebuild of the
+  sources plus its residue is the live grid. The guests' needs phase reads the grid, so the entertainer cheers the cells around him and the guard's security row stays under the guests (Theme Park World's mechanism).
+- **Saves.** The member's thing keeps the state, the idle stamp, the performance start (`+0x5D4`), the speed words, the walk, the template and the cell effect (the cell word and the radius it went down with); the
+  grid's residue is the environment residue the park save already has. A Theme Park Inc save made before the entertainers and the guards (no `TpiPerformers`) is refused with a start-again message before its assets
+  are checked (`ParkSaveFile.ValidateEdition`). Neither role claims an object, so the claim validators and `ValidateThemeParkIncJobKinds` refuse a claim by either (they accept mechanics and gardeners only).
+- **Sprites.** The entertainer's category 8 is the park's theme folder of `esprites.wad` (`Arabian`: Spr_ge and Spr_ph, `Science`: Spr_bu and Spr_sp, `Water`: Spr_fs and Spr_pg, `wIntro`: Spr_bu and Spr_sp);
+  the guard's category 0xB is `Generic\Guards` (Spr_gu). The variant is the candidate's sprite draw modulo the loaded count, as for the other roles. The staff renderer draws every role but the researcher.
+
+Not ported, with the reason:
+
+- **The guard's chase, carry, after-release walk and first aid** (states 0x1A, 0x1C, 0x1D and 0x1E; `0x5D3960`, `0x5D4100`, `0x5D4620`, `0x5D3CA0`, `0x5D43D0`, `0x5D3A20`) are entered from the staff HQ's prank message
+  `0x6323F9` (security word of the cell's environment record `> 0`, the nearest free guard `0x6343C0`, `0x5D3960`) and the first-aid loop `0x557E00`, and decide on **the guests' own Theme Park Inc states**: the catch
+  test `0x614720` reads the guest's `+0x2C0` (not catchable: 0..5, 0xE..0x15 and 0x17..0x1E; catchable: 6..0xD, 0x16 and 0x1F upward; the research note's 0x17 was 0x16) and the first aid takes a guest in state 0x1B (written by `0x554C60`'s caller, not
+  found). The guests of a Theme Park Inc park run Theme Park World's rules (`[EXT:tpi-twp-guest-rules]`) with Theme Park World's state numbers (6, 7, 9 and 10 are the catchable ones there), so neither the catch test nor
+  the first aid's patient can be read from them without inventing a mapping. The release points are resolved (`KidRelease[0..1]` at `0xA02638`, from `levels/Standard.sam`, and the entrances `EntranceA/BPos` at
+  `0xA025D0` and `0xA025D8`), the chase timer is `5 × 0x62E4C0` and the first aid's `5 ×` then 10, but the states stay unported. A guard in one of them is refused in a save, and no prank reaches the guards.
+  `[EXT:tpi-capability-gates]` covers this.
+- **The guests' reaction to a performing entertainer** (`0x614D41..0x615414`: a performing entertainer in the guest's 3 × 3 cells turns the guest and writes its state through the jump table `0x615414`; the
+  amounts are unread) is not ported; only the row 0 cheer reaches the guests.
+- The effect's removal by the destructors (`0x4D4620`-like; staff cannot be fired or picked up yet), the dead routines `0x5D1BC0` and `0x5D18D0` (the "Ouch! You little git!" message; no reference anywhere in
+  `Game.exe`), the duplicates `0x5D1C80` and `0x5D1CC0`, the voices' log lines, the advisor's message `0x3A` of the guard's constructor and the patrol area `0x6256A0` (WP15).
+- The shared 53-bit helpers (`SearchPeriod`, `IdleTerm`, `member.Step`) are used as for the gardener (see its known divergence); no new formula of the two roles has a float. No `rand()` call is reached
+  (the ranges `0x5D1960..0x5D1F60`, `0x5D3B40..0x5D3FB0`, `0x5D3230..0x5D3340` and `0x62CA10` hold none): the roles draw only the world generator.
 
 ## 12. Staff HQ obstacle slots, training and research (November 21, 2026)
 

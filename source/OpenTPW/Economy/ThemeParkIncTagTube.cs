@@ -101,7 +101,7 @@ public sealed class ThemeParkIncTagTube
 	/// <summary>The counter's unread letters by category (<c>[2]</c>).</summary>
 	public IReadOnlyList<int> CategoryUnread => categoryUnread;
 
-	/// <summary>Bumped whenever the list changes (the window's dirty byte <c>0xA60188</c>, set by <c>0x552CD0</c>), and when a row is read.</summary>
+	/// <summary>Bumped whenever the window's dirty byte (<c>0xA60188</c>) is set (<c>0x552CD0</c>): by an insert, a delete and the auto-delete check.</summary>
 	public int Revision { get; private set; }
 
 	/// <summary>The advisor messages the counter posted (<see cref="FirstUnreadAdvice"/>, <see cref="UnreadAdvice"/>), oldest first; the client takes them.</summary>
@@ -172,7 +172,7 @@ public sealed class ThemeParkIncTagTube
 			return false;
 		row.Read = true;
 		UncountUnread( row.Category );
-		Revision++;
+		// the read redraws the list (0x8543D4, 0x854E0A) but does not make it dirty: the selection stays
 		return true;
 	}
 
@@ -182,8 +182,8 @@ public sealed class ThemeParkIncTagTube
 	/// </summary>
 	// [BIN:TPI-EXE:0x635AB0 tube pass] stage 1 frees the to-be-deleted list (memory only); stage 2 (this+0x825): clears it and walks the list: each row with +0xE28 has, when +0xE0C is 0, +0xE0C = 1
 	// and 0x54F320(+0xE0E) (with this+0x81C set), and is unlinked onto the to-be-deleted list; stage 3 (this+0x820 set and <= the clock): this+0x820 = 0, then each unflagged row with +0xE08:
-	// below the clock keeps it ("leaving a non-expired e-mail") and this+0x820 takes the smallest such +0xE08, else +0xE28 = 1 and this+0x825 = 1 ("flagged an expired e-mail"); then 0x552CD0
-	// (window dirty)
+	// above the clock keeps it ("leaving a non-expired e-mail") and this+0x820 takes the smallest such +0xE08, else +0xE28 = 1 and this+0x825 = 1 ("flagged an expired e-mail"); then 0x552CD0
+	// (window dirty), which only this stage calls
 	internal void Update( uint turn )
 	{
 		if ( UnlinkPending )
@@ -198,7 +198,6 @@ public sealed class ThemeParkIncTagTube
 				}
 				rows.Remove( row );
 			}
-			Revision++;
 		}
 		if ( EarliestExpiry == 0 || EarliestExpiry > turn )
 			return;

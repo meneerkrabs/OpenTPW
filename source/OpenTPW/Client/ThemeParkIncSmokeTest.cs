@@ -400,7 +400,10 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		if ( flow.Level?.LevelName == "science" )
 			PlanPersonnelFileContinuation();
 		if ( !captureForRestart )
+		{
+			PlanTagTube();
 			PlanLetter();
+		}
 		// The exit a player uses: the pause menu's Quit closes the window and ends the run.
 		Do( "open the pause menu", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
 		Wait( "menu opens", 2 );
@@ -426,6 +429,84 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			completed = true;
 			Click( Hud.Stack.Top!, "quit" );
 		} );
+	}
+
+	/// <summary>
+	/// The tag tube: a skipped mission's "Objective Complete!" letter is filed as an unread row beside the arrival's briefing; the message key opens the window, a selected row is read after
+	/// its 2.5 seconds, Delete removes it and Okay closes the window. No row opens the letter window.
+	/// </summary>
+	private void PlanTagTube()
+	{
+		var objectiveRows = 0;
+		Do( "skip a mission", () =>
+		{
+			var economy = Level.Park!.Economy;
+			objectiveRows = economy.TpiTagTube!.Listed.Count( row => row.Source == ThemeParkIncLetterSource.Objective );
+			// what the debug dialog's Skip Mission does (0x532B39, the cheats extension's button, which is off in this run): the completion tick between two turns, whose next update posts the
+			// objective letter (0x5EF991)
+			economy.TpiMissions!.CompleteMission( economy.Turn );
+		} );
+		steps.AddLast( ("the controller files the objective letter", () =>
+		{
+			var economy = Level.Park!.Economy;
+			// the park was left paused by the continuation's checks: the pause key lets the turns run, and a flight the completion starts is skipped
+			if ( Hud.Speed == GameSpeed.Paused && !Hud.MenuOpen )
+				flow.InjectedInput = UiInput.Key( UiKeys.Pause );
+			else if ( economy.TpiCutscene is { Flying: true } )
+				flow.InjectedInput = UiInput.Key( UiKeys.Back );
+			return economy.TpiCutscene is not { Flying: true } && !Hud.FlightActive
+				&& economy.TpiTagTube!.Listed.Count( row => row.Source == ThemeParkIncLetterSource.Objective ) > objectiveRows;
+		}) );
+		Wait( "the HUD settles", 2 );
+		Do( "the objective letter is an unread row and opened no window", () =>
+		{
+			var tube = Level.Park!.Economy.TpiTagTube!;
+			var row = tube.Listed.First();
+			Require( row.Source == ThemeParkIncLetterSource.Objective && !row.Read && row.Tag == ThemeParkIncTagLetter.PlainTag, "the newest row is the unread objective letter (0x5CEC30)" );
+			Require( !Hud.LetterOpen, "a kind-4 letter opens no letter window (0x5CD060)" );
+			Require( tube.Unread >= 2, "the briefing and the objective letter are unread" );
+		} );
+		Do( "close what the HUD has open", () =>
+		{
+			if ( Hud.MissionWindowOpen )
+				Click( Hud.Stack.Top!, "cancel" );
+		} );
+		Wait( "the HUD is clear", 2 );
+		Do( "open the tag tube with the message key", () => flow.InjectedInput = UiInput.Key( UiKeys.Messages ) );
+		Wait( "the tag tube opens", 2 );
+		Do( "the tag tube lists the letters newest first", () =>
+		{
+			Require( Hud.TagTubeOpen && Hud.Stack.Top?.Name == ThemeParkIncTagTubeWindow.ScreenName, "the M key opens the tag tube window (0x42EED0)" );
+			var window = Hud.TagTubeWindow!;
+			Require( window.ListedRows.Count >= 2 && window.ListedRows[0].Source == ThemeParkIncLetterSource.Objective, "the date column sorts the objective letter first" );
+			Require( window.ListedRows.Any( row => row.Source == ThemeParkIncLetterSource.Introduction ), "the arrival's briefing is listed" );
+			Require( window.Selected == null && window.DeleteEnabled && !window.EmptyShown, "nothing is selected; Delete is on" );
+		} );
+		Do( "select the objective letter", () => Hud.TagTubeWindow!.SelectRow( 0 ) );
+		Wait( "the details show", 2 );
+		Do( "the row's details show and it is read after its deadline", () =>
+		{
+			var window = Hud.TagTubeWindow!;
+			var row = window.ListedRows[0];
+			Require( window.Details.Subject == Hud.Texts!.Format( ThemeParkIncTable.TagSystem, ThemeParkIncObjectiveLetter.SubjectEntry ), "the subject is \"Objective Complete!\"" );
+			Require( window.Details.Body.Length > 0 && window.GotoShown == (row.GotoKind != 0), "the body shows and the go-to follows the row" );
+			Require( !Hud.LetterOpen, "selecting a row opens no letter window" );
+			// the window's 2.5-second read deadline (0x553480), driven on the window's own clock so the run does not depend on the frame rate
+			window.Tick( ThemeParkIncTagTubeWindow.ReadDelay );
+			Require( row.Read, "the shown row is read once its deadline has come" );
+		} );
+		Do( "delete the objective letter", () => Click( Hud.Stack.Top!, "delete" ) );
+		Wait( "the delete runs on the next tick", 3 );
+		Do( "the objective letter left the list", () =>
+		{
+			var window = Hud.TagTubeWindow!;
+			Require( window.ListedRows.All( row => row.Source != ThemeParkIncLetterSource.Objective || row.Argument != Level.Park!.Economy.TpiCareer!.MissionCounter - 1 ),
+				"the deleted row is not listed (0x636A40)" );
+			Require( window.Selected == null, "the delete cleared the selection" );
+		} );
+		Do( "close the tag tube", () => Click( Hud.Stack.Top!, "ok" ) );
+		Wait( "the tag tube closes", 2 );
+		Do( "the tag tube is closed", () => Require( !Hud.TagTubeOpen, "Okay closes the tag tube window" ) );
 	}
 
 	/// <summary>

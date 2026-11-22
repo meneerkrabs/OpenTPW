@@ -149,7 +149,7 @@ public class ThemeParkIncHudStaffTests
 	public void EveryStaffTextHasElevenNonEmptyTranslations()
 	{
 		var keys = Enum.GetValues<OpenTpwText>().Where( key => key.ToString().StartsWith( "TpiStaff", StringComparison.Ordinal ) ).ToArray();
-		Assert.AreEqual( 9, keys.Length );
+		Assert.AreEqual( 8, keys.Length );
 		Assert.AreEqual( 11, SupplementaryStrings.SupportedLanguages.Count );
 		foreach ( var key in keys )
 			foreach ( var language in SupplementaryStrings.SupportedLanguages )

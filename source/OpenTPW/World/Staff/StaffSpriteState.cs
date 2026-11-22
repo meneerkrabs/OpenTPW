@@ -67,7 +67,8 @@ public sealed class StaffSpriteState
 	/// <summary>The program a non-performance template number runs, null for another number.</summary>
 	public static StaffSpriteProgram? ProgramOf( int template ) => template switch
 	{
-		1 or 2 or 3 or 9 or 10 or (>= 17 and <= 25) or (>= (int)StaffSpriteProgram.ThemeParkIncPerformanceA and <= (int)StaffSpriteProgram.ThemeParkIncPerformanceD) when GameEditions.IsThemeParkInc => (StaffSpriteProgram)template,
+		1 or 2 or 3 or 9 or 10 or (>= 17 and <= 25) => (StaffSpriteProgram)template,
+		>= (int)StaffSpriteProgram.ThemeParkIncPerformanceA and <= (int)StaffSpriteProgram.ThemeParkIncPerformanceD when GameEditions.IsThemeParkInc => (StaffSpriteProgram)template,
 		_ => null
 	};
 

@@ -284,7 +284,7 @@ public class ThemeParkIncPerformerTests
 		member.Happiness = 100;
 		var probe = new WorldRng( economy.World.State );
 		// the gate (0x62BBA0) of a tired member draws for the rest branch (a draw whose low nibble 0 costs happiness) and sets him idle; the search returns, so the % 3 test never draws
-		member.State = ThemeParkIncStaffWorld.Walking;
+		member.State = ThemeParkIncStaffWorld.Performing;
 		world.Search( economy, member, 7 );
 		_ = probe.NextWord();
 		Assert.AreEqual( probe.State, economy.World.State, "one draw, the gate's, and none for the % 3 test" );

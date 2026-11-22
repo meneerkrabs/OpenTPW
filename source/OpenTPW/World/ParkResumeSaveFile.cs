@@ -376,6 +376,16 @@ internal static class ParkResumeSaveFile
 	/// </summary>
 	internal const string ThemeParkIncObstacleMissing = "the Theme Park Inc park was saved before its current obstacle was kept; this save cannot be continued, start a new game from the Personnel File";
 
+	/// <summary>
+	/// The message a Theme Park Inc continuation saved before the catalogue held the facilities is refused with: its asset manifest pins no facility, so it would otherwise only fail the asset
+	/// comparison with an asset it does not expect.
+	/// </summary>
+	internal const string ThemeParkIncFacilitiesMissing = "the Theme Park Inc park was saved before its facilities were kept; this save cannot be continued, start a new game from the Personnel File";
+
+	/// <summary>Whether a manifest pins Theme Park Inc's facilities folder (its <c>facilities.sam</c>, which every catalogue with the folder pins).</summary>
+	internal static bool PinsThemeParkIncFacilities( IReadOnlyDictionary<string, string>? assets ) =>
+		assets?.Keys.Any( key => key.StartsWith( ContentRoot.Data.KeyPrefix + "/levels/", StringComparison.Ordinal ) && key.EndsWith( "/facilities.sam", StringComparison.OrdinalIgnoreCase ) ) == true;
+
 	/// <summary>The message a Theme Park Inc continuation without its owned land is refused with.</summary>
 	internal const string ThemeParkIncLandMissing = "the Theme Park Inc park was saved before its owned land was kept; this save cannot be continued, start the park again";
 
@@ -444,6 +454,7 @@ internal static class ParkResumeSaveFile
 			Require( snapshot.TpiCurrentObstacle != null, ThemeParkIncObstacleMissing );
 			Require( snapshot.TpiCurrentObstacle is >= 0 and <= ushort.MaxValue, "the saved Theme Park Inc current obstacle is not a thing id" );
 			RequireThemeParkIncLand( snapshot.Layout );
+			Require( PinsThemeParkIncFacilities( snapshot.AssetHashes ), ThemeParkIncFacilitiesMissing );
 			Require( snapshot.TpiWeatherClosingsSeen is >= 0 && snapshot.TpiWeatherClosingsSeen <= (snapshot.Economy.TpiWeather?.SpellStarts ?? 0),
 				"the saved Theme Park Inc weather delivery count is invalid" );
 		}

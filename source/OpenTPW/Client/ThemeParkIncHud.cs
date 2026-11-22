@@ -215,7 +215,8 @@ public sealed partial class ThemeParkIncHud
 				Visible = false,
 				Selected = () => category == choice,
 				Clicked = () => { category = choice; },
-				Bounds = new UiRect( 244 + index * 400, 284, 380, 84 ),
+				// five tabs, the original panel's (0x57A482: rides, shops, sideshows, features, facilities), side by side over the list's width
+				Bounds = new UiRect( 244 + index * 316, 284, 300, 84 ),
 				Anchor = UiAnchor.TopLeft
 			} );
 		}
@@ -284,6 +285,7 @@ public sealed partial class ThemeParkIncHud
 		BuildCategory.Rides => OpenTpwText.TpiCategoryRides,
 		BuildCategory.Shops => OpenTpwText.TpiCategoryShops,
 		BuildCategory.Sideshows => OpenTpwText.TpiCategorySideshows,
+		BuildCategory.Facilities => OpenTpwText.TpiCategoryFacilities,
 		_ => OpenTpwText.TpiCategoryFeatures
 	} );
 
@@ -348,8 +350,19 @@ public sealed partial class ThemeParkIncHud
 			buildList.Selected = -1;
 	}
 
+	/// <summary>
+	/// A build-list row chosen: the object in the hand and the window closed, unless the type allows one copy (<c>UsageInfo.SingleInstance</c>) and one stands in the park, which the original refuses with
+	/// its refusal sound and the window left open (the text HUD says why).
+	/// </summary>
+	// [BIN:TPI-EXE:0x57CF60 single instance] the row's type: +0x1BC (UsageInfo.SingleInstance, the word after TrainingRoom +0x1B8) equal to 1 and 0x5B5560 (the control's built count +0x18, raised by the
+	// constructor 0x5DBA8A and lowered by the destroy 0x5DE7B4) above 0 play the sound 0x1D (0x5039C0) and arm nothing; the list's draw 0x57A399 greys such a row (presentation)
 	private void ArmBuild( ObjectCatalogEntry entry )
 	{
+		if ( entry.Settings.GetInt( "UsageInfo.SingleInstance" ) == 1 && level.Objects.Objects.Any( item => !item.IsDeleted && item.Entry.InfoId == entry.InfoId ) )
+		{
+			PostMessage( string.Format( T( OpenTpwText.TpiSingleInstance ), ItemNameOf( entry ) ) );
+			return;
+		}
 		level.CancelTpiHire();
 		level.BuildEntry = entry;
 		armedEntry = entry;

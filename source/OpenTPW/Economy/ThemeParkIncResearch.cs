@@ -111,7 +111,13 @@ public sealed class ThemeParkIncResearch
 		return index >= 0 ? index : throw new InvalidOperationException( $"Object type {id} has no object control (the original's 0x5CFCF0 returns none and its caller faults)." );
 	}
 
-	/// <summary>Whether the object type is researched (control <c>+0x10</c>); true for a type without a control in a park without controls.</summary>
+	/// <summary>
+	/// Whether the object type is researched (control <c>+0x10</c>); true for every type in a park without controls. A park file's table holds a control for every type of its zone (the prebuilt
+	/// Science park's covers the catalogue, facilities included), and no OpenTPW object enters a Theme Park Inc zone (mods and the official extensions name Theme Park World's themes only), so a
+	/// type without a control does not arise.
+	/// </summary>
+	// [BIN:TPI-EXE:0x43F900 control fill] after a park file's load ("Loaded savegame: %s", 0x43F6DF) 0x5CFEB0 gives every type of the zone's type list without a control a new one, researched when its
+	// Upgrades[0].CostOfResearch (+0x270) is 0 (0x5CFF46); a new world fills the table the same way (0x5CFDE0 from 0x64814D). So the original never meets a type without a control
 	public bool IsResearched( int id ) => !HasControls || controls.FirstOrDefault( control => control.Id == id ) is { Researched: true };
 
 	private void MarkResearched( int id, int? level )

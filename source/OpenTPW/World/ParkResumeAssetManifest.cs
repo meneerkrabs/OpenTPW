@@ -42,7 +42,8 @@ internal static class ParkResumeAssetManifest
 
 	// The category default .sam layered under every object file of a category. Mirrors ObjectCatalog's
 	// category directories (note <c>sideshow</c> → <c>SideShow.sam</c>) except Theme Park Inc's <c>obstacles</c>, whose folder ships no
-	// defaults file (its objects' own members are pinned with the archives); keep in sync with it.
+	// defaults file (its objects' own members are pinned with the archives), and its <c>facilities</c>, whose <c>facilities.sam</c>
+	// is keyed by the catalogue's own spelling of the folder (FacilitiesDefaults); keep in sync with it.
 	private static readonly (string Directory, string Defaults)[] CategoryDefaults =
 	{
 		("rides", "Rides.sam"),
@@ -103,6 +104,10 @@ internal static class ParkResumeAssetManifest
 				continue;
 			AddWhenPresent( manifest, $"/levels/{theme}/{directory}/{defaults}" );
 		}
+		// Theme Park Inc's facilities folder layers facilities.sam under its objects (ObjectCatalog's CategoryDirectories); Science spells the folder Facilities, so the defaults file is keyed by the
+		// path the catalogue's own archives carry, found without regard to case as the catalogue finds it
+		if ( FacilitiesDefaults( catalog ) is { } facilities )
+			Add( manifest, DataRootPrefix + facilities, Hash( FileSystem, facilities ) );
 
 		// The balance layers exactly as BalanceSettings.Load read them.
 		foreach ( var layer in BalanceSettings.GetStandardLayers( theme, easy ) )
@@ -120,6 +125,16 @@ internal static class ParkResumeAssetManifest
 			Add( manifest, DataRootPrefix + file, Hash( FileSystem, file ) );
 			yield return true;
 		}
+	}
+
+	/// <summary>The data-relative path of the facilities folder's <c>facilities.sam</c> beside the catalogue's game-data facilities, or null when it has none.</summary>
+	private static string? FacilitiesDefaults( ObjectCatalog catalog )
+	{
+		if ( catalog.Entries.FirstOrDefault( entry => entry.Category == ObjectCategory.Facility && entry.Root.IsData ) is not { } facility )
+			return null;
+		var folder = facility.ArchivePath[..facility.ArchivePath.LastIndexOf( '/' )];
+		return FileSystem.GetFiles( folder ).Select( file => FileSystem.GetRelativePath( FileSystem.GetAbsolutePath( file ) ) )
+			.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "facilities.sam", StringComparison.OrdinalIgnoreCase ) );
 	}
 
 	private static void AddWhenPresent( SortedDictionary<string, string> manifest, string path )

@@ -15,7 +15,12 @@ public enum ObjectCategory
 	Feature,
 	Upgrade,
 	/// <summary>Theme Park Inc's <c>obstacles</c> folder: the mission obstacles and the camera paths (docs/reverse/TPI-MISSIONS.md); Theme Park World levels have none.</summary>
-	Obstacle
+	Obstacle,
+	/// <summary>
+	/// Theme Park Inc's <c>facilities</c> folder (Science spells it <c>Facilities</c>): toilets, litter bins, the info kiosk, the security camera, the staff room and the research and training rooms. Its
+	/// defaults file <c>facilities.sam</c> gives every one <c>Info.WhichUIType</c> 5, the build panel's fifth tab; Theme Park World levels have none.
+	/// </summary>
+	Facility
 }
 
 /// <summary>Raw values of one <c>Upgrades[n]</c> level (cost, capacity, duration, ...), as the .sam layers give them.</summary>
@@ -155,7 +160,7 @@ public sealed class ObjectCatalogEntry
 	public IReadOnlyList<string> Models { get; }
 	public IReadOnlyList<ObjectUpgradeLevel> Upgrades { get; }
 
-	/// <summary><c>Info.WhichUIType</c>: 0 rides, 1 shops, 2 sideshows, 3 features, 4 not shown (fixed items).</summary>
+	/// <summary><c>Info.WhichUIType</c>: 0 rides, 1 shops, 2 sideshows, 3 features, 4 not shown (fixed items), 5 Theme Park Inc's facilities.</summary>
 	public int WhichUIType => Settings.GetInt( "Info.WhichUIType", -1 );
 	public bool IsChoosable => Settings.GetBool( "Info.IsChoosable" );
 	/// <summary><c>Info.OverwritePriority</c> ("Overwrite priority order"): an object may be built over objects of a lower priority, which it demolishes (rides, shops and sideshows 5, small scenery 1, other features 0).</summary>
@@ -177,7 +182,12 @@ public sealed class ObjectCatalogEntry
 	public bool IsTool => !Shape.OccupiedCells.Any();
 	/// <summary>Can be placed from a build menu: shown in a UI category, not a fixed item or tool. Upgrades attach to a ride's track.</summary>
 	// [BIN:TPW-EXE:0x004AAF70 build menu filler] the build-menu filler lists a definition when its model loaded (def+0x508 == 0), its WhichUIType (def+0x4AC, copied from +0x4C at the end of 0x413410) equals the tab, AddOn.UpgradesId (def+0x284) is 0 and the control record 0x4D3D10(id)+0x10 is non-zero (availability or research); tools and fixed items are not filtered by name, their data has WhichUIType 4, and every upgrade-category object has AddOn.UpgradesId != 0, which gives this rule on the whole corpus
-	public bool IsBuildable => WhichUIType is >= 0 and <= 3 && !IsFixedItem && !IsTool && Category != ObjectCategory.Upgrade;
+	// [BIN:TPI-EXE:0x57A482 build panel tabs] Theme Park Inc's panel calls its list builder 0x57CA20 for the tabs 0 (button 0x32DF), 1 (0x32DE), 2 (0x32DD), 3 (0x32E0) and 5 (0x32E1, the jump table 0x57A728):
+	// a type is listed in the tab equal to its +0x600 (Info.WhichUIType), so the facilities (5) are buildable there and no tab shows type 4; only Theme Park Inc's facilities folder holds type 5
+	public bool IsBuildable => (WhichUIType is >= 0 and <= 3 || WhichUIType == FacilityTab && Category == ObjectCategory.Facility) && !IsFixedItem && !IsTool && Category != ObjectCategory.Upgrade;
+
+	/// <summary>Theme Park Inc's facilities tab: <c>Info.WhichUIType</c> 5 (<c>facilities.sam</c>).</summary>
+	public const int FacilityTab = 5;
 	/// <summary><c>Info.RideTypeStringIndex</c>: ITEMTYPES.str entry (e.g. 12 "Vertical Drop" for the Totem), or null.</summary>
 	public int? RideTypeIndex => Settings.Has( "Info.RideTypeStringIndex" ) ? Settings.GetInt( "Info.RideTypeStringIndex" ) : null;
 	// [BIN:TPW-EXE:0x745020 sam schema] CreateParticleEffect, DestroyParticleEffect, RepairParticleEffect and UpgradeParticleEffect follow each other in the type record (+0x60, +0x64, +0x68, +0x6C, matched by schema order and by role); 0 or an absent key starts nothing
@@ -247,10 +257,13 @@ public sealed class ObjectCatalog
 		("upgrades", ObjectCategory.Upgrade, "Upgrades.sam"),
 		// [BIN:TPI-EXE:0x647BF0 obstacle placement] Theme Park Inc's object infos include the types of levels/<zone>/obstacles/*.wad (the placement walks every info of the zone, 0x43C6B0/0x43C6D0, and
 		// reads IsObstacle, IsCameraPath and IsOutsideFeature); the folder has no defaults file
-		("obstacles", ObjectCategory.Obstacle, "Obstacles.sam")
+		("obstacles", ObjectCategory.Obstacle, "Obstacles.sam"),
+		// [BIN:TPI-EXE:0x57A598 facilities tab] Theme Park Inc's build panel has a fifth tab (button 0x32E1, help text 0x113) whose list builder 0x57CA20 takes the types whose +0x600 (the copy of
+		// Info.WhichUIType +0x70 the type loader makes at 0x43D014) is 5: the types of levels/<zone>/facilities/*.wad, each layered over the folder's facilities.sam (Info.WhichUIType 5)
+		("facilities", ObjectCategory.Facility, "facilities.sam")
 	};
 
-	private static readonly ObjectCategory[] OriginalScanOrder = { ObjectCategory.Ride, ObjectCategory.Feature, ObjectCategory.Upgrade, ObjectCategory.Shop, ObjectCategory.Sideshow, ObjectCategory.Obstacle };
+	private static readonly ObjectCategory[] OriginalScanOrder = { ObjectCategory.Ride, ObjectCategory.Feature, ObjectCategory.Upgrade, ObjectCategory.Shop, ObjectCategory.Sideshow, ObjectCategory.Obstacle, ObjectCategory.Facility };
 
 	// Keyed by the file system instance, not its root: entries keep the instance they were read from, and
 	// a replaced FileSystem (setup, tests) with the same root must not hand out entries of the old one.

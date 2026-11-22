@@ -174,15 +174,16 @@ file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` ho
 (`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
 cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
 shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
-viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the level builds no obstacle things yet, so there is no 1703 or 1704 object to draw; `lake.MD2` and the animations are
-ignored). That was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
+level draws none of them now: the lake is the obstacle object 1703 (`obstacles/lake.wad`), which covers the holes, and after mission 1's
+opening its replacement 1704 (`obstacles/dlake.wad`, a different `dlake.MD2` from `terrain.wad`'s); no code of the executable names a
+lake model ([TPI-MISSIONS.md](reverse/TPI-MISSIONS.md) §6). Drawing `terrain.wad`'s `dlake.MD2` was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
 "New Science Drained Lake Obstacle", and `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10
 ("Water Drainage"); so `dlake` is the drained lake, not a finished one, and which one a park shows is data-driven (the exe holds no
-"lake" string). Open: six of its bed textures (`bed04`, `bed06`, `bed07`, `bed09`,
-`bed10`, `bed12`) are in no archive of the supplied data, so the lake's bank is drawn white. `arabian`
+"lake" string). (`terrain.wad`'s `dlake.MD2` names six bed textures, `bed04`, `bed06`, `bed07`, `bed09`,
+`bed10` and `bed12`, that no archive of the supplied data holds; the obstacle models do not need them.) `arabian`
 has 29 more open cells in two mountain pits that no mesh covers (`4an_newenv.MD2`/`3an_newenv.MD2`,
 variants of the environment, do not either); they show the clear colour. The `*_newenv.MD2` files,
-`lake.MD2`, `lake01_alpha.fsh` (a separate water alpha image) and the `proc_tex` set are not used.
+`terrain.wad`'s lake files, `lake01_alpha.fsh` (a separate water alpha image) and the `proc_tex` set are not used.
 
 **Other open spots.** Each world has 8 to 16 heightfield ground cells textured `trans01` (only a `.tga`, in
 `Sharetex.wad`); they draw as black quadrilaterals (visible in `water` as small black patches in the
@@ -194,7 +195,7 @@ The slice's own scope decisions are OpenTPW design decisions, not approximations
 the Theme Park World guest rules over Theme Park Inc data, the capability gates and the Theme Park World tool flow (`[EXT:tpi-*]` at their sites; TPI-900 to
 TPI-904 are retired).
 
-**Approximations and open questions.** (The `0x2D` palette and the drained lake are extensions now: `[EXT:fsh-0x2d-palette]`, `[EXT:tpi-lake-drained]`.)
+**Approximations and open questions.** (The `0x2D` palette is an extension now: `[EXT:fsh-0x2d-palette]`; the lake is the obstacle object.)
 RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
 drawn as 0, 0), RIDES-040 (zero-coordinate fixed
 scene records). Open: how the original game transforms the zero-coordinate scene records and
@@ -270,8 +271,8 @@ Science continuation save. The system draws no random number.
 What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count comes from the sale bookings), 25 (the least happy staff member; the trigger is an
 entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
 or value reads park state OpenTPW does not model. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
-but its completion waits for a camera flight OpenTPW does not port, so a career stays at mission 0 unless the cheats extension's Skip Mission advances it, and the
-Science rows that need mission 2, 3 or 4 wait for that. Left off
+but its completion waits for the mission window's complete button, which the slice does not offer yet, so a career stays at mission 0 unless the cheats extension's
+Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. Left off
 under the same label: the shares (prize and price effect). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
 their `CHALLENGE_TITLES.str` title with the days left and the progress value, and accepts an offered row while the park is open, as the original's mail does
 (`[EXT:tpi-text-hud]`); the challenge mail's full text, its sounds and the advisor's sender advice are not ported.
@@ -286,18 +287,25 @@ career, finds the next obstacle and starts the new mission's statistics; the bui
 are measured from the park; 4 (last month's takings, whose ride and facility rows OpenTPW's ledger does not keep), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
 Science continuation save.
 
+**Camera flights and obstacles.** The cutscene thing flies the controller's cameras as the original does: the ride view on the target's camera seat while its own
+script plays the clip, the clock at the flight's rate, the HUD hidden; its end posts the completion message 0x29. A new game's Science park opens with the zone
+arrival's flyover over the camera path 1798, which Escape or a right click skips. The obstacles and the camera path are things of the world, with their cells, and
+the 1700 gate opens (its `AfterShape`) at the end of the camera flight that the mission window's complete button starts for mission 0; the lake is the obstacle 1703 and
+drains to 1704 at the end of its own flight. The cheats extension's Skip Mission calls the completion tick directly (`0x5F0940`, as the original's debug button does at
+`0x532B39`): it advances the career and opens no obstacle.
+
 **The mission window.** The executable's "Current Objective" window (`ThemeParkIncMissionWindow`, builder `0x55A7F0`, table `0x9BE808`;
 [TPI-MISSIONS.md §7](reverse/TPI-MISSIONS.md#7-the-mission-window)) opens with the Objectives key O (key table `0x9A8A14`) or the text HUD's "Current Objective"
 button, which stands in for the native HUD's buttons (`[EXT:tpi-text-hud]`). It shows the mission's title, picture and sender, the briefing page and the details page
 with every exit statistic's requirement and status, the promotion hint, required challenges and golden tickets. Proceed is enabled when the controller's requirements are
-met and runs OnMissionComplete or the remove-obstacle message 0x24. It pauses nothing. The first briefing's automatic opening after the zone-arrival flight belongs to
-the camera flight, which is ported separately.
+met and runs OnMissionComplete or the remove-obstacle message 0x24. It pauses nothing. The zone-arrival flight's end opens the first briefing one update later, as the original's
+countdown does (`0x5D0369`).
 
-**Few missions complete in play yet.** A mission without an obstacle whose Proceed finds no `ObstacleOpened` or `CutsceneObject` thing completes at once; one that
-shows a thing waits for the camera flight's end (message 0x29), and an obstacle mission also needs the research (message 0x23) and the staff HQ's obstacle slots,
-neither of which OpenTPW runs. The cheats extension's Skip Mission still runs the completion tick. What does not run yet besides: the obstacles as world things and their
-opening (their types are read from the zones' `obstacles` archives), the challenges window (the text HUD's challenge panel stands in for its tab) and the tag tube that
-would file the "Objective Complete!" letter; the letter itself is composed (`ThemeParkIncObjectiveLetter`) but waits in `ParkEconomy.TpiObjectiveLetters`.
+**Few missions complete in play yet.** A mission without an obstacle completes through Proceed: at once, or at the end of the camera flight to its
+`ObstacleOpened` or `CutsceneObject` thing (message 0x29). An obstacle mission's Proceed posts 0x24, whose flight opens the obstacle, but its requirements also need the
+research (message 0x23) and the staff HQ's obstacle slots, neither of which OpenTPW runs yet. The cheats extension's Skip Mission still runs the completion tick. What does
+not run yet besides: the challenges window (the text HUD's challenge panel stands in for its tab) and the tag tube that would file the "Objective Complete!" letter; the
+letter itself is composed (`ThemeParkIncObjectiveLetter`) but waits in `ParkEconomy.TpiObjectiveLetters`.
 
 ### Prebuilt science save
 

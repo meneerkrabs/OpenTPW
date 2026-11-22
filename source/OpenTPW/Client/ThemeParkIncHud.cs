@@ -468,6 +468,14 @@ public sealed partial class ThemeParkIncHud
 	private static UiButton MenuButton( UiScreen menu, string id, string text, Action clicked, float top ) =>
 		MenuButton( menu, id, () => text, clicked, top );
 
+	/// <summary>The binding "pause" (the P key): pauses a running park or resumes a paused one.</summary>
+	// [BIN:TPI-EXE:0x42A27C lost pause toggle] the P key's toggle refuses to pause a lost park but still resumes one that was paused when it was lost
+	private void TogglePause( UiInput input )
+	{
+		if ( input.Has( UiKeys.Pause ) && (!Lost || speed == GameSpeed.Paused) )
+			speed = speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
+	}
+
 	internal void PostMessage( string text )
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
@@ -482,6 +490,8 @@ public sealed partial class ThemeParkIncHud
 	{
 		if ( UpdateLossScene( context, input ) )
 			return true;
+		if ( UpdateFlight( input ) )
+			return true;
 		// The build window rides on the HUD screen, so a modal menu on top of it hides it (ModalOpen stops the camera keys).
 		SetBuildWindowVisible( buildOpen && !MenuOpen );
 		SetStaffPanelVisible( staffOpen && !MenuOpen );
@@ -494,10 +504,10 @@ public sealed partial class ThemeParkIncHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		// [BIN:TPI-EXE:0x42A27C lost pause toggle] the P key's toggle refuses to pause a lost park but still resumes one that was paused when it was lost
-		if ( !MenuOpen && input.Has( UiKeys.Pause ) && (!Lost || speed == GameSpeed.Paused) )
-			speed = speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
+		if ( !MenuOpen )
+			TogglePause( input );
 		UpdateMissionKey( input );
+		UpdateMissionWindowRequests();
 
 		// The level's last action (builds, refusals) becomes a message here; the slice has no advisor to say it.
 		if ( level.LastActionMessage != lastLevelMessage )
@@ -633,7 +643,11 @@ public sealed partial class ThemeParkIncHud
 		blueprint.Show( cells, directions );
 	}
 
-	public void Draw( UiContext context ) => Stack.Draw( context );
+	public void Draw( UiContext context )
+	{
+		if ( !FlightActive )
+			Stack.Draw( context );
+	}
 
 	/// <summary>Closes the open letter as its close button does (message 5 to the HUD's window), or null.</summary>
 	private Action? closeOpenLetter;

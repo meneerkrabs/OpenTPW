@@ -86,6 +86,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	private void Plan( bool captureForRestart )
 	{
 		Wait( "slice starts", 10 );
+		if ( flow.Level?.LevelName == "science" )
+			PlanArrivalFlight();
 		Do( "the slice runs under its capability gates", () =>
 		{
 			var level = flow.Level;
@@ -103,6 +105,10 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 				Require( economy.TpiCareer!.StatusWord( 0, 1 ) == 8 && economy.TpiCareer.StatusWord( 0, 0 ) == 1, "miss00's guest statistic has started" );
 				Require( level.ThemeParkIncCurrentObstacle == prebuilt.Variables.CurrentObstacle && prebuilt.FindAttraction( level.ThemeParkIncCurrentObstacle )?.InfoId == 1700,
 					"the current obstacle is the prebuilt's 1700 gate" );
+				Require( level.Objects.Objects.Any( item => item.ThingId == level.ThemeParkIncCurrentObstacle && item.Entry.InfoId == 1700 )
+					&& new[] { 1702, 1701, 1703, 1750, 1798 }.All( type => level.Objects.Objects.Any( item => item.Entry.InfoId == type && item.ThingId == prebuilt.Attractions.Single( attraction => attraction.InfoId == type ).Id ) ),
+					"the obstacles and the camera path are things of the world with their saved ids" );
+				Require( level.Guests?.Grid.Cells is { } obstacleCells && obstacleCells.ObstacleFlagAt( 41, 48 ) && obstacleCells.RawTypeAt( 41, 48 ) == 8, "the 1700 gate's footprint is a hole with the obstacle flag" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )
@@ -494,6 +500,45 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 
 	private static string EconomyDigest( ParkEconomy economy ) => Convert.ToHexString( System.Security.Cryptography.SHA256.HashData(
 		System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ) );
+
+	private Vector3 flightEye;
+
+	/// <summary>
+	/// The zone arrival of a new game's Science park: the camera path 1798 flies (the ride view on its seat, the clock at 1.0, the HUD hidden under the input window), Escape skips it, message 0x29 carries the
+	/// trigger, and the mission window's countdown runs out one update later and opens the first briefing.
+	/// </summary>
+	private void PlanArrivalFlight()
+	{
+		Do( "the zone arrival flies the camera path", () =>
+		{
+			var cutscene = Level.Park?.Economy.TpiCutscene;
+			Require( cutscene is { Flying: true, Skippable: true, Mode: ThemeParkIncCutscene.ArrivalMode, OverlayOpen: true } && Level.Objects.Objects.Any( item => item.ThingId == cutscene.AnimThing && item.Entry.InfoId == 1798 ),
+				"a new game's first day flies the Science camera path, skippable" );
+			Require( Level.RideView is { } view && view.Ride.Entry.InfoId == 1798 && ReferenceEquals( Camera.Mode, view ), "the camera rides the camera path's seat" );
+			Require( Level.SimulationTimeScale == 1f && Hud.FlightActive, "the clock runs at the flight's rate and the HUD is hidden under the input window" );
+			flightEye = Camera.Position;
+		} );
+		Wait( "the flight moves on", 90 );
+		Do( "the camera follows the clip and the HUD stays hidden", () =>
+		{
+			Require( (Camera.Position - flightEye).Length > 0.01f, "the seat moves with the camera path's M clip" );
+			Require( !Context.Batch.TextDraws.Any( draw => draw.Text == LabelText( "money" ) ), "the HUD is not drawn during the flight" );
+		} );
+		Do( "Escape skips the flyover", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "the next turns end the flight", 90 );
+		Do( "the flyover ended with the trigger and the window's countdown ran out", () =>
+		{
+			var economy = Level.Park!.Economy;
+			Require( economy.TpiCutscene is { Flying: false, OverlayOpen: false, ClockRate: null } && Level.RideView == null && Camera.Mode is ParkCameraMode, "the skip ended the flight and left the ride view" );
+			Require( economy.TpiCameraEnds.LastOrDefault() is { Result: 1, Mode: ThemeParkIncCutscene.ArrivalMode } && economy.TpiCutscene.MissionWindowRequests == 1, "message 0x29 carried the trigger and the mission window was asked for" );
+			Require( economy.TpiIntroductionLetters == 1 && economy.TpiCareer!.ObjectiveLetterPosted, "the arrival's end posted mission 0's first briefing" );
+		} );
+		Wait( "the HUD comes back", 2 );
+		Do( "the countdown opened the mission window", () => Require( Hud.MissionWindowOpen && Hud.Stack.Top?.Name == ThemeParkIncMissionWindow.ScreenName, "the arrival's end opens the first briefing (0x5D0369)" ) );
+		Do( "close the arrival's mission window", () => Click( Hud.Stack.Top!, "cancel" ) );
+		Wait( "the arrival's mission window closes", 1 );
+		Do( "the arrival's mission window is closed", () => Require( !Hud.MissionWindowOpen, "Cancel closes the arrival's mission window" ) );
+	}
 
 	private void PlanColdRestore()
 	{

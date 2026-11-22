@@ -18,13 +18,12 @@ public class ThemeParkIncViewerTests
 
 	/// <summary>
 	/// Texture names that no archive of the supplied retail data holds: the build-tool markers PathTex 16-18 of every world (the viewer's path
-	/// layer does not use them) and the lake bed set of the science lake (drawn plain white, see docs/THEME-PARK-INC.md).
+	/// layer does not use them). The lake is the obstacle 1703 now, not part of the terrain (terrain.wad's dlake.MD2 named the missing bed set).
 	/// </summary>
 	private static readonly string[] MissingTerrainTextures =
 	{
 		"arabian: pathtex/baseblue", "arabian: pathtex/grnarrow", "arabian: pathtex/redarrow",
 		"science: pathtex/baseblue", "science: pathtex/grnarrow", "science: pathtex/redarrow",
-		"science: textures/bed04", "science: textures/bed06", "science: textures/bed07", "science: textures/bed09", "science: textures/bed10", "science: textures/bed12",
 		"water: pathtex/baseblue", "water: pathtex/grnarrow", "water: pathtex/redarrow",
 	};
 
@@ -122,7 +121,7 @@ public class ThemeParkIncViewerTests
 	}
 
 	[TestMethod]
-	public void EveryTerrainTextureOfBothWorldsResolvesAndDecodesExceptTheMissingLakeBeds()
+	public void EveryTerrainTextureOfBothWorldsResolvesAndDecodesExceptThePathMarkers()
 	{
 		UseTpiData();
 		var unresolved = new SortedSet<string>( StringComparer.Ordinal );
@@ -250,8 +249,8 @@ public class ThemeParkIncViewerTests
 		var catalog = ObjectCatalog.Load( "science" );
 		var records = science.Save.PlacedObjects.Select( item => item.Record )
 			.Concat( science.Save.UnresolvedObjects ).Concat( science.Save.FixedItems ).ToArray();
-		Assert.AreEqual( 18, records.Count( item => catalog.Find( item.InfoId ) != null ) );
-		Assert.AreEqual( 17, records.Count( item => catalog.Find( item.InfoId ) is { IsTool: false } ) );
+		Assert.AreEqual( 23, records.Count( item => catalog.Find( item.InfoId ) != null ), "every record names an object, the five obstacle records too" );
+		Assert.AreEqual( 22, records.Count( item => catalog.Find( item.InfoId ) is { IsTool: false } ) );
 		Assert.IsTrue( records.Any( item => catalog.Find( item.InfoId )?.SettingsName == "Gates" ) );
 		Assert.IsTrue( records.Any( item => item.Rotation == 90 ) );
 		Assert.IsNull( OriginalPark.Load( "arabian" ).Save );

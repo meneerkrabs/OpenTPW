@@ -7,7 +7,7 @@ OpenTPW does not support Theme Park Inc. Since October 10, 2026 OpenTPW has a re
 its `.fsh` textures ([FSH.md](FSH.md)), and since October 13, 2026 an experimental
 [playable slice](#theme-park-inc-playable-slice) that loads its worlds, builds in them
 and walks guests through them under an explicit capability policy; since October 17, 2026 it also runs the
-[money](#theme-park-inc-economy-money-only) of Theme Park Inc's own balance keys.
+[money](#theme-park-inc-economy) of Theme Park Inc's own balance keys.
 
 For installation and launch steps, use the [static Theme Park Inc guide](https://opentpw.io/theme-park-inc.html), which covers the desktop edition chooser, the explicit command and the browser starts.
 
@@ -61,7 +61,8 @@ starts the playable slice below (older links still land here).
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). A start without a world opens the slice's
 [Personnel File start screen](#theme-park-inc-front-end) instead. It is not Theme Park Inc support: there is
-no Theme Park Inc in-game interface or native save writing (its economy is the money, the cleaners and researchers, staff training, the research lab a park file brings and the measurable challenges), and nothing it draws has been
+no Theme Park Inc in-game interface, and of the native save formats only the player file (`.GMS`, desktop only) is written. Its money, the cleaners and researchers, staff training, the
+research lab a park file brings, the measurable challenges, the career and the mission controller run (no staff room can be built yet, so neither research nor training starts in play); nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
@@ -100,7 +101,7 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   names the experiment and its refused systems, a guest counter, a money line (cash, park date, entrance fee), a message line, a build window over
   the world's own catalog with each object's price, remove/rotate/cancel tools, a speed control and a pause menu (Esc) whose
   application-owned layout checkpoint controls are described below. Building is **charged** at Theme Park Inc's own prices and removing refunds the scrap value
-  ([economy](#theme-park-inc-economy-money-only); `[EXT:tpi-free-builds]` is retired). If the HUD cannot be built the world falls back to the bare viewer
+  ([economy](#theme-park-inc-economy); `[EXT:tpi-free-builds]` is retired). If the HUD cannot be built the world falls back to the bare viewer
   (Esc quits, P pauses) with a warning.
 - **Building** through the same rules as a Theme Park World park (`ParkObjects` terrain and occupancy
   checks, `Level.PlaceObject` with the purchase), including the path and queue tools of the traced
@@ -114,7 +115,12 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   laid and the land is not drawn darker (Theme Park Inc's boundary drawing is not read). `Level.ApplyThemeParkIncExtent` grows the land by `extents/extent.NNN` for the
   mission controller, and the build list applies the catalogue's gate `0x57CA20`: the four special rides are hidden in every mission, and the mission number (0 until the career
   runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused. The net worth counts the
-  owned squares only, by Theme Park World's cell-point rule (`ParkEconomy.CellPoints`, which skips unowned cells); Theme Park Inc's own net-worth routine has not been read against it.
+  owned squares only, by the cell-point rule `ParkEconomy.CellPoints` shares with Theme Park World. Theme Park Inc's own routine `0x5AFFB0` (thunk `0x404F34`) is the
+  same: it skips a square whose word `+0x0E` has bit 0x40 (`0x67ECA0` with 0x40, `0x5B0017`), scores the types with the same predicates (`0x67F590`..`0x67F890`, the +10
+  test `0x67F640` always false), skips an object in state 4 (`0x5E3970`) and adds the upgrade costs scaled by the repair byte. Only the layouts differ: 72-byte squares, the object record (upgrade costs at
+  type `+0x2AC` with a 0x48 stride, the repair float `+0x54`, the state `+0xA0`, the level byte `+0x64`),
+  the cache at `+0x1F104` (stamp `+0x1F100`, valid `+0x1F108`). Its readers are the month's sample (age 0, `0x5AF53D`), the loan credit test (age 20, `0x5C0F19`) and two
+  unidentified callers with age 10 (`0x721753`, `0x7217EC`).
 - **Guests** start with Theme Park Inc's own 24-row profile table, starting cash, exit counter and starting needs.
   The selected row supplies their excitement preference. The original prank code is saved separately from the
   Theme Park World flag but does not run any TPI prank actions yet. Existing guests in older saves keep their
@@ -140,7 +146,9 @@ for the separate `.tpilayout` format, exact state boundaries and verification li
 
 **Science continuation.** The desktop pause menu can [save and continue a solo Science park](PARK-SAVES.md#experimental-science-continuation-on-desktop) in OpenTPW's own format. This is separate from layout checkpoints and does not resume the original Science prebuilt's simulation state.
 
-**What it leaves out.** No staff apart from cleaners and researchers (any placed member can train), no research lab where no park file brings one (only the Science prebuilt does), no challenge whose value OpenTPW cannot measure (the money runs, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
+**What it leaves out.** No staff apart from cleaners and researchers, no research or training in play (the research lab a park file brings and the training are ported, but the research and training
+rooms cannot be built: the Facilities folder is not in the slice's catalogue), no challenge whose value OpenTPW cannot measure, and no obstacle mission that can be completed (the
+money, the career and the mission controller run, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
@@ -202,11 +210,14 @@ scene records). Open: how the original game transforms the zero-coordinate scene
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
 missing lake bed textures; the viewer's lighting and water transparency against the original.
 
-### Theme Park Inc economy (money only)
+<a id="theme-park-inc-economy-money-only"></a>
+
+### Theme Park Inc economy
 
 Since October 17, 2026 the slice runs Theme Park Inc's **money** (`EditionCapabilities.Money`) and still refuses Theme Park World's staff and research
-(`Staff`, `Research`; the whole Theme Park World economy is `Economy`, true only for Theme Park World); since November 21, 2026 it also runs Theme Park Inc's own
-challenge system (`Challenges`, [below](#theme-park-inc-challenges)), never Theme Park World's objectives. The park's economy is
+(`Staff`, `Research`; the whole Theme Park World economy is `Economy`, true only for Theme Park World). Since November 21, 2026 it also runs Theme Park Inc's own
+staff hiring pool and handymen, its challenge system (`Challenges`, [below](#theme-park-inc-challenges)), the career and the mission controller
+([below](#theme-park-inc-missions)), never Theme Park World's staff, objectives or golden tickets. The park's economy is
 the same `ParkEconomy` class under `EconomyRules.ThemeParkIncMoney` (`Economy/EconomyRules.cs`), over settings built from Theme Park Inc's own keys.
 Evidence: static reading of the no-CD `Game.exe` against `tp.exe` (October 17, 2026), nothing run; none of it is compared with the running original.
 
@@ -251,8 +262,8 @@ walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleani
 The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`) and animate as their states ask (stand, walk, sweep).
 
 **What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
-upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below), spending golden tickets, promotions and the missions; the shares game; Theme Park Inc's
-weather presentation's sky; the advisor's other messages; native save formats. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
+upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below); an obstacle mission's completion, which needs the research and the staff HQ's slots, neither of which can happen while no staff room can be built ([below](#theme-park-inc-missions)); the shares game; Theme Park Inc's
+weather presentation's sky; the advisor's other messages; the native park save formats (the player file `.GMS` is written on desktop). Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
 
 <a id="theme-park-inc-challenges"></a>

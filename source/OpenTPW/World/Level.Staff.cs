@@ -187,6 +187,7 @@ public partial class Level
 		if ( Park?.Economy.TpiStaff == null || Guests == null )
 			return;
 		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
+		AttachThemeParkIncRooms();
 		AdoptTpiStaffThings();
 		// the members' sprites: Theme Park Inc's esprites.wad holds the handymen's bank under the folder Theme Park World's loader reads (Generic\Handymen, Spr_ha), found by name
 		if ( OriginalPark != null )
@@ -213,24 +214,25 @@ public partial class Level
 		{
 			if ( member.Navigation == null )
 				continue;
-			if ( Things.IsUsed( member.ThingId ) ? Things.ModelOf( member.ThingId ) != SaveThingModel.Handyman : !Things.Occupy( member.ThingId, SaveThingModel.Handyman ) )
-				throw new InvalidDataException( $"Theme Park Inc staff member {member.Id}'s thing id {member.ThingId} is not a handyman slot of the thing pool." );
+			var model = ThemeParkIncStaffWorld.ThingModelOf( member.Role );
+			if ( Things.IsUsed( member.ThingId ) ? Things.ModelOf( member.ThingId ) != model : !Things.Occupy( member.ThingId, model ) )
+				throw new InvalidDataException( $"Theme Park Inc staff member {member.Id}'s thing id {member.ThingId} is not a {model} slot of the thing pool." );
 		}
 	}
 
 	/// <summary>
-	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman goes to the hand until a drop or a cancel; the other roles are
+	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman or a researcher goes to the hand until a drop or a cancel; the other roles are
 	/// refused. Null when the hire starts, else the refusal's reason.
 	/// </summary>
 	// [BIN:TPI-EXE:0x630D10 hire] the slot is marked as being placed and the park maximum check runs; the placement tool 0x93B61C then holds the candidate (its enter 0x4D4C20 makes the dangling sprite)
-	// [EXT:tpi-capability-gates] only the handyman is ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
+	// [EXT:tpi-capability-gates] only the handyman and the researcher are ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
 	public string? BeginTpiHire( int slot )
 	{
 		if ( Park?.Economy.TpiStaff is not { } staff )
 			return "unavailable";
 		if ( slot < 0 || slot >= ThemeParkIncStaff.PoolSlots || staff.Slots[slot] is not { } candidate )
 			return "no candidate";
-		if ( candidate.Role != ThemeParkIncStaffRole.Handyman )
+		if ( candidate.Role is not (ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Researcher) )
 			return "role not ported";
 		if ( TpiStaffWorld == null )
 			return "unavailable";

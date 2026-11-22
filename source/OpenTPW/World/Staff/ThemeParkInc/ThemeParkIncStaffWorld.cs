@@ -3,17 +3,18 @@ namespace OpenTPW;
 /// <summary>
 /// Theme Park Inc's staff in the park (docs/reverse/TPI-STAFF.md §11): the placed members' things and their state machines, beside Theme Park World's
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
-/// meters, day counters and search; the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
+/// meters, day counters and search, and the training states 7 and 8; the researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the other roles are refused at the hire
+/// (<c>[EXT:tpi-capability-gates]</c>).
 /// </summary>
 /// <remarks>
-/// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route set-up 0x62EB10, the patrol destination 0x609F70 and the speed step 0x60BC90 are not
+/// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
 /// proven identical to Theme Park World's (WP0 movement: D1 the arrival heading, D2 the run flag, D5 the cell node stride; 0x609F70 is read as a call skeleton only), so a member walks
 /// Theme Park World's walk (the guests' steering step with separation, the route search, the wander destination 0x004F9490 with its off-path search, the speed smoothing 0x004FA870 and the
 /// caps 0x00510190), over Theme Park Inc's own speed words (+0xD4, +0xD6, +0xD8).
 /// [EXT:tpi-no-maintenance-wear] (user-approved 2026-11-21) Theme Park Inc's toilet wear and the bins' fill are unported, so the loo finder 0x5D6230 and the bin finder 0x5D5F10 find nothing
 /// to clean: the handymen sweep litter only (states 0x11 to 0x14 are not entered).
 /// </remarks>
-public sealed class ThemeParkIncStaffWorld
+public sealed partial class ThemeParkIncStaffWorld
 {
 	/// <summary>The handyman's states this world runs (the state word +0x1B4).</summary>
 	public const int Idle = 0, Walking = 1, ToLitter = 0x0F, Sweeping = 0x10;
@@ -65,7 +66,10 @@ public sealed class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x6902F0 sprite variant] (draw >> 2) divided (unsigned) by the category's loaded count (0x9D7008 + 12 × category), the remainder; the candidate keeps its low byte (+0x10) and the
 	// member its variant word +0x30, which 0x5D1000 hands to the sprite; the count is the banks the level loaded from Generic\Handymen (one, Spr_ha, in the retail data)
 	public static int VariantOf( ThemeParkIncStaffMember member, IStaffSpriteBanks? banks ) =>
-		banks?.BankCount( StaffType.Handyman ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
+		banks?.BankCount( SpriteTypeOf( member ) ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
+
+	/// <summary>The sprite bank family of a member's role: the handymen's (category 9) or the researchers' (category 0xC, <c>0x6902F0(0xC)</c>).</summary>
+	internal static StaffType SpriteTypeOf( ThemeParkIncStaffMember member ) => member.Role == ThemeParkIncStaffRole.Researcher ? StaffType.Researcher : StaffType.Handyman;
 
 	/// <summary>
 	/// A state setter's template on the member's sprite wrapper: queued for the next pre-update, or a new source made in it when the member has none (the setters' tail, 0x628180: 0x5D1000 without a
@@ -75,7 +79,7 @@ public sealed class ThemeParkIncStaffWorld
 	{
 		member.Template = template;
 		if ( member.Sprite.Source == null )
-			member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( template ), SpriteClockMilliseconds, SpriteBanks );
+			member.Sprite.Create( SpriteTypeOf( member ), VariantOf( member, SpriteBanks ), ProgramOf( template ), SpriteClockMilliseconds, SpriteBanks );
 		else
 			member.Sprite.QueueTemplate( ProgramOf( template ) );
 	}
@@ -319,12 +323,12 @@ public sealed class ThemeParkIncStaffWorld
 	{
 		ArgumentNullException.ThrowIfNull( economy );
 		ArgumentNullException.ThrowIfNull( member );
-		if ( member.Role != ThemeParkIncStaffRole.Handyman )
-			throw new InvalidOperationException( "Only Theme Park Inc handymen are ported to the park ([EXT:tpi-capability-gates])." );
+		if ( member.Role is not (ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Researcher) )
+			throw new InvalidOperationException( "Only Theme Park Inc handymen and researchers are ported to the park ([EXT:tpi-capability-gates])." );
 		if ( economy.TpiStaff is not { } staff )
 			throw new InvalidOperationException( "The park has no Theme Park Inc staff." );
 		var settings = staff.Settings;
-		member.ThingId = things?.Allocate( SaveThingModel.Handyman ) ?? NextOwnThingId( staff );
+		member.ThingId = things?.Allocate( ThingModelOf( member.Role ) ) ?? NextOwnThingId( staff );
 		member.BaseSpeed = GuestSpeed.BaseSpeeds[(int)(economy.World.NextWord() % 5)];
 		member.SpeedBonus = 0;
 		member.Boost = 0;
@@ -345,9 +349,12 @@ public sealed class ThemeParkIncStaffWorld
 		member.DrawY = navigation.Y / (float)Fixed16.One;
 		member.TurnTick = -1;
 		member.Sprite.Reset();
-		member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( IdleTemplate ), SpriteClockMilliseconds, SpriteBanks );
+		member.Sprite.Create( SpriteTypeOf( member ), VariantOf( member, SpriteBanks ), ProgramOf( IdleTemplate ), SpriteClockMilliseconds, SpriteBanks );
 		FollowChain( member );
-		Search( economy, member, economy.Turn );
+		if ( member.Role == ThemeParkIncStaffRole.Researcher )
+			StartResearcher( economy, member, economy.Turn );
+		else
+			Search( economy, member, economy.Turn );
 		FollowChain( member );
 	}
 
@@ -412,12 +419,21 @@ public sealed class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x63762D handyman update] kind 5: the pre-update 0x5D5000, then the state dispatch 0x5D5710
 	public void Update( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
-		if ( member.Navigation == null || member.Role != ThemeParkIncStaffRole.Handyman || economy.TpiStaff is not { } staff )
+		if ( member.Navigation == null || economy.TpiStaff is not { } staff )
 			return;
 		member.LastUpdateTurn = turn;
 		(member.TurnFromX, member.TurnFromY, member.TurnTick) = (member.Navigation.X, member.Navigation.Y, Guests?.TickCount ?? -1);
-		PreUpdate( economy, staff.Settings, member, turn );
-		Dispatch( economy, staff.Settings, member, turn );
+		if ( member.Role == ThemeParkIncStaffRole.Researcher )
+		{
+			// [BIN:TPI-EXE:0x637690 researcher update] kind 8: the pre-update 0x61B600 (the common 0x628050), then the dispatch 0x61B620
+			CommonPreUpdate( member );
+			DispatchResearcher( economy, staff.Settings, member, turn );
+		}
+		else
+		{
+			PreUpdate( economy, staff.Settings, member, turn );
+			Dispatch( economy, staff.Settings, member, turn );
+		}
 		if ( Guests == null )
 		{
 			var navigation = member.Navigation!;
@@ -443,27 +459,38 @@ public sealed class ThemeParkIncStaffWorld
 		_ => 2
 	};
 
-	/// <summary>The handyman's pre-update: the common part (speed, day counter), then, while idle, a litter scan every search period.</summary>
-	// [BIN:TPI-EXE:0x5D5000 handyman pre-update] 0x628050; p = trunc((1.0 - exp / MaxExperience) * 50.0f) (fildll of the unsigned experience, fidivl, fsubr 0x93B858, fmuls 0x93B89C, ftol);
-	// a period of 0 or turn % p == 0 (unsigned) with the state 0: the radius lerp(exp, 0, MaxExperience, Handyman.MinDetectionRange, MaxDetectionRange), the litter finder 0x5B1B50 around the
-	// member's cell, and a find runs the search 0x5D52A0; then 0x6388F0 on +0x44 (the thought's lapse, presentation)
+	/// <summary>The common pre-update of every member (<c>0x628050</c>): the speed smoothing, the sprite's pending requests and one tick of the display state's day counter.</summary>
 	// [BIN:TPI-EXE:0x628050 staff pre-update] 0x60BC90 (the speed words' smoothing and the walk's caps), the thought check on the member's phase, then one tick of the display state's day counter
-	private void PreUpdate( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
+	private void CommonPreUpdate( ThemeParkIncStaffMember member )
 	{
 		// [EXT:tpi-twp-guest-rules] 0x60BC90's smoothing of (+0xD4 + +0xD6 + +0xD8) / 100 into +0xDC and the decay of +0xD8 by 99/100 are taken as Theme Park World's 0x004FA870, the caps
 		// 0x63EF90 as 0x00510190
 		(member.SmoothedSpeed, member.Boost, member.MaxSpeed, member.MaxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, member.Boost );
 		// [BIN:TPI-EXE:0x5D1080 sprite requests] 0x60BC90 then applies the wrapper's pending template (+0xC, through the table 0x9CDA94, 0x4E49A0) and interval (+0x10, 0x4E42B0), clearing each, as tp.exe's
-		// 0x004D4190; a member restored from a save (whose sprite is not saved) gets a source in his state's template first
-		if ( member.Sprite.Source == null )
-			member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( member.Template ), SpriteClockMilliseconds, SpriteBanks );
-		member.Sprite.ApplyPending( StaffType.Handyman, VariantOf( member, SpriteBanks ), SpriteBanks );
-		member.CountTick( (ThemeParkIncStaffMember.DisplayState)Category( member.State ) );
+		// 0x004D4190; a member restored from a save (whose sprite is not saved) gets a source in his state's template first; a member inside a room (training, researching) has no source (0x5D1050 at the
+		// state's entry) until he leaves it
+		if ( member.Sprite.Source == null && !Hidden( member ) )
+			member.Sprite.Create( SpriteTypeOf( member ), VariantOf( member, SpriteBanks ), ProgramOf( member.Template ), SpriteClockMilliseconds, SpriteBanks );
+		member.Sprite.ApplyPending( SpriteTypeOf( member ), VariantOf( member, SpriteBanks ), SpriteBanks );
+		member.CountTick( (ThemeParkIncStaffMember.DisplayState)DisplayCategory( member ) );
+	}
+
+	/// <summary>The handyman's pre-update: the common part (speed, day counter), then, while idle, a litter scan every search period.</summary>
+	// [BIN:TPI-EXE:0x5D5000 handyman pre-update] 0x628050; p = trunc((1.0 - exp / MaxExperience) * 50.0f) (fildll of the unsigned experience, fidivl, fsubr 0x93B858, fmuls 0x93B89C, ftol);
+	// a period of 0 or turn % p == 0 (unsigned) with the state 0: the radius lerp(exp, 0, MaxExperience, Handyman.MinDetectionRange, MaxDetectionRange), the litter finder 0x5B1B50 around the
+	// member's cell, and a find runs the search 0x5D52A0; then 0x6388F0 on +0x44 (the thought's lapse, presentation)
+	private void PreUpdate( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
+	{
+		CommonPreUpdate( member );
 		var period = SearchPeriod( member.Experience, settings.MaxExperience );
 		var due = period == 0 || unchecked( (uint)turn ) % (uint)period == 0;
 		if ( member.State == Idle && due && FindLitter( economy, settings, member ) != 0 )
 			Search( economy, member, turn );
 	}
+
+	/// <summary>Whether the member is inside a room without a sprite source: training (state 8 and its suspended 0x25) or a researcher researching (state 24).</summary>
+	internal static bool Hidden( ThemeParkIncStaffMember member ) => member.State is ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended
+		|| member.Role == ThemeParkIncStaffRole.Researcher && member.State == ThemeParkIncResearch.Researching;
 
 	/// <summary>The handyman's search period and idle wait: trunc((1 − experience / MaxExperience) × 50).</summary>
 	public static int SearchPeriod( int experience, int maxExperience ) => unchecked( (int)(long)((1.0 - (double)(uint)experience / maxExperience) * 50.0f) );
@@ -513,6 +540,14 @@ public sealed class ThemeParkIncStaffWorld
 				break;
 			case Sweeping:
 				UpdateSweeping( economy, settings, member, turn );
+				break;
+			// [BIN:TPI-EXE:0x5D588E common states] the handyman's table sends 4..0x0E to the common handler 0x6287A0 (byte table 0x628B10, jump table 0x628ADC): 7 -> 0x62A7C0, 8 -> 0x62AA50; above 0x14
+			// (0x25, 0x26) the common handler has no case
+			case ThemeParkIncTraining.ToTrainingRoom:
+				UpdateToTrainingRoom( economy, settings, member, turn );
+				break;
+			case ThemeParkIncTraining.Training:
+				UpdateTraining( economy, settings, member, turn );
 				break;
 		}
 	}
@@ -598,7 +633,7 @@ public sealed class ThemeParkIncStaffWorld
 				if ( InPatrolArea( member, found ) )
 				{
 					var (bx, by) = ParkLitter.SweepSpot( economy.World, cell.X, cell.Y );
-					if ( Route( member, cell, bx, by ) )
+					if ( StaffRoute( economy, member, cell, bx, by ) )
 					{
 						// [BIN:TPI-EXE:0x5D8FE0 litter claim] +0x34 = the member's thing id, +0x38 = the world turn, as Theme Park World's 0x004D9600
 						economy.Litter.Claim( cell.X, cell.Y, member.ThingId, turn );
@@ -650,7 +685,7 @@ public sealed class ThemeParkIncStaffWorld
 		{
 			if ( (economy.World.NextWord() & 0xF) == 0 )
 				member.AddHappiness( -(float)settings.HappyHitNoRestArea );
-			if ( Category( member.State ) == 2 )
+			if ( DisplayCategory( member ) == 2 )
 			{
 				SetState( economy, member, Idle, turn );
 				return true;
@@ -671,8 +706,12 @@ public sealed class ThemeParkIncStaffWorld
 	// rest area (0x62BA20: none) and sets 0 (0x628180(0) at 0x62D94D)
 	private void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
-		Search( economy, member, turn );
-		if ( ((int)(long)member.Motivation & 0xFF) < settings.MotivationPercentToStrike / 2 && Category( member.State ) is 2 or 7 )
+		// [BIN:TPI-EXE:0x62D974 look-for-work kinds] kind 5 0x5D52A0, kind 8 0x61B820
+		if ( member.Role == ThemeParkIncStaffRole.Researcher )
+			SearchResearchRoom( economy, settings, member, turn );
+		else
+			Search( economy, member, turn );
+		if ( ((int)(long)member.Motivation & 0xFF) < settings.MotivationPercentToStrike / 2 && DisplayCategory( member ) is 2 or 7 )
 			SetState( economy, member, Idle, turn );
 	}
 
@@ -699,6 +738,18 @@ public sealed class ThemeParkIncStaffWorld
 				break;
 			case Walking:
 				RequestTemplate( member, WalkTemplate );
+				break;
+			case ThemeParkIncTraining.ToTrainingRoom:
+				EnterToTrainingRoom( economy, member );
+				break;
+			case ThemeParkIncTraining.Training:
+				EnterTraining( economy, member, turn );
+				break;
+			case ThemeParkIncResearch.Researching:
+				EnterResearching( member, turn );
+				break;
+			case ToResearchRoom:
+				EnterToResearchRoom( member );
 				break;
 			default:
 				throw new InvalidOperationException( $"Theme Park Inc staff state {state} is not ported." );
@@ -757,7 +808,26 @@ public sealed class ThemeParkIncStaffWorld
 		return GuestNavigation.Separation( self, neighbours );
 	}
 
-	/// <summary>Sets the walk to a point of a cell; false when no route reaches it (the walk then stands arrived and stuck).</summary>
+	/// <summary>
+	/// The staff route (<c>0x62EB10</c>): a closed park refuses a walk to the entrance cells (47, 17) and (48, 17); else the walk mask is 1 when the member's cell or the target cell is empty (type 0),
+	/// 0 otherwise, and the walk is set to the point (<c>0x60B8E0</c>). False when no route reaches it.
+	/// </summary>
+	// [BIN:TPI-EXE:0x62EB10 staff route] park+0x1EAB44 (0x64FA30, nonzero: the park is closed) with the target word's cell x (its high byte) 0x2F or 0x30 and the y word's cell 0x11 answers 0 and leaves the
+	// walk; the member's cell record (+0x418 + 72 × (y << 7 + x + 1), from the bytes +5 and +7) of type 0 (0x67F6D0, its dword +8) or else the target's sets +0x1A0 = 1, else +0x1A0 = 0 (the walk's +0xB4,
+	// the mask the search and the edge test read); then 0x60B8E0 with the two words
+	// [BIN:TPI-EXE:0x60B8E0 staff steer] the stamp counter raised (0x5D81F0, ParkCellMap.StampCounter: OpenTPW counts the edits only); the stranded mark +0x1B0 is tested (0x60BB50) only while nonzero,
+	// and a staff member's never is: its only setter with a stamp, 0x60A4AE in the wander, is reached by kind 1 (the guests) alone, the staff kinds 4, 5, 6, 8, 7 and 0x14 branching to 0x62C720 at
+	// 0x60A454, and every other writer stores 0 (0x608F94, 0x60A56C, 0x60A84C, 0x60B4CA, 0x60B9FC); then +0x28, +0x2A = the words, +0x1B0 = 0 and SetDest 0x63EE80 (0x63E3A0 with the point << 8)
+	private bool StaffRoute( ParkEconomy economy, ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY )
+	{
+		if ( !economy.IsParkOpen && cell.Y == 0x11 && cell.X is 0x2F or 0x30 )
+			return false;
+		var (x, y) = member.Navigation!.Cell;
+		member.Navigation.Mask = grid.Cells.RawTypeAt( x, y ) == 0 || grid.Cells.RawTypeAt( cell.X, cell.Y ) == 0 ? 1 : 0;
+		return Route( member, cell, byteX, byteY );
+	}
+
+	/// <summary>Sets the walk to a point of a cell with the walk's mask (SetDest, <c>0x63EE80</c>); false when no route reaches it (the walk then stands arrived and stuck).</summary>
 	private bool Route( ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY )
 	{
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
@@ -793,7 +863,8 @@ public sealed class ThemeParkIncStaffWorld
 		{
 			var x = (int)(economy.World.NextWord() % (uint)(area.X1 - area.X0 + 1)) + area.X0;
 			var y = (int)(economy.World.NextWord() % (uint)(area.Y1 - area.Y0 + 1)) + area.Y0;
-			if ( grid.IsWalkable( x, y ) && Route( member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
+			// [BIN:TPI-EXE:0x62C84E patrol entry route] the staff route 0x62EB10 to the cell's centre
+			if ( grid.IsWalkable( x, y ) && StaffRoute( economy, member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
 				return true;
 		}
 		return false;

@@ -5,7 +5,8 @@ namespace OpenTPW;
 /// <summary>A saved Theme Park Inc staff member: its economy state, the day counters the experience gain reads and, once placed, its thing in the park (absent: never placed).</summary>
 public sealed record ThemeParkIncStaffMemberSnapshot( int Id, ThemeParkIncStaffRole Role, int NameIndex, uint SpriteDraw, int Experience, int Salary, int Agency,
 	float Happiness, float Motivation, float Energy, int WageShortfall, int WageDemandDay, uint[] DayCounters,
-	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ThemeParkIncStaffWorldSnapshot? World = null );
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ThemeParkIncStaffWorldSnapshot? World = null,
+	int Ability = 0, int LearningAbility = 0, int TrainingProgress = 0, int ChosenAbility = 0, int HqSlot = -1, bool Listed = false, int ResearchRoom = 0, long ResearchStamp = 0 );
 
 /// <summary>
 /// A placed Theme Park Inc staff member's thing as saved: its thing id, state word (+0x1B4), idle stamp (+0x23C), work stamp (+0x5D4), litter target (+0x5D8, a cell word), speed words
@@ -19,7 +20,8 @@ public sealed record ThemeParkIncStaffWorldSnapshot( int ThingId, int State, lon
 /// check, the pool stamp, the opening-pool latch, the next id, the strike records and the last wage demand's day.
 /// </summary>
 public sealed record ThemeParkIncStaffSnapshot( ThemeParkIncHireCandidate?[] Slots, bool[] Placing, ThemeParkIncStaffMemberSnapshot[] Members, bool[] AtParkMaximum,
-	int[] Hired, long PoolStamp, bool OpeningPoolMade, int NextId, ThemeParkIncStaff.StrikeRecord[] Strikes, bool StrikeForced, uint LastWageDemandDay );
+	int[] Hired, long PoolStamp, bool OpeningPoolMade, int NextId, ThemeParkIncStaff.StrikeRecord[] Strikes, bool StrikeForced, uint LastWageDemandDay,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ThemeParkIncStaffHqSnapshot? Hq = null );
 
 /// <summary>
 /// Theme Park Inc's staff economy: the 32-slot hiring pool and the hired members (docs/reverse/TPI-STAFF.md). The pool follows the executable's own routines,
@@ -47,6 +49,8 @@ public sealed class ThemeParkIncStaff
 	}
 
 	public ThemeParkIncStaffSettings Settings => settings;
+	/// <summary>The staff HQ's obstacle slots and trained-staff counts (the HQ thing's strike records are this class's own).</summary>
+	public ThemeParkIncStaffHeadquarters Hq { get; } = new();
 	/// <summary>The pool's slots; null for an empty one.</summary>
 	public IReadOnlyList<ThemeParkIncHireCandidate?> Slots => slots;
 	public IEnumerable<ThemeParkIncHireCandidate> Candidates => slots.OfType<ThemeParkIncHireCandidate>();
@@ -408,8 +412,9 @@ public sealed class ThemeParkIncStaff
 	internal ThemeParkIncStaffSnapshot Capture() => new(
 		(ThemeParkIncHireCandidate?[])slots.Clone(), (bool[])placing.Clone(),
 		members.Select( member => new ThemeParkIncStaffMemberSnapshot( member.Id, member.Role, member.NameIndex, member.SpriteDraw, member.Experience, member.Salary,
-			member.Agency, member.Happiness, member.Motivation, member.Energy, member.WageShortfall, member.WageDemandDay, member.CaptureDayCounters(), member.CaptureWorld() ) ).ToArray(),
-		(bool[])atParkMaximum.Clone(), (int[])hired.Clone(), PoolStamp, openingPoolMade, NextId, (StrikeRecord[])strikes.Clone(), StrikeForced, LastWageDemandDay );
+			member.Agency, member.Happiness, member.Motivation, member.Energy, member.WageShortfall, member.WageDemandDay, member.CaptureDayCounters(), member.CaptureWorld(),
+			member.Ability, member.LearningAbility, member.TrainingProgress, member.ChosenAbility, member.HqSlot, member.Listed, member.ResearchRoom, member.ResearchStamp ) ).ToArray(),
+		(bool[])atParkMaximum.Clone(), (int[])hired.Clone(), PoolStamp, openingPoolMade, NextId, (StrikeRecord[])strikes.Clone(), StrikeForced, LastWageDemandDay, Hq.Capture() );
 
 	/// <summary>Whether a saved staff snapshot can come from this model: the array sizes, known roles, ids below the next id and unique.</summary>
 	internal static bool IsValid( ThemeParkIncStaffSnapshot? state )
@@ -427,7 +432,11 @@ public sealed class ThemeParkIncStaff
 		}
 		return state.Strikes.All( strike => strike != null )
 			&& state.Members.All( member => member != null && Enum.IsDefined( member.Role ) && member.Id >= 1 && member.Id < state.NextId && ids.Add( member.Id )
-				&& member.DayCounters is { Length: 9 } && ThemeParkIncStaffMember.IsValidWorld( member.Role, member.World ) )
+				&& member.DayCounters is { Length: 9 } && ThemeParkIncStaffMember.IsValidWorld( member.Role, member.World )
+				&& member.Ability is >= 0 and < ThemeParkIncCareer.AbilityCount && member.LearningAbility is >= 0 and < ThemeParkIncCareer.AbilityCount
+				&& member.ChosenAbility is >= 0 and < ThemeParkIncCareer.AbilityCount && member.HqSlot is >= -1 and < ThemeParkIncStaffHeadquarters.SlotCount
+				&& member.ResearchRoom is >= 0 and <= ushort.MaxValue && member.ResearchStamp >= 0 )
+			&& state.Hq != null && ThemeParkIncStaffHeadquarters.IsValid( state.Hq )
 			&& state.Members.Where( member => member.World != null ).Select( member => member.World!.ThingId ).Distinct().Count() == state.Members.Count( member => member.World != null );
 	}
 
@@ -450,7 +459,15 @@ public sealed class ThemeParkIncStaff
 				Motivation = saved.Motivation,
 				Energy = saved.Energy,
 				WageShortfall = saved.WageShortfall,
-				WageDemandDay = saved.WageDemandDay
+				WageDemandDay = saved.WageDemandDay,
+				Ability = saved.Ability,
+				LearningAbility = saved.LearningAbility,
+				TrainingProgress = saved.TrainingProgress,
+				ChosenAbility = saved.ChosenAbility,
+				HqSlot = saved.HqSlot,
+				Listed = saved.Listed,
+				ResearchRoom = saved.ResearchRoom,
+				ResearchStamp = saved.ResearchStamp
 			};
 			member.RestoreDayCounters( saved.DayCounters );
 			member.RestoreWorld( saved.World );
@@ -462,6 +479,8 @@ public sealed class ThemeParkIncStaff
 		StrikeForced = state.StrikeForced;
 		LastWageDemandDay = state.LastWageDemandDay;
 		SelectedSlot = -1;
+		// a save from before the staff HQ's slots is refused (ParkSaveFile.ValidateEdition), so every restored snapshot holds the HQ
+		Hq.Restore( state.Hq ?? throw new InvalidDataException( "The Theme Park Inc staff snapshot holds no staff HQ." ) );
 	}
 
 	/// <summary>Whether the slot's candidate is being placed.</summary>

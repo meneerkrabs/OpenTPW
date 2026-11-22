@@ -61,8 +61,8 @@ starts the playable slice below (older links still land here).
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). A start without a world opens the slice's
 [Personnel File start screen](#theme-park-inc-front-end) instead. It is not Theme Park Inc support: there is
-no Theme Park Inc in-game interface or research, and of the native save formats only the player file (`.GMS`, desktop only) is written. Its money, the cleaners, the measurable challenges,
-the career and the mission controller run; nothing it draws has been
+no Theme Park Inc in-game interface, and of the native save formats only the player file (`.GMS`, desktop only) is written. Its money, the cleaners and researchers, staff training, the
+research lab a park file brings, the measurable challenges, the career and the mission controller run (no staff room can be built yet, so neither research nor training starts in play); nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
@@ -146,7 +146,8 @@ for the separate `.tpilayout` format, exact state boundaries and verification li
 
 **Science continuation.** The desktop pause menu can [save and continue a solo Science park](PARK-SAVES.md#experimental-science-continuation-on-desktop) in OpenTPW's own format. This is separate from layout checkpoints and does not resume the original Science prebuilt's simulation state.
 
-**What it leaves out.** No research, no staff apart from cleaners, no challenge whose value OpenTPW cannot measure, and no obstacle mission that can be completed (the
+**What it leaves out.** No staff apart from cleaners and researchers, no research or training in play (the research lab a park file brings and the training are ported, but the research and training
+rooms cannot be built: the Facilities folder is not in the slice's catalogue), no challenge whose value OpenTPW cannot measure, and no obstacle mission that can be completed (the
 money, the career and the mission controller run, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
@@ -252,16 +253,16 @@ fee, the build list shows each object's price and a placed object's refusal (not
 science save's objects register uncharged, like an imported park's; its own economy is not restored. A layout checkpoint saves the layout only: the cash, calendar and
 loans start fresh in the new session, like the guests.
 
-**Staff (handymen only).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner: activating his row puts him in the hand, a click on a path or grass cell drops
+**Staff (handymen and researchers).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner: activating his row puts him in the hand, a click on a path or grass cell drops
 him (the drop's cell tests and its redirect of a drop on an object to the object's entrance, exit or nearest path cell are the executable's, `0x4D4EB0`), and right-click or Esc cancels. A placed handyman runs Theme Park Inc's own state machine (states 0, 1, 0x0F and 0x10:
 idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, shown as notes), and the
-guests drop litter by Theme Park Inc's litter step (`0x614B71`). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen walk with Theme Park World's
+guests drop litter by Theme Park Inc's litter step (`0x614B71`). A Researcher is hired and placed the same way and runs his own states (0 and 1, 25 to his research room, 24 researching). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen walk with Theme Park World's
 walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleaning and the litter bins' fill are unported, so the handymen sweep litter only
-(`[EXT:tpi-no-maintenance-wear]`). No Theme Park Inc object is a rest area, so a tired cleaner finds none, as in the original; strikes in the park, the wage negotiation, training, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11).
+(`[EXT:tpi-no-maintenance-wear]`). No Theme Park Inc object is a rest area, so a tired cleaner finds none, as in the original; strikes in the park, the wage negotiation, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11). Training (states 7 and 8: the walk to the training room, 300 updates, the reward, the cancel when the room goes), the staff HQ's twenty obstacle slots and the research lab of the Science prebuilt, with its panel as text HUD rows, are ported (docs/reverse/TPI-STAFF.md §12), but in play no training can start and no researcher can research yet: the research lab (1404) and the training room (1440) are Facilities, whose folder the slice's catalogue does not load, and the prebuilt Science park has neither room, so neither can be built. A researcher hired now finds no room and idles.
 The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`) and animate as their states ask (stand, walk, sweep).
 
 **What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
-upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); the challenge types OpenTPW cannot measure (see below); an obstacle mission's completion, which needs the research and the staff HQ's slots ([below](#theme-park-inc-missions)); the shares game; Theme Park Inc's
+upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below); an obstacle mission's completion, which needs the research and the staff HQ's slots, neither of which can happen while no staff room can be built ([below](#theme-park-inc-missions)); the shares game; Theme Park Inc's
 weather presentation's sky; the advisor's other messages; the native park save formats (the player file `.GMS` is written on desktop). Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
 
@@ -308,12 +309,13 @@ drains to 1704 at the end of its own flight. The cheats extension's Skip Mission
 [TPI-MISSIONS.md §7](reverse/TPI-MISSIONS.md#7-the-mission-window)) opens with the Objectives key O (key table `0x9A8A14`) or the text HUD's "Current Objective"
 button, which stands in for the native HUD's buttons (`[EXT:tpi-text-hud]`). It shows the mission's title, picture and sender, the briefing page and the details page
 with every exit statistic's requirement and status, the promotion hint, required challenges and golden tickets. Proceed is enabled when the controller's requirements are
-met and runs OnMissionComplete or the remove-obstacle message 0x24. It pauses nothing. The zone-arrival flight's end opens the first briefing one update later, as the original's
+met and runs OnMissionComplete or the remove-obstacle message 0x24 (to the staff HQ and the controller). It pauses nothing. The zone-arrival flight's end opens the first briefing one update later, as the original's
 countdown does (`0x5D0369`).
 
 **Few missions complete in play yet.** A mission without an obstacle completes through Proceed: at once, or at the end of the camera flight to its
-`ObstacleOpened` or `CutsceneObject` thing (message 0x29). An obstacle mission's Proceed posts 0x24, whose flight opens the obstacle, but its requirements also need the
-research (message 0x23) and the staff HQ's obstacle slots, neither of which OpenTPW runs yet. The cheats extension's Skip Mission still runs the completion tick. What does
+`ObstacleOpened` or `CutsceneObject` thing (message 0x29). An obstacle mission's Proceed posts 0x24 (the staff HQ rebuilds its slots, then the controller's flight opens the obstacle); its
+requirements also need the research (message 0x23, the lab's Park Expansion project) and the staff HQ's obstacle slots filled by trained staff. Both are ported, but neither can happen in play yet: the
+research and training rooms cannot be built (the Facilities folder is not in the slice's catalogue), so no project advances and nobody trains, and an obstacle mission's requirements stay unmet. The cheats extension's Skip Mission still runs the completion tick. What does
 not run yet besides: the challenges window (the text HUD's challenge panel stands in for its tab) and the tag tube that would file the "Objective Complete!" letter; the
 letter itself is composed (`ThemeParkIncObjectiveLetter`) but waits in `ParkEconomy.TpiObjectiveLetters`.
 

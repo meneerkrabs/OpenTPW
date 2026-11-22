@@ -49,6 +49,18 @@ public class ThemeParkIncMissionWindowTests
 		public bool ResearchersHired { get; set; }
 		public bool? ObstacleStaffSlotsFilled { get; set; }
 		public string PlayerName { get; set; } = "Player";
+
+		// the economy's PressThemeParkIncMissionComplete (ThemeParkIncMissionMet: a current zone and MetRequirements) without a staff HQ: message 0x24 reaches the controller alone
+		public bool PressComplete()
+		{
+			if ( Missions.Career.CurrentZone == null || !Missions.MetRequirements() )
+				return false;
+			if ( Missions.Career.HasObstacle )
+				Missions.RemoveObstacle( CurrentObstacle );
+			else
+				Missions.OnMissionComplete( Turn );
+			return true;
+		}
 	}
 
 	private static UiStringTable SyntheticStrings()

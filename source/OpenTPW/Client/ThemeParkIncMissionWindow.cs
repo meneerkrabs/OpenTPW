@@ -21,6 +21,8 @@ internal interface IThemeParkIncMissionWindowWorld
 	bool? ObstacleStaffSlotsFilled { get; }
 	/// <summary>The addressee: the player's name (<c>0x777870</c>, the user record's <c>+8</c>).</summary>
 	string PlayerName { get; }
+	/// <summary>Proceed's action (<see cref="ParkEconomy.PressThemeParkIncMissionComplete"/>): message 0x24 to the staff HQ and the controller, or OnMissionComplete; false when the requirements are not met.</summary>
+	bool PressComplete();
 }
 
 /// <summary>What survives the mission window object between openings (the globals at <c>0xA61814</c> and the list pointer <c>0xA61818</c>).</summary>
@@ -194,7 +196,9 @@ internal sealed class ThemeParkIncMissionWindow
 		Label( "obstacleTickets", table.Control( 0xCEC66 ).Rect, () => ObstacleLines.Tickets, slot7, white, wrap: true, visible: () => ObstacleGroupShown );
 		Label( "obstacleStatus", table.Control( 0xCEC67 ).Rect, () => ObstacleLines.Status, slot7, white, wrap: true, visible: () => ObstacleGroupShown );
 		// [BIN:TPI-EXE:0x55D6D0 staff list] the list 0xCEC64's column headers 0x10, 0x11 and 0x12: UITEXT 87, 88 and 89
-		// [EXT:tpi-capability-gates] the rows (0x55E020) are the staff HQ's obstacle slots, which belong to the staff roles OpenTPW does not port: the list has no rows
+		// [EXT:tpi-capability-gates] the rows (0x55E020, which the window calls at 0x55D45A, 0x55D8F4 and 0x55DE83: per slot up to the first of type 7, the staff type's name, the ability's name or
+		// UITEXT 0x72, the member's name or an empty row) are not ported yet, although the HQ's slots now are (ThemeParkIncStaffHeadquarters): the list has no rows. The slot validation 0x55E1F0 is not
+		// the window's: its callers are 0x586893, 0x587113, 0x5873E1 and 0x5874DC, with the per-object table of 0x623EE0
 		var list = table.Control( 0xCEC64 );
 		foreach ( var (column, text) in new[] { (0x10u, StaffTypeHeader), (0x11u, AbilityHeader), (0x12u, EmployeeHeader) } )
 		{
@@ -463,7 +467,7 @@ internal sealed class ThemeParkIncMissionWindow
 	/// <summary>The obstacle group's lines in obstacle state 2 (<c>0x55D1B0</c>).</summary>
 	// [BIN:TPI-EXE:0x55D1B0 obstacle lines] 0xCEC65 = UITEXT 84; 0xCEC66 = with Obstacle.GoldenTickets n != 0: UITEXT 85, " " (0x9BBC54), STAT_TITLES 13 (n == 1) or 14 with n, else ""; 0xCEC67 = UITEXT 86,
 	// "\n", with n != 0 STAT_TITLES 15 with the career's tickets and "\n", then 93 when every one of the 20 slots (0x64E940 +0x14, stride 12) has +0 == 7 or word +8 != 0, else 92
-	// [EXT:tpi-capability-gates] the slots belong to the staff roles OpenTPW does not port: without them no slot is reported filled and the status says 92
+	// the slots are the staff HQ's (IThemeParkIncMissionWindowWorld.ObstacleStaffSlotsFilled, ThemeParkIncStaffHeadquarters.AllFilled); a park without the HQ says 92
 	public (string Heading, string Tickets, string Status) ComposeObstacleLines()
 	{
 		var career = Career;
@@ -514,16 +518,12 @@ internal sealed class ThemeParkIncMissionWindow
 	/// window closes.
 	/// </summary>
 	// [BIN:TPI-EXE:0x55BD79 proceed] 0x55A620 false: nothing; 0x5F0190 (HasObstacle): message 0x24 with the thing park+0x1EAB6E (0x436140, vtable 0x93A3D0) through the dispatcher 0xA09728
-	// (0x436DD0, the controller's handler 0x5F0F96); else 0x64ED00 -> 0x5F0770; then 0x85049F(window, 4), 0x501CD0(0) and the advisor panel 0x1FA (presentation)
+	// (0x436DD0 calls its listeners at once in ascending thing handle order: the staff HQ's rebuild 0x634D20, then the controller's handler 0x5F0F96; ParkEconomy.PressThemeParkIncMissionComplete); else
+	// 0x64ED00 -> 0x5F0770; then 0x85049F(window, 4), 0x501CD0(0) and the advisor panel 0x1FA (presentation)
 	internal void Proceed()
 	{
-		var missions = world.Missions;
-		if ( !missions.MetRequirements() )
+		if ( !world.PressComplete() )
 			return;
-		if ( missions.Career.HasObstacle )
-			missions.RemoveObstacle( world.CurrentObstacle );
-		else
-			missions.OnMissionComplete( world.Turn );
 		Close();
 	}
 

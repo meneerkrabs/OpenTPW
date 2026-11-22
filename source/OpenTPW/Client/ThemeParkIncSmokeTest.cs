@@ -109,6 +109,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 					&& new[] { 1702, 1701, 1703, 1750, 1798 }.All( type => level.Objects.Objects.Any( item => item.Entry.InfoId == type && item.ThingId == prebuilt.Attractions.Single( attraction => attraction.InfoId == type ).Id ) ),
 					"the obstacles and the camera path are things of the world with their saved ids" );
 				Require( level.Guests?.Grid.Cells is { } obstacleCells && obstacleCells.ObstacleFlagAt( 41, 48 ) && obstacleCells.RawTypeAt( 41, 48 ) == 8, "the 1700 gate's footprint is a hole with the obstacle flag" );
+				Require( economy.TpiStaff!.Hq.Slots.Count == ThemeParkIncStaffHeadquarters.SlotCount && economy.TpiStaff.Hq.AllFilled, "the staff HQ keeps the prebuilt's twenty empty-requirement slots" );
+				Require( economy.TpiResearch is { Count: 50, HasControls: true } research && research.Infos.Count > 0 && !research.IsResearched( 1105 )
+					&& Hud.StaffRows().Contains( flow.Strings.Entry( 285 ) ), "the research lab holds the prebuilt's fifty projects, gates the catalogue and has its row in the staff panel" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )

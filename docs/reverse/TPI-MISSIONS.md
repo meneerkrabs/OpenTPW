@@ -65,8 +65,8 @@ takings among the other income, without rows of their own, and a ring with no cl
   rank; an obstacle mission's obstacle removed; tickets at least `Obstacle.GoldenTickets`.
 - **MetRequirements (`0x55A620`).** The career's current zone must be `Completion.EndingTheme` (or `EndingTheme` 3). An obstacle mission (`0x5F0190`: a type and
   `Info.NoResearch` 0) then needs the obstacle state 2, every slot of the staff HQ's 20-entry obstacle table filled, and the tickets; it does not call
-  IsMissionComplete. Any other mission is IsMissionComplete. The staff HQ's slots belong to staff roles OpenTPW does not port, so an obstacle mission's
-  requirements are never met (`[EXT:tpi-capability-gates]`).
+  IsMissionComplete. Any other mission is IsMissionComplete. The staff HQ's slots are `ThemeParkIncStaffHeadquarters` (TPI-STAFF.md §12.1): the mission's
+  `ObstacleStaff` table, filled by trained staff whose ability matches; a park without Theme Park Inc staff has no HQ and never meets an obstacle mission.
 - **Obstacle state (`0x5F01D0`).** 0 without an obstacle (or with `NoResearch`); else 1, or 2 once researched; 3 when the current zone is the ending zone and
   the type's `Obstacle.OpenedAutomaticly` is 1; 4 once removed.
 - **OnMissionComplete (`0x5F0770`).** The mission window's button for a mission without an obstacle. In the wrong zone it logs "Mission is complete but we're in
@@ -87,13 +87,13 @@ The controller's handler `0x5F0F50` ends every message with the 0x27 broadcast.
 | Message | Sender | The controller |
 | --- | --- | --- |
 | 0x23 obstacle researched | the research lab's kind-5 project | `+0x1B = 1`; the next update discovers the obstacle staff's abilities, sets state 1 and flies the camera to the current obstacle (anim 1) |
-| 0x24 remove obstacle | the mission window's or the remove button | state 2, the message's thing, camera (anim 2), career `+0x13E5 = 1` |
+| 0x24 remove obstacle | the mission window's or the remove button | state 2, the message's thing, camera (anim 2), career `+0x13E5 = 1`; the staff HQ, an older thing, hears it first and rebuilds its slots (`0x634D20`) |
 | 0x25 promotion | a challenge win with `PromoGiven`, Get Promoted | `0x74C450(rank)` |
 | 0x26 challenge won | the challenge win | no case: only the broadcast |
 | 0x29 camera finished | the end of every camera flight (`0x5D0996`, the only sender) | state 2 or 3: the thing opens (`0x466050`, `0x5E8BD0`) and the tick runs; state 4: the thing is destroyed and the tick runs; then state and thing 0 |
 
 OpenTPW routes the challenge system's promotion and win, and the Get Promoted cheat, through the controller. The research lab's project (`0x61CBF0`) is
-not registered, because Theme Park Inc's research is not ported (`[EXT:tpi-capability-gates]`); message 0x23 therefore never arrives in play.
+registered at the controller's registration and every message 0x27 (`ThemeParkIncResearch.RegisterObstacle`), and its completion sends message 0x23 (TPI-STAFF.md §12.3).
 
 ## 5. The camera flight
 
@@ -123,7 +123,8 @@ target thing's camera seat 1 while the thing's own script plays its animation:
 OpenTPW ports all of this: `ParkEconomy.TpiCutscene` plays the controller's camera requests and posts 0x29 at the real end, the level gives it its things' scripts and the ride
 view (`RideCameraMode` with its one-frame blend and pointer look), the Theme Park Inc HUD is hidden under the input window and turns Escape and the right button's release into
 the skip, the game flow runs the level at the flight's rate, and the continuation save keeps the thing (`ParkSaveFile.Data.TpiCutscene`). The mission window's complete button is
-`ParkEconomy.PressThemeParkIncMissionComplete` (`0x55BD79`: message 0x24 with the current obstacle for an obstacle mission, else OnMissionComplete); the HUD opens the mission window (§7)
+`ParkEconomy.PressThemeParkIncMissionComplete` (`0x55BD79`: message 0x24 with the current obstacle for an obstacle mission, to the staff HQ and then the controller, else OnMissionComplete), which the
+mission window's Proceed calls; the HUD opens the mission window (§7)
 on each of `ThemeParkIncCutscene.MissionWindowRequests`. Not ported: the fog range and the camera words of the start (`0x6F22F0`, `0xBE2104`; drawing), the HUD control 0x40's saved state,
 the panels other than the request list (`PanelRequests`), the advice classes admitted during a flight (`0x71BDC0`), and the 1750 zone switch, which `ZoneSwitchRequests` records for
 the zone package.
@@ -187,10 +188,12 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   the challenges won (4) and the tickets held (15). In another zone at or above the required rank (also when none is required) it is 86 and 75 with the ending zone's
   name. Integer arguments print with `%d` (`0x8942E0`).
 - **Obstacle state 2 (`0x55D1B0`).** The details page shows the group `0xCEC63`: 84, the tickets line (85 and 13/14), and 86 with the tickets held and 93 or 92 by
-  the staff HQ's 20 slots. The slots and the staff list's rows (`0x55E020`) are not modelled, so it says 92 and the list has only its headers 87 to 89
-  (`[EXT:tpi-capability-gates]`).
+  the staff HQ's 20 slots. The slots are the staff HQ's (`ThemeParkIncStaffHeadquarters`); the staff list's rows (`0x55E020`, which the window calls at
+  `0x55D45A`, `0x55D8F4` and `0x55DE83`) are not ported yet, so the list has only its headers 87 to 89 (`[EXT:tpi-capability-gates]`). The slot validation `0x55E1F0` is not the window's
+  (its callers are `0x586893`, `0x587113`, `0x5873E1` and `0x5874DC`, with the per-object table of `0x623EE0`).
 - **Proceed (`0x55BD79`).** Enabled by each refresh when MetRequirements (`0x55A620`) holds; a click without it does nothing. An obstacle mission posts message 0x24
-  with the current obstacle (`park+0x1EAB6E`), any other runs OnMissionComplete (`0x5F0770`); the window closes. When the requirements are met at opening the builder
+  with the current obstacle (`park+0x1EAB6E`), which the dispatcher `0x436DD0` delivers at once in ascending thing handle order, to the staff HQ (`0x634D20`) and then the controller; any other runs
+  OnMissionComplete (`0x5F0770`); the window closes. OpenTPW's window calls `ParkEconomy.PressThemeParkIncMissionComplete`, which sends 0x24 through `ThemeParkIncObstacleRemoved` to both. When the requirements are met at opening the builder
   also starts a particle burst at the button (`0x500B70` → `0x7BACC0`), which OpenTPW does not draw.
 - **Refresh and lifetime.** Opening arms a 4000 ms timer; its expiry sets `0xA61814`, from which every tick refreshes the window (and a reopened window refreshes at
   once). Only the close and cancel buttons (id −2) clear it. In obstacle state 2 a window opened without the staff list is built again. The builder makes no pause

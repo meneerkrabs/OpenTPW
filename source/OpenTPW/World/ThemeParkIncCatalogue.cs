@@ -8,14 +8,16 @@ public static class ThemeParkIncCatalogue
 {
 	/// <summary>
 	/// Whether the catalogue lists <paramref name="entry"/>: not a special object (<c>Info.IsSpecial</c>) or an add-on, a thinking space (<c>UsageInfo.ThinkingSpace</c> 1) only from
-	/// mission 1, a training room (<c>UsageInfo.TrainingRoom</c>) from mission 2, or in mission 1 once the obstacle research is done.
+	/// mission 1, a training room (<c>UsageInfo.TrainingRoom</c>) from mission 2, or in mission 1 once the obstacle research is done; and only once researched.
 	/// </summary>
-	public static bool IsListed( ObjectCatalogEntry entry, int missionNumber, bool obstacleResearchDone )
+	// [BIN:TPI-EXE:0x57CB66 researched types] then the type's object control (0x5CFCF0) +0x10 == 0 lists it only when the mode word [0xC65B80] is 3 and the type's +0x14C is 3; the career game's mode is
+	// 0, so an unresearched type is not listed (ThemeParkIncResearch.IsResearched, every type in a park without a seeded lab)
+	public static bool IsListed( ObjectCatalogEntry entry, int missionNumber, bool obstacleResearchDone, bool researched = true )
 	{
 		ArgumentNullException.ThrowIfNull( entry );
 		var settings = entry.Settings;
 		return IsListed( settings.GetInt( "Info.IsSpecial" ), settings.GetInt( "AddOn.UpgradesId" ), settings.GetInt( "AddOn.UpgradesAnyRide" ),
-			settings.GetInt( "UsageInfo.ThinkingSpace" ), settings.GetInt( "UsageInfo.TrainingRoom" ), missionNumber, obstacleResearchDone );
+			settings.GetInt( "UsageInfo.ThinkingSpace" ), settings.GetInt( "UsageInfo.TrainingRoom" ), missionNumber, obstacleResearchDone ) && researched;
 	}
 
 	/// <summary><see cref="IsListed(ObjectCatalogEntry, int, bool)"/> on the type record's words.</summary>

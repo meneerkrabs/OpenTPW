@@ -4,7 +4,8 @@ namespace OpenTPW;
 /// Theme Park Inc's staff in the park (docs/reverse/TPI-STAFF.md §11): the placed members' things and their state machines, beside Theme Park World's
 /// <see cref="StaffWorldSimulation"/>, which it does not touch. The handyman runs Theme Park Inc's own states 0 (idle), 1 (walk), 0x0F (to litter) and 0x10 (sweep) with its
 /// meters, day counters and search, and the training states 7 and 8; the mechanic runs 0, 1, 21 (to the ride) and 22 (repair) with the ride wear of ParkEconomy.UpdateThemeParkIncRide; the
-/// researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
+/// researcher runs his states 0, 1, 24 (researching) and 25 (to his research room); the gardener runs 0, 1, 0x1F (to the plant) and 0x20 (watering) with the training states and the plants of
+/// ParkEconomy.UpdateThemeParkIncPlant (ThemeParkIncStaffWorld.Gardeners); the other roles are refused at the hire (<c>[EXT:tpi-capability-gates]</c>).
 /// </summary>
 /// <remarks>
 /// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
@@ -73,11 +74,12 @@ public sealed partial class ThemeParkIncStaffWorld
 	public static int VariantOf( ThemeParkIncStaffMember member, IStaffSpriteBanks? banks ) =>
 		banks?.BankCount( SpriteTypeOf( member ) ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
 
-	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (category 0xA) or the researchers' (category 0xC, <c>0x6902F0(0xC)</c>).</summary>
+	/// <summary>The sprite bank family of a member's role: the handymen's (category 9), the mechanics' (category 0xA), the researchers' (category 0xC, <c>0x6902F0(0xC)</c>) or the gardeners' (category 0x12, <c>Generic\Gardeners</c>).</summary>
 	internal static StaffType SpriteTypeOf( ThemeParkIncStaffMember member ) => member.Role switch
 	{
 		ThemeParkIncStaffRole.Researcher => StaffType.Researcher,
 		ThemeParkIncStaffRole.Mechanic => StaffType.Mechanic,
+		ThemeParkIncStaffRole.Gardener => StaffSpriteRules.ThemeParkIncGardener,
 		_ => StaffType.Handyman
 	};
 
@@ -334,7 +336,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		ArgumentNullException.ThrowIfNull( economy );
 		ArgumentNullException.ThrowIfNull( member );
 		if ( !ThemeParkIncStaffMember.IsPlacedRole( member.Role ) )
-			throw new InvalidOperationException( "Only Theme Park Inc handymen, mechanics and researchers are ported to the park ([EXT:tpi-capability-gates])." );
+			throw new InvalidOperationException( "Only Theme Park Inc handymen, mechanics, researchers and gardeners are ported to the park ([EXT:tpi-capability-gates])." );
 		if ( economy.TpiStaff is not { } staff )
 			throw new InvalidOperationException( "The park has no Theme Park Inc staff." );
 		var settings = staff.Settings;
@@ -356,6 +358,9 @@ public sealed partial class ThemeParkIncStaffWorld
 		member.LitterCell = 0;
 		member.RideId = 0;
 		member.JobTimer = 0;
+		// [BIN:TPI-EXE:0x5D22A3 gardener start] +0x5D0 = 0 and the gardener list's head (0x64F510), +0x5D8 and +0x5D4 = 0, template 3 on the sprite source (0x5D1000 with the category 0x12), the removal
+		// message 10 subscribed (0x436AC0), then the search 0x5D28C0 with no setter before it; the list (world +0x1EAB7E through +0x5D0, newest first) is the members' gardeners in their order
+		member.PlantId = 0;
 		member.Template = IdleTemplate;
 		member.DrawX = navigation.X / (float)Fixed16.One;
 		member.DrawY = navigation.Y / (float)Fixed16.One;
@@ -453,6 +458,13 @@ public sealed partial class ThemeParkIncStaffWorld
 			CommonPreUpdate( member );
 			DispatchMechanic( economy, staff.Settings, member, turn );
 		}
+		else if ( member.Role == ThemeParkIncStaffRole.Gardener )
+		{
+			// [BIN:TPI-EXE:0x63763E gardener update] kind 0x14: the pre-update 0x5D2820 (the common 0x628050, then the search period), then the dispatch 0x5D2A60
+			CommonPreUpdate( member );
+			PreUpdateGardener( economy, staff.Settings, member, turn );
+			DispatchGardener( economy, staff.Settings, member, turn );
+		}
 		else
 		{
 			PreUpdate( economy, staff.Settings, member, turn );
@@ -499,7 +511,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		member.CountTick( (ThemeParkIncStaffMember.DisplayState)DisplayCategory( member ) );
 	}
 
-	/// <summary>The handyman's pre-update: the common part (speed, day counter), then, while idle, a litter scan every search period.</summary>
+	/// <summary>The handyman's pre-update: the common part (speed, day counter), then, while idle, a litter scan every search period; the mechanic's is the common part alone.</summary>
 	// [BIN:TPI-EXE:0x5D5000 handyman pre-update] 0x628050; p = trunc((1.0 - exp / MaxExperience) * 50.0f) (fildll of the unsigned experience, fidivl, fsubr 0x93B858, fmuls 0x93B89C, ftol);
 	// a period of 0 or turn % p == 0 (unsigned) with the state 0: the radius lerp(exp, 0, MaxExperience, Handyman.MinDetectionRange, MaxDetectionRange), the litter finder 0x5B1B50 around the
 	// member's cell, and a find runs the search 0x5D52A0; then 0x6388F0 on +0x44 (the thought's lapse, presentation)
@@ -675,11 +687,13 @@ public sealed partial class ThemeParkIncStaffWorld
 		SetState( economy, member, Patrol( economy, member ) ? Walking : Idle, turn );
 	}
 
-	/// <summary>The role's search: the handyman's 0x5D52A0 or the mechanic's 0x5DA3D0.</summary>
+	/// <summary>The role's search: the handyman's 0x5D52A0, the mechanic's 0x5DA3D0 or the gardener's 0x5D28C0.</summary>
 	internal void Search( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		if ( member.Role == ThemeParkIncStaffRole.Mechanic )
 			SearchMechanic( economy, member, turn );
+		else if ( member.Role == ThemeParkIncStaffRole.Gardener )
+			SearchGardener( economy, member, turn );
 		else
 			SearchHandyman( economy, member, turn );
 	}
@@ -735,7 +749,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>Looking for work (0x62D810): the role's search, then a member with low motivation who is now working stops again.</summary>
-	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0; then a motivation byte below MotivationPercentToStrike / 2 (cltd, sub, sar: toward zero) with the display state 2 or 7 looks for a
+	// [BIN:TPI-EXE:0x62D810 look for work] kind 5 runs 0x5D52A0, kind 4 0x5DA3D0, kind 0x14 0x5D28C0 (the byte table 0x62D974's index 16: 0x62D844); then a motivation byte below MotivationPercentToStrike / 2 (cltd, sub, sar: toward zero) with the display state 2 or 7 looks for a
 	// rest area (0x62BA20: none) and sets 0 (0x628180(0) at 0x62D94D)
 	private void LookForWork( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
@@ -757,6 +771,11 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( member.Role == ThemeParkIncStaffRole.Mechanic && state is ToRide or Repairing )
 		{
 			SetMechanicState( economy, member, state );
+			return;
+		}
+		if ( member.Role == ThemeParkIncStaffRole.Gardener && state is ToPlant or Watering )
+		{
+			SetGardenerState( member, state, turn );
 			return;
 		}
 		switch ( state )

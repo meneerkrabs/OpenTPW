@@ -257,6 +257,8 @@ public sealed class ThemeParkIncStaffMember
 	public int RideId { get; internal set; }
 	/// <summary>A mechanic's job timer (+0x5D4): the updates of work left on the ride, counted down to 0 (ThemeParkIncStaffWorld).</summary>
 	public long JobTimer { get; internal set; }
+	/// <summary>A gardener's plant (+0x5D8, <c>mPlantToWater</c>, the thing the chooser found) as the plant's economy instance id; 0 for none. His work stamp is <see cref="WorkStamp"/> (+0x5D4).</summary>
+	public int PlantId { get; internal set; }
 	/// <summary>The base speed word (+0xD4).</summary>
 	public int BaseSpeed { get; internal set; }
 	/// <summary>The speed bonus word (+0xD6): 25 on the walk to a job, else 0.</summary>
@@ -295,41 +297,53 @@ public sealed class ThemeParkIncStaffMember
 	public StaffSpriteState Sprite { get; } = new();
 
 	/// <summary>The member's thing for a save; null before it is placed.</summary>
-	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld() => Navigation is not { } navigation ? null : Role == ThemeParkIncStaffRole.Mechanic
-		? new( ThingId, State, IdleStamp, 0, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template,
-			ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, RideId, JobTimer )
-		: new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost,
-		SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial );
+	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld() => Navigation is not { } navigation ? null : Role switch
+	{
+		ThemeParkIncStaffRole.Mechanic => new( ThingId, State, IdleStamp, 0, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 },
+			Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, RideId, JobTimer ),
+		ThemeParkIncStaffRole.Gardener => new( ThingId, State, IdleStamp, WorkStamp, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 },
+			Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, PlantId: PlantId ),
+		_ => new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template,
+			ParkSaveFile.NavigationData.Capture( navigation ), CellSerial )
+	};
 
-	/// <summary>The roles <see cref="ThemeParkIncStaffWorld"/> places in the park: the handyman, the mechanic and the researcher.</summary>
-	public static bool IsPlacedRole( ThemeParkIncStaffRole role ) => role is ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher;
+	/// <summary>The roles <see cref="ThemeParkIncStaffWorld"/> places in the park: the handyman, the mechanic, the researcher and the gardener.</summary>
+	public static bool IsPlacedRole( ThemeParkIncStaffRole role ) => role is ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher
+		or ThemeParkIncStaffRole.Gardener;
 
 	/// <summary>
-	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10 and a mechanic's 0, 1, 21 and 22, each with the training states 7, 8, 0x25 and 0x26
-	/// (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25.
+	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10, a mechanic's 0, 1, 21 and 22 and a gardener's 0, 1, 0x1F and 0x20, each with the training
+	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25.
 	/// </summary>
 	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
-		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 or ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended
-			or ThemeParkIncTraining.ToTrainingRoomSuspended,
-		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing or ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training
-			or ThemeParkIncTraining.TrainingSuspended or ThemeParkIncTraining.ToTrainingRoomSuspended,
+		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 || IsTrainingState( state ),
+		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing || IsTrainingState( state ),
+		ThemeParkIncStaffRole.Gardener => state is 0 or 1 or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Researcher => state is 0 or 1 or ThemeParkIncResearch.Researching or ThemeParkIncStaffWorld.ToResearchRoom,
 		_ => false
 	};
 
+	/// <summary>The training states a member of a trainable role runs (to the room, training and their suspended forms).</summary>
+	private static bool IsTrainingState( int state ) => state is ThemeParkIncTraining.ToTrainingRoom or ThemeParkIncTraining.Training or ThemeParkIncTraining.TrainingSuspended
+		or ThemeParkIncTraining.ToTrainingRoomSuspended;
+
 	/// <summary>
-	/// Whether a saved thing can be this model's: a ported state, a thing id of the pool, a cell word of the map, a valid walk; a mechanic's ride and job timer, a handyman's litter target and
-	/// work stamp, each only on its own role, and the whole map as the patrol rectangle for a mechanic (no patrol area is set in the park, so his area test is the whole-map answer).
+	/// Whether a saved thing can be this model's: a ported state, a thing id of the pool, a cell word of the map, a valid walk; a mechanic's ride and job timer, a gardener's plant, a handyman's
+	/// litter target, each only on its own role, and the whole map as the patrol rectangle for a mechanic and a gardener (no patrol area is set in the park, so their area test is the whole-map answer).
 	/// </summary>
 	internal static bool IsValidWorld( ThemeParkIncStaffRole role, ThemeParkIncStaffWorldSnapshot? world ) => world == null || IsPortedState( role, world.State )
 		&& world.ThingId is >= 1 and <= ThingPool.Capacity && world.LitterCell is >= 0 and <= ParkLitter.MapSize * ParkLitter.MapSize && world.BaseSpeed is >= 0 and <= ushort.MaxValue
 		&& world.SpeedBonus is >= 0 and <= ushort.MaxValue && world.Boost is >= 0 and <= ushort.MaxValue && float.IsFinite( world.SmoothedSpeed ) && world.IdleStamp >= 0 && world.WorkStamp >= 0
 		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && world.CellSerial >= 0 && world.Navigation is { IsValid: true }
-		&& (role == ThemeParkIncStaffRole.Mechanic
-			? world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 3 or 0xF or 0x1A
-				&& area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1]
-			: world.RideId == null && world.JobTimer == null && world.Template is 1 or 2 or 3 or 0xF or 0x19);
+		&& role switch
+		{
+			ThemeParkIncStaffRole.Mechanic => world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0
+				&& world.Template is 1 or 3 or 0xF or 0x1A && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
+			ThemeParkIncStaffRole.Gardener => world.PlantId is >= 0 && world.RideId == null && world.JobTimer == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or 0x19
+				&& area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
+			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.Template is 1 or 2 or 3 or 0xF or 0x19
+		};
 
 	/// <summary>Restores the saved thing (a valid one, <see cref="IsValidWorld"/>), or leaves the member unplaced.</summary>
 	internal void RestoreWorld( ThemeParkIncStaffWorldSnapshot? world )
@@ -343,6 +357,7 @@ public sealed class ThemeParkIncStaffMember
 		LitterCell = world.LitterCell;
 		RideId = world.RideId ?? 0;
 		JobTimer = world.JobTimer ?? 0;
+		PlantId = world.PlantId ?? 0;
 		BaseSpeed = world.BaseSpeed;
 		SpeedBonus = world.SpeedBonus;
 		Boost = (ushort)world.Boost;

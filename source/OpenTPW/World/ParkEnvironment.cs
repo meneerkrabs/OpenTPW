@@ -14,12 +14,18 @@ public readonly record struct RegionEffect( int Radius, short Happiness, short I
 	public const int DirtyToilet = 6;
 	public const int Fireworks = 7;
 
-	/// <summary>The table from the balance settings (rows the file lacks spread nothing).</summary>
+	/// <summary>
+	/// The rows of Theme Park Inc's table: the eight above, then 8 and 9 (a clean and a dirty bin, 0x5E31B0), 10 to 13 (a plant in conditions 0 to 3, 0x5E4CB0) and 14 (0x5DB6A5).
+	/// </summary>
+	// [BIN:TPI-EXE:0x996684 Standard schema] the record "3,RegionFX,0,0,15": an array of 15 rows of the five words and the radius (ThemeParkIncStandard.Schema)
+	public const int ThemeParkIncCount = 15;
+
+	/// <summary>The table from the balance settings (rows the file lacks spread nothing): <paramref name="rows"/> rows, <see cref="Count"/> for Theme Park World, <see cref="ThemeParkIncCount"/> for Theme Park Inc.</summary>
 	// [DATA:levels/Standard.sam:RegionFX[0..7].Radius/Happiness/Illness/Hunger/Security/Attraction] the effect table the writer reads at cell manager +0x1D9104 + 12 × index (five words, the radius byte at +10; tp.exe 0x004D8480, the Mac 0xd73a0)
-	public static RegionEffect[] Load( SamSettings settings )
+	public static RegionEffect[] Load( SamSettings settings, int rows = Count )
 	{
-		var table = new RegionEffect[Count];
-		for ( var index = 0; index < Count; index++ )
+		var table = new RegionEffect[rows];
+		for ( var index = 0; index < rows; index++ )
 		{
 			short Word( string key ) => unchecked( (short)settings.GetInt( $"RegionFX[{index}].{key}", 0, optional: true ) );
 			table[index] = new RegionEffect( settings.GetInt( $"RegionFX[{index}].Radius", 0, optional: true ) & 0xFF, Word( "Happiness" ), Word( "Illness" ),

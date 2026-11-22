@@ -4,9 +4,9 @@ public partial class Level
 {
 	/// <summary>
 	/// The park's one thing pool (tp.exe 0x00516270): the guests, the staff, the placed objects, the vehicles and the world's own singletons take their thing ids from it, in the order the park builds
-	/// them, and a destroyed thing's id is taken again by the next (docs/GUESTS.md, "Thing ids").
+	/// them, and a destroyed thing's id is taken again by the next (docs/GUESTS.md, "Thing ids"). A Theme Park Inc park's pool also takes the gardener's model (ThingPool.ThemeParkInc).
 	/// </summary>
-	public ThingPool Things => things ??= new();
+	public ThingPool Things => things ??= new() { ThemeParkInc = GameEditions.IsThemeParkInc };
 
 	private ThingPool? things;
 

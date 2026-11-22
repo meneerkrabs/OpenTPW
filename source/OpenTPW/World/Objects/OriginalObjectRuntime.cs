@@ -86,16 +86,17 @@ public sealed partial class OriginalObjectRuntime
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
 		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem, holdsLastFrameAtClipEnd: ObjectAnimations.HasOnlyBaseClips( entry.Animations ) );
 		effects = new OriginalObjectEffects( this );
-		if ( entry.ScriptPath != null )
+		var (scriptFiles, scriptPath) = ScriptOf( entry );
+		if ( scriptPath != null )
 		{
-			using var stream = entry.FileSystem.OpenRead( entry.ScriptPath );
+			using var stream = scriptFiles.OpenRead( scriptPath );
 			using ( LoadProfile.Measure( "object-script" ) )
 				Script = new RideVM( stream, new RideVMOptions
 				{
 					Effects = effects,
 					World = world,
 					Seed = seed,
-					SourceName = entry.ScriptPath,
+					SourceName = scriptPath,
 					ResolveScript = ResolveChildScript
 				} );
 			// Upgrade level 0 values from the .sam layers.
@@ -330,6 +331,26 @@ public sealed partial class OriginalObjectRuntime
 		if ( modelCall )
 			Hoarding.SetState( ObjectHoardingState.CloseMode );
 	}
+
+	/// <summary>
+	/// The script an object runs: its own archive's, or in Theme Park Inc for a type with <c>UsageInfo.RequiresWatering</c> (a plant) the shared <c>data\levels\vegetation.rse</c> of the game's files,
+	/// whatever its archive holds. Null without a script (a plant of a game folder without the file runs none, as the original's load fails).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DE61A plant script] the thing's script loader 0x5DE610 tests +0x43 bit 0x10 (the type's +0x1AC, RequiresWatering, 0x5DB654) first: "data\levels\vegetation%s" with ".rse"
+	// (0x9CEE9C, 0x93E368) replaces the type's own script path (0x43C780 on the type id +0x16); Theme Park World's loader has no such flag
+	internal static (BaseFileSystem Files, string? Path) ScriptOf( ObjectCatalogEntry entry )
+	{
+		if ( !GameEditions.IsThemeParkInc || !entry.Settings.GetBool( "UsageInfo.RequiresWatering" ) )
+			return (entry.FileSystem, entry.ScriptPath);
+		var files = FileSystem;
+		var path = files.DirectoryExists( "/levels" )
+			? files.GetFiles( "/levels" ).FirstOrDefault( file => string.Equals( Path.GetFileName( file ), VegetationScript, StringComparison.OrdinalIgnoreCase ) )
+			: null;
+		return (files, path);
+	}
+
+	/// <summary>The plants' shared script in the game's <c>levels</c> folder.</summary>
+	public const string VegetationScript = "vegetation.rse";
 
 	/// <summary>A common variable by name (scripts declare different subsets); 0 when the script has none.</summary>
 	public int GetVariable( RideVariables variable )

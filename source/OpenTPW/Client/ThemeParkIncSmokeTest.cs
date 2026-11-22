@@ -112,6 +112,18 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 				Require( economy.TpiStaff!.Hq.Slots.Count == ThemeParkIncStaffHeadquarters.SlotCount && economy.TpiStaff.Hq.AllFilled, "the staff HQ keeps the prebuilt's twenty empty-requirement slots" );
 				Require( economy.TpiResearch is { Count: 50, HasControls: true } research && research.Infos.Count > 0 && !research.IsResearched( 1105 )
 					&& Hud.StaffRows().Contains( flow.Strings.Entry( 285 ) ), "the research lab holds the prebuilt's fifty projects, gates the catalogue and has its row in the staff panel" );
+				// the import, the economy links and Level.SeedThemeParkIncObjectList: the mechanics' object list is the saved chain (FirstObject along mNext), an object with an economy record as
+				// its record and any other thing as its negated thing id
+				var chain = new List<int>();
+				for ( int thing = prebuilt.Variables.FirstObject; thing != 0 && chain.Count <= prebuilt.Attractions.Count; thing = prebuilt.FindAttraction( thing )!.Next )
+					chain.Add( thing );
+				var listed = economy.ThemeParkIncObjectList.Select( key => key < 0 ? -key : level.Objects.Objects.FirstOrDefault( item => level.GetEconomyInstance( item ) == key ) is { } item
+					? level.Objects.SavedThemeParkIncThingOf( item ) : 0 ).ToList();
+				Require( listed.SequenceEqual( chain ) && chain.Count == 24 && economy.ThemeParkIncObjectList.Count( key => key < 0 ) == 7,
+					$"the mechanics' object list is the saved chain with the seven things without an economy record ({string.Join( ",", economy.ThemeParkIncObjectList )})" );
+				// the tool entry 1710 (thing 26) is not rebuilt, and its slot is held as the original keeps the thing (Level.SeedThemeParkIncObjectList)
+				Require( level.Objects.Objects.All( item => item.ThingId != 26 ) && level.Things.IsHeld( 26 ) && level.Things.ModelOf( 26 ) == SaveThingModel.Attraction,
+					"the prebuilt's unbuilt thing 26 holds its attraction slot" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )
@@ -291,6 +303,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Wait( "tools down", 2 );
 		Do( "the tools are away", () => Require( !Level.IsRemovingObjects && !Level.CellTool.IsActive, "Cancel puts the remove tool away" ) );
 		PlanHandyman();
+		PlanMechanic();
 		if ( flow.Level?.LevelName == "science" )
 			PlanChallenges();
 		Do( "round-trip Science state", () =>
@@ -700,6 +713,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	}
 
 	private ThemeParkIncStaffMember? hiredHandyman;
+	private ThemeParkIncStaffMember? hiredMechanic;
 	private long handymanDropTurn;
 	private int staffRow;
 
@@ -801,6 +815,40 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( float.IsFinite( member.Energy ) && member.Energy <= 100f, "with his meters" );
 			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Handyman ) > 0, "the cleaner's sprite source shows a frame of the handymen's bank" );
 			Log.Trace( $"Theme Park Inc slice smoke: cleaner {member.ThingId} in state {member.State:X} at {member.Navigation!.Cell}, energy {member.Energy}, last update turn {member.LastUpdateTurn}, walk original {member.Navigation.Original} arrived {member.Navigation.Arrived} target ({member.Navigation.TargetX >> 16}, {member.Navigation.TargetY >> 16}) links {Level.Guests!.Grid.Cells.LinksAt( member.Navigation.Cell.X, member.Navigation.Cell.Y ):X}; {Level.Park!.Economy.Litter.Count} litter item(s) in the park." );
+		} );
+	}
+
+	/// <summary>
+	/// A mechanic hired from the pool (when the pool holds one) and dropped beside the cleaner: the park's turns update him in a mechanic state, his sprite shows a frame of the mechanics'
+	/// bank, and the rides go on wearing by Theme Park Inc's rules (the continuation check later covers him and the gauges).
+	/// </summary>
+	private void PlanMechanic()
+	{
+		Do( "hire a mechanic and drop him beside the cleaner", () =>
+		{
+			var staff = Level.Park!.Economy.TpiStaff!;
+			var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).FirstOrDefault( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Mechanic, -1 );
+			if ( slot < 0 )
+			{
+				Log.Trace( "Theme Park Inc slice smoke: the pool holds no mechanic; the mechanic step is skipped." );
+				return;
+			}
+			Require( Level.BeginTpiHire( slot ) == null && Level.TpiPlacingSlot == slot, "a mechanic's hire starts" );
+			var cell = hiredHandyman!.Navigation!.Cell;
+			hiredMechanic = Level.DropTpiStaff( cell.X, cell.Y );
+			Require( hiredMechanic is { Role: ThemeParkIncStaffRole.Mechanic, Placed: true } && Level.Things.ModelOf( hiredMechanic.ThingId ) == SaveThingModel.Mechanic,
+				"the drop makes the mechanic and his thing" );
+		} );
+		Wait( "the mechanic works", 60 );
+		Do( "the mechanic is updated by the park's turns", () =>
+		{
+			if ( hiredMechanic is not { } member )
+				return;
+			Require( member.LastUpdateTurn > handymanDropTurn, "the thing sweep updated the mechanic" );
+			Require( member.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing, "in a mechanic state" );
+			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Mechanic ) > 0, "the mechanic's sprite source shows a frame of the mechanics' bank" );
+			var rides = Level.Park!.Economy.Objects.Where( item => item.Kind == ParkObjectKind.Ride ).ToList();
+			Log.Trace( $"Theme Park Inc slice smoke: mechanic {member.ThingId} in state {member.State} with ride {member.RideId}; ride repair {string.Join( ", ", rides.Select( item => $"{item.InfoId}:{item.Repair:0.##}/{item.LifeGauge:0.##}" ) )}." );
 		} );
 	}
 

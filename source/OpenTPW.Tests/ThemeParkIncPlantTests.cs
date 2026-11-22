@@ -100,19 +100,19 @@ public class ThemeParkIncPlantTests
 		var variables = Variables();
 		var (economy, plant) = Economy( variables );
 		economy.PlaceObjectEffects( plant.Id, (20, 20) );
-		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		economy.UpdateThemeParkIncPlant( plant );
 		Assert.AreEqual( 99.0, plant.Repair );
 		Assert.AreEqual( (short)3, economy.Litter.Environment.At( 20, 20 ).Happiness, "condition unchanged: row 10 stays" );
 		variables[ParkEconomy.PlantCondition] = 2;
-		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		economy.UpdateThemeParkIncPlant( plant );
 		Assert.AreEqual( (2, 33.0), (variables[ParkEconomy.PlantOldState], plant.Repair) );
 		Assert.AreEqual( ((short)0, (short)0), (economy.Litter.Environment.At( 20, 20 ).Happiness, economy.Litter.Environment.At( 20, 20 ).Illness), "row 12 is all zero" );
 		variables[ParkEconomy.PlantCondition] = 3;
-		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		economy.UpdateThemeParkIncPlant( plant );
 		Assert.AreEqual( ((short)-1, (short)1, 0.0), (economy.Litter.Environment.At( 20, 20 ).Happiness, economy.Litter.Environment.At( 20, 20 ).Illness, plant.Repair) );
 		// a condition outside 0..3 moves no row in (the tables 0x5E5044 and 0x5E5054 end at 3) but is still noted
 		variables[ParkEconomy.PlantCondition] = 7;
-		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		economy.UpdateThemeParkIncPlant( plant );
 		Assert.AreEqual( (7, (short)0), (variables[ParkEconomy.PlantOldState], economy.Litter.Environment.At( 20, 20 ).Happiness) );
 		Assert.AreEqual( (float)(-4 * 33), (float)plant.Repair );
 	}
@@ -127,10 +127,10 @@ public class ThemeParkIncPlantTests
 		var variables = Variables( scale: 1999 );
 		var (economy, plant) = Economy( variables );
 		Assert.AreEqual( withers, economy.Settings.ThemeParkIncWithers, "Standard.sam's Vegetation.*Wither, heatwave first as at 0xA029A4" );
-		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		economy.UpdateThemeParkIncPlant( plant );
 		Assert.AreEqual( 1999, variables[ParkEconomy.PlantScale], "1999 / 1000 is 1: equal to the clear sky's 1.0, so no write" );
 		variables[ParkEconomy.PlantScale] = -999;
-		economy.UpdateThemeParkIncPlant( plant, (20, 20) );
+		economy.UpdateThemeParkIncPlant( plant );
 		Assert.AreEqual( 1000, variables[ParkEconomy.PlantScale], "-999 / 1000 is 0 toward zero: written" );
 	}
 

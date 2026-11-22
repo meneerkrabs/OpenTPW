@@ -5,9 +5,6 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>The researcher's walk to his research room (state 25); state 24 is <see cref="ThemeParkIncResearch.Researching"/>.</summary>
 	public const int ToResearchRoom = 25;
 
-	/// <summary>The thing model of a role's staff thing (the load cases 5 handyman, 8 researcher).</summary>
-	internal static SaveThingModel ThingModelOf( ThemeParkIncStaffRole role ) => role == ThemeParkIncStaffRole.Researcher ? SaveThingModel.Researcher : SaveThingModel.Handyman;
-
 	/// <summary>
 	/// The display category of a member (<c>0x62B010</c>): <see cref="Category"/>, except that a researcher in a research state counts researching only while listed in a lab team (+0x274), else idle.
 	/// </summary>

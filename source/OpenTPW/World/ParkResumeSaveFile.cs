@@ -851,10 +851,10 @@ internal static class ParkResumeSaveFile
 			Names( record!.ThingId, SaveThingModel.Attraction, record.X, record.Y );
 		foreach ( var member in members )
 			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), member.Id );
-		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: only the handyman is placed)
+		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: the handyman and the mechanic are placed)
 		foreach ( var member in snapshot.Economy!.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>() )
 			if ( member?.World is { } world )
-				Names( world.ThingId, SaveThingModel.Handyman, member.Id );
+				Names( world.ThingId, ThemeParkIncStaffMember.IsPlacedRole( member.Role ) ? ThemeParkIncStaffWorld.ThingModelOf( member.Role ) : SaveThingModel.Handyman, member.Id );
 		if ( snapshot.Guests!.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
 			foreach ( var guest in snapshot.Guests.Guests! )
 				Names( guest!.Id, SaveThingModel.Guest, guest.Id );
@@ -864,6 +864,29 @@ internal static class ParkResumeSaveFile
 		RequireThing( !named.Overlaps( placeholders ), "a placeholder slot of the thing pool is named by a thing" );
 		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) && !pending.Contains( slot.Id ) && !placeholders.Contains( slot.Id ) );
 		RequireThing( held == named.Count || snapshot.Guests.SchemaVersion < GuestSimulationSnapshot.ThingPoolSchemaVersion, "the thing pool holds a guest, attraction or staff slot no thing names" );
+		if ( snapshot.Economy.TpiObjectList is { } list
+			&& ThemeParkIncObjectListProblem( list, objects.Select( record => (record!.ThingId, record.AttractionId) ), snapshot.EconomyBindings.Select( binding => binding!.AttractionId ),
+				placeholders.Where( id => models.GetValueOrDefault( id ) == SaveThingModel.Attraction ) ) is { } problem )
+			RequireThing( false, problem );
+	}
+
+	/// <summary>
+	/// Theme Park Inc's object list against the world it was saved with (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): each negated thing id is a placed object no economy binding names, or a
+	/// held attraction slot (a saved thing OpenTPW does not rebuild), and every placed object without a binding is on the list. Null when it agrees, else the problem.
+	/// </summary>
+	internal static string? ThemeParkIncObjectListProblem( IReadOnlyList<int> list, IEnumerable<(int ThingId, int AttractionId)> objects, IEnumerable<int> boundAttractions, IEnumerable<int> heldAttractions )
+	{
+		var bound = boundAttractions.ToHashSet();
+		var unbound = objects.Where( item => !bound.Contains( item.AttractionId ) ).Select( item => item.ThingId ).ToHashSet();
+		var held = heldAttractions.ToHashSet();
+		var negated = list.Where( key => key < 0 ).Select( key => -key ).ToHashSet();
+		foreach ( var thing in negated.Order() )
+			if ( !unbound.Contains( thing ) && !held.Contains( thing ) )
+				return $"the Theme Park Inc object list names thing {thing}, which is no placed object without an economy record and no held attraction slot";
+		foreach ( var thing in unbound.Order() )
+			if ( !negated.Contains( thing ) )
+				return $"the placed object of thing {thing} has no economy record and is not on the Theme Park Inc object list";
+		return null;
 	}
 
 	private static void ValidateGuests( ParkResumeSnapshot snapshot )

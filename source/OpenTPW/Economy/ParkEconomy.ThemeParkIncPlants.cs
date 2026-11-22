@@ -38,7 +38,8 @@ public sealed partial class ParkEconomy
 
 	/// <summary>
 	/// A plant's state-3 update (<c>0x5E4CB0</c>, the object's thing update after <c>0x5E4790</c>): the weather's wither rate goes into <c>VAR_SCALE</c> when the script's scale (in thousandths) differs
-	/// from it; <c>+0x54</c> takes the condition's gauge; a changed condition is noted in <c>VAR_OLDSTATE</c> and the plant's RegionFX row follows it on <paramref name="cell"/>, the plant's thing cell.
+	/// from it; <c>+0x54</c> takes the condition's gauge; a changed condition is noted in <c>VAR_OLDSTATE</c> and the plant's RegionFX row follows it on its thing cell (the cell the level put its
+	/// row on, <see cref="ParkObjectState.EffectCell"/>; a headless plant without one moves no row).
 	/// </summary>
 	// [BIN:TPI-EXE:0x5E4CB0 object state dispatch] the switch on the state word +0xA0: 0 the ride update 0x5E5960, 3 the plant block 0x5E4CDE, 1, 2 and 4 0x5E4F99; the plant block needs the flag
 	// +0x43 bit 0x10 (else it returns). s = VAR_SCALE (variable 14) / 1000 (imul 0x10624DD3, sar 6, the sign bit added: toward zero) as a float; the weather thing (0x64EB80: the world word +0x1EAB58)
@@ -47,7 +48,7 @@ public sealed partial class ParkEconomy
 	// (0x5E4DB1..0x5E4DD4, every update); c unequal to o writes VAR_OLDSTATE = c, takes row 10 + o off the thing's cell for o in 0..3 (0x5D74D0, the table 0x5E5044) and puts row 10 + c on it for c in
 	// 0..3 (0x5D74A0, the table 0x5E5054); c = 3 also clears the advisor's queued notices 0x2C..0x2F about the plant (0x64EA60 -> 0x636D10: [EXT:tpi-capability-gates], the advisor's other messages)
 	// [EXT:hardware-d3d-path] the product wither × 1000.0f rounds to a single at the game thread's 24-bit x87 before the truncation
-	internal void UpdateThemeParkIncPlant( ParkObjectState item, (int X, int Y) cell )
+	internal void UpdateThemeParkIncPlant( ParkObjectState item )
 	{
 		if ( !IsThemeParkIncPlant( item ) || ObjectState( item ) != RideObjectStates.NotAnAttraction )
 			return;
@@ -61,6 +62,8 @@ public sealed partial class ParkEconomy
 		if ( condition == old )
 			return;
 		WriteThemeParkIncScript( item, PlantOldState, condition );
+		if ( item.EffectCell is not { } cell )
+			return;
 		if ( old is >= 0 and <= 3 )
 			Litter.Environment.Apply( PlantHealthyRow + old, cell.X, cell.Y, add: false );
 		if ( condition is >= 0 and <= 3 )

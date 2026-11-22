@@ -186,7 +186,7 @@ public sealed class ParkEconomyRuntime
 		if ( park.Save?.Statistics is { } statistics )
 			economy.StatisticsHistory.RestoreOriginal( statistics );
 		Log.Trace( $"Park economy: Theme Park Inc money rules; {park.LevelName} balance from {string.Join( ", ", settings.Standard.Sources )}; "
-			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, Theme Park Inc staff ({(economy.TpiStaff == null ? "none" : "cleaners only")}), Theme Park Inc challenges ({(economy.TpiChallenges == null ? "none" : "ported types only")}), no research." );
+			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, Theme Park Inc staff ({(economy.TpiStaff == null ? "none" : "cleaners and mechanics only")}), Theme Park Inc challenges ({(economy.TpiChallenges == null ? "none" : "ported types only")}), no research." );
 		return new ParkEconomyRuntime( economy, import: null )
 		{
 			Start = new ParkStart( ParkStartKind.FullSimulation, ParkGameMode.FullSimulation, EasyBalance: false, ImportShippedSave: false ),

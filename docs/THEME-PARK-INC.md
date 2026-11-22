@@ -61,7 +61,7 @@ starts the playable slice below (older links still land here).
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). A start without a world opens the slice's
 [Personnel File start screen](#theme-park-inc-front-end) instead. It is not Theme Park Inc support: there is
-no Theme Park Inc in-game interface, and of the native save formats only the player file (`.GMS`, desktop only) is written. Its money, the cleaners and researchers, staff training, the
+no Theme Park Inc in-game interface, and of the native save formats only the player file (`.GMS`, desktop only) is written. Its money, the cleaners, the mechanics with the ride wear and the researchers, staff training, the
 research lab a park file brings, the measurable challenges, the career and the mission controller run (no staff room can be built yet, so neither research nor training starts in play); nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
@@ -146,7 +146,7 @@ for the separate `.tpilayout` format, exact state boundaries and verification li
 
 **Science continuation.** The desktop pause menu can [save and continue a solo Science park](PARK-SAVES.md#experimental-science-continuation-on-desktop) in OpenTPW's own format. This is separate from layout checkpoints and does not resume the original Science prebuilt's simulation state.
 
-**What it leaves out.** No staff apart from cleaners and researchers, no research or training in play (the research lab a park file brings and the training are ported, but the research and training
+**What it leaves out.** No staff apart from cleaners, mechanics and researchers, no research or training in play (the research lab a park file brings and the training are ported, but the research and training
 rooms cannot be built: the Facilities folder is not in the slice's catalogue), no challenge whose value OpenTPW cannot measure, and no obstacle mission that can be completed (the
 money, the career and the mission controller run, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
@@ -253,15 +253,27 @@ fee, the build list shows each object's price and a placed object's refusal (not
 science save's objects register uncharged, like an imported park's; its own economy is not restored. A layout checkpoint saves the layout only: the cash, calendar and
 loans start fresh in the new session, like the guests.
 
-**Staff (handymen and researchers).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner: activating his row puts him in the hand, a click on a path or grass cell drops
+**Staff (handymen, mechanics and researchers).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner or a Mechanic: activating his row puts him in the hand, a click on a path or grass cell drops
 him (the drop's cell tests and its redirect of a drop on an object to the object's entrance, exit or nearest path cell are the executable's, `0x4D4EB0`), and right-click or Esc cancels. A placed handyman runs Theme Park Inc's own state machine (states 0, 1, 0x0F and 0x10:
 idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, shown as notes), and the
-guests drop litter by Theme Park Inc's litter step (`0x614B71`). A Researcher is hired and placed the same way and runs his own states (0 and 1, 25 to his research room, 24 researching). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen walk with Theme Park World's
+guests drop litter by Theme Park Inc's litter step (`0x614B71`). A placed mechanic runs Theme Park Inc's mechanic (states 0, 1, 21 and 22: idle, walk, to the ride and repair, with the
+search `0x5DA3D0`, the ride finder `0x5DAAD0` and the claims), and the rides wear by Theme Park Inc's own rules (see below). A Researcher is hired and placed the same way and runs his own states (0 and 1, 25 to his research room, 24 researching). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen and the mechanics walk with Theme Park World's
 walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleaning and the litter bins' fill are unported, so the handymen sweep litter only
 (`[EXT:tpi-no-maintenance-wear]`). No Theme Park Inc object is a rest area, so a tired cleaner finds none, as in the original; strikes in the park, the wage negotiation, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11). Training (states 7 and 8: the walk to the training room, 300 updates, the reward, the cancel when the room goes), the staff HQ's twenty obstacle slots and the research lab of the Science prebuilt, with its panel as text HUD rows, are ported (docs/reverse/TPI-STAFF.md §12), but in play no training can start and no researcher can research yet: the research lab (1404) and the training room (1440) are Facilities, whose folder the slice's catalogue does not load, and the prebuilt Science park has neither room, so neither can be built. A researcher hired now finds no room and idles.
-The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`) and animate as their states ask (stand, walk, sweep).
+The handymen and the mechanics are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen` and `Generic\Mechanics`) and animate as their states ask (stand, walk,
+sweep, repair).
 
-**What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
+**Ride wear and repair (with the staff).** A Theme Park Inc park with its staff wears its rides by the executable's object update (`0x5E4790`): every 64th turn a running ride (its
+script's `VAR_RUNNING`, or `Info.RunsContinuously`) loses the wear `0x5E21A0` (its speed and riders against `UsageInfo.MaxSpeed`, `MaxCapacity` and the level's red lines, times half its
+`WearRate`) from its state of repair, and its life gauge 0.02 times as much unless it is a special ride (`Info.IsSpecial`); a new ride's life gauge starts at its `Info.WorkingLife`.
+Below `RideBreakDown.WarnPlayer` (5) the ride reports itself worn to its script; when the life or repair byte reaches 0 it asks its script to break down (`VAR_BREAKSTAT`), losing 5
+life first unless it is special; no random number decides a breakdown. A mechanic's search takes the nearest ride that is broken down or called for, else one below
+`RideBreakDown.Imminent` (10), which then asks for maintenance and closes; he walks to its entrance, works `(100 − repair) × the work duration / 100` updates, waits for the ride's fix
+animation, and repairs it fully (`0x5E2910`), which reopens it unless its guard, the park or the weather keeps it closed. The upgrade job is not reached: only a mechanic trained in
+Ride Upgrading takes one, no training can start in play, and the economy sells no Theme Park Inc upgrade. The advisor's ride messages are not posted. Details and addresses:
+[TPI-STAFF.md](reverse/TPI-STAFF.md#mechanics-and-ride-wear-wp9-november-21-2026).
+
+**What stays refused.** The other staff roles (`[EXT:tpi-capability-gates]`); a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`, which no longer covers the rides); no
 upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below); an obstacle mission's completion, which needs the research and the staff HQ's slots, neither of which can happen while no staff room can be built ([below](#theme-park-inc-missions)); the shares game; Theme Park Inc's
 weather presentation's sky; the advisor's other messages; the native park save formats (the player file `.GMS` is written on desktop). Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).

@@ -69,6 +69,15 @@ public static class ParkSaveFile
 		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncResearchSnapshot? TpiResearch { get; init; }
 		/// <summary>
+		/// The Theme Park Inc ride-wear rules the save's rides and mechanics follow (<see cref="ThemeParkIncRideWearRules"/>): written by a park with Theme Park Inc's staff. A Theme Park Inc save
+		/// without it was made before the mechanics and the ride wear were ported and is refused.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? TpiRideWear { get; init; }
+		/// <summary>Theme Park Inc's object list, newest first (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): written by a park with Theme Park Inc's staff, with its ride wear.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int>? TpiObjectList { get; init; }
+		/// <summary>
 		/// Theme Park Inc's cutscene thing (the <c>CUTS</c> thing's flight). Required in a Theme Park Inc save; absent in Theme Park World saves. A Theme Park Inc save from before the flight (and the
 		/// obstacles) is refused (<see cref="CutsceneMissing"/>).
 		/// </summary>
@@ -747,6 +756,8 @@ public static class ParkSaveFile
 			TpiCareer = park.TpiCareer?.Capture(),
 			TpiMissions = park.TpiMissions?.Capture(),
 			TpiResearch = park.CaptureThemeParkIncResearch(),
+			TpiRideWear = park.TpiStaff != null ? ThemeParkIncRideWearRules : null,
+			TpiObjectList = park.TpiStaff != null ? park.ThemeParkIncObjectList.ToList() : null,
 			TpiCutscene = park.TpiCutscene?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
@@ -1101,6 +1112,13 @@ public static class ParkSaveFile
 			// asset manifest is compared (ParkResumeSaveFile.RequireAssets would only name an asset the save does not expect)
 			if ( data.TpiCutscene == null )
 				throw new InvalidDataException( CutsceneMissing );
+			// user decision 2026-11-21: a Theme Park Inc park save from before the mechanics and the ride wear is refused: its rides were worn by other rules (or not at all), so it is not the
+			// park the ported rules would have made
+			if ( data.TpiStaff != null && data.TpiRideWear != ThemeParkIncRideWearRules )
+				throw new InvalidDataException( ThemeParkIncRideWearMissing );
+			if ( data.TpiStaff != null && !ParkEconomy.IsValidThemeParkIncObjectList( data.Objects.Select( item => item.Id ), data.TpiObjectList ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc object list." );
+			ValidateThemeParkIncJobs( data );
 			foreach ( var item in data.Objects )
 			{
 				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
@@ -1111,10 +1129,37 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiRideWear != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
+	}
+
+	/// <summary>The rules version a Theme Park Inc save with its staff writes for its ride wear and mechanics (<see cref="Data.TpiRideWear"/>).</summary>
+	public const int ThemeParkIncRideWearRules = 1;
+
+	/// <summary>The refusal of a Theme Park Inc save from before the mechanics and the ride wear.</summary>
+	public const string ThemeParkIncRideWearMissing = "This Theme Park Inc park was saved before OpenTPW kept the mechanics and the ride wear and cannot be continued; start a new game from the Personnel File.";
+
+	/// <summary>
+	/// A Theme Park Inc save's jobs: an object's claim names a placed mechanic's thing (0x5E3780 writes his thing id), and a placed mechanic's ride is an object of the save (the removal message
+	/// clears it, 0x5D9DD0); a mechanic at work (21 or 22) has one.
+	/// </summary>
+	private static void ValidateThemeParkIncJobs( Data data )
+	{
+		var mechanics = (data.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>())
+			.Where( member => member.Role == ThemeParkIncStaffRole.Mechanic && member.World != null ).ToList();
+		var ids = data.Objects.Select( item => item.Id ).ToHashSet();
+		foreach ( var item in data.Objects.Where( item => item.MechanicId != 0 ) )
+			if ( !mechanics.Any( member => member.World!.ThingId == item.MechanicId ) )
+				throw new InvalidDataException( $"Park save is inconsistent: object {item.Id} is claimed by thing {item.MechanicId}, which is no placed Theme Park Inc mechanic." );
+		foreach ( var member in mechanics )
+		{
+			var world = member.World!;
+			if ( world.RideId is not { } ride || ride != 0 && !ids.Contains( ride )
+				|| world.State is ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing && ride == 0 )
+				throw new InvalidDataException( $"Park save is inconsistent: Theme Park Inc mechanic {member.Id}'s ride {world.RideId} is not an object of the park." );
+		}
 	}
 
 	/// <summary>Validates a parsed economy save in place. Internal: the world-save envelope validates its embedded economy through these same rules.</summary>
@@ -1222,7 +1267,9 @@ public static class ParkSaveFile
 		if ( data.Research.RecentItems is { } recentItems )
 			SaveRecentResearch.Validate( recentItems );
 		Require( (data.Research.HighestGroups == null || data.Research.HighestGroups.Count == Enum.GetValues<ResearchCategory>().Length && data.Research.HighestGroups.All( group => group is >= 0 and <= ParkResearch.MaximumOpenGroup )) && (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == (data.Edition == GameEdition.ThemeParkInc ? 0 : 5) && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
-		Require( data.MechanicCursor >= 0, "mechanic cursor" );
+		// a Theme Park Inc cursor may name a thing without an economy record (a negated thing id), as a positive one may name a sold object: the HQ word keeps a dead thing's id, which the finder
+		// 0x5DAAD0 reads as "not in the list" and so starts at the head
+		Require( data.MechanicCursor >= (data.TpiObjectList != null ? -ThingPool.Capacity : 0), "mechanic cursor" );
 		Require( data.Research.CheatAvailable is not { } cheatAvailable || cheatAvailable.Count > 0 && cheatAvailable.Distinct().Count() == cheatAvailable.Count, "research cheat" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
@@ -1433,6 +1480,8 @@ public static class ParkSaveFile
 			data.Objectives.ActualThing, data.Objectives.CarriedThings, data.Objectives.NextOfferSeconds );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
+		if ( data.TpiObjectList != null )
+			park.RestoreThemeParkIncObjectList( data.TpiObjectList );
 		if ( data.StatisticsHistory is { } history )
 			park.StatisticsHistory.Restore( history, park.Ledger.History.Select( month => month.ParkRating ) );
 		else

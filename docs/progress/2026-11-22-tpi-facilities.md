@@ -18,9 +18,13 @@
   object can enter a Theme Park Inc zone: the official extensions stay off under Theme Park Inc and a mod's `objects.json` must name one of Theme Park World's four themes. So no extension or mod
   object vanishes from the Theme Park Inc build list, and the `tpi-rides` mod's science bin (a Theme Park World `space` feature, id 40003) is never listed beside Theme Park Inc's own (1422).
 - **Rest areas.** The staff rooms (Science 1400, Water 2420, Arabian 3418) set `UsageInfo.ChillsYouOut`, the thing flag `+0x42` bit 2 the rest-area finder `0x62BA20` tests. Ported for the
-  handymen and the researchers (`ThemeParkIncStaffWorld.Rest.cs`): the finder (nearest open area by squared cells, first on a tie), the tired gate's walk (`0x62BCA9`), the slack test of state 1
+  handymen, the researchers and the mechanics (`ThemeParkIncStaffWorld.Rest.cs`): the finder (nearest open area by squared cells, first on a tie), the tired gate's walk (`0x62BCA9`), the slack test of state 1
   (`0x62D650`), the low-motivation rest (`0x62D866`), state 2 with the capacity test and the customer count (`0x629EF0`), the rest (`0x62A1C0`) and its end (`0x62C230`), the search beside a full
   room (state 0x23, `0x62CA90`: its closing draw is taken on every branch but "no area", which the WP4 notes missed) and a rest area's removal (`0x626638`). The member's rest area (`+0x248`) is saved.
+- **Mechanics rest too (a change to the merged mechanics, #985).** The mechanic's dispatch byte table `0x5DA358` sends state 2 to `0x629EF0` and 3 to `0x62A1C0`, and state 0x23 (above 0x16) to the
+  common handler `0x6287A0`, which sends it to the rest search `0x62CA90`; #985 had left these states out because no rest area existed. With the staff rooms buildable a tired mechanic would have
+  entered state 2 and stayed there, so the mechanic's dispatch and `IsPortedState` now take them (test `AMechanicRestsLikeTheOthers`).
+- **The finders walk the object list.** The rest-area and room finders now walk the economy's Theme Park Inc object list (#985), the order `0x62BA20` walks (world `+0x1EAB88`), instead of the thing pool's.
 - **Toilets and bins.** The toilets are placed and used; a use still wears nothing and the bins' fill is not kept (`[EXT:tpi-no-maintenance-wear]`). A new litter bin's script now takes
   `Standard.sam`'s construction words (`VAR_CAPACITY` 20, `VAR_DIRTY` 15, `VAR_FIRERISK` 5).
 - **Saves.** The asset manifest pins `facilities.sam` with the folders' archives. A layout checkpoint is version 5 and version 4 is refused by its version; a Science continuation whose manifest

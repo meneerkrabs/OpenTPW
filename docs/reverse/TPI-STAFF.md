@@ -241,7 +241,7 @@ Ported as an economy model, without the world simulation, and checked against th
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
-Not ported yet: the state machines of the roles other than the handyman, the mechanic and the researcher; slacking (`0x62D650`) and low-motivation rest; the wage negotiation dialog (`0x559E00`). Training is ported since November 21, 2026 (§12.2).
+Not ported yet: the state machines of the roles other than the handyman, the mechanic and the researcher; the wage negotiation dialog (`0x559E00`). Slacking (`0x62D650`) and the low-motivation rest (`0x62D866`) are ported with the rest areas (§13). Training is ported since November 21, 2026 (§12.2).
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.

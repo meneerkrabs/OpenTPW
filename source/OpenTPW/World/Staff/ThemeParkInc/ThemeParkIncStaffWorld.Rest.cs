@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// Theme Park Inc's rest areas (docs/reverse/TPI-STAFF.md §13): the finder, the tired gate's and the slack test's walk to a staff room, the arrival with its capacity, the rest, its end, the search
-/// beside a full room, the low-motivation rest and a rest area's removal. Every role runs them (the handyman's table 0x5D58C4 and the researcher's 0x61B774 send states 2 and 3 to 0x629EF0 and 0x62A1C0,
+/// beside a full room, the low-motivation rest and a rest area's removal. Every role runs them (the handyman's table 0x5D58C4, the researcher's 0x61B774 and the mechanic's 0x5DA358 send states 2 and 3 to 0x629EF0 and 0x62A1C0,
 /// the common handler 0x6287A0 sends 0x23 to 0x62CA90).
 /// </summary>
 public sealed partial class ThemeParkIncStaffWorld

@@ -578,13 +578,13 @@ public sealed record RequestMaintenanceCommand( int Attraction, bool On ) : Park
 		if ( IsCondemnedRide( level, item ) )
 			return ParkCommandResult.Rejected( $"{item.Entry.DisplayName} is condemned." );
 		var role = info.ProvidesRelief ? StaffType.Handyman : StaffType.Mechanic;
-		// [BIN:TPI-EXE:0x5511FB call button state] a Theme Park Inc park counts its own staff: the ride panel's call button is enabled when the staff HQ (world +0x1EAB54) counts a thing of the
-		// mechanics' kind 4 (0x5B2DB0(4): the thing list's things of that kind whose byte +3 is 0), a placed mechanic; it tests no strike (the case 0x14 counts kind 7 the same way)
+		// [BIN:TPI-EXE:0x5511FB call button state] a Theme Park Inc park counts its own staff: the object panel's call button (its click 0x55152A runs 0x5E3400(1) on the panel's thing, whatever the
+		// object) is enabled when the staff HQ (world +0x1EAB54) counts a thing of the mechanics' kind 4 (0x5B2DB0(4): the thing list's things of that kind whose byte +3 is 0), a placed mechanic, for
+		// every object; the button state counts no handyman (its other case, 0x14, counts kind 7) and tests no strike
 		if ( economy.TpiStaff is { } tpiStaff )
 		{
-			var tpiRole = info.ProvidesRelief ? ThemeParkIncStaffRole.Handyman : ThemeParkIncStaffRole.Mechanic;
-			if ( On && !state.MaintenanceRequested && !tpiStaff.Members.Any( member => member.Role == tpiRole && member.Navigation != null ) )
-				return ParkCommandResult.Rejected( $"The park has no {role} to call." );
+			if ( On && !state.MaintenanceRequested && !tpiStaff.Members.Any( member => member.Role == ThemeParkIncStaffRole.Mechanic && member.Placed ) )
+				return ParkCommandResult.Rejected( $"The park has no {StaffType.Mechanic} to call." );
 			return economy.RequestMaintenance( state.Id, On ) ? ParkCommandResult.Ok() : NoAttraction( Attraction );
 		}
 		if ( On && !state.MaintenanceRequested && !economy.Staff.OfType( role ).Any() )

@@ -851,7 +851,7 @@ internal static class ParkResumeSaveFile
 			Names( record!.ThingId, SaveThingModel.Attraction, record.X, record.Y );
 		foreach ( var member in members )
 			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), member.Id );
-		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: the handyman and the mechanic are placed)
+		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: the handyman, the mechanic and the researcher are placed)
 		foreach ( var member in snapshot.Economy!.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>() )
 			if ( member?.World is { } world )
 				Names( world.ThingId, ThemeParkIncStaffMember.IsPlacedRole( member.Role ) ? ThemeParkIncStaffWorld.ThingModelOf( member.Role ) : SaveThingModel.Handyman, member.Id );

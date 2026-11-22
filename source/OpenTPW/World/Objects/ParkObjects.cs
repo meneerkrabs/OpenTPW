@@ -766,6 +766,11 @@ public sealed class ParkObjects
 
 	private readonly List<string> savedSceneGaps = new();
 
+	private readonly Dictionary<OriginalObject, int> savedThemeParkIncThings = new();
+
+	/// <summary>The Theme Park Inc save's attraction thing an imported object was built from (<see cref="ImportOriginal"/>), 0 for an object no such save placed.</summary>
+	internal int SavedThemeParkIncThingOf( OriginalObject item ) => savedThemeParkIncThings.TryGetValue( item, out var thing ) ? thing : 0;
+
 	/// <summary>What <see cref="ImportOriginal"/> could not restore of the saved scene records' node states and animation controls, one line each.</summary>
 	public IReadOnlyList<string> SavedSceneGaps => savedSceneGaps;
 
@@ -791,6 +796,9 @@ public sealed class ParkObjects
 				? save.FindThemeParkIncAttraction( record ) is { } attraction ? SavedThingId( attraction.Id ) : 0
 				: save.FindAttraction( record ) is { } thing ? SavedThingId( thing.Id ) : 0;
 			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, seeds[record] ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			// a Theme Park Inc save's attraction thing of the record (the import's join), for the object list's order (Level.SeedThemeParkIncObjectList)
+			if ( save.FindThemeParkIncAttraction( record ) is { } tpiThing )
+				savedThemeParkIncThings[imported] = tpiThing.Id;
 			// [BIN:TPW-EXE:0x004647A0 hoarding load] the RideSystem record's flag word +0x1C bits 0..6 and its +0x22 dword are the thing's hoarding flags and level (docs/OBJECTS.md, "Hoarding")
 			if ( save.RideSystem?.Records.FirstOrDefault( scene => scene.Offset == record.Offset ) is { } scene )
 			{
@@ -814,7 +822,8 @@ public sealed class ParkObjects
 			if ( !IsImportedObject( entry ) )
 				continue;
 			var thingId = Things != null ? SavedThingId( attraction.Id ) : 0;
-			Register( new OriginalObject( entry, ComputePlacement( entry, 0, 0, 0 ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			var unrecorded = Register( new OriginalObject( entry, ComputePlacement( entry, 0, 0, 0 ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			savedThemeParkIncThings[unrecorded] = attraction.Id;
 			count++;
 		}
 		yield return (count, 1);

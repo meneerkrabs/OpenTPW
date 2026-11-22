@@ -262,6 +262,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
 	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
 	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
+	public int RunningVariable => vm != null ? Get( RideVariables.VAR_RUNNING ) : 0;
 	public int RidersOnBoard => vm != null ? Get( RideVariables.VAR_ONRIDE ) : 0;
 	/// <summary>The operating speed: InitSpeed of the ride record (see <see cref="QueueParameters"/>).</summary>
 	public int Speed => Parameters.Speed;

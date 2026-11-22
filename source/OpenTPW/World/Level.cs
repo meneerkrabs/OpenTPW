@@ -1042,7 +1042,8 @@ public partial class Level : IDisposable
 	// [BIN:TPI-EXE:0x5E3400 maintenance request] the request closes the ride itself (the open word +0x7C = 0, VAR_RIDECLOSED = 1 and the close model call); [BIN:TPI-EXE:0x5E2910 repair fully] the
 	// repair writes VAR_WORN and VAR_BREAKSTAT and runs the open and the closing tail 0x5E2C2E (OpenAfterThemeParkIncRepair); the wear tick 0x5E25B0 and the relief test 0x5E3990 write VAR_WORN
 	// [BIN:TPI-EXE:0x5E3509 maintenance cancel] the cancel 0x5E3400(0) opens the ride through 0x5E1DC0 whatever its guard says (the guard only logs "Opening non-openable ride"); the text HUD has no
-	// ride panel ([EXT:tpi-text-hud]: the native panel's call 0x5562E0, cancel 0x5563F0 and toggle 0x50FCD0 are not ported), but the shared RequestMaintenanceCommand (the co-op call button) reaches it
+	// ride panel ([EXT:tpi-text-hud]: the native panel's call 0x5562E0, cancel 0x5563F0 and toggle 0x50FCD0 are not ported), but the shared RequestMaintenanceCommand (the co-op call button) runs
+	// the request (while a mechanic is placed, the panel button's state 0x5511FB) and the cancel
 	private void SetupThemeParkIncRideEvents()
 	{
 		if ( Park == null )

@@ -409,6 +409,33 @@ public class ThemeParkIncRepairTailTests
 	// ---- The maintenance cancel -----------------------------------------------------------------
 
 	[TestMethod]
+	public void TheSharedCommandCallsAMechanicOnlyWhenOneIsPlaced()
+	{
+		// [BIN:TPI-EXE:0x5511FB call button state] the call is enabled while the staff HQ counts a placed mechanic (kind 4); the cancel needs none
+		var world = World();
+		var (objects, _, _, _, swing) = Things( world );
+		var (ride, state) = Build( world, objects, swing );
+		var call = new RequestMaintenanceCommand( ride.Runtime.AttractionId, On: true ).Execute( world.Level );
+		Assert.AreEqual( (false, false, true), (call.Accepted, state.MaintenanceRequested, ride.Runtime.IsOpen), call.Reason );
+		StringAssert.Contains( call.Reason, "no Mechanic" );
+		var grid = new GuestPathGrid( 16, 16 );
+		for ( var x = 0; x < 12; x++ )
+			grid.SetPath( x, 5, true );
+		world.Economy.Litter.Cells = grid.Cells;
+		world.Economy.Litter.ThemeParkInc = true;
+		var staff = world.Economy.TpiStaff!;
+		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Mechanic );
+		Assert.IsTrue( staff.BeginHire( slot ) );
+		var member = staff.EndHire( slot, placed: true )!;
+		new ThemeParkIncStaffWorld( grid ).Construct( world.Economy, member, (2, 5), null );
+		Assert.IsTrue( member.Placed );
+		Assert.IsTrue( new RequestMaintenanceCommand( ride.Runtime.AttractionId, On: true ).Execute( world.Level ).Accepted );
+		Assert.AreEqual( (true, false), (state.MaintenanceRequested, ride.Runtime.IsOpen), "the call closes the ride (0x5E3400(1))" );
+		Assert.IsTrue( new RequestMaintenanceCommand( ride.Runtime.AttractionId, On: false ).Execute( world.Level ).Accepted );
+		Assert.AreEqual( (false, true), (state.MaintenanceRequested, ride.Runtime.IsOpen), "the cancel opens it (0x5E3400(0))" );
+	}
+
+	[TestMethod]
 	public void ACancelledRequestOpensTheRideWhateverItsGuardAndEndsTheClaim()
 	{
 		// [BIN:TPI-EXE:0x5E3509 maintenance cancel] +0x78 = 0; the open 0x5E1DC0 whatever the guard (here a closed park) and SetState(0); the claimant goes idle and the claim clears

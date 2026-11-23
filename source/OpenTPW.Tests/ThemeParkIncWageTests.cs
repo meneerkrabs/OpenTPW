@@ -153,6 +153,22 @@ public class ThemeParkIncWageTests
 	}
 
 	[TestMethod]
+	public void ATrainingLetterIsAnUnreadRowWithTheStaffWindowGoto()
+	{
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		var member = Hire( economy, world, ThemeParkIncStaffRole.Handyman, (40, 9) );
+		economy.FileThemeParkIncTrainingLetter( member, finished: false, 7 );
+		var row = economy.TpiTagTube!.Listed.First();
+		Assert.AreEqual( (ThemeParkIncLetterSource.Training, 0x8F, 0xD, 5, member.ThingId, 7, 0, false), (row.Source, row.Tag, row.Argument, row.GotoKind, row.Key, row.Ability, row.Category, row.Read) );
+		var json = ParkSaveFile.Serialize( economy );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog );
+		Assert.AreEqual( 7, restored.TpiTagTube!.Listed.First().Ability );
+		economy.DismissThemeParkIncMember( member, null );
+		Assert.IsTrue( row.Flagged, "the dismissal deletes every row keyed by the member (0x636B10)" );
+	}
+
+	[TestMethod]
 	public void TheDismissalPaysASalaryClearsTheOnlyStrikersSlotAndTakesTheMemberAway()
 	{
 		var economy = ScienceEconomy();

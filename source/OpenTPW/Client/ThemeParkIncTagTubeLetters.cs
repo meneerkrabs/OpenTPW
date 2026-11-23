@@ -23,6 +23,7 @@ internal static class ThemeParkIncTagTubeLetters
 			ThemeParkIncLetterSource.Introduction => Introduction( texts, addressee, date, row.Picture ),
 			ThemeParkIncLetterSource.Notification => Notification( ThemeParkIncTagLetter.NotificationMail( row.Argument ), texts, addressee, date ),
 			ThemeParkIncLetterSource.WageDemand => WageDemand( row, texts, addressee, date, memberName?.Invoke( row ) ?? "" ),
+			ThemeParkIncLetterSource.Training => Training( row, texts, addressee, date, memberName?.Invoke( row ) ?? "", strings.Ability( row.Ability ) ),
 			_ => throw new InvalidOperationException( $"A tag tube row has the unknown letter source {row.Source}." )
 		};
 	}
@@ -61,5 +62,17 @@ internal static class ThemeParkIncTagTubeLetters
 		var body = Tag( bodyEntry, new Dictionary<int, string> { [8] = name, [9] = row.GotoArgument.ToString( System.Globalization.CultureInfo.InvariantCulture ) } )
 			+ "\n" + Tag( ThemeParkIncTagLetter.WageDemandSenderName ) + "\n" + Tag( ThemeParkIncTagLetter.WageDemandSenderTitle );
 		return new ThemeParkIncLetterWindow.Letter( Tag( 0xFB ), Tag( ThemeParkIncTagLetter.WageDemandSenderName ), addressee, date, body, row.Picture - 1, row.GotoKind, row.GotoArgument );
+	}
+
+	/// <summary>A training letter (<c>0x5CEFB0</c> kinds 0xC and 0xD): subject TAG_SYSTEM 0x4E or 0x50, the body 0x4F or 0x51 with the member's name and the ability, the signature of the sender row key 5.</summary>
+	// [BIN:TPI-EXE:0x5CF069 training subject] 0xC: 0x4E ("Training Completed"), 0xD: 0x50 ("Training Suspended"); [BIN:TPI-EXE:0x5CF1E0 training body] ABILITIES.str (0xA0D648) at +0x28 as parameter 2 and the
+	// member's name (0x62B600) as parameter 1 in 0x4F (0xC) or 0x51 (0xD)
+	private static ThemeParkIncLetterWindow.Letter Training( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, string addressee, string date, string name, string ability )
+	{
+		string Tag( int entry, IReadOnlyDictionary<int, string>? values = null ) => texts.Format( ThemeParkIncTable.TagSystem, entry, values );
+		var finished = row.Argument == ThemeParkIncTagLetter.TrainingFinished;
+		var body = Tag( finished ? 0x4F : 0x51, new Dictionary<int, string> { [1] = name, [2] = ability } )
+			+ "\n" + Tag( ThemeParkIncTagLetter.WageDemandSenderName ) + "\n" + Tag( ThemeParkIncTagLetter.WageDemandSenderTitle );
+		return new ThemeParkIncLetterWindow.Letter( Tag( finished ? 0x4E : 0x50 ), Tag( ThemeParkIncTagLetter.WageDemandSenderName ), addressee, date, body, row.Picture - 1, row.GotoKind, row.GotoArgument );
 	}
 }

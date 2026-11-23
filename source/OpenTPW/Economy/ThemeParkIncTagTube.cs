@@ -10,7 +10,9 @@ public enum ThemeParkIncLetterSource
 	/// <summary>A notification letter (<c>0x5CEE50</c>): the bank's six-months-in-the-red letter (id 8) or the challenge system's firing letter (id 7).</summary>
 	Notification = 3,
 	/// <summary>A staff member's wage demand (<c>0x5CEFB0</c>, kind 0xA or 0xB); the argument is the kind, the key (<c>+0xE14</c>) the member's thing and the go-to argument (<c>+0xE18</c>) the demand.</summary>
-	WageDemand = 4
+	WageDemand = 4,
+	/// <summary>A training letter (<c>0x5CEFB0</c>, kind 0xC finished or 0xD suspended); the argument is the kind, the key the member's thing and the ability is kept in <see cref="ThemeParkIncTagTubeRow.Ability"/>.</summary>
+	Training = 5
 }
 
 /// <summary>
@@ -48,6 +50,8 @@ public sealed class ThemeParkIncTagTubeRow
 	public uint Serial { get; internal set; }
 	/// <summary><c>+0xE24</c>: the letter's date, <c>year &lt;&lt; 16 | (month - 1) &lt;&lt; 8 | day</c> (<c>0x518BC0</c>), the list's sort column.</summary>
 	public int Date { get; internal set; }
+	/// <summary>A training letter's ability (the letter's <c>+0x28</c>, which its body names); 0 for the other letters.</summary>
+	public int Ability { get; internal set; }
 	/// <summary><c>+0xE28</c>: flagged for deletion (deleted, expired or superseded); the list and the save skip it.</summary>
 	public bool Flagged { get; internal set; }
 
@@ -57,7 +61,7 @@ public sealed class ThemeParkIncTagTubeRow
 
 /// <summary>A saved tag tube row: the fields the serializer <c>0x6355D0</c> writes and the load reads back.</summary>
 public sealed record ThemeParkIncTagTubeRowSnapshot( int Tag, int Kind, ThemeParkIncLetterSource Source, int Argument, int Picture, int ExpiryUnits, bool Read, int Category, int GotoKind, int Key,
-	int GotoArgument, int Date );
+	int GotoArgument, int Date, [property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )] int Ability = 0 );
 
 /// <summary>The tag tube in a park save: its unflagged rows, newest first (the <c>SGAT</c> chunk's <c>numtags</c> and <c>MailMessage</c> records).</summary>
 public sealed record ThemeParkIncTagTubeSnapshot( ThemeParkIncTagTubeRowSnapshot[] Rows );
@@ -270,7 +274,7 @@ public sealed class ThemeParkIncTagTube
 	/// <summary>The saved rows: the unflagged ones, newest first (<c>0x6355D0</c> with flag 1).</summary>
 	// [BIN:TPI-EXE:0x6355D0 tube save] counts the rows with +0xE28 == 0 (numtags), then writes each of them (MailMessage, 0xE2C bytes) in list order
 	public ThemeParkIncTagTubeSnapshot Capture() => new( Listed.Select( row => new ThemeParkIncTagTubeRowSnapshot( row.Tag, row.Kind, row.Source, row.Argument, row.Picture, row.ExpiryUnits,
-		row.Read, row.Category, row.GotoKind, row.Key, row.GotoArgument, row.Date ) ).ToArray() );
+		row.Read, row.Category, row.GotoKind, row.Key, row.GotoArgument, row.Date, row.Ability ) ).ToArray() );
 
 	/// <summary>
 	/// The load (<c>0x6355D0</c> with flag 0): a new empty tube and counter, then each saved row appended in file order through the insert (its expiry restarts from <paramref name="turn"/>,
@@ -300,7 +304,8 @@ public sealed class ThemeParkIncTagTube
 				GotoKind = saved.GotoKind,
 				Key = saved.Key,
 				GotoArgument = saved.GotoArgument,
-				Date = saved.Date
+				Date = saved.Date,
+				Ability = saved.Ability
 			}, turn, load: true );
 	}
 
@@ -311,6 +316,9 @@ public sealed class ThemeParkIncTagTube
 		{
 			ThemeParkIncLetterSource.Objective => row.Argument >= 0,
 			ThemeParkIncLetterSource.Introduction => row.Argument == ThemeParkIncTagLetter.IntroductionTag,
+			ThemeParkIncLetterSource.Training => row.Argument is ThemeParkIncTagLetter.TrainingFinished or ThemeParkIncTagLetter.TrainingSuspended
+				&& row.Tag == (row.Argument == ThemeParkIncTagLetter.TrainingFinished ? ThemeParkIncTagLetter.TrainingFinishedTag : ThemeParkIncTagLetter.TrainingSuspendedTag)
+				&& row.GotoKind == ThemeParkIncTagLetter.TrainingGoto && row.Key is > 0 and <= ushort.MaxValue && row.Ability is >= 0 and < ThemeParkIncCareer.AbilityCount,
 			ThemeParkIncLetterSource.WageDemand => row.Argument is ThemeParkIncTagLetter.WageDemandWithStrike or ThemeParkIncTagLetter.WageDemandWithoutStrike
 				&& row.Tag == ThemeParkIncTagLetter.WageDemandTag && row.GotoKind == ThemeParkIncTagLetter.WageDemandGoto && row.Key is > 0 and <= ushort.MaxValue,
 			_ => row.Argument is ThemeParkIncTagLetter.RedSixMonthsId or ThemeParkIncTagLetter.ChallengeLostId

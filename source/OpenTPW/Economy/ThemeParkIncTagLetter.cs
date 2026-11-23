@@ -112,6 +112,28 @@ public static class ThemeParkIncTagLetter
 		Date = PackedDate( turn )
 	};
 
+	/// <summary>The training letter's kinds: 0xC the training finished (<c>0x62AC4D</c>), 0xD suspended (<c>0x62E8D6</c>).</summary>
+	public const int TrainingFinished = 0xC, TrainingSuspended = 0xD;
+
+	/// <summary>The training letters' tags (0x8E finished, 0x8F suspended) and go-to kind (5: the staff window <c>0x58C6C0</c> on the member).</summary>
+	public const int TrainingFinishedTag = 0x8E, TrainingSuspendedTag = 0x8F, TrainingGoto = 5;
+
+	/// <summary>The row of a training letter of <paramref name="kind"/> for the member whose thing is <paramref name="thing"/> and <paramref name="ability"/>: unread, category 0, never expiring.</summary>
+	// [BIN:TPI-EXE:0x5CF44F training row fill] +0xE14 = the handle; kind 0xC: +0xE10 = 5, +0 = 0x8E; kind 0xD (0x5CF461): +0xE10 = 5, +0 = 0x8F; +4 = 0x97, the letter's +0x10 = 0 (the category); +0xE18 stays
+	// the builder's 0; the sender row is key 5's (picture 5), as every 0x5CEFB0 letter's
+	public static ThemeParkIncTagTubeRow Training( int kind, int thing, int ability, long turn ) => new()
+	{
+		Tag = kind == TrainingFinished ? TrainingFinishedTag : TrainingSuspendedTag,
+		Kind = NullTag,
+		Source = ThemeParkIncLetterSource.Training,
+		Argument = kind,
+		Picture = WageDemandPicture,
+		GotoKind = TrainingGoto,
+		Key = thing,
+		Ability = ability,
+		Date = PackedDate( turn )
+	};
+
 	/// <summary>The advice mail of a notification row's id.</summary>
 	internal static ThemeParkIncAdviceMail NotificationMail( int id ) => id == RedSixMonthsId ? ThemeParkIncAdviceMail.RedSixMonths : ThemeParkIncAdviceMail.ChallengeLost;
 }

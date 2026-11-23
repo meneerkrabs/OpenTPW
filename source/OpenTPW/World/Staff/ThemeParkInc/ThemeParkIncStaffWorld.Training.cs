@@ -44,7 +44,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>The park's staff rooms; null in a world without them (tests without rooms).</summary>
 	public IThemeParkIncRooms? Rooms { get; set; }
 
-	/// <summary>The training notices since the HUD last took them (the advisor's lines 0x175 and 0x1C9 and the letters of kind 0xC and 0xD). Not saved; at most 32 are kept.</summary>
+	/// <summary>The training notices since the HUD last took them (the advisor's lines 0x175 and 0x1C9; the letters of kind 0xC and 0xD are tag tube rows). Not saved; at most 32 are kept.</summary>
 	public List<ThemeParkIncTrainingNotice> TrainingNotices { get; } = new();
 
 	private void Notice( ThemeParkIncTrainingNotice notice )
@@ -150,6 +150,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	private void FinishTraining( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		economy.TpiStaff!.Hq.TrainingFinished( member );
+		economy.FileThemeParkIncTrainingLetter( member, finished: true, member.Ability );
 		if ( TrainingRoom is { } room )
 			Rooms!.AddOccupancy( room.Thing, -1 );
 		ShowAgain( member );
@@ -181,6 +182,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( member.State == ThemeParkIncTraining.Training )
 			ShowAgain( member );
 		Notice( new ThemeParkIncTrainingNotice( member, false, ability ) );
+		economy.FileThemeParkIncTrainingLetter( member, finished: false, ability );
 		SetState( economy, member, Idle, turn );
 		LookForWork( economy, economy.TpiStaff!.Settings, member, turn );
 	}

@@ -48,9 +48,14 @@ public sealed partial class ParkEconomy
 		}
 	}
 
+	/// <summary>A training letter (the finish <c>0x62AB90</c>, the cancel <c>0x62E7A0</c>): the tag system files its row, unread.</summary>
+	// [BIN:TPI-EXE:0x62AC4D training letter] new(0x2C), 0x5CEFB0(0xC, member, +0x218) and 0x435DC0 to the broadcaster; [BIN:TPI-EXE:0x62E8D6 suspended letter] 0x5CEFB0(0xD, member, the ability dropped)
+	internal void FileThemeParkIncTrainingLetter( ThemeParkIncStaffMember member, bool finished, int ability ) =>
+		FileThemeParkIncLetter( ThemeParkIncTagLetter.Training( finished ? ThemeParkIncTagLetter.TrainingFinished : ThemeParkIncTagLetter.TrainingSuspended, member.ThingId, ability, Turn ) );
+
 	/// <summary>The member whose thing is <paramref name="thing"/> (a wage demand row's key, <c>0xAA18B0[+0xE14]</c>); null when no member holds it.</summary>
 	internal ThemeParkIncStaffMember? ThemeParkIncMemberOfRow( ThemeParkIncTagTubeRow row ) =>
-		row.Source == ThemeParkIncLetterSource.WageDemand && row.Key != 0 ? TpiStaff?.Members.FirstOrDefault( member => member.ThingId == row.Key ) : null;
+		row.Source is ThemeParkIncLetterSource.WageDemand or ThemeParkIncLetterSource.Training && row.Key != 0 ? TpiStaff?.Members.FirstOrDefault( member => member.ThingId == row.Key ) : null;
 
 	/// <summary>
 	/// The negotiation's end (the results dialog's close, <c>0x559860</c> message 0x14) with the decision <paramref name="result"/> (<see cref="ThemeParkIncWageNegotiation.Decide"/>): a yes

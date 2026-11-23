@@ -162,6 +162,7 @@ public class ThemeParkIncMissionDataTests
 		Assert.IsFalse( missions.RegisterObstacleResearch, "the advance does not set +0x1A again: only the constructor and a load do" );
 		AdvanceTo( economy.Turn + 1 );
 		Assert.IsTrue( career.ObjectiveLetterPosted );
-		CollectionAssert.AreEqual( new[] { 0 }, economy.TpiObjectiveLetters, "the objective letter of mission 0" );
+		CollectionAssert.AreEqual( new[] { 0 }, economy.TpiTagTube!.Listed.Where( row => row.Source == ThemeParkIncLetterSource.Objective ).Select( row => row.Argument ).ToArray(),
+			"the objective letter of mission 0, filed as a tube row" );
 	}
 }

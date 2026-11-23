@@ -78,7 +78,7 @@ takings among the other income, without rows of their own, and a ring with no cl
   finds the new current obstacle (`0x6476F0`: the last attraction of `Obstacle.Type`, or 0 for none) and the new mission's statistics start. The end-of-game
   object `0x5CD6E0(0x5D, 6, 1)` and message 0x2C, which nothing in OpenTPW receives, are not posted (`[EXT:tpi-capability-gates]`).
 - **Objective letter.** The update after an advance posts the "Objective Complete!" letter of the completed mission (`0x5CEAE0`, `OBJECTIVE_COMPLETE.str`) and
-  sets the career's `+0x20`. OpenTPW records the letter (`ParkEconomy.TpiObjectiveLetters`); its texts and window are in §7.
+  sets the career's `+0x20`. The tag system files it as an unread row of the tag tube ([TPI-TAG-TUBE.md](TPI-TAG-TUBE.md)); its texts are in §7.
 
 ## 4. Messages
 
@@ -202,8 +202,8 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   (`0x529960`), which is not built: the text HUD's challenge panel stands in for it.
 - **Openers.** The key table's Objectives row (`0x9A8A14`: O, no modifier, `0x42F020`, not in game mode 3), the HUD buttons (`0x54AC0F`, `0x54F7C1`), a click on the
   `ObstacleOpened` thing (`0x5068C3`), the challenges window's Objectives tab (`0x52A60F`), a letter's go-to kind 0xC (`0x551461`) and, three flight updates after a
-  zone-arrival (mode 2) camera flight, the first briefing (`0x5D0369`). OpenTPW has the key, the text HUD's button and the arrival flight's countdown (`ThemeParkIncCutscene.MissionWindowRequests`, §5). The letter go-to is ported but not
-  reachable in play yet, because the slice files no letters without the tag tube.
+  zone-arrival (mode 2) camera flight, the first briefing (`0x5D0369`). OpenTPW has the key, the text HUD's button and the arrival flight's countdown (`ThemeParkIncCutscene.MissionWindowRequests`, §5). The letter go-to is ported and
+  reachable from the tag tube window's go-to button ([TPI-TAG-TUBE.md](TPI-TAG-TUBE.md) §3).
 - **Not ported:** the body's scroll text (`0x52C4C0`; the body shows from its top, as at every opening, and the slider does not move it), the interface sounds
   (`0x1B6`, `0x277`), the per-mission advisor panel (`0x5F16C0`, `0x93E3E0[counter]`) and the advisor panel `0x1FA` on closing.
 
@@ -212,5 +212,5 @@ dated by the tag system like the bank's letter (`ThemeParkIncObjectiveLetter`). 
 0x6A7, 1 the mission window, 2/3/4 kind 0x12 with 2/1/0, 5 type 0xE75, 6 the challenges window, 7 kind 0x12 with 1, 8 type 0x6A6, 9 challenges, 10 kind 0x12 with 2,
 11 type 0xA8F, 12 type 0xA8E, 13 challenges, 14 kind 0x12 with 0, 15 type 0xE77, 16 challenges. The letter window's go-to (`0x526AA5` → `0x5511B0`) opens the mission
 window or the challenge panel; a thing's camera move (`0x5033C0`) and kind 0x12 (`0xA59CC0` → `0x521C90`, not read) are not ported, and the obstacle things, which are in
-OpenTPW's world now (§6), get no camera move. The tag system opens a letter's window at once only for kinds 6 to 8 (`0x5CD060`); this letter (kind 4) becomes a row of the tag tube that the player
-opens. The slice has no tag tube, so the letters stay in `ParkEconomy.TpiObjectiveLetters`.
+OpenTPW's world now (§6), get no camera move. The tag system opens a letter's window at once only for kinds 6 to 8 (`0x5CD060`); this letter (kind 4) becomes a row of the tag tube, whose window shows
+it and runs its go-to ([TPI-TAG-TUBE.md](TPI-TAG-TUBE.md)).

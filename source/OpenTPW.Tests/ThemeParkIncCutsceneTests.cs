@@ -229,7 +229,7 @@ public class ThemeParkIncCutsceneTests
 		Run( 18 );
 		Assert.IsFalse( cutscene.Flying );
 		Assert.AreEqual( new ThemeParkIncCameraEnd( 32, 0, ThemeParkIncCutscene.ArrivalMode ), economy.TpiCameraEnds.Single() );
-		Assert.AreEqual( (1, true), (economy.TpiIntroductionLetters, career.ObjectiveLetterPosted), "mission 0's first briefing (0x5F1760)" );
+		Assert.AreEqual( (1, true), (economy.TpiTagTube!.Listed.Count( row => row.Source == ThemeParkIncLetterSource.Introduction ), career.ObjectiveLetterPosted), "mission 0's first briefing (0x5F1760)" );
 		Assert.AreEqual( 1, cutscene.MissionWindowRequests, "the mission window opens one update after the flyover's end" );
 		Assert.AreEqual( ThemeParkIncMissionState.Idle, missions.State, "a camera end in state 0 only resets" );
 

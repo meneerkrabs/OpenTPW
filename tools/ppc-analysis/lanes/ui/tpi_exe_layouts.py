@@ -7,7 +7,7 @@ the next table starts); that scan is not part of this script, whose ``--check`` 
 encrypted, so its tables are not readable statically.
 
 Phase 1 of the Theme Park Inc front end needs the first two tables; the in-game letter window the third; the mission window the
-last two:
+next two; the tag tube the last:
 
 * ``PersonnelFile`` 0x9C0FBC: the start menu. Builder 0x56ADB0 (``CreateWindow`` 0x84DEA0 over this table), handler
   0x568CE0/0x568D40. Window ``!window_s``, four ``filetab`` player slots, the ``filepage`` label areas, the name box
@@ -28,6 +28,11 @@ last two:
   buttons, which both carry the id -2.
 * ``ChallengesWindow`` 0x9B54CC: the mission window's other tab (builder 0x529960); its Objectives tab 0xC1200 opens
   the mission window again.
+* ``TagTube`` 0x9BBC84: the tag tube, the mail list window (builder 0x551CF0, procedure 0x5517B0): the title 0xBBB, the
+  sorted ``!list`` 0xBBE with its two column headers (0x10, 0x11) and scroll parts, the detail ``!frame`` 0xBC1 with
+  the From/To/Subject pairs (0xBC3/0xBC4, 0xBC7/0xBC8, 0xBC5/0xBC6), the ``mugshot`` 0xBC2, the body scroll bar 0xBC9,
+  the footer 0xBCA and ``b_goto`` 0xBCB, the empty-list label 0xBCC and the ``b_close``, ``b_okay``, ``b_delete`` and
+  ``b_help`` buttons (0xBB9, 0xBBA, 0xBBC, 0xBCD).
 
 A model hash is the root-name hash of ``UiModels.RootNameKey``; the names are resolved from the game's ui.wad and an
 unresolved or ambiguous hash is an error. Rectangles are (left, top, right, bottom) in the 2048 x 1536 virtual canvas.
@@ -56,6 +61,7 @@ TABLES = [
     ('LetterWindow', 0x9B4854, 0xA7F8, (46, 44, 2002, 1492), 0x9B4ADE, 17),
     ('MissionWindow', 0x9BE808, 0xCEC52, (196, 38, 2028, 1318), 0x9BECCC, 34),
     ('ChallengesWindow', 0x9B54CC, 0xC11FB, (196, 38, 2028, 1318), 0x9B5924, 30),
+    ('TagTube', 0x9BBC84, 0xBB8, (196, 38, 2028, 1318), 0x9BC08C, 31),
 ]
 
 # Controls the C# reads by model name or id; a table that lacks one is an error.
@@ -66,6 +72,8 @@ REQUIRED_MODELS = {
     'MissionWindow': ['!window', '!f_plain', '!frame', 'objectim', 'mugshot', 'tab_text', 'b_close', 'b_cancel', 'b_help', 'b_ltoggle10',
                       'b_updown', 'b_vscrollup', 'b_vscroller', 'b_vscrolldn'],
     'ChallengesWindow': ['!window', 'tab_text', '!listnarrow', 'b_ltoggle10'],
+    'TagTube': ['!window', '!f_plain', '!frame', '!list', 'mugshot', 'b_close', 'b_okay', 'b_delete', 'b_goto', 'b_help',
+                'b_vscrollup', 'b_vscroller', 'b_vscrolldn'],
 }
 REQUIRED_IDS = {
     'PersonnelFile': [0xC73D, 0xC73E, 0xC73F, 0xC740, 0xC754, 0xC755, 0xC759, 0xC73A, 0xC75B, 0xC758, 0xC757, 0xC75C, 0xC75E],
@@ -73,6 +81,7 @@ REQUIRED_IDS = {
     'LetterWindow': list(range(0xA7F9, 0xA809)),
     'MissionWindow': list(range(0xCEC53, 0xCEC6C)) + [0xFFFFFFFE],
     'ChallengesWindow': [0xC1200, 0xC1202, 0xC120E],
+    'TagTube': list(range(0xBB8, 0xBCE)) + [0x10, 0x11],
 }
 
 

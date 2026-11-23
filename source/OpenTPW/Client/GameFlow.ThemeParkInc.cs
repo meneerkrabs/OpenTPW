@@ -117,6 +117,11 @@ internal sealed partial class GameFlow
 			// a mail that comes while a letter is open waits for it: what the tag system does with a second notification then is not read (docs/reverse/TPI-BANK-MAIL.md)
 			if ( !hud.LetterOpen && tpiEconomy.TakeTpiMail() is { } mail )
 				PresentThemeParkIncMail( hud, tpiEconomy, mail );
+			// [BIN:TPI-EXE:0x54F1A0 unread advice] the tube's counter posts advisor message 0x198 (descriptor 0x9E3F80, group 0, response 739) or 0x15D (0x9E3FB8, group 0, two responses from 652)
+			// [EXT:tpi-capability-gates] Theme Park Inc's advisor plays only the weather forecasts (ThemeParkIncForecastQueue): these descriptors' score callbacks (0x405C68, 0x406F23), their
+			// response rows and the speech choice are not read, so the message is noted and not said
+			foreach ( var advice in tpiEconomy.TakeThemeParkIncTubeAdvice() )
+				Log.Trace( $"Theme Park Inc unread mail advice {advice:X} is not said: the advisor's message path is not ported." );
 			if ( tpiEconomy.TpiForecast is { } forecast )
 				PresentThemeParkIncForecast( level, hud, tpiEconomy, forecast );
 		}
@@ -166,17 +171,8 @@ internal sealed partial class GameFlow
 	/// and day (0x7D91E0); 0x518BC0 packs them and [BIN:TPI-EXE:0x518C30 letter date] the window prints UITEXT 956, "{0x29}.{0x2A}.{0x2B}",
 	/// with the day (0x29), the month (0x2A) and the year (0x2B). That is the shared calendar's date of the park turn.
 	/// </summary>
-	private static string ThemeParkIncLetterDate( UiStringTable strings, ParkEconomy economy )
-	{
-		var date = ParkCalendar.DateAtTurn( economy.Turn );
-		var culture = System.Globalization.CultureInfo.InvariantCulture;
-		return strings.FormatByType( ThemeParkIncLetterWindow.DateTemplate, new Dictionary<int, string>
-		{
-			[0x29] = date.Day.ToString( culture ),
-			[0x2A] = date.Month.ToString( culture ),
-			[0x2B] = date.Year.ToString( culture )
-		} );
-	}
+	private static string ThemeParkIncLetterDate( UiStringTable strings, ParkEconomy economy ) =>
+		ThemeParkIncLetterWindow.FormatDate( strings, ThemeParkIncTagLetter.PackedDate( economy.Turn ) );
 
 	/// <summary>Looks an advice text up in <c>TAG_SYSTEM.str</c> and puts it on the advice line.</summary>
 	private static void ShowThemeParkIncAdviceCaption( ThemeParkIncHud hud, int textEntry, string kind )

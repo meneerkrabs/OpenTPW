@@ -357,8 +357,15 @@ countdown does (`0x5D0369`).
 `ObstacleOpened` or `CutsceneObject` thing (message 0x29). An obstacle mission's Proceed posts 0x24 (the staff HQ rebuilds its slots, then the controller's flight opens the obstacle); its
 requirements also need the research (message 0x23, the lab's Park Expansion project) and the staff HQ's obstacle slots filled by trained staff. Both are ported, and the research and training rooms are now
 built from the facilities tab, so a project advances and staff train in play; the requirement finders know handymen, mechanics and gardeners (another type repeats the last answer), and all three are hired. The cheats extension's Skip Mission still runs the completion tick. What does
-not run yet besides: the challenges window (the text HUD's challenge panel stands in for its tab) and the tag tube that would file the "Objective Complete!" letter; the
-letter itself is composed (`ThemeParkIncObjectiveLetter`) but waits in `ParkEconomy.TpiObjectiveLetters`.
+not run yet besides: the challenges window (the text HUD's challenge panel stands in for its tab).
+
+**The tag tube.** Every letter the slice posts is filed as a row of the tag tube ([TPI-TAG-TUBE.md](reverse/TPI-TAG-TUBE.md)): the arrival's briefing and each
+"Objective Complete!" letter unread, the bank's and the firing letter read (their letter window still opens at once). The "Message Centre" window (table `0x9BBC84`)
+opens with the M key or the text HUD's button below "Current Objective", which stands in for the native HUD's mail panel and shows the unread count
+(`[EXT:tpi-text-hud]`). It lists the rows newest first (a header press sorts by subject or turns the direction), shows a selected row's sender, addressee,
+subject, picture and body, reads it after 2.5 seconds, deletes it with Delete and runs its go-to; no row click opens the letter window. The tube is kept in the
+Science continuation save. The advisor's unread-mail messages (0x198, 0x15D), the native panel's chime and picture and the body's scroll are not ported
+(`[EXT:tpi-capability-gates]`).
 
 ### Prebuilt science save
 

@@ -52,11 +52,13 @@ mission's tech level: for `TechLevel.Theme` 0 to 2 the zone record's `+0` rises 
 | 8 | guests in the park | same |
 
 `0x5B2060(4)` counts the guests on a cell of type 0, 1, 3, 9 or 10, Theme Park World's census. `0x5C1300` sums `(term − repaid) × instalment` over the bought
-loan records. OpenTPW measures types 1, 2, 3, 5 and 8 from its park. Type 4 sums the newest closed month of five analyser rings (`+0x20148` to `+0x20A88`, stride
+loan records. OpenTPW measures types 1, 2, 3, 5, 6, 7 and 8 from its park. Type 4 sums the newest closed month of five analyser rings (`+0x20148` to `+0x20A88`, stride
 `0x250`): the admission, shop, sideshow, ride and facility takings, so last month's revenue, not its profit (`research/tpi-campaign/r8-research-training-awards-shares.md`
 §5). The first three are Theme Park World's gate, shop and sideshow rows moved by `+0x268`, which OpenTPW's ledger keeps; but the ledger books ride and facility
-takings among the other income, without rows of their own, and a ring with no closed month adds `0x10(%esp)`, the pushed `ecx`, which is the analyser's own address. Type 6 reads awards that no ported code writes, type 7 the share system. Those three are never stored or decided
-(`[EXT:tpi-capability-gates]`), and a type-4 status is not started. Of the shipped missions only miss17 needs one (awards and shares), so it cannot be completed. No shipped mission sets a
+takings among the other income, without rows of their own, and a ring with no closed month adds `0x10(%esp)`, the pushed `ecx`, which is the analyser's own address. Type 4 is
+never stored or decided (`[EXT:tpi-capability-gates]`), and a type-4 status is not started; no shipped mission uses it. Type 6 counts the career's award bytes, which the park
+awards' checker writes, and type 7 the shares owned × 100 / `CompanySharesIssued` (`0x5EFF9F`: 0 shares give 0), from the shares game; both are ported
+([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)), so miss17 (six awards and 51 % of the shares) can be completed. No shipped mission sets a
 `TargetTime`, so no shipped mission can fail.
 
 ## 3. Requirements and completion

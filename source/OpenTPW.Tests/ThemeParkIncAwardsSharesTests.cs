@@ -248,6 +248,34 @@ public class ThemeParkIncAwardsSharesTests
 		Assert.AreEqual( Shares, ThemeParkIncShareSettings.Read( standard ) );
 	}
 
+	/// <summary>
+	/// <c>OPENTPW_TPI_PATH</c>: the Standard object bound from the shipped files holds the thresholds at the addresses the checker reads (<c>0xA028BC</c>..<c>0xA028E0</c>) and the share words at
+	/// <c>0xA02168</c>..<c>0xA02170</c>, as the keyed reader gives them; the thirteen challenge share prizes sum to 14300, which with the 1000 shares of the start-up is exactly 51 % of 30000.
+	/// </summary>
+	[TestMethod]
+	public void TheShippedWordsAreTheKeyedThresholdsAndSharePrizesReachExactlyFiftyOnePercent()
+	{
+		var files = TestCareerFiles.Shipped();
+		var standard = ThemeParkIncStandard.Load( files.Read, "science" )!;
+		int Word( uint address ) => standard[(int)(address - ThemeParkIncStandard.ObjectAddress)];
+		var bound = new ThemeParkIncAwardSettings( Word( 0xA028BC ), Word( 0xA028C0 ), Word( 0xA028C4 ), Word( 0xA028C8 ), Word( 0xA028CC ), Word( 0xA028D0 ), Word( 0xA028D4 ), Word( 0xA028D8 ),
+			Word( 0xA028DC ), Word( 0xA028E0 ) );
+		var keyed = new SamSettings( new[] { SamDocument.Parse( Encoding.Latin1.GetString( files.Read( "/levels/Standard.sam" )! ), "Standard.sam" ) } );
+		Assert.AreEqual( Retail, bound );
+		Assert.AreEqual( bound, ThemeParkIncAwardSettings.Read( keyed ) );
+		Assert.AreEqual( Shares, new ThemeParkIncShareSettings( Word( 0xA02168 ), Word( 0xA0216C ), Word( 0xA02170 ) ) );
+		Assert.AreEqual( Shares, ThemeParkIncShareSettings.Read( keyed ) );
+		var challenges = SamDocument.Parse( Encoding.Latin1.GetString( files.Read( "/Challenges.sam" )! ), "Challenges.sam" );
+		var prizes = new SamSettings( new[] { challenges } );
+		var sharePrizes = Enumerable.Range( 0, ThemeParkIncChallengeSettings.RowCount ).Select( row => prizes.GetInt( $"Challenges[{row}].SharePrize", 0, optional: true ) ).Where( prize => prize > 0 ).ToArray();
+		Assert.AreEqual( (13, 14300), (sharePrizes.Length, sharePrizes.Sum()) );
+		var shares = new ThemeParkIncSharesGame();
+		shares.Initialize( Shares );
+		foreach ( var prize in sharePrizes )
+			shares.AddShares( prize, Shares );
+		Assert.AreEqual( (15300, 51), (shares.Owned, shares.PercentOwned) );
+	}
+
 	// ---- the shares game -------------------------------------------------------------------
 
 	[TestMethod]

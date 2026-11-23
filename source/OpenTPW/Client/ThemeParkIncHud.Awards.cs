@@ -30,7 +30,7 @@ public sealed partial class ThemeParkIncHud
 
 	/// <summary>The awards the checker decided, as notes: "Park Awards - " and the award's name (the advisor's award messages stand behind them in the original).</summary>
 	// [EXT:tpi-text-hud] the award advice (0x606EC0) is shown as a note in the game's own words, UITEXT 452 and the award's name
-	private void ShowAwardNotices()
+	internal void ShowAwardNotices()
 	{
 		if ( level.Park?.Economy is not { TpiAwardNotices.Count: > 0 } economy )
 			return;

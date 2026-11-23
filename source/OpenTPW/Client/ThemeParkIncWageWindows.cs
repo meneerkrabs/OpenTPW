@@ -4,6 +4,20 @@ using OpenTPW.UI.Original;
 
 namespace OpenTPW;
 
+/// <summary>A number's text, formatted again only when the number changes.</summary>
+internal sealed class CachedNumber
+{
+	private int value;
+	private string? text;
+
+	public string Of( int number )
+	{
+		if ( text == null || number != value )
+			(value, text) = (number, number.ToString( CultureInfo.InvariantCulture ));
+		return text;
+	}
+}
+
 /// <summary>The common parts of the wage windows: the font slots, the colours and the layout's controls.</summary>
 internal static class ThemeParkIncWageWindowParts
 {
@@ -80,10 +94,13 @@ internal sealed class ThemeParkIncWageDemandWindow
 		this.settings = settings;
 		Member = member;
 		Demand = demand;
-		Offer = demand;
+		// [BIN:TPI-EXE:0x85CDCB varibox value] the box's value setter (vtable +0x20, 0x85CD5D) clamps the value to its range (+0x144..+0x148) and, when it changed, posts message 0x800 with it
+		// (0x85CE75), which the procedure stores at +0x14: the offer is the demand clamped to MinWage..MaxWage
+		Offer = Math.Clamp( demand, settings.MinWage, settings.MaxWage );
 		this.close = close;
 		this.negotiate = negotiate;
 		this.dismiss = dismiss;
+		ComposeTexts();
 	}
 
 	/// <summary><c>+4</c>: the member who demands.</summary>
@@ -98,15 +115,20 @@ internal sealed class ThemeParkIncWageDemandWindow
 	/// <summary>The window has closed (the procedure's message 0x14).</summary>
 	public bool Closed { get; private set; }
 
-	/// <summary>The member's name, the demand text and the agency's and ability's names as the window shows them.</summary>
-	public (string Name, string DemandText, string Agency, string Ability) Texts => (strings.StaffName( (int)Member.Role, Member.NameIndex ),
+	/// <summary>The member's name, the demand text and the agency's and ability's names as the window shows them: set once, as the builder 0x59ACA0 sets the controls' texts.</summary>
+	public (string Name, string DemandText, string Agency, string Ability) Texts { get; private set; }
+
+	private readonly CachedNumber offerText = new(), salaryText = new();
+
+	private void ComposeTexts() => Texts = (strings.StaffName( (int)Member.Role, Member.NameIndex ),
 		strings.FormatByType( DemandText, new Dictionary<int, string> { [0xD] = Demand.ToString( CultureInfo.InvariantCulture ) } ), strings.Entry( AgencyText( Member.Agency ) ),
 		strings.Ability( Member.Ability ));
 
 	public UiScreen Build()
 	{
 		var table = ThemeParkIncLayoutTables.WageDemand;
-		var screen = new UiScreen( ScreenName ) { Back = Close };
+		// [BIN:TPI-EXE:0x59A9F6 wage window Enter] the Enter key is the command -1, which the procedure takes as OK (whatever control the pointer rests on)
+		var screen = new UiScreen( ScreenName ) { Back = Close, Accept = PressOkay };
 		ThemeParkIncWageWindowParts.Image( screen, table, "window", 0xCA181 );
 		ThemeParkIncWageWindowParts.Title( screen, table.Control( 0xCA199 ).Rect, () => strings.Entry( TitleText ) );
 		// [BIN:TPI-EXE:0x59AD4B wage window name] the frame 0xCA187 in font slot 6 with the member's name (+0x1C0, 0x62B600)
@@ -120,7 +142,7 @@ internal sealed class ThemeParkIncWageDemandWindow
 		var box = table.Control( 0xCA185 );
 		ThemeParkIncWageWindowParts.Image( screen, table, "offerBox", 0xCA185 );
 		var field = box.Children.First( child => child.Type == 5 );
-		ThemeParkIncWageWindowParts.Label( screen, "offer", field.Rect, () => Offer.ToString( CultureInfo.InvariantCulture ), UiAlign.Center );
+		ThemeParkIncWageWindowParts.Label( screen, "offer", field.Rect, () => offerText.Of( Offer ), UiAlign.Center );
 		foreach ( var part in box.Children.Where( child => child.Model is "b_minus" or "b_plus" ) )
 		{
 			var up = part.Model == "b_plus";
@@ -136,7 +158,7 @@ internal sealed class ThemeParkIncWageDemandWindow
 			ThemeParkIncWageWindowParts.Label( screen, id, table.Control( value ).Rect, shown );
 		}
 		Pair( "employedFor", 0xCA18E, EmployedForText, 0xCA18F, () => "" );
-		Pair( "wage", 0xCA18C, WageText, 0xCA18D, () => Member.Salary.ToString( CultureInfo.InvariantCulture ) );
+		Pair( "wage", 0xCA18C, WageText, 0xCA18D, () => salaryText.Of( Member.Salary ) );
 		Pair( "agency", 0xCA193, AgencyLabelText, 0xCA194, () => Texts.Agency );
 		Pair( "ability", 0xCA196, AbilityLabelText, 0xCA195, () => Texts.Ability );
 		ThemeParkIncWageWindowParts.Label( screen, "experienceLabel", table.Control( 0xCA190 ).Rect, () => strings.Entry( ExperienceText ) );
@@ -155,13 +177,12 @@ internal sealed class ThemeParkIncWageDemandWindow
 		ThemeParkIncWageWindowParts.Label( screen, "demand", demandFrame.Inner ?? demandFrame.Rect, () => Texts.DemandText, UiAlign.Center, wrap: true );
 		// the member's picture (0xCA198: 0x502B60 renders the member into the frame) is not ported: Theme Park Inc's person renders are not built
 		ThemeParkIncWageWindowParts.Image( screen, table, "pictureFrame", 0xCA198 );
-		var okay = ThemeParkIncWageWindowParts.Button( screen, strings, "ok", table.Control( 0xCA184 ), PressOkay );
+		ThemeParkIncWageWindowParts.Button( screen, strings, "ok", table.Control( 0xCA184 ), PressOkay );
 		ThemeParkIncWageWindowParts.Button( screen, strings, "close", table.Control( 0xCA182 ), PressClose );
 		ThemeParkIncWageWindowParts.Button( screen, strings, "cancel", table.Control( 0xFFFFFFFE ), PressClose );
 		ThemeParkIncWageWindowParts.Button( screen, strings, "fire", table.Control( 0xCA183 ), PressFire );
 		// [BIN:TPI-EXE:0x59AA8D wage window help] 0xCA19A calls 0x503A40(0x1B0), the advisor panel's help, which is not ported
 		ThemeParkIncWageWindowParts.Button( screen, strings, "help", table.Control( 0xCA19A ), null );
-		screen.Focus( okay );
 		return screen;
 	}
 
@@ -233,6 +254,7 @@ internal sealed class ThemeParkIncWageNegotiationWindow
 	private readonly UiStringTable strings;
 	private readonly Action close;
 	private readonly Action<int, ThemeParkIncWageNegotiation.Choice> finish;
+	private readonly string memberName;
 
 	public ThemeParkIncWageNegotiationWindow( UiStringTable strings, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, int demand, int offer, Action close,
 		Action<int, ThemeParkIncWageNegotiation.Choice> finish )
@@ -244,6 +266,13 @@ internal sealed class ThemeParkIncWageNegotiationWindow
 		this.close = close;
 		this.finish = finish;
 		Result = ThemeParkIncWageNegotiation.Decide( member.Salary, offer, demand, settings.PercentageForBadWageDecision );
+		Body = Result switch
+		{
+			ThemeParkIncWageNegotiation.Accepted => strings.Entry( AcceptedText ),
+			ThemeParkIncWageNegotiation.Grudging => strings.Entry( GrudgingText ),
+			_ => strings.FormatByType( RefusedText, new Dictionary<int, string> { [0xD] = Demand.ToString( CultureInfo.InvariantCulture ) } )
+		};
+		memberName = strings.StaffName( (int)member.Role, member.NameIndex );
 	}
 
 	public ThemeParkIncStaffMember Member { get; }
@@ -259,18 +288,14 @@ internal sealed class ThemeParkIncWageNegotiationWindow
 	/// <summary>The dialog has closed and applied its decision.</summary>
 	public bool Closed { get; private set; }
 
-	/// <summary>The body: the member's answer.</summary>
-	public string Body => Result switch
-	{
-		ThemeParkIncWageNegotiation.Accepted => strings.Entry( AcceptedText ),
-		ThemeParkIncWageNegotiation.Grudging => strings.Entry( GrudgingText ),
-		_ => strings.FormatByType( RefusedText, new Dictionary<int, string> { [0xD] = Demand.ToString( CultureInfo.InvariantCulture ) } )
-	};
+	/// <summary>The body: the member's answer, composed once into the body buffer 0xA4E56C as the decision does.</summary>
+	public string Body { get; }
 
 	public UiScreen Build()
 	{
 		var table = ThemeParkIncLayoutTables.WageNegotiation;
-		var screen = new UiScreen( ScreenName ) { Back = Close };
+		// [BIN:TPI-EXE:0x55999F negotiation commands] command 0x100 is taken for 0xB285, 0xB28B and 0xB291 only, and the default procedure 0x507FA0 ignores it: the Enter key's -1 does nothing
+		var screen = new UiScreen( ScreenName ) { Back = Close, Accept = () => { } };
 		ThemeParkIncWageWindowParts.Image( screen, table, "window", 0xB284 );
 		ThemeParkIncWageWindowParts.Title( screen, table.Control( 0xB28A ).Rect, () => strings.Entry( TitleText ) );
 		// [BIN:TPI-EXE:0x559E1D negotiation fields] 0xB287 (UITEXT 0xA2) and 0xB288 (the member's name, 0x62B600) inside the body frame 0xB286, font slot 6; the body (0xA4E56C) centred (0x84A4D2(1, 1, 3),
@@ -278,7 +303,7 @@ internal sealed class ThemeParkIncWageNegotiationWindow
 		var frame = table.Control( 0xB286 );
 		ThemeParkIncWageWindowParts.Image( screen, table, "bodyFrame", 0xB286 );
 		ThemeParkIncWageWindowParts.Label( screen, "nameLabel", table.Control( 0xB287 ).Rect, () => strings.Entry( NameText ) );
-		ThemeParkIncWageWindowParts.Label( screen, "name", table.Control( 0xB288 ).Rect, () => strings.StaffName( (int)Member.Role, Member.NameIndex ) );
+		ThemeParkIncWageWindowParts.Label( screen, "name", table.Control( 0xB288 ).Rect, () => memberName );
 		ThemeParkIncWageWindowParts.Label( screen, "body", frame.Inner ?? frame.Rect, () => Body, UiAlign.Center, wrap: true );
 		// the member's picture (0xB289: 0x502B60 renders the member into the frame) is not ported: Theme Park Inc's person renders are not built
 		ThemeParkIncWageWindowParts.Image( screen, table, "pictureFrame", 0xB289 );
@@ -297,11 +322,10 @@ internal sealed class ThemeParkIncWageNegotiationWindow
 			}
 		}
 		// [BIN:TPI-EXE:0x5599A1 negotiation buttons] 0xB285 (b_close) and 0xB28B (b_okay) post message 4 and play sound 0x1B1; the window's destroy then sends message 0x14, which applies the decision
-		var okay = ThemeParkIncWageWindowParts.Button( screen, strings, "ok", table.Control( 0xB28B ), Close );
+		ThemeParkIncWageWindowParts.Button( screen, strings, "ok", table.Control( 0xB28B ), Close );
 		ThemeParkIncWageWindowParts.Button( screen, strings, "close", table.Control( 0xB285 ), Close );
 		// [BIN:TPI-EXE:0x5599B2 negotiation help] 0xB291 calls 0x503A40(0x1B1), the advisor panel's help, which is not ported
 		ThemeParkIncWageWindowParts.Button( screen, strings, "help", table.Control( 0xB291 ), null );
-		screen.Focus( okay );
 		return screen;
 	}
 

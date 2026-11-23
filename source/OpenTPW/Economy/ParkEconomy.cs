@@ -1559,7 +1559,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		// [BIN:TPI-EXE:0x5AF220 analyser month] Theme Park Inc's month message reaches its listeners in ascending thing-id order (the id-keyed tree walked in order by 0x436DD0).
 		// The analyser is id 5 and the bank 9, so its close and sample precede the batch credit, the instalments and the objects — whose entries therefore fall in the month that opens.
-		// A Theme Park Inc park runs no staff work (EconomyRules.ThemeParkIncMoney has Staff false), so nothing else moves
+		// Theme Park World's staff work (Rules.Staff) is off in a Theme Park Inc park; its own staff (TpiStaff) hear the month as things of the same order: the HQ first, the members' paydays after the bank
 		// [BIN:TPI-EXE:0x632C20 strike month] the staff HQ (thing 1) hears it first: the strike consideration reads the meters before the members' paydays review their wages
 		if ( Rules.ThemeParkInc )
 			ConsiderThemeParkIncStrikes();

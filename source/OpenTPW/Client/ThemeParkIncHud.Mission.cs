@@ -50,10 +50,7 @@ public sealed partial class ThemeParkIncHud
 	{
 		if ( Lost || level.Park?.Economy is not { TpiCareer.CurrentZone: not null } economy || economy.TpiMissionWindowWorld( strings.Entry( ThemeParkIncText.NewPlayer ) ) is not { } world )
 			return false;
-		if ( LetterOpen )
-			closeOpenLetter?.Invoke();
-		CloseTagTube();
-		CloseMissionWindow();
+		CloseHudWindow();
 		ThemeParkIncMissionWindow? window = null;
 		window = new ThemeParkIncMissionWindow( TextsOrLanguage, strings, world, missionSession, () => CloseMissionWindow( window ), OpenChallengePanel );
 		var screen = window.Build();

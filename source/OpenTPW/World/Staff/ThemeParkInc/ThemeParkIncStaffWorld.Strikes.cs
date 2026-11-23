@@ -21,7 +21,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	// a route sets 4 (0x628180) and answers 1; none logs "Could not get to strike location" (0x9D2A48) and goes on to the rest branch 0x62BC88
 	// [BIN:TPI-EXE:0x64FA50 gate status] the gate thing's (world +0x1EAB66) script variable 1 (VAR_STATUS, 1 open), -1 without a gate; [EXT:tpi-park-open] the Theme Park Inc park opens at the start and
 	// runs no gate script (its gate commands are not traced), so its gate stands open: the status reads 1
-	private bool StrikeWalk( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
+	internal bool StrikeWalk( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		if ( economy.TpiStaff is not { } staff || !staff.OnStrike( member.Role ) || GateStatus != ParkGate.GateIsOpen )
 			return false;

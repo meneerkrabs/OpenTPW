@@ -42,6 +42,9 @@ public sealed partial class ParkEconomy
 	{
 		foreach ( var demand in demands )
 		{
+			// a member always has a thing in the original (its handle keys the row); one without (a headless economy's) files no row
+			if ( demand.Member.ThingId == 0 )
+				continue;
 			TpiTagTube?.DeleteTagged( ThemeParkIncTagLetter.WageDemandTag, (ushort)demand.Member.ThingId );
 			TpiStaffAdvice.Add( ThemeParkIncWageDemandAdvice );
 			FileThemeParkIncLetter( ThemeParkIncTagLetter.WageDemand( demand.Type, demand.Member.ThingId, demand.Shortfall, Turn ) );

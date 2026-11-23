@@ -17,7 +17,7 @@ grievance and the month's escalation) is in [TPI-STAFF.md](TPI-STAFF.md) §4 and
   message 0x19, which the tag system files at once.
 - **The letter** (`0x5CEFB0`, vtable `0x93DFD0`): sender row key 5 of `0x9CD6D8` (Miss Moody, Human Resources Director, picture 5); subject TAG_SYSTEM 0xFB "Urgent Wage Demand";
   body 0xFC (kind 0xA, "…They're threatening to call a strike…") or 0xFD (0xB) with the member's name (parameter 8) and the demand (9); the row fill `0x5CF3F0`: tag 0x90, kind word 0x97,
-  go-to 0xE with the demand at `+0xE18`, the member's handle at `+0xE14`, category 2; no expiry; `0x5CD060` refuses kinds 0xA and 0xB, so no letter window opens and the row is unread.
+  go-to 0xE with the demand at `+0xE18`, the member's handle at `+0xE14`, category 2; no expiry; `0x5CD060` accepts only kinds 6, 7 and 8 (`0x5CD063..0x5CD070`), so no letter window opens for any `0x5CEFB0` kind (0xA to 0xD) and the row is unread.
 - The training letters come from the same constructor: kinds 0xC (`0x62AC4D`, the training's finish) and 0xD (`0x62E8D6`, its cancel) with subject 0x4E/0x50, body 0x4F/0x51 (the
   name and the ability), tag 0x8E/0x8F, go-to 5 (the staff window `0x58C6C0`, which the text HUD's staff panel stands in for), category 0.
 - The debug menu's test demand (`0x5382A2`, `rand() % 200`) is not a play path and is not ported.

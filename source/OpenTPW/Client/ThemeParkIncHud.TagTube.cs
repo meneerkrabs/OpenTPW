@@ -28,11 +28,7 @@ public sealed partial class ThemeParkIncHud
 	{
 		if ( Lost || TagTubeOpen || level.Park?.Economy is not { TpiTagTube: not null } economy )
 			return false;
-		if ( LetterOpen )
-			closeOpenLetter?.Invoke();
-		CloseMissionWindow();
-		WageDemandWindow?.Close();
-		NegotiationWindow?.Close();
+		CloseHudWindow();
 		ThemeParkIncTagTubeWindow? window = null;
 		var addressee = strings.Entry( ThemeParkIncText.NewPlayer );
 		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee, MemberName ),

@@ -206,6 +206,8 @@ public class ThemeParkIncWageTests
 		var staff = economy.TpiStaff!;
 		Assert.AreEqual( (48, 9, 6, 1), staff.Settings.StrikeArea, "Science's FixedItemInfo.StrikeArea*" );
 		Assert.AreEqual( (47, 17), staff.Settings.EntranceA );
+		// three rows, so the y draw's remainder matters (Science's SizeY is 1)
+		SetStrikeArea( staff.Settings, (48, 9, 6, 3) );
 		var member = Hire( economy, world, ThemeParkIncStaffRole.Handyman, (40, 9) );
 		StartStrike( staff, ThemeParkIncStaffRole.Handyman );
 		var turn = economy.Turn;
@@ -216,11 +218,12 @@ public class ThemeParkIncWageTests
 		var expected = new WorldRng( before );
 		var x = 48 + (int)(expected.NextWord() % 6u);
 		expected.NextWord();
-		var y = 9 + (int)(expected.NextWord() % 1u);
+		var y = 9 + (int)(expected.NextWord() % 3u);
 		Assert.AreEqual( (x, y), (member.Navigation!.TargetX >> 16, member.Navigation.TargetY >> 16), "four world draws pick the cell" );
 		for ( var step = 0; step < 2000 && member.State == ThemeParkIncStaffWorld.ToStrike; step++ )
 			world.Update( economy, member, ++turn );
 		Assert.AreEqual( ThemeParkIncStaffWorld.Striking, member.State );
+		Assert.AreEqual( (x, y), member.Navigation.Cell, "he stands on the drawn cell" );
 		Assert.AreEqual( ThemeParkIncStaffWorld.StrikeTemplate, member.Template );
 		Assert.AreEqual( (int)ThemeParkIncStaffMember.DisplayState.OnStrike, ThemeParkIncStaffWorld.DisplayCategory( member ) );
 		var state = economy.World.State;
@@ -248,6 +251,8 @@ public class ThemeParkIncWageTests
 		world.Update( economy, member, economy.Turn + 1 );
 		Assert.IsFalse( staff.OnStrike( ThemeParkIncStaffRole.Handyman ) );
 		CollectionAssert.AreEqual( new[] { new ThemeParkIncStaff.StrikeMessage( ThemeParkIncStaffRole.Handyman, 5, 0 ) }, economy.TakeThemeParkIncStrikeMessages().ToArray() );
+		// 0x62EB10 refuses the entrance cells (47, 17) and (48, 17) of a closed park, so the striker cannot walk back: "couldn't find park entrance" and 0x628180(0)
+		Assert.AreEqual( ThemeParkIncStaffWorld.Idle, member.State );
 	}
 
 	[TestMethod]
@@ -345,12 +350,150 @@ public class ThemeParkIncWageTests
 		return economy;
 	}
 
-	/// <summary>A 64 × 24 map with a path along y = 9 (x 30 to 60, through the strike area 48..53) and a path from (47, 9) down to the entrance (47, 17).</summary>
+	[TestMethod]
+	public void AStrikeJoinWhoseRouteIsRefusedTakesItsFourDrawsKeepsTheMaskAndFallsThroughToTheRestBranch()
+	{
+		// the strike area on the entrance cell of a closed park: 0x62EB10 refuses before it writes +0x1A0
+		var (economy, world, member) = JoinSetup( strike: true );
+		var settings = economy.TpiStaff!.Settings;
+		var before = economy.World.State;
+		var state = member.State;
+		Assert.IsFalse( world.StrikeWalk( economy, settings, member, economy.Turn + 1 ) );
+		var expected = new WorldRng( before );
+		for ( var draw = 0; draw < 4; draw++ )
+			expected.NextWord();
+		Assert.AreEqual( expected.State, economy.World.State, "four world draws" );
+		Assert.AreEqual( 1, member.Navigation!.Mask, "+0x1A0 = 1 stays: the refusal comes before the mask's write" );
+		Assert.AreEqual( state, member.State, "no state set" );
+
+		// the search after the refused join is the search without a strike, four draws later
+		var (strikeEconomy, strikeWorld, striker) = JoinSetup( strike: true );
+		var (plainEconomy, plainWorld, plain) = JoinSetup( strike: false );
+		for ( var draw = 0; draw < 4; draw++ )
+			plainEconomy.World.NextWord();
+		strikeWorld.Search( strikeEconomy, striker, strikeEconomy.Turn + 1 );
+		plainWorld.Search( plainEconomy, plain, plainEconomy.Turn + 1 );
+		Assert.AreEqual( plainEconomy.World.State, strikeEconomy.World.State );
+		Assert.AreEqual( (plain.State, plain.BaseSpeed, plain.Navigation!.TargetX, plain.Navigation.TargetY), (striker.State, striker.BaseSpeed, striker.Navigation!.TargetX, striker.Navigation.TargetY) );
+	}
+
+	private (ParkEconomy Economy, ThemeParkIncStaffWorld World, ThemeParkIncStaffMember Member) JoinSetup( bool strike )
+	{
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		var staff = economy.TpiStaff!;
+		SetStrikeArea( staff.Settings, (47, 17, 1, 1) );
+		var member = Hire( economy, world, ThemeParkIncStaffRole.Handyman, (40, 9) );
+		if ( strike )
+			StartStrike( staff, ThemeParkIncStaffRole.Handyman );
+		economy.ClosePark();
+		return (economy, world, member);
+	}
+
+	[TestMethod]
+	public void TheMonthConsidersTheStrikesBeforeThePaydaysReviewTheWages()
+	{
+		var economy = ScienceEconomy();
+		var staff = economy.TpiStaff!;
+		var members = Enumerable.Range( 0, staff.Settings.MinStaffOfTypeForStrike ).Select( _ =>
+		{
+			var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).FirstOrDefault( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Handyman, -1 );
+			if ( slot < 0 )
+				Assert.Inconclusive( "The Science pool holds too few cleaners." );
+			staff.BeginHire( slot );
+			return staff.EndHire( slot, placed: true )!;
+		} ).ToList();
+		// the first month boundary at which the park is old enough to strike
+		var boundary = economy.Turn + 1;
+		while ( ParkCalendar.FieldsAtTurn( boundary ).Month == ParkCalendar.FieldsAtTurn( boundary - 1 ).Month
+			|| ThemeParkIncStaff.ParkAgeMonths( boundary ) < staff.Settings.MinMonthsForStrike )
+			boundary++;
+		economy.Advance( ParkCalendar.TickOfTurn( boundary - 1 ) - economy.Tick );
+		Assert.AreEqual( boundary - 1, economy.Turn );
+		// a motivation just above the threshold that the payday's review (a salary below the expected wage) takes below it
+		foreach ( var member in members )
+		{
+			(member.Energy, member.Happiness, member.Motivation) = (100f, 100f, staff.Settings.MotivationPercentToStrike + 1);
+			member.Salary = 0;
+		}
+		economy.TakeThemeParkIncStrikeMessages();
+		economy.Advance( ParkCalendar.TickOfTurn( boundary ) - economy.Tick );
+		Assert.IsTrue( members.All( member => ((int)member.Motivation & 0xFF) <= staff.Settings.MotivationPercentToStrike ), "the payday's review lowered the motivation" );
+		Assert.AreEqual( 0, staff.Strikes[(int)ThemeParkIncStaffRole.Handyman].Level, "the HQ (thing 1) considered the meters before the paydays: no grievance yet" );
+		Assert.AreEqual( economy.Turn, staff.Strikes[(int)ThemeParkIncStaffRole.Handyman].Turn, "the month considered the role" );
+		Assert.AreEqual( 0, economy.TakeThemeParkIncStrikeMessages().Count );
+	}
+
+	[TestMethod]
+	public void TheHudsCloseOfItsWindowAppliesAnOpenNegotiation()
+	{
+		var economy = ScienceEconomy();
+		var staff = economy.TpiStaff!;
+		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index] != null );
+		staff.BeginHire( slot );
+		var member = staff.EndHire( slot, placed: true )!;
+		var hud = BuildHud( economy );
+		var salary = member.Salary;
+		hud.OpenNegotiation( member, 10, 10 );
+		Assert.IsNotNull( hud.NegotiationWindow );
+		Assert.AreEqual( ThemeParkIncWageNegotiation.Accepted, hud.NegotiationWindow!.Result );
+		// another window opening sends the registered one message 5 (0x5013C0): the dialog closes, and its message 0x14 applies the decision
+		typeof( ThemeParkIncHud ).GetMethod( "CloseHudWindow", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( hud, null );
+		Assert.IsNull( hud.NegotiationWindow );
+		Assert.IsFalse( hud.Stack.Screens.Any( screen => screen.Name == ThemeParkIncWageNegotiationWindow.ScreenName ) );
+		Assert.AreEqual( salary + 10, member.Salary );
+	}
+
+	[TestMethod]
+	public void EnterIsOkInTheWageWindowAndNothingInTheDialog()
+	{
+		var settings = Settings();
+		var member = new ThemeParkIncStaffMember( 1, ThemeParkIncStaffRole.Handyman, 0, 1000, 100, 0, 0 );
+		var events = new List<string>();
+		var window = new ThemeParkIncWageDemandWindow( Strings(), settings, member, 40, () => events.Add( "closed" ), ( _, demand, offer ) => events.Add( $"negotiate {demand} {offer}" ),
+			_ => events.Add( "fired" ) );
+		var screen = window.Build();
+		screen.Focus( screen.Find( "fire" ) );
+		screen.Accept!();
+		CollectionAssert.AreEqual( new[] { "closed", "negotiate 40 40" }, events, "Enter is command -1, OK, whatever the pointer rests on (0x59A9F6)" );
+		var dialog = new ThemeParkIncWageNegotiationWindow( Strings(), settings, member, 100, 0, () => events.Add( "dialog closed" ), ( _, _ ) => events.Add( "applied" ) );
+		var dialogScreen = dialog.Build();
+		dialogScreen.Accept!();
+		Assert.IsFalse( dialog.Closed, "the dialog's procedure takes no command -1 (0x55999F)" );
+		Assert.IsNull( dialogScreen.Focused, "no element starts focused" );
+		Assert.AreEqual( 500, new ThemeParkIncWageDemandWindow( Strings(), settings, member, 900, () => { }, ( _, _, _ ) => { }, _ => { } ).Offer, "the box clamps the demand (0x85CDCB)" );
+	}
+
+	private static ThemeParkIncHud BuildHud( ParkEconomy economy )
+	{
+		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, null,
+			new object[] { "science", Array.Empty<ObjectCatalogEntry>() }, null )!;
+		var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		SetBacking( level, "Objects", new ParkObjects( catalog, new SandboxParkGrid(), new WorldSeed( 1 ) ) );
+		SetBacking( level, "CellTool", new CellBuildTool() );
+		SetBacking( level, "LastActionMessage", "" );
+		var runtime = (ParkEconomyRuntime)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomyRuntime ) );
+		SetBacking( runtime, "Economy", economy );
+		SetBacking( level, "Park", runtime );
+		var strings = new UiStringTable( "English", Enumerable.Range( 0, 1000 ).Select( index => $"ui{index}" ).ToArray(), Enumerable.Range( 0, 400 ).Select( index => $"help{index}" ).ToArray(),
+			new string[1], new string[1], staffTypes: Enumerable.Repeat( "type", 12 ).ToArray(), staffNames: Enumerable.Range( 0, 6 ).Select( _ => Enumerable.Repeat( "name", 40 ).ToArray() ).ToArray() );
+		return new ThemeParkIncHud( level, strings, new ThemeParkIncHudHost() );
+	}
+
+	private static void SetBacking( object target, string property, object value ) =>
+		target.GetType().GetField( "<" + property + ">k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( target, value );
+
+	private static void SetStrikeArea( ThemeParkIncStaffSettings settings, (int X, int Y, int Width, int Height) area ) => SetBacking( settings, "StrikeArea", area );
+
+	/// <summary>A 64 × 24 map with a path along y = 9 (x 30 to 60, through the strike area 48..53, which also has rows 10 and 11) and a path from (47, 9) down to the entrance (47, 17).</summary>
 	private static ThemeParkIncStaffWorld World( ParkEconomy economy )
 	{
 		var grid = new GuestPathGrid( 64, 24 );
 		for ( var x = 30; x <= 60; x++ )
 			grid.SetPath( x, 9, true );
+		for ( var x = 48; x <= 53; x++ )
+			for ( var y = 10; y <= 11; y++ )
+				grid.SetPath( x, y, true );
 		for ( var y = 9; y <= 17; y++ )
 			grid.SetPath( 47, y, true );
 		economy.Litter.Cells = grid.Cells;

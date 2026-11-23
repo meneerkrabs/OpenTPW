@@ -41,7 +41,8 @@ Verified with these checks:
 - The native oracle `tpi_guest_states_oracle.py` runs at the game thread's 24-bit precision. It found no mismatch over:
   - the catch test for every state word from -1 to 40;
   - the setter's phase 1 entries;
-  - 1000 pre-update cases.
+  - 1000 pre-update cases;
+  - 1000 cases of the booth's verdict.
 - New tests for:
   - the tables and the switch;
   - the constructor's draws and the walk from the stop into the park;

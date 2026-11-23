@@ -165,8 +165,8 @@ A test checks every address against its key through the SAM binding.
 
 ## Verification
 
-- `tools/ppc-analysis/oracle_x86/tpi_guest_states_oracle.py` runs three routines natively at control word `0x7F` and compares them with the port: the catch test over -1..40, the setter's P1
-  entries and the pre-update. No mismatch (see the oracle README).
+- `tools/ppc-analysis/oracle_x86/tpi_guest_states_oracle.py` runs four routines natively at control word `0x7F` and compares them with the port: the catch test over -1..40, the setter's P1
+  entries, the pre-update and the booth's verdict. No mismatch (see the oracle README).
 - `ThemeParkIncNativeGuestTests` and `ThemeParkIncGuestSettingsTests` cover the rig behaviour, the draws, the saves and the shipped values.
 
 ## Phases after P1

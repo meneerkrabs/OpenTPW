@@ -1,7 +1,7 @@
 """Theme Park Inc's native guest states (phase P1) run in the x86 oracle sandbox and compared with the C# port's reading (ThemeParkIncGuestStates, GuestSimulation.ThemeParkInc).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified Theme Park Inc no-CD Game.exe (OPENTPW_TPI_EXE, SHA-256 pinned) are needed, nothing here is shipped.
-Three routines run natively, at the game thread's x87 control word 0x7F (24-bit significand):
+Four routines run natively, at the game thread's x87 control word 0x7F (24-bit significand):
 - the catch test 0x614720, exhaustively over the state words -1..40, against ThemeParkIncGuestStates.IsCatchable;
 - the state setter 0x61A540 for every state phase P1 enters (0..6, 8..16, 18, 22..25 and 27..30), over random guests, booths and turns: the world generator 0x6493E0, the booth cell
   0x5D79B0, the mode store 0x5D0F90, the speed term 0x60B3F0 and the stay turns 0x6118A0 run for real, the analyser's stay ring 0x5AF080 is stubbed and recorded; the state word, the mode,
@@ -9,7 +9,9 @@ Three routines run natively, at the game thread's x87 control word 0x7F (24-bit 
 - the pre-update 0x619B50 over random meters, cell words, turns, ids, umbrella states, balloon countdowns and states: the region record 0x5D7420, the clamped adder 0x60D0D0, _ftol 0x86FAB0, the
   speed term 0x60B3F0, the world generator and the history shift 0x611D60/0x611D20 run for real; the speed average 0x60BC90, the weather rule 0x611050, the park-cell test 0x60BE00, the
   thought pick 0x60FC60, the thought object 0x638960/0x6388F0 and the balloon release 0x613D00 are stubbed and recorded. The meters, the exit counter, the speed term, the queue words, the
-  history, the countdown, the draws and the stubs' calls are compared with ThemeParkIncPreUpdate.
+  history, the countdown, the draws and the stubs' calls are compared with ThemeParkIncPreUpdate;
+- the booth's verdict 0x6157D0 over random divisors, fee floors, multipliers, park excitements and fees: the world generator runs for real, the excitement 0x5B05D0, the park record 0x64EBE0
+  and the opinion ring 0x5AEDE0 are stubbed and recorded; the verdict, the opinion and the draw are compared with ThemeParkIncBoothVerdict.
 
 Usage: python3 -I tools/ppc-analysis/oracle_x86/tpi_guest_states_oracle.py [cases]
 """
@@ -155,7 +157,7 @@ def main(cases: int) -> int:
         raise SystemExit('needs OPENTPW_TPI_EXE (tools/ppc-analysis/oracle_x86/README.md)')
     image = Image.load(path)
     rng = random.Random(1123)
-    bad = {'catch': 0, 'setter': 0, 'pre': 0}
+    bad = {'catch': 0, 'setter': 0, 'pre': 0, 'verdict': 0}
 
     # the catch test
     catch = Sandbox(image, [(0x614720, 0x61479A)], budget=200)
@@ -289,7 +291,50 @@ def main(cases: int) -> int:
                 if bad['pre'] <= 5:
                     print(f'pre-update id {thing_id} turn {turn}: {key} native {value} port {port[key]}')
 
-    print(f"{cases} cases: catch {bad['catch']}, setter {bad['setter']}, pre-update {bad['pre']} mismatches")
+    # the booth's verdict
+    opinions: list = []
+    verdict_state: dict = {}
+    verdict = Sandbox(image, [(0x6157D0, 0x615912), (0x6493E0, 0x649415)] + thunks(0x40A92F),
+                      stubs={0x403E45: lambda sb: (0, 0), 0x40144C: lambda sb: (0x7000000, 0), 0x402BD5: lambda sb: (verdict_state['points'], 0),
+                             0x40AE2A: lambda sb: (verdict_state['park'], 0), 0x40B6E5: lambda sb: (opinions.append((sb.arg(1) & 0xFF, sb.arg(0))), (0, 8))[1]}, budget=2000)
+    for index in range(cases * 25):
+        verdict.reset()
+        verdict.set_fpcw(CONTROL_WORD)
+        opinions.clear()
+        divisor = rng.choice([1, 2, 4, 6, 7, rng.randrange(1, 40)])
+        minimum = rng.choice([0, 20, rng.randrange(0, 60)])
+        multipliers = [f32(rng.choice([0.75, 0.5, rng.uniform(0.1, 1.0)])), f32(rng.choice([1.25, rng.uniform(1.0, 2.0)])), f32(rng.choice([2.0, rng.uniform(1.5, 4.0)]))]
+        opinion = [rng.randrange(0, 101) for _ in range(4)]
+        points = rng.choice([0, rng.randrange(0, 200), rng.randrange(0, 5000)])
+        fee = rng.choice([0, minimum, rng.randrange(0, 200), rng.randrange(0, 2000)])
+        seed = rng.randrange(0, 1 << 32)
+        world = verdict.object(0x1EAC00, {SEED: ('I', seed)})
+        verdict.write(WORLD_POINTER, 'I', world)
+        park = verdict.object(0x200, {0x120: ('I', fee)})
+        verdict_state.update(points=points, park=park)
+        for address, value in ((0xA01A90, divisor), (0xA01A94, minimum)):
+            verdict.write(address, 'I', value)
+        for address, value in zip((0xA01A98, 0xA01A9C, 0xA01AA0), multipliers):
+            verdict.write(address, 'f', value)
+        for k, value in enumerate(opinion):
+            verdict.write(0xA01AEC + 4 * k, 'I', value)
+        native = (verdict.call(0x6157D0).eax, list(opinions), verdict.read(world + SEED, 'I'))
+        replica_world = World(seed)
+        value = (points // (replica_world.word() % ((divisor >> 1) + 1) + divisor) + minimum) & MASK
+        if value <= minimum and fee <= minimum:
+            port = (3, [])
+        else:
+            a, b = f32(float(value)), f32(float(fee))
+            if f32(multipliers[1] * a) <= b:
+                port = (0, [(opinion[0], 0)]) if b >= f32(multipliers[2] * a) else (1, [(opinion[1], 0)])
+            else:
+                port = (2, [(opinion[2], 0)]) if b <= f32(multipliers[0] * a) else (3, [(opinion[3], 0)])
+        if native != (*port, replica_world.state):
+            bad['verdict'] += 1
+            if bad['verdict'] <= 5:
+                print(f'verdict points {points} fee {fee} divisor {divisor} minimum {minimum}: native {native} port {port}')
+
+    print(f"{cases} cases: catch {bad['catch']}, setter {bad['setter']}, pre-update {bad['pre']}, verdict {bad['verdict']} mismatches")
     return sum(bad.values())
 
 

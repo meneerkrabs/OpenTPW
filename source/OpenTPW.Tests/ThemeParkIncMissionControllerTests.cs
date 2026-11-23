@@ -166,14 +166,35 @@ public class ThemeParkIncMissionControllerTests
 		Assert.AreEqual( 2, relativeCareer.StatusWord( 0, 0 ), "(50 + 100) × 30 / 100 = 45" );
 	}
 
+	/// <summary>
+	/// Miss17's statistics: type 6 counts the awards the career holds (<c>0x74C860</c>), type 7 the shares owned as a whole percentage of the issued shares (<c>0x5EFF9F</c>); 1000 shares from the
+	/// start-up and the thirteen share prizes (14300) are exactly 51 %.
+	/// </summary>
 	[TestMethod]
-	public void AnUnmeasurableStatisticIsNeverStoredOrDecided()
+	public void MissSeventeensAwardsAndSharesStatisticsAreMeasuredAndDecided()
 	{
-		var (controller, career, _) = Controller( Statistic( 0, 6, 6 ) + Statistic( 1, 7, 51, time: 1 ) );
-		Assert.AreEqual( (1, 1), (career.StatusWord( 0, 0 ), career.StatusWord( 1, 0 )), "awards and shares start with a zero baseline" );
-		Run( controller, 1, TurnAtDays( 3 ) );
-		Assert.AreEqual( (1, 1, 0, 0), (career.StatusWord( 0, 0 ), career.StatusWord( 1, 0 ), career.StatusWord( 0, 7 ), career.StatusWord( 1, 7 )) );
+		var (controller, career, host) = Controller( Statistic( 0, 6, 6, zone: 4 ) + Statistic( 1, 7, 51, zone: 4 ) );
+		Assert.AreEqual( (1, 1, 0, 0), (career.StatusWord( 0, 0 ), career.StatusWord( 1, 0 ), career.StatusWord( 0, 9 ), career.StatusWord( 1, 9 )), "both start with a zero baseline" );
+		Assert.AreEqual( (0, 0), (controller.Measure( 0 ), controller.Measure( 1 )), "no award; the reset's holding -1 measures -100 / 30000 = 0" );
+		var settings = new ThemeParkIncShareSettings( 30000, 1000, 100 );
+		career.Shares.Initialize( settings );
+		Assert.AreEqual( 3, controller.Measure( 1 ), "the start-up's 1000 shares are 3 %" );
+		career.Shares.AddShares( 14299, settings );
+		Assert.AreEqual( 50, controller.Measure( 1 ), "15299 shares are 50 % (integer division)" );
+		for ( var award = 0; award < 5; award++ )
+			career.StoreAward( award, 100 );
+		Assert.AreEqual( 5, controller.Measure( 0 ) );
+		Run( controller, 1, TurnAtDays( 2 ) );
+		Assert.AreEqual( (1, 1, 5, 50), (career.StatusWord( 0, 0 ), career.StatusWord( 1, 0 ), career.StatusWord( 0, 6 ), career.StatusWord( 1, 6 )), "stored daily, below the targets" );
 		Assert.IsFalse( controller.IsMissionComplete() );
+		career.StoreAward( 7, 50 );
+		career.Shares.AddShares( 1, settings );
+		Assert.AreEqual( (6, 51), (controller.Measure( 0 ), controller.Measure( 1 )), "the sixth award; 15300 shares are 51 %" );
+		Run( controller, TurnAtDays( 2 ) + 1, TurnAtDays( 3 ) + 4 );
+		Assert.AreEqual( (2, 2), (career.StatusWord( 0, 0 ), career.StatusWord( 1, 0 )), "both achieved" );
+		Assert.IsTrue( controller.IsMissionComplete() );
+		host.CompanySharesIssued = 0;
+		Assert.ThrowsException<InvalidOperationException>( () => controller.Measure( 1 ), "the original divides by the issued shares and faults" );
 	}
 
 	[TestMethod]

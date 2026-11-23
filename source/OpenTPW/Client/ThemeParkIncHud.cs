@@ -542,7 +542,6 @@ public sealed partial class ThemeParkIncHud
 		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
-		ShowWageDemands();
 		ShowTrainingNotices();
 		ShowChallengeNotices();
 		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );

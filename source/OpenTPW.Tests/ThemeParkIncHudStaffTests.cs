@@ -33,7 +33,6 @@ public class ThemeParkIncHudStaffTests
 		Set( level, "LastActionMessage", "" );
 		var economy = (ParkEconomy)RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomy ) );
 		Set( economy, "TpiStaff", staff );
-		Set( economy, "TpiWageDemands", new List<ThemeParkIncStaff.WageDemand>() );
 		var runtime = (ParkEconomyRuntime)RuntimeHelpers.GetUninitializedObject( typeof( ParkEconomyRuntime ) );
 		Set( runtime, "Economy", economy );
 		Set( level, "Park", runtime );

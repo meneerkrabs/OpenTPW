@@ -78,6 +78,40 @@ public static class ThemeParkIncTagLetter
 		Date = PackedDate( turn )
 	};
 
+	/// <summary>The wage demand's kinds (<c>0x5CEFB0</c>'s first argument): 0xA when its role has a grievance in a park younger than MinMonthsForStrike months (the letter threatens a strike), else 0xB.</summary>
+	public const int WageDemandWithStrike = 0xA, WageDemandWithoutStrike = 0xB;
+
+	/// <summary>The wage demand row's tag (<c>0x90</c>), the tag the daily routine and the negotiation delete the member's older rows by (<c>0x636C90(0x90, handle)</c>).</summary>
+	public const int WageDemandTag = 0x90;
+
+	/// <summary>The wage demand row's go-to kind (<c>0xE</c>): the go-to opens the wage demand window (<c>0x5511B0</c> → <c>0x59ABB0</c>).</summary>
+	public const int WageDemandGoto = 0xE;
+
+	/// <summary>The wage demand's sender row: key 5 of <c>0x9CD6D8</c> (Miss Moody, Human Resources Director), whose picture word is 5.</summary>
+	// [BIN:TPI-EXE:0x5CEFDC wage demand sender] the constructor looks for the row whose key is 5 (0x9CD728 first, then the table from 0x9CD6D8 in 16-byte steps) and keeps it at +8: {5, 0xB7, 0xB8, 5}
+	public const int WageDemandSenderName = 0xB7, WageDemandSenderTitle = 0xB8, WageDemandPicture = 5;
+
+	/// <summary>
+	/// The row of a wage demand of <paramref name="kind"/> (0xA or 0xB) by the member whose thing is <paramref name="thing"/> for <paramref name="demand"/> a month: tag 0x90, the go-to 0xE with the
+	/// demand, the member's thing as the key, category 2 and the sender's picture 5, unread and never expiring.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5CF3F0 wage demand row fill] +0xE14 = the member's handle (0x6375C0 on +0x24); kinds 0xA and 0xB: +0xE10 = 0xE, +0 = 0x90, +4 = 0x97, the letter's +0x10 = 2, +0xE18 = the demand (+0x28);
+	// +0xE04 stays the builder's 0 (0x635DB2), so the row never expires; the category is the letter's +0x10 (0x5CD410), the picture the sender row's word +0xC (0x5CD440); 0x5CD060 refuses kinds 0xA and
+	// 0xB, so no letter window opens and the row is filed unread (0x636142)
+	public static ThemeParkIncTagTubeRow WageDemand( int kind, int thing, int demand, long turn ) => new()
+	{
+		Tag = WageDemandTag,
+		Kind = NullTag,
+		Source = ThemeParkIncLetterSource.WageDemand,
+		Argument = kind,
+		Picture = WageDemandPicture,
+		Category = 2,
+		GotoKind = WageDemandGoto,
+		Key = thing,
+		GotoArgument = demand,
+		Date = PackedDate( turn )
+	};
+
 	/// <summary>The advice mail of a notification row's id.</summary>
 	internal static ThemeParkIncAdviceMail NotificationMail( int id ) => id == RedSixMonthsId ? ThemeParkIncAdviceMail.RedSixMonths : ThemeParkIncAdviceMail.ChallengeLost;
 }

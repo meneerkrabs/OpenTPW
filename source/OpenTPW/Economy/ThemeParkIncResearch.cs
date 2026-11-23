@@ -288,6 +288,34 @@ public sealed class ThemeParkIncResearch
 	}
 
 	/// <summary>
+	/// Message 0x21 for a staff member's thing destroyed (<c>0x61DAD0</c>): a researcher leaves both teams; a member of another role who is a slot's consultant is replaced by the consultant the slot's
+	/// project picks now from <paramref name="members"/>, the staff as the message finds them (the leaver still among them: the class's unlink comes after the message).
+	/// </summary>
+	// [BIN:TPI-EXE:0x61DAD0 lab staff removed] kind 8: each of the 20 words of both teams (+0x24, +0x4C) equal to the handle is cleared (the researcher's +0x274 is not touched); any other kind: each slot
+	// whose consultant word (+0x1C) is the handle takes 0x61D970(slot, the slot's project +0x14, handle), whose staff walk does not skip the leaver
+	public void StaffRemoved( ThemeParkIncStaffMember member, IEnumerable<ThemeParkIncStaffMember> members )
+	{
+		var handle = (ushort)member.ThingId;
+		if ( member.Role == ThemeParkIncStaffRole.Researcher )
+		{
+			foreach ( var team in teams )
+				for ( var index = 0; index < TeamSize; index++ )
+					if ( team[index] == handle )
+						team[index] = 0;
+			return;
+		}
+		for ( var slot = 0; slot < Slots; slot++ )
+		{
+			if ( consultants[slot] != handle )
+				continue;
+			// a consultant is set with the slot's project (the panel's commit) and cleared with it (0x61F560), so the slot holds a project here; the original would index the project table by -1
+			if ( slotProjects[slot] < 0 )
+				throw new InvalidOperationException( "A Theme Park Inc research slot holds a consultant without a project." );
+			consultants[slot] = PickConsultant( projects[slotProjects[slot]], members );
+		}
+	}
+
+	/// <summary>
 	/// Message 0x21 for a research room's thing destroyed (<c>0x61DB90</c>): both availability bytes clear, every team member is no longer listed and both teams empty, whichever room went.
 	/// </summary>
 	// [BIN:TPI-EXE:0x61DB90 room removed] the word +0x74 = 0; every member of both teams 0x62E240(T, 0) (a researcher: +0x27E = +0x274 = 0 only); both teams cleared

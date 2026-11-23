@@ -31,10 +31,12 @@ public sealed partial class ThemeParkIncHud
 		if ( LetterOpen )
 			closeOpenLetter?.Invoke();
 		CloseMissionWindow();
+		WageDemandWindow?.Close();
+		NegotiationWindow?.Close();
 		ThemeParkIncTagTubeWindow? window = null;
 		var addressee = strings.Entry( ThemeParkIncText.NewPlayer );
-		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee ),
-			() => RemoveTagTube( window ), RunLetterGoto );
+		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee, MemberName ),
+			() => RemoveTagTube( window ), RunTubeGoto );
 		TagTubeWindow = window;
 		Stack.Push( window.Build() );
 		return true;

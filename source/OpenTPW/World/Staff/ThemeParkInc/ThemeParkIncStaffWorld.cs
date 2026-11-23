@@ -64,6 +64,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		IdleTemplate => StaffSpriteEvents.Stand,
 		WalkTemplate => StaffSpriteEvents.Patrol,
 		WorkTemplate => StaffSpriteEvents.Sweep,
+		StrikeTemplate => StaffSpriteEvents.Strike,
 		RepairTemplate => StaffSpriteEvents.Repair,
 		PerformanceTemplateA => (int)StaffSpriteProgram.ThemeParkIncPerformanceA,
 		PerformanceTemplateB => (int)StaffSpriteProgram.ThemeParkIncPerformanceB,
@@ -620,6 +621,13 @@ public sealed partial class ThemeParkIncStaffWorld
 			case RestSearch:
 				UpdateRestSearch( economy, settings, member, turn );
 				break;
+			// [BIN:TPI-EXE:0x6287A0 strike states] the role's table sends 4 and 5 to the common handler: 4 -> 0x628855, 5 -> 0x628892 (ThemeParkIncStaffWorld.Strikes.cs)
+			case ToStrike:
+				UpdateToStrike( economy, member, turn );
+				break;
+			case Striking:
+				UpdateStriking( economy, member, turn );
+				break;
 		}
 	}
 
@@ -754,14 +762,16 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// The strike and rest gate (0x62BBA0) before every search: true when it set the member's state. A comfortable member's base speed follows his energy and his mood may show; a tired
 	/// one walks to the nearest rest area he reaches (the staff rooms, <see cref="TiredGate"/>), or may lose happiness and, while working, stops.
 	/// </summary>
-	// [BIN:TPI-EXE:0x62BBA0 strike gate] the strike branch needs the role's strike flag (HQ +0x160 + 12 × code, 0x634210) and 0x64FA50 == 1: the role strikes only through the month's strike
-	// consideration, which a park does not run yet (strikes in the world are a later package), so no record is active and the branch is not taken
+	// [BIN:TPI-EXE:0x62BBA0 strike gate] the strike branch (StrikeWalk) first: the role's strike flag (HQ +0x160 + 12 × code, 0x634210) and the gate's variable 1 (0x64FA50) equal to 1; a walk to the
+	// strike area sets 4 and the gate answers 1, a refused one falls through to the rest branch
 	// [BIN:TPI-EXE:0x62BC88 rest branch] energy byte (ftol & 0xFF) at most RestLevel (0xA02254): the rest branch (TiredGate)
 	// [BIN:TPI-EXE:0x62BD8D comfortable branch] energy byte above RestLevel: +0xD4 = lerp(exp, 0, MaxExperience, w, MaxSpeedDifference + w) with w = 140 at 100, else the word at 0x9CFB28 by the
 	// tens; happiness byte at most 10 asks for the thought 0x17, above 97 a world draw whose low nibble 0 asks for 0x16 (presentation)
 	// [BIN:TPI-EXE:0x62BE2B gate end] +0x27E is 0 for every member but a researcher listed for a room (only 0x62E240 writes it; the constructors clear it), so the gate answers 0
 	private bool Gate( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
+		if ( StrikeWalk( economy, settings, member, turn ) )
+			return true;
 		var energy = (int)(long)member.Energy & 0xFF;
 		if ( energy <= settings.RestLevel )
 			return TiredGate( economy, settings, member, turn );
@@ -828,6 +838,17 @@ public sealed partial class ThemeParkIncStaffWorld
 				break;
 			case ToRestArea:
 				RequestTemplate( member, 1 );
+				break;
+			// [BIN:TPI-EXE:0x628246 strike walk setter] 4: 0x60B3F0(1) (the speed bonus 25) and template 0xF
+			case ToStrike:
+				member.SpeedBonus = BonusTable[1];
+				RequestTemplate( member, WalkTemplate );
+				break;
+			// [BIN:TPI-EXE:0x628259 striking setter] 5: the sprite angle +0x2C = 0, 0x60B3F0(0) and template 0x1B; Theme Park World's state 5 clears its angle alike (the heading sector 4, towards -Y)
+			case Striking:
+				(member.HeadingX, member.HeadingY) = (0f, -1f);
+				member.SpeedBonus = BonusTable[0];
+				RequestTemplate( member, StrikeTemplate );
 				break;
 			case Resting:
 				member.Sprite.Delete();

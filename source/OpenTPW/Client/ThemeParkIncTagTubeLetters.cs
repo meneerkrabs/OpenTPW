@@ -14,7 +14,7 @@ internal static class ThemeParkIncTagTubeLetters
 	// [BIN:TPI-EXE:0x9D42E0 briefing tag record] {0x5C, 0x97, 0xA2, 0, 0, 0, 0, 0xAE, 0xA1, 0}: body 162, sender 174, subject 161 ("Welcome!")
 	public const int IntroductionBody = 0xA2, IntroductionSender = 0xAE, IntroductionSubject = 0xA1;
 
-	public static ThemeParkIncLetterWindow.Letter Compose( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, UiStringTable strings, string addressee )
+	public static ThemeParkIncLetterWindow.Letter Compose( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, UiStringTable strings, string addressee, Func<ThemeParkIncTagTubeRow, string>? memberName = null )
 	{
 		var date = ThemeParkIncLetterWindow.FormatDate( strings, row.Date );
 		return row.Source switch
@@ -22,6 +22,7 @@ internal static class ThemeParkIncTagTubeLetters
 			ThemeParkIncLetterSource.Objective => ThemeParkIncObjectiveLetter.Compose( row.Argument, texts, addressee, date ),
 			ThemeParkIncLetterSource.Introduction => Introduction( texts, addressee, date, row.Picture ),
 			ThemeParkIncLetterSource.Notification => Notification( ThemeParkIncTagLetter.NotificationMail( row.Argument ), texts, addressee, date ),
+			ThemeParkIncLetterSource.WageDemand => WageDemand( row, texts, addressee, date, memberName?.Invoke( row ) ?? "" ),
 			_ => throw new InvalidOperationException( $"A tag tube row has the unknown letter source {row.Source}." )
 		};
 	}
@@ -44,5 +45,21 @@ internal static class ThemeParkIncTagTubeLetters
 		var body = Tag( mail.TextEntry ) + "\n" + Tag( ThemeParkIncAdviceMail.SenderNameEntry ) + "\n" + Tag( ThemeParkIncAdviceMail.SenderTitleEntry );
 		return new ThemeParkIncLetterWindow.Letter( Tag( ThemeParkIncAdviceMail.SubjectEntry ), Tag( ThemeParkIncAdviceMail.SenderNameEntry ), addressee, date, body,
 			ThemeParkIncAdviceMail.SenderPicture - 1 );
+	}
+
+	/// <summary>
+	/// A wage demand (<c>0x5CEFB0</c>, vtable <c>0x93DFD0</c>): subject TAG_SYSTEM 0xFB, the sender row key 5's name, the player, the body 0xFC (kind 0xA) or 0xFD (0xB) with the member's name and the demand,
+	/// then the sender's signature.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5CF050 wage demand subject] kinds 0xA and 0xB: TAG_SYSTEM 0xFB; [BIN:TPI-EXE:0x5CF0F1 wage demand body] 0xFC (0xA) or 0xFD (0xB) with the member's name (0x62B600, parameter 8) and the
+	// demand (+0x28, parameter 9); the sender (0x5CD0D0) is the row's +4 (0xB7), the addressee (0x5CD110, +0xC = 1) the player, the signature (0x5CD1C0) "\n", 0xB7, "\n", 0xB8
+	// a row keeps the member's thing, not his name: the name is the member's now (a dismissed member's rows are deleted with him, 0x636B10)
+	private static ThemeParkIncLetterWindow.Letter WageDemand( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, string addressee, string date, string name )
+	{
+		string Tag( int entry, IReadOnlyDictionary<int, string>? values = null ) => texts.Format( ThemeParkIncTable.TagSystem, entry, values );
+		var bodyEntry = row.Argument == ThemeParkIncTagLetter.WageDemandWithStrike ? 0xFC : 0xFD;
+		var body = Tag( bodyEntry, new Dictionary<int, string> { [8] = name, [9] = row.GotoArgument.ToString( System.Globalization.CultureInfo.InvariantCulture ) } )
+			+ "\n" + Tag( ThemeParkIncTagLetter.WageDemandSenderName ) + "\n" + Tag( ThemeParkIncTagLetter.WageDemandSenderTitle );
+		return new ThemeParkIncLetterWindow.Letter( Tag( 0xFB ), Tag( ThemeParkIncTagLetter.WageDemandSenderName ), addressee, date, body, row.Picture - 1, row.GotoKind, row.GotoArgument );
 	}
 }

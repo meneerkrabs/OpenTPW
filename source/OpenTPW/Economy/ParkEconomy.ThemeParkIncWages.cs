@@ -38,7 +38,7 @@ public sealed partial class ParkEconomy
 	// advisor message 0x1C8 (0x71A930, 0x64EA00 -> 0x718820); the grievance and the age give the kind; new(0x2C), 0x5CEFB0(kind, member, +0x270) and 0x435DC0 posts it as the type-0x19 letter,
 	// which the tag system files at once (0x436DD0 -> 0x637970 case 0xC -> 0x635D80); then +0x26C = +0x270 = 0 (ThemeParkIncStaff.EndDay)
 	// [EXT:tpi-capability-gates] the message 0x1C8 is noted, not said: Theme Park Inc's advisor plays only the forecasts (ThemeParkIncForecastQueue)
-	private void FileThemeParkIncWageDemands( IEnumerable<ThemeParkIncStaff.WageDemand> demands )
+	internal void FileThemeParkIncWageDemands( IEnumerable<ThemeParkIncStaff.WageDemand> demands )
 	{
 		foreach ( var demand in demands )
 		{
@@ -140,7 +140,7 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x632C20 strike month] the staff HQ is thing 1 of the prebuilt park, so it hears the month message (0x0C) before the analyser (5), the bank (9) and the members (their reviews change
 	// the meters the grievance reads); [EXT:tpi-capability-gates] the messages (type 0x17, 0x435CA0 posted by 0x436DD0) reach only the advisor's listener 0x7176E0, whose speech is not ported: the client
 	// notes them
-	private void ConsiderThemeParkIncStrikes()
+	internal void ConsiderThemeParkIncStrikes()
 	{
 		if ( TpiStaff is not { } staff )
 			return;

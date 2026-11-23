@@ -14,6 +14,7 @@ internal sealed class TestMissionHost : IThemeParkIncMissionHost
 	public int BankBalance { get; set; }
 	public int OutstandingLoans { get; set; }
 	public int GuestsInPark { get; set; }
+	public int CompanySharesIssued { get; set; } = 30000;
 	public ushort CurrentObstacle { get; set; }
 	public Dictionary<int, ushort> Attractions { get; } = new();
 	public HashSet<int> Automatic { get; } = new();
@@ -98,9 +99,9 @@ public class ThemeParkIncMissionControllerTests
 		host.OutstandingLoans = 1;
 		Assert.AreEqual( (1, int.MaxValue), (controller.Measure( 0 ), controller.Measure( 1 )), "32-bit arithmetic wraps as the original's" );
 
-		var (unmeasured, _, _) = Controller( Statistic( 0, 4, 10 ) + Statistic( 1, 6, 6 ) + Statistic( 2, 7, 51 ) + Statistic( 3, 9, 1 ), host );
-		CollectionAssert.AreEqual( new int?[] { null, null, null, 0, 0 }, Enumerable.Range( 0, 5 ).Select( unmeasured.Measure ).ToArray(),
-			"4 (last month's takings), 6 (awards) and 7 (shares) are not measurable; any other type measures 0" );
+		var (unmeasured, _, _) = Controller( Statistic( 0, 4, 10 ) + Statistic( 3, 9, 1 ), host );
+		CollectionAssert.AreEqual( new int?[] { null, 0, 0, 0, 0 }, Enumerable.Range( 0, 5 ).Select( unmeasured.Measure ).ToArray(),
+			"4 (last month's takings) is not measurable; any other type measures 0" );
 	}
 
 	[TestMethod]

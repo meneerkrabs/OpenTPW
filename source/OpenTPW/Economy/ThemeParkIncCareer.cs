@@ -28,7 +28,15 @@ public sealed class ThemeParkIncZoneRecord
 /// </summary>
 public sealed record ThemeParkIncCareerSnapshot( int FiringLine, bool GameFinished, byte[] Flags, byte[] Awards, bool SwearFilter, bool NewCareer, int CardCount, int CardCursor,
 	int[] Cards, int MissionCounter, int Rank, byte[] Abilities, int GoldenTickets, int[] Regions, bool ObstacleResearched, bool ObstacleRemoved, int[] Statuses, bool GmiFlag,
-	byte[] History, ThemeParkIncZoneSnapshot[] Zones, string? CurrentZone );
+	byte[] History, ThemeParkIncZoneSnapshot[] Zones, string? CurrentZone )
+{
+	/// <summary>
+	/// The shares game's 182 bytes (<see cref="ThemeParkIncSharesGame"/>, the Global Master Save's section at <c>0x6209F0</c>). Null in a save from before the shares game was kept, which is refused
+	/// (<c>ParkSaveFile.SharesMissing</c>).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public byte[]? Shares { get; init; }
+}
 
 /// <summary>A zone record as a park save keeps it: the global save's 215 bytes after the name.</summary>
 public sealed record ThemeParkIncZoneSnapshot( byte[] Name, byte[] OneShot, byte[] OptionalFlags, int[] OptionalValues, byte[] AwardFlags, int[] AwardValues, ushort[] SignA, ushort[] SignB,
@@ -112,6 +120,11 @@ public sealed class ThemeParkIncCareer
 	public IReadOnlyList<byte> Flags => flags;
 	/// <summary><c>+0x2A..+0x31</c>: the park awards held.</summary>
 	public IReadOnlyList<byte> Awards => awards;
+	/// <summary>
+	/// The shares game (<c>0xAA0128</c>): a global beside the career that the career reset resets and the Global Master Save carries (<see cref="ThemeParkIncSharesGame"/>); OpenTPW keeps it with the
+	/// career that saves it.
+	/// </summary>
+	public ThemeParkIncSharesGame Shares { get; } = new();
 	/// <summary><c>+0x38</c>: the swear filter.</summary>
 	public bool SwearFilter { get; private set; }
 	/// <summary><c>+0x50</c>: a new career, whose first Science world is the prebuilt park.</summary>
@@ -246,6 +259,41 @@ public sealed class ThemeParkIncCareer
 	public int AwardsHeld => awards.Count( award => award != 0 );
 
 	/// <summary>
+	/// A park award's storage (<c>0x74C760</c>): the first win of award <paramref name="award"/> anywhere marks the career (<c>+0x2A + i</c>) and makes the current zone its holder with
+	/// <paramref name="value"/> (1); an award the current zone holds changes nothing (0); otherwise the zone that holds it with a value below <paramref name="value"/> loses it to the current zone (2),
+	/// and a holder with a value as high or higher keeps it (0). The career's byte is never cleared.
+	/// </summary>
+	// [BIN:TPI-EXE:0x74C760 award storage] career +0x2A + i != 1: +0x2A + i = 1, current zone (+0x4C) +0x20 + i = 1, +0x28 + 4i = value, return 1; else the current zone's +0x20 + i set: return 0; else
+	// the zone list (head +0x40, the node's record at +0x20, next 0x751E60) in order: a zone whose +0x20 + i is set and whose +0x28 + 4i is below the value (signed jg) is cleared, the current zone takes
+	// the flag and the value, return 2; none: return 0 (the inner test of a clear flag at 0x74C79C is dead)
+	public int StoreAward( int award, int value )
+	{
+		if ( award is < 0 or >= 8 )
+			throw new ArgumentOutOfRangeException( nameof( award ) );
+		if ( CurrentZone is not { } current )
+			throw new InvalidOperationException( "A park award needs the career's current zone record (the original's 0x74C760 reads +0x4C and would fault)." );
+		if ( awards[award] != 1 )
+		{
+			awards[award] = 1;
+			current.Data.Awards[award] = (1, value);
+			return 1;
+		}
+		if ( current.Data.Awards[award].Flag != 0 )
+			return 0;
+		foreach ( var zone in zones.Values )
+		{
+			var (flag, held) = zone.Data.Awards[award];
+			if ( flag != 0 && value > held )
+			{
+				zone.Data.Awards[award] = (0, held);
+				current.Data.Awards[award] = (1, value);
+				return 2;
+			}
+		}
+		return 0;
+	}
+
+	/// <summary>
 	/// The firing line table from OpenTPW's own reading of the layered Standard.sam keys: the six <c>FiringLineForRank[n].Limit</c> values (0 for a key no layer sets) and the count dword after them.
 	/// Used where the Standard files' bytes are not at hand (<see cref="BalanceSettings.ForThemeParkInc"/> over parsed settings); the game reads <see cref="ThemeParkIncStandard"/>.
 	/// </summary>
@@ -274,7 +322,7 @@ public sealed class ThemeParkIncCareer
 	/// </summary>
 	// [BIN:TPI-EXE:0x74BB40 career reset] +0x54 = 16, +0x58 = 0, 16 entries copied from 0xBFC680; the scan of data\cdk registration\*.cdk (validation 0x74BC2E..) finds nothing in the shipped
 	// data; then +0x105C = 0, +0x1060 = 1, +0 = 5, +0x13E5 = +0x13E4 = 0, +0x1074 = 0, +0x1064[i] = (i is 1, 7 or 9), statuses +0..+0x1C = 0 and +0x20 = 4 (+0x24..+0x2F untouched),
-	// +0x2A..+0x31 = 0, +0x34 = 0, +0x38 = 1, +0x50 = 1, +0x20 = 0, +0x21..+0x29 = 1, 0x74C050 (mission 0), the shares reset 0x621210 (not ported), +4 = 0, +0x1078[0..14] = 0 and +0x10B0 = 1
+	// +0x2A..+0x31 = 0, +0x34 = 0, +0x38 = 1, +0x50 = 1, +0x20 = 0, +0x21..+0x29 = 1, 0x74C050 (mission 0), the shares reset 0x621210, +4 = 0, +0x1078[0..14] = 0 and +0x10B0 = 1
 	public void Reset()
 	{
 		CardCount = 16;
@@ -300,6 +348,8 @@ public sealed class ThemeParkIncCareer
 		for ( var index = 1; index < flags.Length; index++ )
 			flags[index] = 1;
 		LoadMission();
+		// [BIN:TPI-EXE:0x74BE97 shares reset call] the career reset resets the shares game (0x621210) after the mission load and before +4
+		Shares.Reset();
 		GameFinished = false;
 		Array.Clear( regions );
 		regions[14] = 1;
@@ -540,14 +590,17 @@ public sealed class ThemeParkIncCareer
 
 	internal ThemeParkIncCareerSnapshot Capture() => new( FiringLine, GameFinished, (byte[])flags.Clone(), (byte[])awards.Clone(), SwearFilter, NewCareer, CardCount, CardCursor,
 		cards.SelectMany( card => new[] { card.Id, card.Level, card.Flag, card.Amount } ).ToArray(), MissionCounter, Rank, (byte[])abilities.Clone(), GoldenTickets, (int[])regions.Clone(),
-		ObstacleResearched, ObstacleRemoved, (int[])statuses.Clone(), GmiFlag, (byte[])history.Clone(), zones.Values.Select( zone => SnapshotOf( zone.Data ) ).ToArray(), CurrentZone?.Name );
+		ObstacleResearched, ObstacleRemoved, (int[])statuses.Clone(), GmiFlag, (byte[])history.Clone(), zones.Values.Select( zone => SnapshotOf( zone.Data ) ).ToArray(), CurrentZone?.Name )
+	{
+		Shares = Shares.Capture()
+	};
 
 	/// <summary>Whether a mission counter is one OpenTPW takes from a save: inside the region table (0 to 23), which the advance reads.</summary>
 	public static bool IsValidMissionCounter( int counter ) => counter >= 0 && counter < RegionForMission.Count;
 
 	internal static bool IsValid( ThemeParkIncCareerSnapshot? state ) =>
 		state is { MissionCounter: var counter } && IsValidMissionCounter( counter ) && state is { Flags.Length: 10, Awards.Length: 8, Cards.Length: CardSlots * 4, Abilities.Length: AbilityCount, Regions.Length: RegionCount, Statuses.Length: StatusCount * StatusWords,
-			History.Length: HistoryBytes, Zones: not null }
+			History.Length: HistoryBytes, Zones: not null } && state.Shares is null or { Length: ThemeParkIncSharesGame.Bytes }
 		&& state.Zones.All( zone => zone is { Name: not null, OneShot.Length: 6, OptionalFlags.Length: 4, OptionalValues.Length: 4, AwardFlags.Length: 8, AwardValues.Length: 8,
 			SignA.Length: ThemeParkIncZoneData.SignCharacters, SignB.Length: ThemeParkIncZoneData.SignCharacters } )
 		&& state.Zones.Select( zone => DataOf( zone ).Name ).Distinct( StringComparer.Ordinal ).Count() == state.Zones.Length
@@ -584,6 +637,8 @@ public sealed class ThemeParkIncCareer
 		CurrentZone = state.CurrentZone is { } current ? zones[current] : null;
 		LoadMission();
 		state.Statuses.CopyTo( statuses, 0 );
+		// a save from before the shares game is refused (ParkSaveFile.ValidateEdition), so a restored snapshot holds it
+		Shares.Load( state.Shares ?? throw new InvalidDataException( "The Theme Park Inc career snapshot holds no shares game." ) );
 	}
 
 	private static ThemeParkIncZoneSnapshot SnapshotOf( ThemeParkIncZoneData data ) => new( (byte[])data.NameBytes.Clone(), (byte[])data.OneShot.Clone(),
@@ -605,6 +660,7 @@ public sealed class ThemeParkIncCareer
 	/// <paramref name="theme"/> (3 for none).
 	/// </summary>
 	// [BIN:TPI-EXE:0x74C8F0 global save write] the header's theme is 0x42A340() (3 when it is -1); +0x14EC is set to the refresh flag before the body is written
+	// [BIN:TPI-EXE:0x74EC8D shares section] the body hands the shares game 0xAA0128 to its serializer 0x6209F0 (write 0x620A30, read 0x620E30; its result is ignored)
 	public ThemeParkIncGlobalSave ToGlobalSave( ThemeParkIncGlobalSave session, int theme, bool refresh )
 	{
 		ArgumentNullException.ThrowIfNull( session );
@@ -617,9 +673,14 @@ public sealed class ThemeParkIncCareer
 			Abilities = (byte[])abilities.Clone(), ObstacleResearched = (byte)(ObstacleResearched ? 1 : 0), ObstacleRemoved = (byte)(ObstacleRemoved ? 1 : 0),
 			Statuses = (int[])statuses.Clone(), Regions = (int[])regions.Clone(), Zones = zones.Values.Select( zone => zone.Data.Clone() ).ToList(),
 			OptionsBytesRaw = session.OptionsBytesRaw, GmiFlag = (byte)(GmiFlag ? 1 : 0), GameFinished = (byte)(GameFinished ? 1 : 0), FirstHourTime = session.FirstHourTime,
-			History = (byte[])history.Clone(), Block592720 = session.Block592720, SharesRaw = session.SharesRaw, MapFlagsRaw = session.MapFlagsRaw, AmbientRaw = session.AmbientRaw
+			History = (byte[])history.Clone(), Block592720 = session.Block592720, SharesRaw = Shares.ToBytes( SessionCompanyName( session ) ), MapFlagsRaw = session.MapFlagsRaw,
+			AmbientRaw = session.AmbientRaw
 		};
 	}
+
+	/// <summary>The language's company name the writer formats into an empty one: the session's (a new session's is <c>TAG_SYSTEM.str</c> entry 0xAC, <see cref="ThemeParkIncSession.New"/>).</summary>
+	// [BIN:TPI-EXE:0x620CEF company name] the shares writer formats TAG_SYSTEM entry 0xAC (limit 0x1E) into an empty mCompanyName before it writes it
+	private static string SessionCompanyName( ThemeParkIncGlobalSave session ) => session.SharesRaw is { Length: ThemeParkIncGlobalSave.SharesBytes } ? session.Shares!.CompanyName : "";
 
 	/// <summary>
 	/// Loads a global save into this career as the original's loader does (<c>0x74D110</c>): the reset and an empty zone map first, then every section the read reached, with the mission file of
@@ -668,6 +729,9 @@ public sealed class ThemeParkIncCareer
 		}
 		if ( save.History is { } savedHistory )
 			history = (byte[])savedHistory.Clone();
+		// [BIN:TPI-EXE:0x620E30 shares load] a stopped load leaves the reset's shares; the start-up's defaults (0x622060, 0x6223D0) come with the park (ThemeParkIncSharesGame.Initialize)
+		if ( save.SharesRaw is { } savedShares )
+			Shares.Load( savedShares );
 		if ( currentZone != null )
 			ChangeTheme( currentZone );
 		return save.Outcome;

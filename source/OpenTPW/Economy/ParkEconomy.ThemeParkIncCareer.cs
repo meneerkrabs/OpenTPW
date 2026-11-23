@@ -70,6 +70,7 @@ public sealed partial class ParkEconomy
 	// files a zone whose global.sam does not load is refused here, at the park's construction or load
 	private void EnterThemeParkIncZone( ThemeParkIncCareer career )
 	{
+		InitializeThemeParkIncShares( career );
 		TpiHeadlessCareer = GameCareerFiles.Instance.Read( ThemeParkIncMission.PathOf( 0 ) ) == null;
 		if ( TpiHeadlessCareer )
 			return;
@@ -117,5 +118,20 @@ public sealed partial class ParkEconomy
 		var rank = unchecked( career.Rank + 1 );
 		var read = TpiMissions!.Promotion( rank );
 		return rank.ToString( System.Globalization.CultureInfo.InvariantCulture ) + (read ? "" : " (unread limit)");
+	}
+
+	/// <summary>
+	/// The Win The Game cheat (<see cref="CheatKind.WinTheGame"/>): the debug menu's button gives the player 51 % of the company's issued shares, as the shares game's gift (<c>0x621CE0</c>) adds them.
+	/// The outcome is the shares owned afterwards.
+	/// </summary>
+	// [BIN:TPI-EXE:0x53835D win the game] the debug menu's procedure 0x538030 (built by 0x537B7F with the text "Win the game..." at 0x9B81F4) takes [0xA02168] × 51 (shll 4, add, lea × 3), ÷ 100 toward
+	// zero (0x51EB851F, sar 5 plus the sign bit), to 0x621CE0 on 0xAA0128 (0x538384); then a 0x24-byte end object 0x5CD6E0(0x5D, 6, 1) is posted to the message centre (0x5383A9..)
+	// [EXT:tpi-capability-gates] the end object (the majority shareholding's ending, as the completion tick's end-of-game object) is not posted: the ending sequence is not ported
+	private string WinThemeParkIncGame()
+	{
+		var career = TpiCareer!;
+		var issued = Settings.ThemeParkIncShares.CompanySharesIssued;
+		career.Shares.AddShares( unchecked( issued * 51 ) / 100, Settings.ThemeParkIncShares );
+		return career.Shares.Owned.ToString( System.Globalization.CultureInfo.InvariantCulture );
 	}
 }

@@ -4,6 +4,7 @@ Theme Park Inc's economy, staff and arrival routines are now ported at the preci
 
 - **Switched to single-precision steps** (`ThemeParkIncX87`, which rounds an exact integer-and-single result once): the staff wage review, daily experience gain, moving and working step, rest and meter add; the handyman's and gardener's search period and every role's idle wait; the shop cost of goods; the arrival group; and the scrap percentage of a plant. The guest base speed (#975), research, ride wear, plants and weather were already single-precision.
 - **What a retail park sees.** With the shipped `Arrival` words a group is one guest larger without weather and in rain and snow (100 × 0.01f rounds to 1.0). A plant whose script condition is 0 sells for 101 percent (3 × 33.333332f rounds to 100.0). A staff member with 34000 of 100000 experience searches every 33rd turn instead of every 32nd. The staff meters move only in their last bits.
+- **Smaller fixes on the way.** A staff meter whose sum is not a number is stored as 0, as the original's unordered compare does; the research lab's cash and cost products round from the exact integer; the arrival keeps the low 32 bits of a group of 2^31 or more, as `_ftol` does. The rounding helpers take allocation-free paths for the usual small operands.
 - **Not switched.** Theme Park Inc's loan offers share Theme Park World's loan arithmetic; the shipped offers are the same at both precisions.
 
 Verified with these checks:

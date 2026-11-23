@@ -2,15 +2,17 @@
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified Theme Park Inc no-CD Game.exe (OPENTPW_TPI_EXE, SHA-256 pinned) are needed, nothing here is shipped. The routine runs with its
 real _ftol (0x86FAB0); the type lookup 0x40C1D0 is stubbed to answer a synthetic type record whose special-ingredient word (+0x218) is set. The thing's cost of goods (+0x88) is set; the three float
-arguments are the quality byte, the ingredient byte and the third byte (-1.0 for the shop types 1, 5, 6, 7 and 8).
+arguments are the quality byte, the ingredient byte and the third byte (-1.0 for the shop types 1, 5, 6, 7 and 8). The port reads the routine at the control word 0x7F (24-bit significand), the game
+thread's after the Direct3D device started ([EXT:hardware-d3d-path]); the 53-bit word 0x27F is checked beside it.
 
-Usage: python3 -I tools/ppc-analysis/oracle_x86/tpi_goods_cost_oracle.py [cases]   (prints the number of mismatches against the formula, at the control words 0x27F (53 bits) and 0x7F (24 bits))
+Usage: python3 -I tools/ppc-analysis/oracle_x86/tpi_goods_cost_oracle.py [cases]   (prints the number of mismatches against the formula, at the control words 0x7F (24 bits) and 0x27F (53 bits))
 """
 from __future__ import annotations
 
 import random
 import struct
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -42,7 +44,8 @@ def formula(base: int, quality: float, ingredient: float, third: float, special:
     if precision == 53:
         product = ((i + q) + 1.0) * base * share
     else:
-        product = single(single(single(i + q) + 1.0) * base)
+        # the cost is an exact 32-bit integer (fimull), so its product with the single is rounded once from the exact value
+        product = single(float(Fraction(single(single(i + q) + 1.0)) * base))
         product = single(product * share)
     value = int(product)
     return value if value != 0 else 1
@@ -56,7 +59,7 @@ def main(cases: int) -> int:
     sandbox = Sandbox(Image.load(path), [(ENTRY, 0x5E638A), FTOL], stubs={LOOKUP: lambda sb: (record['info'], 4)})
     rng = random.Random(5)
     failures = 0
-    for precision, control in ((53, 0x27F), (24, 0x7F)):
+    for precision, control in ((24, 0x7F), (53, 0x27F)):
         bad = 0
         for _ in range(cases):
             base = rng.choice([0, 1, 5, 10, 100, rng.randrange(0, 5000)])

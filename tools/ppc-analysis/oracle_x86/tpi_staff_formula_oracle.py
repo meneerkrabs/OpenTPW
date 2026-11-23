@@ -124,7 +124,8 @@ def quotient(numerator: int, denominator: int, precision: int) -> float:
 
 
 def clamp(total: float) -> float:
-    return 100.0 if total > 100.0 else 0.0 if total < 0.0 else single(total)
+    """The meter clamp: fcom 100.0, then fcom 0.0 with C0 set stores 0; a NaN compares unordered and is stored as 0."""
+    return 100.0 if total > 100.0 else single(total) if total >= 0.0 else 0.0
 
 
 def review(kind, experience, pay, agency_row, happiness, motivation, unhappy, happy, lowest, max_experience, top, rand_value, precision=24):

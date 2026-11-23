@@ -11,24 +11,37 @@ namespace OpenTPW;
 // SetCooperativeLevel with DDSCL_FPUSETUP and without DDSCL_FPUPRESERVE (0x851 at 0x6BF33F, 0x808 at 0x6BF5A8) lets the Direct3D device creation set the control word 0x7F and keep it, as tp.exe's
 // 0x563914/0x563B92. Nothing on the game thread puts 53 bits back: _fpreset (0x880B57) and _control87 (0x880B0C) have no caller but the start-up's _controlfp; the renderer's pair 0x7071E0
 // (precision cleared) and 0x707210 (the saved word back) brackets each frame (0x6DD38B/0x6DD7FC, 0x6DDB03/0x6DDF7A), and its extended-precision restore 0x707230 runs only when bit 1 of the render
-// state 0xBE2328 is set, which no writer sets (initial value 0x3000141 at 0x6F2705, as tp.exe's 0x8BD508); the Bullfrog screen library's guard 0x812560 (0x7D5A98) changes only the exception masks,
-// and the C runtime's other control-word writers (_ftol 0x86FAB0, 0x86B720 and the math helpers 0x87A70F..0x87C545) restore the word they found
+// state 0xBE2328 is set, which no writer sets (initial value 0x3000141 at 0x6F2705, as tp.exe's 0x8BD508); the renderer's check-and-set 0x707160 (through the thunk 0x40B2DF) has no caller;
+// the Bullfrog screen library's guard 0x812560 (0x7D5A98) changes only the exception masks, and its own SetCooperativeLevel (0x7D5AAD: 0x51 or 0x08, with 0x800 only under a flag, never
+// FPUPRESERVE) creates no Direct3D device; 0x47AC30 sets rounding toward zero and restores the word at 0x47ADA2, 0x86DF20 masks the exceptions (0x3F) and restores it at 0x86E364, and the C
+// runtime's other control-word writers (_ftol 0x86FAB0, 0x86B720 and the math helpers 0x87A70F..0x87C545) restore the word they found
 // [EXT:hardware-d3d-path] OpenTPW models the hardware Direct3D path only: a device without DrawPrimitives2 would leave the CRT's 53 bits (COMPAT-018)
 internal static class ThemeParkIncX87
 {
+	// The common operands take allocation-free paths: an integer of at most 2^24 is itself a single, and for +, - and / of two singles the double result rounded to a single is the single
+	// result (53 >= 2 x 24 + 2, so the double rounding is innocuous); a product of a 29-bit integer and a 24-bit significand is exact in a double; a quotient with a 32-bit divisor is decided
+	// in 128-bit integers. Only the rare larger operands take BigInteger.
+	private const long SingleInteger = 1L << 24;
+	private const long ExactProductInteger = 1L << 29;
+
 	/// <summary><c>fild</c> <paramref name="numerator"/>, <c>fidiv</c> <paramref name="denominator"/>: the quotient rounded once to a single.</summary>
 	public static float Quotient( long numerator, long denominator )
 	{
-		if ( numerator == 0 || denominator == 0 )
+		if ( numerator == 0 || denominator == 0 || Math.Abs( numerator ) <= SingleInteger && Math.Abs( denominator ) <= SingleInteger )
 			return (float)((double)numerator / denominator);
 		var negative = numerator < 0 != denominator < 0;
+		if ( numerator != long.MinValue && Math.Abs( denominator ) <= uint.MaxValue )
+		{
+			var value = WideQuotient( (ulong)Math.Abs( numerator ), (ulong)Math.Abs( denominator ) );
+			return negative ? -value : value;
+		}
 		return Round( BigInteger.Abs( numerator ), BigInteger.Abs( denominator ), 0, negative );
 	}
 
 	/// <summary>The exact <paramref name="integer"/> (<c>fild</c>, <c>fimul</c>) times <paramref name="single"/>, rounded once to a single.</summary>
 	public static float Product( long integer, float single )
 	{
-		if ( integer == 0 || single == 0f || !float.IsFinite( single ) )
+		if ( integer == 0 || single == 0f || !float.IsFinite( single ) || Math.Abs( integer ) < ExactProductInteger )
 			return (float)(integer * (double)single);
 		var (significand, exponent) = Decompose( single );
 		return Round( BigInteger.Abs( integer ) * BigInteger.Abs( significand ), BigInteger.One, exponent, integer < 0 != significand < 0 );
@@ -37,7 +50,7 @@ internal static class ThemeParkIncX87
 	/// <summary>The exact <paramref name="integer"/> (<c>fild</c>, <c>fiadd</c>) plus <paramref name="single"/>, rounded once to a single.</summary>
 	public static float Sum( long integer, float single )
 	{
-		if ( integer == 0 || single == 0f || !float.IsFinite( single ) )
+		if ( integer == 0 || single == 0f || !float.IsFinite( single ) || Math.Abs( integer ) <= SingleInteger )
 			return (float)(integer + (double)single);
 		var (significand, exponent) = Decompose( single );
 		var total = exponent >= 0 ? new BigInteger( integer ) + (new BigInteger( significand ) << exponent) : (new BigInteger( integer ) << -exponent) + significand;
@@ -49,7 +62,7 @@ internal static class ThemeParkIncX87
 	/// <summary><paramref name="single"/> divided by the exact <paramref name="integer"/> (<c>fidiv</c>), rounded once to a single.</summary>
 	public static float Divide( float single, long integer )
 	{
-		if ( integer == 0 || single == 0f || !float.IsFinite( single ) )
+		if ( integer == 0 || single == 0f || !float.IsFinite( single ) || Math.Abs( integer ) <= SingleInteger )
 			return (float)(single / (double)integer);
 		var (significand, exponent) = Decompose( single );
 		return Round( BigInteger.Abs( significand ), BigInteger.Abs( integer ), exponent, integer < 0 != significand < 0 );
@@ -61,6 +74,22 @@ internal static class ThemeParkIncX87
 	/// </summary>
 	public static int Ftol( float value ) =>
 		float.IsFinite( value ) && Math.Abs( value ) < 9223372036854775808f ? unchecked( (int)(long)value ) : 0;
+
+	/// <summary><paramref name="numerator"/> / <paramref name="divisor"/> (a divisor below 2^32) rounded to a single, ties to even, in 128-bit integers.</summary>
+	private static float WideQuotient( ulong numerator, ulong divisor )
+	{
+		// the quotient scaled by 2^64 has at least 33 bits, so its 24 leading bits and the rest decide the rounding exactly
+		var scaled = (UInt128)numerator << 64;
+		var quotient = scaled / divisor;
+		var rest = scaled % divisor;
+		var shift = 128 - (int)UInt128.LeadingZeroCount( quotient ) - 24;
+		var significand = quotient >> shift;
+		var dropped = quotient & ((UInt128.One << shift) - 1);
+		var half = UInt128.One << (shift - 1);
+		if ( dropped > half || dropped == half && (rest != 0 || (significand & 1) != 0) )
+			significand++;
+		return (float)Math.ScaleB( (double)significand, shift - 64 );
+	}
 
 	/// <summary>A finite nonzero single as <c>significand × 2^exponent</c>, the significand a signed integer of at most 24 bits.</summary>
 	private static (long Significand, int Exponent) Decompose( float single )

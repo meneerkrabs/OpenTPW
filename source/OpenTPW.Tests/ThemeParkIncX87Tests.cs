@@ -36,6 +36,94 @@ public class ThemeParkIncX87Tests
 	}
 
 	[TestMethod]
+	public void TheHelpersAgreeWithAnExactRationalReferenceOnRandomOperands()
+	{
+		// every path: small operands (the double fast paths), 29-bit and larger integers, 32-bit divisors (the 128-bit quotient) and 64-bit ones (BigInteger)
+		var random = new Random( 20261122 );
+		long Integer()
+		{
+			var bits = random.Next( 1, 64 );
+			var value = (long)(random.NextInt64() & ((1L << bits) - 1)) | 1L << (bits - 1);
+			return random.Next( 2 ) == 0 ? -value : value;
+		}
+		float Single()
+		{
+			// a random 24-bit significand between 2^-12 and 2^12, where no result leaves the normal singles
+			var value = (float)Math.ScaleB( random.Next( 0x800000, 0x1000000 ), random.Next( -35, -11 ) );
+			return random.Next( 2 ) == 0 ? -value : value;
+		}
+		for ( var index = 0; index < 20000; index++ )
+		{
+			var (a, b, single) = (Integer(), Integer(), random.Next( 3 ) == 0 ? (float)random.Next( 1, 1000 ) / 7f : Single());
+			Assert.AreEqual( Reference( a, b ), ThemeParkIncX87.Quotient( a, b ), $"{a} / {b}" );
+			var (significand, exponent) = Exact( single );
+			Assert.AreEqual( Reference( a * significand * Pow2( exponent ), Pow2( -exponent ) ), ThemeParkIncX87.Product( a, single ), $"{a} x {single:R}" );
+			Assert.AreEqual( Reference( a * Pow2( -exponent ) + significand * Pow2( exponent ), Pow2( -exponent ) ), ThemeParkIncX87.Sum( a, single ), $"{a} + {single:R}" );
+			Assert.AreEqual( Reference( significand * Pow2( exponent ), b * Pow2( -exponent ) ), ThemeParkIncX87.Divide( single, b ), $"{single:R} / {b}" );
+		}
+		// the reference is sharp: this product is 2^40 + 2^16 (a midpoint) plus less than 2^-12, so the double rounds to the midpoint and the single to the even 2^40, while the exact value
+		// rounds up to 2^40 + 2^17
+		const long hard = 1098493290459;
+		var (hardSignificand, hardExponent) = Exact( 1.0009270906448364f );
+		Assert.AreEqual( 1099511758848f, Reference( hard * hardSignificand * Pow2( hardExponent ), Pow2( -hardExponent ) ) );
+		Assert.AreEqual( 1099511758848f, ThemeParkIncX87.Product( hard, 1.0009270906448364f ) );
+		Assert.AreEqual( 1099511627776f, (float)(hard * (double)1.0009270906448364f ), "a double in between rounds twice" );
+	}
+
+	[TestMethod]
+	public void TheArrivalKeepsTheLowDwordOfAGroupOfTwoToTheThirtyTwoOrMore()
+	{
+		// [BIN:TPI-EXE:0x005BCD60 arrival group] _ftol (0x86FAB0) keeps the low dword of the 64-bit truncation: (1717987308 + 20) x 2.5 is 2^32 + 1024, so the group is 1024 (the native routine at 0x7F,
+		// x86_targets.TPI_ARRIVAL_TARGET); a saturated or indefinite conversion would give MinPeople
+		var settings = GuestTests.CreateSettings();
+		settings.ArrivalNewParkBonus = 20;
+		settings.ArrivalPointsPerVisitor = 1;
+		settings.ArrivalMinPeople = 1;
+		settings.ArrivalWeatherPercentages = new[] { 90, 80, 75, 250 };
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 1 ) { ParkPoints = () => 1717987308, ArrivalWeatherState = () => 1 };
+		Assert.AreEqual( 1024, simulation.ArrivalGroupSize() );
+	}
+
+	/// <summary>A finite nonzero single as its exact <c>significand × 2^exponent</c>.</summary>
+	private static (System.Numerics.BigInteger Significand, int Exponent) Exact( float value )
+	{
+		var bits = BitConverter.SingleToInt32Bits( value );
+		var field = (bits >> 23) & 0xFF;
+		var significand = (long)(bits & 0x7FFFFF) | (field == 0 ? 0 : 0x800000L);
+		return (bits < 0 ? -significand : significand, field == 0 ? -149 : field - 150);
+	}
+
+	/// <summary>2^exponent as an integer, 1 for a negative exponent (the other side of the fraction carries it).</summary>
+	private static System.Numerics.BigInteger Pow2( int exponent ) => exponent > 0 ? System.Numerics.BigInteger.One << exponent : System.Numerics.BigInteger.One;
+
+	/// <summary>The single nearest the exact <paramref name="numerator"/> / <paramref name="denominator"/>, ties to even, found among the neighbours of an approximation.</summary>
+	private static float Reference( System.Numerics.BigInteger numerator, System.Numerics.BigInteger denominator )
+	{
+		if ( denominator.Sign < 0 )
+			(numerator, denominator) = (-numerator, -denominator);
+		var guess = (float)((double)numerator / (double)denominator);
+		var best = guess;
+		var bestDistance = Distance( guess );
+		foreach ( var candidate in new[] { MathF.BitDecrement( MathF.BitDecrement( guess ) ), MathF.BitDecrement( guess ), MathF.BitIncrement( guess ), MathF.BitIncrement( MathF.BitIncrement( guess ) ) } )
+		{
+			var distance = Distance( candidate );
+			var order = distance.Numerator * bestDistance.Denominator - bestDistance.Numerator * distance.Denominator;
+			if ( order.Sign < 0 || order.IsZero && (BitConverter.SingleToInt32Bits( candidate ) & 1) == 0 )
+				(best, bestDistance) = (candidate, distance);
+		}
+		return best;
+
+		(System.Numerics.BigInteger Numerator, System.Numerics.BigInteger Denominator) Distance( float candidate )
+		{
+			var (significand, exponent) = candidate == 0f ? (System.Numerics.BigInteger.Zero, 0) : Exact( candidate );
+			var candidateNumerator = significand * Pow2( exponent );
+			var candidateDenominator = Pow2( -exponent );
+			var difference = candidateNumerator * denominator - numerator * candidateDenominator;
+			return (System.Numerics.BigInteger.Abs( difference ), candidateDenominator * denominator);
+		}
+	}
+
+	[TestMethod]
 	[DataRow( 100000, 34000, 33, -33, DisplayName = "34000 of 100000: 33.0 (53 bits: 32.99999999999999, 32)" )]
 	[DataRow( 50000, 17000, 33, -33, DisplayName = "17000 of 50000 (53 bits: 32)" )]
 	[DataRow( 100000, 82297, 8, -8 )]

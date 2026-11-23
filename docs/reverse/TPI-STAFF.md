@@ -633,8 +633,10 @@ Every Theme Park Inc routine that runs on the game thread is read at the x87 con
   pair `0x7071E0` (precision field cleared, the old word returned) and `0x707210` (the saved word back) brackets each frame (`0x6DD38B`/`0x6DD7FC`, `0x6DDB03`/`0x6DDF7A`); its
   extended-precision restore `0x707230` runs only when bit 1 of the render state `0xBE2328` is set, and no writer sets it (initial value `0x3000141` at `0x6F2705`; the other writers
   set or clear bits 0, 6, 8, 27, 28, 30 and 31, or put back a saved copy; the only pointer use, `0x702A2A`, writes the word to a debug log). This is tp.exe's arrangement
-  (`0x591220`, `0x591240`, `0x591250`, `0x8BD508`). The Bullfrog screen library's guard `0x812560` (`0x7D5A98`) changes only the exception masks; `_ftol` (`0x86FAB0`), `0x86B720`
-  and the C runtime's math helpers save the word and put it back. The other `fldcw`/`fldenv` hits (`0x6AB738`, `0x66D969`, `0x67DD75`) are data in jump tables.
+  (`0x591220`, `0x591240`, `0x591250`, `0x8BD508`). The renderer's check-and-set `0x707160` (thunk `0x40B2DF`) has no caller. The Bullfrog screen library's guard `0x812560`
+  (`0x7D5A98`) changes only the exception masks, and its own `SetCooperativeLevel` (`0x7D5AAD`: `0x51` or `0x08`, with `0x800` only under a flag and never `FPUPRESERVE`; no direct
+  caller) creates no Direct3D device. `0x47AC30` sets rounding toward zero and restores the word at `0x47ADA2`; `0x86DF20` masks the exceptions (`0x3F`) and restores it at `0x86E364`;
+  `_ftol` (`0x86FAB0`), `0x86B720` and the C runtime's math helpers save the word and put it back. The other `fldcw`/`fldenv` hits (`0x6AB738`, `0x66D969`, `0x67DD75`) are data in jump tables.
 - Switched to single-precision steps (`ThemeParkIncX87`, which rounds an exact integer-and-single result once): the wage review `0x62CDA0`, the daily experience gain `0x629650`,
   the step `0x62B3E0`/`0x62B4D0`, the rest `0x62A1C0`, the meter add `0x60D0D0`, the search period of `0x5D5000`/`0x5D2820` and the idle term `0x62CA10`
   (`ThemeParkIncStaffMember`, `ThemeParkIncStaffWorld`), the shop cost of goods `0x5E6260` (`ThemeParkIncGoodsCost`), the arrival group `0x5BCD60` (`GuestSimulation`) and the

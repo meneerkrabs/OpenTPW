@@ -63,11 +63,12 @@ public sealed class ThemeParkIncStaffMember
 	public static ThemeParkIncStaffMember Hire( ThemeParkIncHireCandidate candidate, int id ) =>
 		new( id, candidate.Role, candidate.NameIndex, candidate.Experience, candidate.Wage, candidate.Agency, candidate.SpriteDraw );
 
-	/// <summary>A meter after adding a delta, the x87 sum already rounded to a single at the game thread's 24 bits: above 100 it is 100, below 0 it is 0, else the sum (a NaN too).</summary>
-	// [BIN:TPI-EXE:0x62CED1 meter clamp] fcom 100.0 (0x93AC24) with C0|C3 clear stores 100.0, fcom 0.0 (0x93A038) with C0 set stores 0, else the sum is stored as a single
+	/// <summary>A meter after adding a delta, the x87 sum already rounded to a single at the game thread's 24 bits: above 100 it is 100, below 0 or a NaN it is 0, else the sum.</summary>
+	// [BIN:TPI-EXE:0x62CED1 meter clamp] fcom 100.0 (0x93AC24) with C0|C3 clear stores 100.0, fcom 0.0 (0x93A038) with C0 set stores 0, else the sum is stored as a single; a NaN compares unordered
+	// (C0, C2 and C3 set), so it fails the first test and passes the second: 0 (0x62CEE8..0x62CEF7, 0x60D0EE..0x60D0FD, 0x62A2AB..0x62A2BA)
 	// [BIN:TPI-EXE:0x6BF33F control word] [EXT:hardware-d3d-path] the staff routines run on the game thread at the control word 0x7F the Direct3D device set (ThemeParkIncX87): each fadd, fmul and
 	// fdiv rounds to a single, so the clamps compare the rounded sums
-	private static float ClampSingle( float sum ) => sum > 100f ? 100f : sum < 0f ? 0f : sum;
+	private static float ClampSingle( float sum ) => sum > 100f ? 100f : sum >= 0f ? sum : 0f;
 
 	/// <summary>
 	/// The wage review after each payday and salary change: a salary below the expected wage costs motivation and happiness and records the shortfall (and, at low
@@ -151,7 +152,8 @@ public sealed class ThemeParkIncStaffMember
 		var working = unchecked( dayCounters[(int)DisplayState.Working] + dayCounters[(int)DisplayState.Researching] );
 		var all = unchecked( dayCounters[(int)DisplayState.OnStrike] + dayCounters[(int)DisplayState.Training] + dayCounters[(int)DisplayState.Idle]
 			+ dayCounters[(int)DisplayState.Resting] + dayCounters[(int)DisplayState.LookingForWork] + working );
-		var share = all == 0 ? float.NaN : ThemeParkIncX87.Quotient( working, all );
+		// fildll loads both sums zero-extended (the high dwords 0, 0x62966C and 0x62969F): the unsigned words as they are
+		var share = all == 0 ? float.NaN : ThemeParkIncX87.Quotient( (long)working, (long)all );
 		var gain = float.IsNaN( share ) ? 0 : (int)ThemeParkIncX87.Product( settings.Roles[Role].ExperiencePerMonth, share );
 		var modifier = Agency >= 0 && Agency < settings.Agencies.Count ? settings.Agencies[Agency].ExperienceGainModifier : 0;
 		if ( modifier != 0 && gain != 0 )

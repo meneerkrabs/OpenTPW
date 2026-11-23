@@ -44,7 +44,7 @@ def formula(base: int, quality: float, ingredient: float, third: float, special:
     if precision == 53:
         product = ((i + q) + 1.0) * base * share
     else:
-        # the cost is an exact 32-bit integer (fimull), so its product with the single is rounded once from the exact value
+        # the cost is an exact 32-bit integer (fimull); below 2^29 its product with the single is exact in a double, so it is rounded once (the inputs stay below 5000)
         product = single(float(Fraction(single(single(i + q) + 1.0)) * base))
         product = single(product * share)
     value = int(product)

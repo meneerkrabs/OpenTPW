@@ -67,6 +67,20 @@ public interface IThemeParkIncAwardPark
 }
 
 /// <summary>An award decided by a check (<c>0x606EC0</c>): the award, whether it was won (1) or moved to this zone from another (2), and the value it was stored with.</summary>
+/// <summary>A park whose staff and attraction lists are taken once for one check (the measures read them several times, and the adapter builds them on each read).</summary>
+internal sealed class CapturedPark( IThemeParkIncAwardPark park ) : IThemeParkIncAwardPark
+{
+	private IReadOnlyList<ThemeParkIncAwardStaff>? staff;
+	private IReadOnlyList<ThemeParkIncAwardAttraction>? attractions;
+
+	public byte CellType( int x, int y ) => park.CellType( x, y );
+	public bool HasLitter( int x, int y ) => park.HasLitter( x, y );
+	public bool HasTrackRecord( int x, int y ) => park.HasTrackRecord( x, y );
+	public short Security( int x, int y ) => park.Security( x, y );
+	public IReadOnlyList<ThemeParkIncAwardStaff> Staff => staff ??= park.Staff;
+	public IReadOnlyList<ThemeParkIncAwardAttraction> Attractions => attractions ??= park.Attractions;
+}
+
 public readonly record struct ThemeParkIncAwardNotice( ThemeParkIncAward Award, bool Moved, int Value )
 {
 	/// <summary>The advisor message the original posts for it (<see cref="ThemeParkIncParkAwards.WonAdvice"/>, <see cref="ThemeParkIncParkAwards.MovedAdvice"/>).</summary>
@@ -116,6 +130,7 @@ public static class ThemeParkIncParkAwards
 	{
 		ArgumentNullException.ThrowIfNull( career );
 		ArgumentNullException.ThrowIfNull( park );
+		park = new CapturedPark( park );
 		var hygiene = 100 - LitterPercent( park );
 		if ( hygiene >= settings.Hygiene && CoveredCells( park ) >= settings.HygieneMinParkSize && Store( career, ThemeParkIncAward.Hygiene, hygiene ) is { } cleanest )
 			return cleanest;

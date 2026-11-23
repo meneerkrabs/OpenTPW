@@ -12,12 +12,13 @@ public partial class Level
 	}
 
 	/// <summary>The level's park as Theme Park Inc's award checker reads it (<see cref="IThemeParkIncAwardPark"/>).</summary>
-	private sealed class ThemeParkIncAwardPark( Level level ) : IThemeParkIncAwardPark
+	internal sealed class ThemeParkIncAwardPark( Level level ) : IThemeParkIncAwardPark
 	{
 		private ParkEconomy Economy => level.Park!.Economy;
 
-		// [BIN:TPI-EXE:0x67F5B0 cell type] the cell record's dword +8, which the map keeps as its type (ParkCellMap.RawTypeAt; StaffPlacementRules reads the same word for the staff drop)
-		public byte CellType( int x, int y ) => Economy.Litter.Cells?.RawTypeAt( x, y ) ?? 0;
+		// [BIN:TPI-EXE:0x67F5B0 cell type] the cell record's dword +8: the cell's own type, which a track tile of the second layer never overwrites (the record is apart from the cell), so a cell
+		// holding only a tile reads 0 or the base type the tile keeps (ParkCellMap.PrimaryTypeAt, not the type byte OpenTPW shows for the tile)
+		public byte CellType( int x, int y ) => Economy.Litter.Cells?.PrimaryTypeAt( x, y ) ?? 0;
 
 		// [BIN:TPI-EXE:0x5D8CC2 litter type] the cell record's +0x30, Theme Park World's +0x2C: the park's litter map (ParkLitter)
 		public bool HasLitter( int x, int y ) => Economy.Litter.TypeAt( x, y ) != LitterType.None;
@@ -39,17 +40,21 @@ public partial class Level
 
 		private static ThemeParkIncAwardAttraction Attraction( OriginalObject item )
 		{
-			var settings = item.Entry.Settings;
-			var (width, height) = ShapeSize( settings );
 			var statistics = item.Runtime.Bump?.SectionStatistics();
-			return new ThemeParkIncAwardAttraction( settings.GetInt( "Info.WhichUIType" ), settings.GetInt( "Bumper.WhichTrackType" ), item.Runtime.IsOpen, width, height,
-				statistics?.LongestRun ?? 0, statistics?.Sections ?? 0 );
+			return Attraction( item.Entry.Settings, item.Runtime.IsOpen, statistics?.LongestRun ?? 0, statistics?.Sections ?? 0 );
+		}
+
+		/// <summary>An attraction's award record from its type's settings (<c>Info.WhichUIType</c>, <c>Bumper.WhichTrackType</c>, the shape's size) and its live state.</summary>
+		internal static ThemeParkIncAwardAttraction Attraction( ObjectSettings settings, bool open, int longestRun, int sections )
+		{
+			var (width, height) = ShapeSize( settings );
+			return new ThemeParkIncAwardAttraction( settings.GetInt( "Info.WhichUIType" ), settings.GetInt( "Bumper.WhichTrackType" ), open, width, height, longestRun, sections );
 		}
 
 		/// <summary>The width and height of the type's <c>Info.Shape</c> record as the map parser writes them: the most cells of a row (a space takes none) and the rows.</summary>
 		// [BIN:TPI-EXE:0x41AF73 shape size] the map parser stores the widest row's column count (a space skipped) at the record's +0 and the row count at +4 (0x41AF7B, 0x41AF82), as Theme Park World's
 		// 0x00402720 does (ObjectMapGrid)
-		private static (int Width, int Height) ShapeSize( ObjectSettings settings )
+		internal static (int Width, int Height) ShapeSize( ObjectSettings settings )
 		{
 			if ( !settings.Blocks.TryGetValue( "Info.Shape", out var rows ) )
 				return (0, 0);

@@ -23,10 +23,25 @@ public sealed partial class ThemeParkIncHud
 		if ( level.Park?.Economy is not { TpiCareer: { } career } )
 			return "";
 		var shares = career.Shares;
-		var held = Enum.GetValues<ThemeParkIncAward>().Where( award => career.Awards[(int)award] != 0 ).Select( AwardName ).ToArray();
-		return $"{strings.Entry( SharesOwnedLabel )} {shares.Owned}   {strings.Entry( ShareholdingLabel )} {shares.PercentOwned}   {strings.Entry( SharePriceLabel )} {shares.Price}   "
+		var mask = 0;
+		for ( var award = 0; award < AwardCount; award++ )
+			if ( career.Awards[award] != 0 )
+				mask |= 1 << award;
+		var key = (shares.Owned, shares.PercentOwned, shares.Price, mask);
+		if ( sharesTextKey == key && sharesText != null )
+			return sharesText;
+		var held = new List<string>();
+		for ( var award = 0; award < AwardCount; award++ )
+			if ( (mask & (1 << award)) != 0 )
+				held.Add( AwardName( (ThemeParkIncAward)award ) );
+		sharesTextKey = key;
+		return sharesText = $"{strings.Entry( SharesOwnedLabel )} {shares.Owned}   {strings.Entry( ShareholdingLabel )} {shares.PercentOwned}   {strings.Entry( SharePriceLabel )} {shares.Price}   "
 			+ strings.Entry( ParkAwardsPrefix ) + string.Join( ", ", held );
 	}
+
+	private static readonly int AwardCount = Enum.GetValues<ThemeParkIncAward>().Length;
+	private (int Owned, int Percent, int Price, int Mask) sharesTextKey;
+	private string? sharesText;
 
 	/// <summary>The awards the checker decided, as notes: "Park Awards - " and the award's name (the advisor's award messages stand behind them in the original).</summary>
 	// [EXT:tpi-text-hud] the award advice (0x606EC0) is shown as a note in the game's own words, UITEXT 452 and the award's name

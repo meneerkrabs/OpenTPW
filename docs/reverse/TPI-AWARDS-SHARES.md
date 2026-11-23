@@ -85,7 +85,7 @@ Awards panel's refresh `0x561E30`. No money moves and nothing is drawn. The chec
 - **Global Master Save** `0x6209F0` (from `0x74EC8D`): the 182 bytes (per slot the present word, the year, three words and two doubles, 36 bytes; the holding and the
   percentage; the name; the price). The write formats an empty name first; the read's result is ignored.
 - **Miss17**: 1000 shares from the start-up and the thirteen `SharePrize` values of `Challenges.sam` (rows 8, 14, 20 to 30: 600, 1900, 2000, 3000, 400, 400, 500, 650, 700,
-  450, 2500, 600, 600, together 14300) are 15300 shares, exactly 51 % of 30000 (`0x5EFF9F`: owned × 100 / 30000). Every share-prize challenge must be won.
+  450, 2500, 600, 600, together 14300) are 15300 shares, exactly 51 % of 30000 (`0x5EFF9F`: owned × 100 / 30000). Every share-prize challenge must be won. OpenTPW offers none of them yet: their types (17, 46, 48, 50 to 53, 55 to 58) are not among the measured challenge types (2, 25 and 41, `ThemeParkIncChallenges.IsPorted`), so until those types are ported, 51 % is reachable only through the cheats extension's "Win the game...".
 - **The debug menu** (procedure `0x538030`; the button is built at `0x537B7F`): "Win the game..." gives 51 % of the issued shares and posts the end-of-game object
   `0x5CD6E0(0x5D, 6, 1)`, the same object the completion tick of the last mission posts; "Award 10 Shares", "Increase share value by 5%" and "Trigger Next Annual Report"
   are its other share buttons.

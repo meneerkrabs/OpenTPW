@@ -373,7 +373,7 @@ training (half the staff trained, ten staff at least), the fastest go-kart track
 zone that beats its holder's value; the career counts the awards ever won. The two coaster awards are not decided: their measure needs a coaster's "viewed" byte, which only
 the original's attraction window sets, and its track record (`[EXT:tpi-capability-gates]`). The shares game starts the career with 1000 shares at a price of 100; a won
 challenge pays its share prize and raises the price by its `SharePriceEffectWon` (4 %), a slot's first loss lowers it by its `SharePriceEffectLost` (2 %). The thirteen share
-prizes add up to exactly the 15300 shares miss17's 51 % needs. The annual report's score and price step are ported, but the report is not run at the year change: it reads
+prizes add up to exactly the 15300 shares miss17's 51 % needs; none of those challenges is offered yet (their types are unmeasured), so the 51 % is reachable only through the cheat below until they are ported. The annual report's score and price step are ported, but the report is not run at the year change: it reads
 analyser rings OpenTPW does not keep (`[EXT:tpi-capability-gates]`). The text HUD's challenge panel shows the shares owned, the percentage, the price and the awards held,
 and an award decided becomes a note, in the game's own words (UITEXT); the native share portfolio and Park Awards panels and the advisor's award messages are not ported
 (`[EXT:tpi-text-hud]`, `[EXT:tpi-capability-gates]`). The shares are kept with the career, in the player file and the Science continuation save. The cheats extension's

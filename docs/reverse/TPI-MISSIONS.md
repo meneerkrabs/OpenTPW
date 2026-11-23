@@ -58,7 +58,8 @@ loan records. OpenTPW measures types 1, 2, 3, 5, 6, 7 and 8 from its park. Type 
 takings among the other income, without rows of their own, and a ring with no closed month adds `0x10(%esp)`, the pushed `ecx`, which is the analyser's own address. Type 4 is
 never stored or decided (`[EXT:tpi-capability-gates]`), and a type-4 status is not started; no shipped mission uses it. Type 6 counts the career's award bytes, which the park
 awards' checker writes, and type 7 the shares owned × 100 / `CompanySharesIssued` (`0x5EFF9F`: 0 shares give 0), from the shares game; both are ported
-([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)), so miss17 (six awards and 51 % of the shares) can be completed. No shipped mission sets a
+([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)), so miss17's statistics (six awards and 51 % of the shares) are measured. Its 51 % needs all thirteen share-prize challenges
+won; OpenTPW offers none of them yet: their types (17, 46, 48, 50 to 53, 55 to 58) are not among the measured challenge types (2, 25 and 41, `ThemeParkIncChallenges.IsPorted`), so until those types are ported, 51 % is reachable only through the cheats extension's "Win the game...". No shipped mission sets a
 `TargetTime`, so no shipped mission can fail.
 
 ## 3. Requirements and completion

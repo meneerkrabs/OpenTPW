@@ -753,7 +753,8 @@ public partial class Level : IDisposable
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) ) { PostSelected = NoteFenceSelection }
 			: null;
-		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null, UntypedHarnessWorld = false };
+		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null, UntypedHarnessWorld = false,
+			ThemeParkIncNativeGuests = GameEditions.IsThemeParkInc && GuestSimulation.ThemeParkIncNativeGuestsRequested };
 		BindGuestThoughtPresentation( Guests );
 		// a visit has no economy, whose turn an own park's arrivals read (ParkEconomyRuntime.AttachGuests): its arrivals read the turn of the save it is built on
 		if ( Visit != null )

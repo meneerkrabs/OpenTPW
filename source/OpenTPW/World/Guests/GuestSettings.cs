@@ -67,6 +67,11 @@ public sealed class GuestSettings
 	/// </summary>
 	public List<int> TpiPreferredExcitement { get; set; } = new();
 	internal ThemeParkIncGuestStartSettings? TpiGuestStart { get; set; }
+	/// <summary>
+	/// Theme Park Inc only: the Standard words Theme Park Inc's own guest states read, by address (<see cref="ThemeParkIncGuestSettings"/>); null in Theme Park World and where the Standard object
+	/// could not be read. Only <see cref="GuestSimulation.ThemeParkIncNativeGuests"/> reads it.
+	/// </summary>
+	public ThemeParkIncGuestSettings? TpiNative { get; set; }
 
 	internal int PreferredExcitement( int type, bool nativeTpiBirth ) => nativeTpiBirth
 		? TpiGuestStart!.Types[type].PreferredExcitement
@@ -121,7 +126,10 @@ public sealed class GuestSettings
 		}
 		var settings = FromValues( values );
 		if ( GameEditions.IsThemeParkInc )
+		{
 			settings.TpiGuestStart = ThemeParkIncGuestStartSettings.Parse( values );
+			settings.TpiNative = ThemeParkIncGuestSettings.Load( ParkEconomy.GameCareerFiles.Instance.Read, levelName );
+		}
 		return settings;
 	}
 

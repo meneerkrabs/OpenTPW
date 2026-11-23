@@ -168,6 +168,12 @@ public sealed record GuestSnapshot
 	/// <summary>Native TPI birth code, including zero. An absent code retains the legacy guest profile.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? TpiPrankCode { get; init; }
+	/// <summary>
+	/// The fields of a guest running Theme Park Inc's own state machine (<see cref="Guest.Tpi"/>, schema 10); absent on every other guest and in older saves, whose guests run the Theme Park World
+	/// rules (<c>[EXT:tpi-twp-guest-rules]</c>).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public ThemeParkIncGuestSnapshot? Tpi { get; init; }
 	/// <summary>The way out a guard's set-down drew (<see cref="Guest.ExitSide"/>); absent for every other guest and in older saves.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? ExitSide { get; init; }
@@ -473,14 +479,17 @@ public sealed record GuestSimulationSnapshot
 	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped. Versions 1 to 3 (before
 	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters, versions 1 to 5 (before balloons and costumes)
 	/// without either, versions 1 to 6 (before thought bubbles) without a bubble, versions 1 to 7 (before the thing pool) with guest ids that are a simulation's own counter,
-	/// versions 1 to 8 (before the arrival walk on the cell map) with guests that walk an arrival lane off the grid, which the restore turns into guests on the map.</summary>
-	public const int CurrentSchemaVersion = 9;
+	/// versions 1 to 8 (before the arrival walk on the cell map) with guests that walk an arrival lane off the grid, which the restore turns into guests on the map, versions 1 to 9
+	/// (before Theme Park Inc's native guest states) with no native Theme Park Inc guest (<see cref="GuestSnapshot.Tpi"/>).</summary>
+	public const int CurrentSchemaVersion = 10;
+	/// <summary>The first schema that may hold Theme Park Inc's native guest block (<see cref="GuestSnapshot.Tpi"/>).</summary>
+	public const int ThemeParkIncNativeSchemaVersion = 10;
 	/// <summary>The first schema whose guest ids are slots of the park's thing pool (tp.exe 0x00516270): earlier saves count their guests, and keep those ids.</summary>
 	public const int ThingPoolSchemaVersion = 8;
 	/// <summary>The first schema whose guests all walk the cell map, the arrival walk's states 0 to 5 included (tp.exe 0x004FF520 and the states around it): earlier saves may hold guests on an arrival lane.</summary>
 	public const int ArrivalWalkSchemaVersion = 9;
 	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 9 as written now, 8 before the arrival walk on the cell map, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
-	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>

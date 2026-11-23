@@ -288,6 +288,11 @@ public partial class Level
 		{
 			Guests.ArrivalVehicles = new ArrivalVehicles( Objects, BindFixedItemMadeInPlay );
 		}
+		// [BIN:TPI-EXE:0x5BCB10 arrival update] Theme Park Inc's native guests arrive and leave by the bus, the heli and the mono (the features bus, heli and mono, guest-states-p0.md §3)
+		else if ( GameEditions.IsThemeParkInc && Guests.ThemeParkIncNativeGuests && ArrivalVehicles.Available( Objects.Catalog, GuestSimulation.ThemeParkIncVehicleNames ) )
+		{
+			Guests.ArrivalVehicles = new ArrivalVehicles( Objects, BindFixedItemMadeInPlay, GuestSimulation.ThemeParkIncVehicleNames );
+		}
 	}
 
 	/// <summary>The level's shipped save, read once for <see cref="RestoreLegacySavedQueue"/> (a resumed park's <see cref="OriginalPark"/> has none); null until needed.</summary>

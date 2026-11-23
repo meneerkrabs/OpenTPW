@@ -861,7 +861,9 @@ public sealed class ParkObjects
 	internal IEnumerable<(int Placed, float Share)> AddDefaultFixedItemSteps()
 	{
 		// [EXT:tpi-bus-from-setup] a Theme Park Inc world without a prebuilt save gets its Bus at setup where the Theme Park World arrival vehicles are placed on first dispatch: no original reading of how Theme Park Inc places its arrival vehicle is available, and a bus standing from the start keeps the viewer's park alive
-		var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && (entry.SettingsName is "Gates" or "Lights" || GameEditions.IsThemeParkInc && entry.SettingsName == "Bus") ).ToList();
+		// [BIN:TPI-EXE:0x64FB90 vehicle dispatch] Theme Park Inc's native guests (GuestSimulation.ThemeParkIncNativeGuests) get their vehicle from the dispatch, which builds a new one each time: no Bus at setup
+		var setupBus = GameEditions.IsThemeParkInc && !GuestSimulation.ThemeParkIncNativeGuestsRequested;
+		var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && (entry.SettingsName is "Gates" or "Lights" || setupBus && entry.SettingsName == "Bus") ).ToList();
 		var count = 0;
 		foreach ( var entry in entries )
 		{

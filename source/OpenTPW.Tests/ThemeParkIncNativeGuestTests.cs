@@ -322,11 +322,32 @@ public sealed class ThemeParkIncNativeGuestTests
 		var (simulation, _, _) = Rig();
 		var guest = simulation.SpawnInPark( 12, 17 );
 		guest.ExitLevel = 10000;
-		guest.TemporaryHistory[0] = 5;
 		while ( (simulation.ParkTurn + 1) % 20 != 0 || !simulation.NextTickStartsTurn )
 			simulation.Tick( Tick );
+		(guest.TemporaryHistory[0], guest.TemporaryHistory[1], guest.TemporaryHistory[2], guest.TemporaryHistory[3]) = (5, 6, 7, 8);
 		simulation.Tick( Tick );
-		CollectionAssert.AreEqual( new[] { 0, 5, 0, 0 }, guest.TemporaryHistory, "0x611D60 every 20 turns" );
+		CollectionAssert.AreEqual( new[] { 0, 5, 6, 6 }, guest.TemporaryHistory, "0x611D60 every 20 turns; 0x611D20's overlapping copy loses the third word (tpi_guest_states_oracle.py)" );
+	}
+
+	[TestMethod]
+	public void ABalloonsTimeRunsOnlyOnAParkCellOutsideStatesTwentyAndTwentyOne()
+	{
+		var (simulation, _, _) = Rig();
+		var guest = simulation.SpawnInPark( 12, 17 );
+		guest.ExitLevel = 10000;
+		guest.Happiness = 60;
+		var tpi = guest.Tpi!;
+		BeforePhase( simulation, guest.Id & 3 );
+		tpi.BalloonCountdown = 1;
+		tpi.HoldsBalloon = true;
+		simulation.Tick( Tick );
+		Assert.AreEqual( (0u, false), (tpi.BalloonCountdown, tpi.HoldsBalloon), "the countdown reaches 0: 0x613D00(0)" );
+		Assert.AreEqual( 60f - 15f, guest.Happiness, "MediumHappinessChange" );
+		simulation.PlaceForTest( guest, 12, 5 );
+		BeforePhase( simulation, guest.Id & 3 );
+		tpi.BalloonCountdown = 5;
+		simulation.Tick( Tick );
+		Assert.AreEqual( 5u, tpi.BalloonCountdown, "off the park cells the countdown is skipped (0x619E7D jumps to 0x619EBB)" );
 	}
 
 	// ---- The weather rule ----------------------------------------------------------------------------------------------------

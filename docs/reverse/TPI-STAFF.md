@@ -239,7 +239,8 @@ Ported as an economy model, without the world simulation, and checked against th
 - Payday and the day message: `ThemeParkIncStaff.PayMonth` (`0x6265DE`, salary debit then review) and `EndDay` (`0x628CA0`: experience, then the wage
   demand on its day of the month, at most one per 30 game days for all staff via `0xAA07F4`, type 0xA or 0xB), members in ascending handle order (`0x436E97`).
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
-- The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
+- The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21). The label was widened on 2026-11-22
+  (user decision) to the guests' four sites `0x613F18`, `0x615318`, `0x615328` and `0x61795E`; `rand() % N` is `world.Next(N)` there too (docs/reverse/TPI-GUESTS.md).
 
 Not ported yet: the guard's chase, carry and first aid (see "Entertainer and guard" below); the wage negotiation dialog (`0x559E00`). Slacking (`0x62D650`) and the low-motivation rest (`0x62D866`) are ported with the rest areas (§13). Training is ported since November 21, 2026 (§12.2).
 

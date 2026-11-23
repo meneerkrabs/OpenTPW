@@ -215,12 +215,15 @@ public sealed partial class GuestSimulation
 				term = 1;
 			}
 			guest.ToiletBonus = UmbrellaRules.SpeedTerm( guest.UmbrellaState, SpeedTermWord( term ) );
-			// [BIN:TPI-EXE:0x619E63 thought draw] outside states 0x14 and 0x15 and on a park cell (0x60BE00): one world draw, R % 10 == 0 runs the pick 0x60FC60
-			if ( tpi.State is not (ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl) && OnParkCellTypeAt( cx, cy ) && random.NextWord() % 10 == 0 )
-				ThemeParkIncThoughtPick( guest, settings );
-			// [BIN:TPI-EXE:0x619E9E balloon countdown] +0x298 above 0 (unsigned) loses 1; at 0 the balloon goes (0x613D00(0))
-			if ( tpi.BalloonCountdown > 0 && --tpi.BalloonCountdown == 0 )
-				ReleaseThemeParkIncBalloon( guest, tpi, settings );
+			// [BIN:TPI-EXE:0x619E63 thought draw] outside states 0x14 and 0x15 and on a park cell (0x60BE00): one world draw, R % 10 == 0 runs the pick 0x60FC60; then the balloon countdown 0x619E9E:
+			// +0x298 above 0 (unsigned) loses 1 and at 0 the balloon goes (0x613D00(0)). Either test failing jumps to 0x619EBB, past the countdown: a guest on an object, held or outside the park keeps its balloon's time
+			if ( tpi.State is not (ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl) && OnParkCellTypeAt( cx, cy ) )
+			{
+				if ( random.NextWord() % 10 == 0 )
+					ThemeParkIncThoughtPick( guest, settings );
+				if ( tpi.BalloonCountdown > 0 && --tpi.BalloonCountdown == 0 )
+					ReleaseThemeParkIncBalloon( guest, tpi, settings );
+			}
 			// [BIN:TPI-EXE:0x6388F0 thought object] a bubble older than its stamp + 12 goes (thought 21 holds 120 turns; nothing of phase P1 shows 21)
 			if ( guest.BubbleThought != GuestThought.None && (ulong)(guest.BubbleTurn + GuestThoughts.BubbleTurns) < turn )
 				guest.BubbleThought = GuestThought.None;
@@ -231,8 +234,22 @@ public sealed partial class GuestSimulation
 			tpi.QueueLink = 0;
 			tpi.QueueSlot = 0;
 		}
-		// [BIN:TPI-EXE:0x611D60 history] a turn that is a multiple of 20 shifts a 0 into the four words +0x212..+0x218 (0x611D20): Theme Park World's temporary history (NeedsUpdate.DecayHistory)
-		NeedsUpdate.DecayHistory( guest.TemporaryHistory, turn );
+		// [BIN:TPI-EXE:0x611D60 history] a turn that is a multiple of 20 shifts a 0 into the four words +0x212..+0x218 (0x611D20)
+		if ( turn % NeedsUpdate.HistoryPeriod == 0 )
+			ShiftThemeParkIncHistory( guest.TemporaryHistory );
+	}
+
+	/// <summary>
+	/// The history shift <c>0x611D20</c>, bug-compatible: the dword copy of the first two words to the second and third runs before the last word is read, so the fourth slot takes the old second
+	/// word again and the old third word is lost (<c>[a, b, c, d]</c> becomes <c>[0, a, b, b]</c>). Theme Park World's shift (<see cref="NeedsUpdate.DecayHistory"/>) keeps <c>c</c>.
+	/// </summary>
+	// [BIN:TPI-EXE:0x611D20 history shift] [+0x214] = dword [+0x212] (the words a, b); word [+0x218] = word [+0x216], which the dword store has just made b; word [+0x212] = the argument 0
+	internal static void ShiftThemeParkIncHistory( int[] history )
+	{
+		history[2] = history[1];
+		history[1] = history[0];
+		history[3] = history[2];
+		history[0] = 0;
 	}
 
 	/// <summary>The speed term word of an index (<c>0x9CFB20</c>: 0, 25, 50).</summary>

@@ -723,6 +723,8 @@ public sealed partial class GuestSimulation
 	// [BIN:TPI-EXE:0x6157D0 booth verdict] GP = S (0x5B05D0, the park's excitement worked out longhand) / (N + R % (N / 2 + 1)) + MinimumEntryFee (unsigned, N = [0xA01A90]), AF = park +0x120 (the fee);
 	// GP and AF both at most the fee floor return 3 with no opinion; else AF against GP × Average (0xA01A9C), GP × Expensive (0xA01AA0) and GP × Cheap (0xA01A98) in x87 at 24 bits (fildll of the
 	// words, exact below 2^24), recording the opinion bytes 0xA01AEC, 0xA01AF0, 0xA01AF4, 0xA01AF8 (0x5AEDE0) as Theme Park World's 0x004FF5B0 does
+	// [BIN:TPI-EXE:0x5B05D0 park excitement] the sum over the object list (world +0x1EAB88) of the kinds 0 and 2 that pass the counts test 0x5DFC90 and have copies, with the age bracket from the
+	// first purchase: the same sum as tp.exe's 0x004C8240, which the economy ports (ParkPoints, also read by Theme Park Inc's arrival group 0x5BCD60)
 	private BoothVerdictKind ThemeParkIncBoothVerdict( ThemeParkIncGuestSettings settings )
 	{
 		var points = (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 );
@@ -857,11 +859,11 @@ public sealed partial class GuestSimulation
 			return;
 		var settings = NativeTpi!;
 		var stop = ThemeParkIncGuestSettings.CellWord( settings.BusStopA.X, settings.BusStopA.Y );
-		var stops = new[] { stop, unchecked( (ushort)(stop + 1) ) };
+		var next = unchecked( (ushort)(stop + 1) );
 		var here = TpiCellWord( guest );
-		if ( here == stops[0] || here == stops[1] )
+		if ( here == stop || here == next )
 			return;
-		var chosen = stops[random.NextWord() & 1];
+		var chosen = (random.NextWord() & 1) == 0 ? stop : next;
 		var byteX = (int)(random.NextWord() & 0xFF);
 		var byteY = (int)(random.NextWord() & 0xFF);
 		RouteToTpiPoint( guest, ThemeParkIncGuestSettings.CellOf( chosen ), byteX, byteY );

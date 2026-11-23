@@ -44,5 +44,23 @@ public sealed partial class ParkEconomy
 
 	/// <summary>The shares game's start-up for the park's career (<c>0x620930</c>, every world build at <c>0x648676</c>; the Global Master Save's load ends with the same steps).</summary>
 	// [BIN:TPI-EXE:0x648676 shares init] the new-world init calls 0x620930 on 0xAA0128 after the research lab's 0x61BBD0 and before 0x693270
-	private void InitializeThemeParkIncShares( ThemeParkIncCareer career ) => career.Shares.Initialize( Settings.ThemeParkIncShares );
+	private void InitializeThemeParkIncShares( ThemeParkIncCareer career ) => career.Shares.Initialize( Settings.ThemeParkIncShares, ThemeParkIncCompanyName() );
+
+	/// <summary>The language's company name, <c>TAG_SYSTEM.str</c> entry 0xAC ("Theme Park Inc." in English); empty without a selected language or the table (a headless economy).</summary>
+	// [BIN:TPI-EXE:0x620987 company name] the start-up formats entry 0xAC of the TAG_SYSTEM table ([0xA0D5F8]) into an empty name
+	private static string ThemeParkIncCompanyName()
+	{
+		if ( !GameLanguage.IsSelected )
+			return "";
+		try
+		{
+			var entries = GameLanguage.Current.LoadStrings( "TAG_SYSTEM.str" ).Entries;
+			return entries.Length > 0xAC ? entries[0xAC] : "";
+		}
+		catch ( Exception error ) when ( error is IOException or InvalidDataException )
+		{
+			Log?.Warning( $"Theme Park Inc shares: no company name ({error.Message})." );
+			return "";
+		}
+	}
 }

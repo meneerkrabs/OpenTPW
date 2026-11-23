@@ -91,18 +91,20 @@ public sealed class ThemeParkIncSharesGame
 
 	/// <summary>
 	/// The start-up (<c>0x620930</c>, run by every world build at <c>0x648676</c>; the load's <c>0x622060</c> and <c>0x6223D0</c> are the same steps): a holding of -1 takes
-	/// <c>InitialSharesOwned</c> when that is above 0; a holding above 0 recomputes the percentage when <c>CompanySharesIssued</c> is above 0; a price of -1 takes <c>InitialSharePrice</c> when that is
-	/// above 0. The empty name is formatted when it is read (<see cref="CompanyName"/>).
+	/// <c>InitialSharesOwned</c> when that is above 0; a holding above 0 recomputes the percentage when <c>CompanySharesIssued</c> is above 0; an empty name takes <paramref name="defaultName"/> (the
+	/// language's <c>TAG_SYSTEM.str</c> entry 0xAC, at most 30 characters); a price of -1 takes <c>InitialSharePrice</c> when that is above 0.
 	/// </summary>
 	// [BIN:TPI-EXE:0x620930 shares init] logs "### Shares Game Init! ###"; owner +0 == -1 and [0xA0216C] > 0: +0 = it; +0 > 0 and [0xA02168] > 0 (signed): +4 = +0 × 100 / [0xA02168] (cltd, idivl);
-	// an empty company name is formatted from TAG_SYSTEM entry 0xAC (0x8934A0, limit 0x1E); company +0 == -1 and [0xA02170] > 0: +0 = it
+	// an empty company name is formatted from TAG_SYSTEM entry 0xAC (0x620987: 0x8934A0, limit 0x1E); company +0 == -1 and [0xA02170] > 0: +0 = it
 	// [BIN:TPI-EXE:0x622060 load percentage] [BIN:TPI-EXE:0x6223D0 load company] the load 0x620E30 ends with the same three steps
-	public void Initialize( ThemeParkIncShareSettings settings )
+	public void Initialize( ThemeParkIncShareSettings settings, string defaultName = "" )
 	{
+		ArgumentNullException.ThrowIfNull( defaultName );
 		if ( Owned == -1 && settings.InitialSharesOwned > 0 )
 			Owned = settings.InitialSharesOwned;
 		if ( Owned > 0 && settings.CompanySharesIssued > 0 )
 			PercentOwned = unchecked( Owned * 100 ) / settings.CompanySharesIssued;
+		FormatName( defaultName );
 		if ( Price == -1 && settings.InitialSharePrice > 0 )
 			Price = settings.InitialSharePrice;
 	}
@@ -155,20 +157,24 @@ public sealed class ThemeParkIncSharesGame
 	// [BIN:TPI-EXE:0x62191F report price] after the score (0x62191A -> 0x621F50): price = [[+4]]; price != 0 and score != 0: price + price × score / 100 (idiv), stored when above 0; then 0x582780
 	public void ApplyAnnualScore( int score ) => MovePrice( score );
 
-	/// <summary>The 182 bytes the Global Master Save writes (<c>0x620A30</c>): an empty name is written as <paramref name="defaultName"/>, as the writer formats it first.</summary>
+	/// <summary>The 182 bytes the Global Master Save writes (<c>0x620A30</c>): an empty name first takes <paramref name="defaultName"/>, as the writer formats it into the company record.</summary>
 	// [BIN:TPI-EXE:0x620A30 shares write] per slot 0..2: the present word (1 or 0), then year +4, +8, +0xC, +0x10 and the doubles +0x18, +0x20 (36 zero bytes for a null slot); then +0 and +4 of the owner,
 	// mCompanyName[31] (an empty one first formatted from TAG_SYSTEM 0xAC, 0x620CEF..0x620D0A) and the price
 	public byte[] ToBytes( string defaultName )
 	{
 		ArgumentNullException.ThrowIfNull( defaultName );
-		var bytes = (byte[])raw.Clone();
-		if ( StoredName().Length == 0 && defaultName.Length > 0 )
-		{
-			var name = defaultName.Length > 0x1E ? defaultName[..0x1E] : defaultName;
-			for ( var index = 0; index < name.Length; index++ )
-				BinaryPrimitives.WriteUInt16LittleEndian( bytes.AsSpan( NameAt + 2 * index ), name[index] );
-		}
-		return bytes;
+		FormatName( defaultName );
+		return (byte[])raw.Clone();
+	}
+
+	// [BIN:TPI-EXE:0x620987 name format] an empty mCompanyName (wcslen 0x86FEE7 == 0) is formatted in place from TAG_SYSTEM entry 0xAC with the limit 0x1E (0x8934A0); the writer does the same at 0x620CEF
+	private void FormatName( string defaultName )
+	{
+		if ( StoredName().Length != 0 || defaultName.Length == 0 )
+			return;
+		var name = defaultName.Length > 0x1E ? defaultName[..0x1E] : defaultName;
+		for ( var index = 0; index < name.Length; index++ )
+			BinaryPrimitives.WriteUInt16LittleEndian( raw.AsSpan( NameAt + 2 * index ), name[index] );
 	}
 
 	/// <summary>Takes the 182 bytes of a Global Master Save or a park save (<c>0x620E30</c> reads them field by field); the start-up's steps (<see cref="Initialize"/>) follow when the park is built.</summary>

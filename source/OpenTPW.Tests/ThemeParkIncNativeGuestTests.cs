@@ -59,7 +59,7 @@ public sealed class ThemeParkIncNativeGuestTests
 	{
 		SmallHappinessChange = 5, MediumHappinessChange = 15, BigHappinessChange = 25, ExcitementToCostDivisor = 6, MinimumEntryFee = 20,
 		CheapPriceMultiplier = 0.75f, AveragePriceMultiplier = 1.25f, ExpensivePriceMultiplier = 2f,
-		OpinionForMuchTooHigh = 0, OpinionForTooHigh = 20, OpinionForTooLow = 100, OpinionForAboutRight = 50,
+		OpinionForMuchTooHigh = 0, OpinionForTooHigh = 20, OpinionForTooLow = 100, OpinionForAboutRight = 50, StinkbombLikelihood = 25, PrankHappinessThreshold = 15, PrankLikelihood = 10,
 		UmbrellaModifier = 1, WeatherModifierFrequency = 4, SlowestWeatherChangeResponse = 3, DiscardBalloonPctModifier = 100,
 		ThoughtBubbleHungry = 80, ThoughtBubbleThirsty = 80, ThoughtBubbleNeedTheLoo = 80, ThoughtBubbleSick = 80, ThoughtBubbleMess = 0.3f, ThoughtBubbleHappy = 80, ThoughtBubbleUnhappy = 20,
 		HappinessWeather = [new( 1, -1, -1, 1 ), new( 1, -1, -1.5f, -2 ), new( -1, -2, -2, -2 )],
@@ -288,12 +288,14 @@ public sealed class ThemeParkIncNativeGuestTests
 		var (simulation, _, _) = Rig();
 		var guest = simulation.SpawnInPark( 12, 17 );
 		guest.ExitLevel = 10000;
+		// first aid's wait (state 27) draws nothing of its own, so the pre-update's draws are the only ones (idle, state 6, draws A every update)
+		simulation.SetThemeParkIncState( guest, guest.Tpi!, ThemeParkIncGuestStates.WaitingForFirstAid );
 		var phase = guest.Id & 3;
 		BeforePhase( simulation, (phase + 1) & 3 );
 		guest.ExitLevel = 400;
 		var before = simulation.World.State;
 		simulation.Tick( Tick );
-		Assert.AreEqual( before, simulation.World.State, "off its phase an idle guest draws nothing (the P1 state 6 stub)" );
+		Assert.AreEqual( before, simulation.World.State, "off its phase a guest waiting for first aid draws nothing" );
 		Assert.AreEqual( 400, guest.ExitLevel );
 		BeforePhase( simulation, phase );
 		var replay = new WorldRng( simulation.World.State );
@@ -429,7 +431,7 @@ public sealed class ThemeParkIncNativeGuestTests
 	}
 
 	[TestMethod]
-	public void TheIdleStubSendsAGuestWithoutExitTimeToTheBusStop()
+	public void AnIdleGuestWithoutExitTimeHeadsForTheBusStop()
 	{
 		var (simulation, _, _) = Rig();
 		var guest = simulation.SpawnInPark( 12, 17 );
@@ -595,10 +597,10 @@ public sealed class ThemeParkIncNativeGuestTests
 			var guest = save.Guests.Single();
 			return save with { Guests = [guest with { Tpi = guest.Tpi! with { State = state, Saved = saved }, State = ThemeParkIncGuestStates.Projection( state ) }] };
 		}
-		foreach ( var state in new[] { 7, 9, 13, 14, 17, 20, 21, 24, 26 } )
+		foreach ( var state in new[] { 10, 13, 14, 17, 20, 21, 24, 26 } )
 			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state}" );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( 8, 14 ) ), "a spot animation that returns to a queue" );
-		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 22, 23, 27, 28, 29, 30 } )
+		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 7, 8, 9, 22, 23, 27, 28, 29, 30 } )
 			Rig().Simulation.RestoreSnapshot( With( state, 6 ) );
 		Rig().Simulation.RestoreSnapshot( With( 8, 27 ) );
 	}
@@ -723,6 +725,7 @@ public sealed class ThemeParkIncNativeGuestTests
 		simulation.ArrivalWeatherState = () => UmbrellaRules.WeatherRain;
 		simulation.UmbrellaOnTrackCell = ( _, _ ) => true;
 		simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateClosed );
+		simulation.SetThemeParkIncState( guest, guest.Tpi!, ThemeParkIncGuestStates.WaitingForFirstAid );
 		BeforePhase( simulation, guest.Id & 3 );
 		var replay = new WorldRng( simulation.World.State );
 		replay.NextWord();

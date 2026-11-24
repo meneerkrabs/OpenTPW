@@ -81,39 +81,7 @@ public partial class Level
 		public IReadOnlyList<ThemeParkIncRestArea> RestAreas() => ObjectList( "UsageInfo.ChillsYouOut" )
 			.Select( item => new ThemeParkIncRestArea( (ushort)item.ThingId, item.ThingCell, Entrance( item ), item.Runtime.IsOpen ) ).ToArray();
 
-		/// <summary>
-		/// The live objects whose type sets <paramref name="key"/>, in the object list's order (<see cref="ParkEconomy.ThemeParkIncObjectList"/>, park+0x1EAB88, newest first), which the finders
-		/// 0x62BA20 walk. A thing being destroyed is no longer on the list: the attraction's destroy unlinks it (0x64F430 at 0x5DE7C4) before it broadcasts message 0xA.
-		/// </summary>
-		private IEnumerable<OriginalObject> ObjectList( string key )
-		{
-			if ( level.Park?.Economy is not { } economy )
-				yield break;
-			// both lookups are built once per walk, so the walk stays linear in the list and the placed objects
-			var byInstance = new Dictionary<int, OriginalObject>();
-			foreach ( var (item, instance) in level.economyInstances ?? new() )
-				byInstance[instance] = item;
-			Dictionary<int, OriginalObject>? byThing = null;
-			foreach ( var entry in economy.ThemeParkIncObjectList )
-			{
-				// an object with an economy record is listed by its instance, any other attraction thing by its negated thing id (the first placed object holding it)
-				OriginalObject? item;
-				if ( entry > 0 )
-					item = byInstance.GetValueOrDefault( entry );
-				else
-				{
-					if ( byThing == null )
-					{
-						byThing = new Dictionary<int, OriginalObject>();
-						foreach ( var candidate in level.Objects.Objects )
-							byThing.TryAdd( candidate.ThingId, candidate );
-					}
-					item = byThing.GetValueOrDefault( -entry );
-				}
-				if ( item is { IsDeleted: false } && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue && item.ThingId != level.tpiDestroyedRoom )
-					yield return item;
-			}
-		}
+		private IEnumerable<OriginalObject> ObjectList( string key ) => level.ThemeParkIncObjectsWith( key );
 
 		/// <summary>A room's entrance cell (its thing's word +0x46).</summary>
 		private static (int X, int Y) Entrance( OriginalObject room )
@@ -138,6 +106,40 @@ public partial class Level
 		{
 			if ( level.ThemeParkIncThing( thing )?.Script is { Variables.Length: > 0 } script )
 				script.Variables[0] = unchecked( script.Variables[0] + delta );
+		}
+	}
+
+	/// <summary>
+	/// The live objects whose type sets <paramref name="key"/>, in the object list's order (<see cref="ParkEconomy.ThemeParkIncObjectList"/>, park+0x1EAB88, newest first), which the finders
+	/// 0x62BA20, the bin search 0x618D10 and the show finder 0x6193B0 walk. A thing being destroyed is no longer on the list: the attraction's destroy unlinks it (0x64F430 at 0x5DE7C4) before it broadcasts message 0xA.
+	/// </summary>
+	internal IEnumerable<OriginalObject> ThemeParkIncObjectsWith( string key )
+	{
+		if ( Park?.Economy is not { } economy )
+			yield break;
+		// both lookups are built once per walk, so the walk stays linear in the list and the placed objects
+		var byInstance = new Dictionary<int, OriginalObject>();
+		foreach ( var (item, instance) in economyInstances ?? new() )
+			byInstance[instance] = item;
+		Dictionary<int, OriginalObject>? byThing = null;
+		foreach ( var entry in economy.ThemeParkIncObjectList )
+		{
+			// an object with an economy record is listed by its instance, any other attraction thing by its negated thing id (the first placed object holding it)
+			OriginalObject? item;
+			if ( entry > 0 )
+				item = byInstance.GetValueOrDefault( entry );
+			else
+			{
+				if ( byThing == null )
+				{
+					byThing = new Dictionary<int, OriginalObject>();
+					foreach ( var candidate in Objects.Objects )
+						byThing.TryAdd( candidate.ThingId, candidate );
+				}
+				item = byThing.GetValueOrDefault( -entry );
+			}
+			if ( item is { IsDeleted: false } && item.Entry.Settings.GetInt( key ) != 0 && item.ThingId is > 0 and <= ushort.MaxValue && item.ThingId != tpiDestroyedRoom )
+				yield return item;
 		}
 	}
 

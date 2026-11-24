@@ -28,6 +28,7 @@ public sealed record ThemeParkIncGuestSettings
 	public const uint ExcitementToCostDivisorAddress = 0xA01A90, MinimumEntryFeeAddress = 0xA01A94;
 	public const uint CheapPriceMultiplierAddress = 0xA01A98, AveragePriceMultiplierAddress = 0xA01A9C, ExpensivePriceMultiplierAddress = 0xA01AA0;
 	public const uint OpinionForMuchTooHighAddress = 0xA01AEC, OpinionForTooHighAddress = 0xA01AF0, OpinionForTooLowAddress = 0xA01AF4, OpinionForAboutRightAddress = 0xA01AF8;
+	public const uint StinkbombLikelihoodAddress = 0xA01B00, PrankHappinessThresholdAddress = 0xA01B04, PrankLikelihoodAddress = 0xA01B08;
 	public const uint UmbrellaModifierAddress = 0xA01B5C, WeatherModifierFrequencyAddress = 0xA01B60, SlowestWeatherChangeResponseAddress = 0xA01B64, DiscardBalloonPctModifierAddress = 0xA01B68;
 	public const uint ThoughtBubbleHungryAddress = 0xA01B6C, ThoughtBubbleThirstyAddress = 0xA01B70, ThoughtBubbleNeedTheLooAddress = 0xA01B74, ThoughtBubbleSickAddress = 0xA01B78;
 	public const uint ThoughtBubbleMessAddress = 0xA01B7C, ThoughtBubbleHappyAddress = 0xA01B80, ThoughtBubbleUnhappyAddress = 0xA01B84;
@@ -55,6 +56,13 @@ public sealed record ThemeParkIncGuestSettings
 	public int OpinionForTooHigh { get; init; }
 	public int OpinionForTooLow { get; init; }
 	public int OpinionForAboutRight { get; init; }
+	/// <summary>
+	/// State 6's prank words: <c>StinkbombLikelihood</c> (case 0 of the prank switch, against <c>A % 100</c>, unsigned), <c>PrankHappinessThreshold</c> (the prank gate's happiness byte, signed) and
+	/// <c>PrankLikelihood</c> (the gate's <c>A % 100</c>, unsigned).
+	/// </summary>
+	public int StinkbombLikelihood { get; init; }
+	public int PrankHappinessThreshold { get; init; }
+	public int PrankLikelihood { get; init; }
 	/// <summary>The weather rule's <c>UmbrellaModifier</c>, <c>WeatherModifierFrequency</c>, <c>SlowestWeatherChangeResponse</c> and <c>DiscardBalloonPctModifier</c>.</summary>
 	public int UmbrellaModifier { get; init; }
 	public int WeatherModifierFrequency { get; init; }
@@ -109,6 +117,7 @@ public sealed record ThemeParkIncGuestSettings
 			CheapPriceMultiplier = F( CheapPriceMultiplierAddress ), AveragePriceMultiplier = F( AveragePriceMultiplierAddress ), ExpensivePriceMultiplier = F( ExpensivePriceMultiplierAddress ),
 			OpinionForMuchTooHigh = W( OpinionForMuchTooHighAddress ), OpinionForTooHigh = W( OpinionForTooHighAddress ), OpinionForTooLow = W( OpinionForTooLowAddress ),
 			OpinionForAboutRight = W( OpinionForAboutRightAddress ),
+			StinkbombLikelihood = W( StinkbombLikelihoodAddress ), PrankHappinessThreshold = W( PrankHappinessThresholdAddress ), PrankLikelihood = W( PrankLikelihoodAddress ),
 			UmbrellaModifier = W( UmbrellaModifierAddress ), WeatherModifierFrequency = W( WeatherModifierFrequencyAddress ),
 			SlowestWeatherChangeResponse = W( SlowestWeatherChangeResponseAddress ), DiscardBalloonPctModifier = W( DiscardBalloonPctModifierAddress ),
 			ThoughtBubbleHungry = W( ThoughtBubbleHungryAddress ), ThoughtBubbleThirsty = W( ThoughtBubbleThirstyAddress ), ThoughtBubbleNeedTheLoo = W( ThoughtBubbleNeedTheLooAddress ),

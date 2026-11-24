@@ -8,8 +8,9 @@ namespace OpenTPW;
 /// The guard's chase, carry and first aid (the states 0x1A, 0x1C, 0x1D and 0x1E, entered from the staff HQ's prank message <c>0x6323F9</c> and the first-aid loop <c>0x557E00</c>) are not ported: they
 /// read the guests' own state numbers (<c>0x614720</c> tests the guest's <c>+0x2C0</c> against Theme Park Inc's set, 6..0xD, 0x16 and 0x1F upward; the first aid's patient is a guest in state 0x1B),
 /// which a park's Theme Park World guests do not carry (<c>[EXT:tpi-capability-gates]</c>; docs/reverse/TPI-STAFF.md, "Guard"). The guests' reaction to a performing entertainer (<c>0x614D41</c>, in the guest's own
-/// update: the facing and the state writes) is not ported either (<c>[EXT:tpi-capability-gates]</c>: Theme Park World's own turn towards a performer, 0x004FEFF4, reads Theme Park World's staff, so a Theme Park Inc
-/// park's guests get neither); the entertainer's row 0 on the cells cheers the guests through the needs phase, as in Theme Park World.
+/// update: the heading and <c>+0x1B8</c>) runs for the guests of Theme Park Inc's native states (<see cref="Entertainers"/>, docs/reverse/TPI-GUESTS.md, phase P2); a park's Theme Park World guests
+/// (<c>[EXT:tpi-twp-guest-rules]</c>, the default path) do not react, because Theme Park World's own turn towards a performer, 0x004FEFF4, reads Theme Park World's staff. The entertainer's row 0 on the cells
+/// cheers the guests through the needs phase, as in Theme Park World.
 /// </remarks>
 public sealed partial class ThemeParkIncStaffWorld
 {
@@ -275,6 +276,26 @@ public sealed partial class ThemeParkIncStaffWorld
 	{
 		member.SpeedBonus = BonusTable[0];
 		SetState( economy, member, state, turn );
+	}
+
+	/// <summary>
+	/// The placed entertainers in the entertainers' list order (newest first), as the guests' finder <c>0x619100</c> walks them: each one's thing id, cell and whether he performs (state 0x17).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D1380 entertainer list] the constructor puts the entertainer at the head of the list world +0x1EAB82 (0x64F050, next +0x5D0) at his drop, which is when ThemeParkIncStaff.EndHire puts
+	// the member at the front of the members: the placed entertainers of the members, in order, are the list
+	// [BIN:TPI-EXE:0x614D9B performing] the guest's reaction reads the member's state word +0x1B4 against 0x17
+	public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers( ParkEconomy? economy )
+	{
+		if ( economy?.TpiStaff is not { } staff )
+			return Array.Empty<ThemeParkIncEntertainerView>();
+		List<ThemeParkIncEntertainerView>? views = null;
+		foreach ( var member in staff.Members )
+		{
+			if ( member.Role != ThemeParkIncStaffRole.Entertainer || member.Navigation is not { } navigation || member.ThingId is not (> 0 and <= ushort.MaxValue) )
+				continue;
+			(views ??= new()).Add( new ThemeParkIncEntertainerView( (ushort)member.ThingId, navigation.Cell, member.State == Performing ) );
+		}
+		return views ?? (IReadOnlyList<ThemeParkIncEntertainerView>)Array.Empty<ThemeParkIncEntertainerView>();
 	}
 
 	/// <summary>The entertainer's and the guard's starts at the drop (0x5D1380, 0x5D3140 with 0x5D3230): the effect on the cell, then the first search.</summary>

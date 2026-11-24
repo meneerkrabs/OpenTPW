@@ -1,7 +1,8 @@
 namespace OpenTPW;
 
 // Theme Park Inc's own guest state machine (docs/reverse/TPI-GUESTS.md, phase P1 of the port): the setter 0x61A540 with its entry table, the dispatch 0x619FF0 (table 0x61A3A8),
-// the pre-update 0x619B50 with the weather rule 0x611050, the constructor's tail and the arrival and leaving states. It runs on the shared Guest records, inside the shared
+// the pre-update 0x619B50 with the weather rule 0x611050, the constructor's tail and the arrival and leaving states (idle, the wander and the walk to a bin, phase P2, are in
+// GuestSimulation.ThemeParkIncIdle.cs). It runs on the shared Guest records, inside the shared
 // sweep, for the guests that carry a Theme Park Inc record (Guest.Tpi); every other guest keeps the Theme Park World update untouched. The walk step, the route search, the
 // wander and the speed stay Theme Park World's ([EXT:tpi-twp-guest-rules]), as for the staff.
 public sealed partial class GuestSimulation
@@ -124,10 +125,15 @@ public sealed partial class GuestSimulation
 				if ( tpi.Paid )
 					Payments?.StayEnded( ParkStatisticsHistory.StayDays( (long)(unchecked( TpiTurn - (uint)tpi.ArrivalTurn ) >> 2 << 2) ) );
 				break;
-			case ThemeParkIncGuestStates.Wandering or ThemeParkIncGuestStates.WaitingToBeAdmitted or ThemeParkIncGuestStates.BeingUnloaded
+			case ThemeParkIncGuestStates.Wandering:
+				// [BIN:TPI-EXE:0x61A9C7 state 7 entry] +0xE8 nonzero: 0x60B8E0(+0x28, +0x2A), the walk to the target words again (its result unread); then mode 1
+				if ( tpi.Wandered )
+					RouteToThemeParkIncTarget( guest );
+				break;
+			case ThemeParkIncGuestStates.WaitingToBeAdmitted or ThemeParkIncGuestStates.BeingUnloaded
 				or ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl or ThemeParkIncGuestStates.ListeningToRumours:
-				// [EXT:tpi-capability-gates] the entries of 7 (0x61A9C7, the walker word +0xE8), 17 (0x61A66A, the ride's roll 0x5E7A00), 19 and 20 (0x61A69D, 0x61A77E, the ride),
-				// 21 (0x61A906, the guard) and 26 (0x61A9F6, 0x60B6E0) read objects the later phases port; no state of phase P1 enters them
+				// [EXT:tpi-capability-gates] the entries of 17 (0x61A66A, the ride's roll 0x5E7A00), 19 and 20 (0x61A69D, 0x61A77E, the ride), 21 (0x61A906, the guard) and 26 (0x61A9F6, 0x60B6E0) read
+				// objects the later phases port; no state of phases P1 and P2 enters them
 				throw new NotSupportedException( $"Theme Park Inc guest state {state} ({ThemeParkIncGuestStates.Names[state]}) is not ported yet (docs/reverse/TPI-GUESTS.md)." );
 		}
 	}
@@ -401,7 +407,8 @@ public sealed partial class GuestSimulation
 		}
 		if ( tpi.HoldsBalloon || tpi.BalloonCountdown > 0 )
 		{
-			// [EXT:tpi-capability-gates] the balloon's litter (0x5D8C80 of [0x9D0614 + 4 × +0x2A0]) is not dropped: Theme Park Inc's litter types are phase P2's, and no native guest holds a balloon before phase P3
+			// [EXT:tpi-capability-gates] the balloon's litter (0x5D8C80 of [0x9D0614 + 4 × +0x2A0]: the types 9, 0xC, 0xB, 0xA by the balloon's colour) is not dropped: ParkLitter holds the types 1..8, and no
+			// native guest holds a balloon before phase P3
 			tpi.HoldsBalloon = false;
 			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(settings.MediumHappinessChange & 0xFF) );
 			tpi.BalloonCountdown = 0;
@@ -440,12 +447,18 @@ public sealed partial class GuestSimulation
 				UpdateTpiWalkingToEntrance( guest, tpi );
 				break;
 			case ThemeParkIncGuestStates.Idle:
-				UpdateTpiIdleStub( guest, tpi );
+				UpdateTpiIdle( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.Wandering:
+				UpdateTpiWandering( guest, tpi );
 				break;
 			case ThemeParkIncGuestStates.SpotAnimation:
 				// [BIN:TPI-EXE:0x61A382 state 8] the turn past +0x230 + 10 (unsigned) restores the saved state (0x60FC40 = setter(+0x2C4))
 				if ( TpiTurn > unchecked( (uint)tpi.SpotTurn + 10 ) )
 					SetThemeParkIncState( guest, tpi, tpi.Saved );
+				break;
+			case ThemeParkIncGuestStates.WalkingToBin:
+				UpdateTpiWalkingToBin( guest, tpi );
 				break;
 			case ThemeParkIncGuestStates.LeavingPark:
 				UpdateTpiLeavingPark( guest, tpi );
@@ -466,7 +479,7 @@ public sealed partial class GuestSimulation
 				UpdateTpiWaitingToBePickedUp( guest, tpi );
 				break;
 			case >= 0 and < ThemeParkIncGuestStates.Count:
-				// [EXT:tpi-capability-gates] states 7, 9..21 and 24..26 are the later phases' (P2..P6); nothing of phase P1 enters them
+				// [EXT:tpi-capability-gates] states 10..21 and 24..26 are the later phases' (P3..P6); nothing of phases P1 and P2 enters them
 				throw new NotSupportedException( $"Theme Park Inc guest state {tpi.State} ({ThemeParkIncGuestStates.Names[tpi.State]}) is not ported yet (docs/reverse/TPI-GUESTS.md)." );
 		}
 	}
@@ -788,25 +801,7 @@ public sealed partial class GuestSimulation
 		}
 	}
 
-	// ---- Idle (the phase P1 stub) and leaving -------------------------------------------------------------------------------------
-
-	/// <summary>
-	/// State 6 in phase P1: only the leave gate of <c>0x614A40</c> runs: a happiness byte of 0, an exit counter at or below 0 or a closed park costs the big happiness change and sends the guest to
-	/// the bus stop (state 22).
-	/// </summary>
-	// [BIN:TPI-EXE:0x614C2B leave gate] the happiness byte zero, +0x1E0 at most 0 (signed jle) or 0x64FA30 nonzero: 0x614460(2), the bus stop walk with the mask retry, setter(0x16), then the
-	// handler falls through to its other branches (no return)
-	// [EXT:tpi-capability-gates] phase P1 runs this stub for state 6 (the plan's phase P2 ports the handler 0x614A40..0x615411): its draw A (0x614A70), the spot animation, the vomit, the urge (draws B and
-	// C), the heading, the entertainer reaction, the prank gate and the A & 3 fall-through are not run, so an idle guest draws nothing until the leave gate fires and returns after it
-	private void UpdateTpiIdleStub( Guest guest, ThemeParkIncGuestRecord tpi )
-	{
-		if ( MeterMath.Byte( guest.Happiness ) != 0 && guest.ExitLevel > 0 && Payments?.ParkClosed != true )
-			return;
-		var settings = NativeTpi!;
-		guest.Happiness = MeterMath.Add( guest.Happiness, -HappinessChange( settings, 2 ) );
-		WalkToBusStopWithRetry( guest, settings );
-		SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.LeavingPark );
-	}
+	// ---- Leaving -------------------------------------------------------------------------------------------------------------------
 
 	/// <summary>
 	/// State 22 (<c>0x618620</c>): a guest who may stay after all (exit counter above 0, happiness byte nonzero, park open, on a park cell) goes back to state 6 ("Make up your mind!"); otherwise the

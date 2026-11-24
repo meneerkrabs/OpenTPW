@@ -262,16 +262,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		} );
 		Do( "resume normal speed", () => flow.InjectedInput = UiInput.Key( UiKeys.Pause ) );
 		Wait( "speed applies", 2 );
-		Do( "note the resume frame", () =>
-		{
-			resumedAt = frame;
-			// with Theme Park Inc's native guest states on (--tpi-native-guests, docs/reverse/TPI-GUESTS.md) an idle guest runs only phase P1's leave gate and stands; an exit counter of 0
-			// sends it walking to the bus stop, so the walk check runs on the native leaving path
-			// TODO(tpi-guests P2): remove this once state 6 (0x614A40) is ported in full: idle guests then wander by themselves
-			if ( Level.Guests is { ThemeParkIncNativeGuests: true } native )
-				foreach ( var guest in native.Guests )
-					guest.ExitLevel = 0;
-		} );
+		Do( "note the resume frame", () => resumedAt = frame );
 		steps.AddLast( ("guests walk again", () =>
 		{
 			if ( Level.Guests!.Guests.Select( guest => (guest.Cell.X, guest.Cell.Y) ).SequenceEqual( pausedCells ) )

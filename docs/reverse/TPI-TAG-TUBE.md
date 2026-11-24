@@ -81,7 +81,9 @@ checked, because the arrival's briefing and every objective letter would have be
 
 - The advisor's unread messages 0x198 and 0x15D (descriptors `0x9E3F80` and `0x9E3FB8`, group 0, responses 739 and 652..653) and the go-to hint 0x211
   (`0x9E5B80`): Theme Park Inc's advisor plays only the weather forecasts, and the speech choice among two responses is not read (`[EXT:tpi-capability-gates]`).
-  The tube counts and doubles its threshold exactly; the client notes the message.
+  The tube counts and doubles its threshold exactly; the client notes the message. Porting the speech means running the advisor's playback (queued by `0x718820`), which draws
+  the C runtime's `rand()` three times, all presentation: the talking-animation segments (`0x715AC4`, GenerateAnimSequence `0x715AB0`), the stop sound (`0x716A2C`, `0x716950`) and the
+  mouth frame (`0x717175`). That port waits on the user's decision about those draws.
 - The native mail panel's picture by category (control 0x47) and its chime (sound 0x1E of the bank `0xAE0124`), and the help button's advisor help (`0x503A40(0x1AF)`).
 - The body's scroll text (message 0x800 with the slider 3017).
 - The tag-definition rows (branch 0x18) and branch 0x1B of the row builder, which no ported sender posts.

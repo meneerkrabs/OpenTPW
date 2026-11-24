@@ -35,6 +35,22 @@ public sealed partial class Level
 	}
 
 	/// <summary>
+	/// An attraction thing as the ride choice reads it (phase P3a): its ride bridge, its type's score words (the keys of the type record words the score <c>0x6101E0</c> reads; a key the type's .sam leaves out
+	/// reads 0, as the record the loader zeroes) and whether the save's special-ride table names its thing.
+	/// </summary>
+	// [DATA:<attraction>.sam:Info.GenderSpecific] type +0x78; UsageInfo.AppearanceEffect +0x21C, UsageInfo.IsInfoDesk +0x244 (the key table 0x9A4520, four bytes a key from GoldenTicketCost +0x174);
+	// WeatherModifier.Snow/Rain/Storm/HeatWavePercentage +0xF0..+0xFC and GenerationModifier.Kid/Parent/GrandparentScorePercentage +0x110..+0x118
+	private ThemeParkIncAttractionView ThemeParkIncAttractionViewOf( OriginalObject item, HashSet<int>? special )
+	{
+		var settings = item.Entry.Settings;
+		int Key( string key ) => settings.Has( key ) ? settings.GetInt( key ) : 0;
+		var terms = new ThemeParkIncScoreTerms( Key( "Info.GenderSpecific" ), Key( "UsageInfo.AppearanceEffect" ), Key( "UsageInfo.IsInfoDesk" ) != 0,
+			Key( "WeatherModifier.SnowPercentage" ), Key( "WeatherModifier.RainPercentage" ), Key( "WeatherModifier.StormPercentage" ), Key( "WeatherModifier.HeatWavePercentage" ),
+			Key( "GenerationModifier.KidScorePercentage" ), Key( "GenerationModifier.ParentScorePercentage" ), Key( "GenerationModifier.GrandparentScorePercentage" ) );
+		return new ThemeParkIncAttractionView( (ushort)item.ThingId, item.ThingCell, item.Visitors, terms, special?.Contains( item.ThingId ) == true );
+	}
+
+	/// <summary>
 	/// The level's side of <see cref="IThemeParkIncGuestWorld"/>. The object views are built when a guest first looks after a placement or a removal (the sweep reads them for every idle guest); a
 	/// script variable is read live through its array, and the entertainers are read live from the staff.
 	/// </summary>
@@ -43,6 +59,7 @@ public sealed partial class Level
 		private bool fresh;
 		private ThemeParkIncThingView[] bins = [];
 		private ThemeParkIncThingView[] shows = [];
+		private ThemeParkIncAttractionView[] attractions = [];
 
 		/// <summary>Forgets the views: an object was placed or removed.</summary>
 		internal void Invalidate() => fresh = false;
@@ -54,6 +71,11 @@ public sealed partial class Level
 			fresh = true;
 			bins = level.ThemeParkIncObjectsWith( "UsageInfo.HoldsLitter" ).Select( level.ThemeParkIncViewOf ).ToArray();
 			shows = level.ThemeParkIncObjectsWith( "UsageInfo.IsFireworks" ).Select( level.ThemeParkIncViewOf ).ToArray();
+			// [BIN:TPI-EXE:0x6242F0 special ride] the table 0xAA0420 (stride 0xF4, count 0xAA071C) of the park's special rides, which only the park loader 0x6244B0 fills: the prebuilt park's records
+			var special = level.OriginalPark?.Save?.ThemeParkIncWorld?.SpecialRides is { Count: > 0 } rides ? rides.Select( ride => (int)ride.Id ).ToHashSet() : null;
+			attractions = level.Guests is { } guests
+				? level.ThemeParkIncObjectsWith( "Info.IsChoosable" ).Where( item => guests.Hosts( item.Visitors ) ).Select( item => level.ThemeParkIncAttractionViewOf( item, special ) ).ToArray()
+				: [];
 		}
 
 		public IReadOnlyList<ThemeParkIncThingView> Bins()
@@ -66,6 +88,12 @@ public sealed partial class Level
 		{
 			Refresh();
 			return shows;
+		}
+
+		public IReadOnlyList<ThemeParkIncAttractionView> Attractions()
+		{
+			Refresh();
+			return attractions;
 		}
 
 		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => level.TpiStaffWorld?.Entertainers( level.Park?.Economy ) ?? [];

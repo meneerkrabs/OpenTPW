@@ -597,10 +597,13 @@ public sealed class ThemeParkIncNativeGuestTests
 			var guest = save.Guests.Single();
 			return save with { Guests = [guest with { Tpi = guest.Tpi! with { State = state, Saved = saved }, State = ThemeParkIncGuestStates.Projection( state ) }] };
 		}
-		foreach ( var state in new[] { 10, 13, 14, 17, 20, 21, 24, 26 } )
+		foreach ( var state in new[] { 10, 11, 12, 17, 18, 19, 20, 21, 24, 25, 26 } )
 			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state}" );
-		Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( 8, 14 ) ), "a spot animation that returns to a queue" );
-		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 7, 8, 9, 22, 23, 27, 28, 29, 30 } )
+		// phase P3a runs the queue states, and the cross-references refuse a guest in one that no ride's list holds
+		foreach ( var state in new[] { 14, 15 } )
+			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state} outside every list" );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( 8, 14 ) ), "a spot animation that returns to a queue no list holds" );
+		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 22, 23, 27, 28, 29, 30 } )
 			Rig().Simulation.RestoreSnapshot( With( state, 6 ) );
 		Rig().Simulation.RestoreSnapshot( With( 8, 27 ) );
 	}

@@ -339,9 +339,13 @@ public sealed partial class GuestSimulation
 				// state 0 or 2, else 3 (0x60FB30), 0x614460(0) (SmallHappinessChange), +0x224 = the turn
 				if ( turn <= unchecked( (uint)tpi.Word224 + 30 ) )
 					return;
-				// [BIN:TPI-EXE:0x610080 major decision] +0x204 = 0 first (0x61008F), then the object list's rides (+0x42 bit 4) with a queue (0x5E0520) and a score (0x6101E0) of at least 10
-				// [EXT:tpi-capability-gates] the ride scan is phase P3's: no ride is chosen, so +0x204 stays 0 and the guest pauses; the scan's route requests are not made and it draws nothing
-				tpi.Target = 0;
+				// [BIN:TPI-EXE:0x615272 ride chosen] 0x610080 (ThemeParkIncMajorDecision, phase P3a), then +0x204 nonzero sets 13 and returns
+				ThemeParkIncMajorDecision( guest, tpi, settings );
+				if ( tpi.Target != 0 )
+				{
+					SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.WalkingToMajor );
+					return;
+				}
 				StartThemeParkIncSpotAnimation( guest, tpi,
 					guest.UmbrellaState is UmbrellaRules.StateNone or UmbrellaRules.StateClosed ? ThemeParkIncCantDecideAnimation : ThemeParkIncCantDecideUmbrellaAnimation );
 				guest.Happiness = MeterMath.Add( guest.Happiness, -HappinessChange( settings, 0 ) );
@@ -392,19 +396,35 @@ public sealed partial class GuestSimulation
 	// [BIN:TPI-EXE:0x60D120 removal message] message 0xA with the object's id (+8): +0x204 equal: state 0x14 gets its model back and the sound 0x80, else a guest in the queue states (0x61AC40) leaves
 	// the queue (0x619700(0)); then happiness += −byte [0xA01A78] (0x60D0D0), +0x204 = 0 and setter(6); then +0x206 equal is cleared, and each of the four words +0x20A..+0x210 equal is cleared with
 	// the word 8 bytes on (+0x212..+0x218, the temporary history)
-	// [EXT:tpi-capability-gates] the state 0x14 and queue branches are phase P3's (no native guest rides or queues before it)
+	// [EXT:tpi-twp-guest-rules] a guest of the bridged boarding (state 16 until phase P3b) leaves the removed ride by Theme Park World's removal (DropForRemovedAttraction: on the ride, the model back
+	// and the sound 0x80 as for 0x14; in the queue, the medium step), then the small step and state 6 as below
 	internal void ThemeParkIncObjectRemoved( int thingId )
 	{
 		if ( NativeTpi is not { } settings || thingId == 0 )
 			return;
+		var ride = TpiAttraction( thingId )?.Ride;
 		foreach ( var guest in guests )
 		{
 			if ( guest.Tpi is not { } tpi )
 				continue;
 			if ( tpi.Target == thingId )
 			{
-				guest.Happiness = MeterMath.Add( guest.Happiness, -HappinessChange( settings, 0 ) );
+				if ( tpi.State == ThemeParkIncGuestStates.BeingLoaded && ride != null )
+					// Theme Park World's removal takes its own small step
+					DropForRemovedAttraction( guest, ride );
+				else
+				{
+					if ( ThemeParkIncGuestStates.InQueueOrLoading( tpi.State, tpi.Saved ) )
+					{
+						// [BIN:TPI-EXE:0x60D17F queued guest] 0x619700(0); the destroyed ride's list goes with it (the bridge lets the guest go here so that its teardown does not send it away twice)
+						if ( ride != null )
+							TpiRemoveFromQueue( ride, guest );
+						TpiDismissFromQueue( guest, tpi, quietly: false );
+					}
+					guest.Happiness = MeterMath.Add( guest.Happiness, -HappinessChange( settings, 0 ) );
+				}
 				tpi.Target = 0;
+				ClearTpiQueueMirror( guest );
 				SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.Idle );
 			}
 			if ( tpi.Word206 == thingId )

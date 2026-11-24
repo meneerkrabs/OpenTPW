@@ -27,6 +27,7 @@ public sealed record ThemeParkIncGuestSettings
 	public const uint SmallHappinessChangeAddress = 0xA01A78, MediumHappinessChangeAddress = 0xA01A7C, BigHappinessChangeAddress = 0xA01A80;
 	public const uint ExcitementToCostDivisorAddress = 0xA01A90, MinimumEntryFeeAddress = 0xA01A94;
 	public const uint CheapPriceMultiplierAddress = 0xA01A98, AveragePriceMultiplierAddress = 0xA01A9C, ExpensivePriceMultiplierAddress = 0xA01AA0;
+	public const uint DecisionVariable1Address = 0xA01AA4, DecisionVariable2Address = 0xA01AA8, DecisionVarDistWeightAddress = 0xA01AC4;
 	public const uint OpinionForMuchTooHighAddress = 0xA01AEC, OpinionForTooHighAddress = 0xA01AF0, OpinionForTooLowAddress = 0xA01AF4, OpinionForAboutRightAddress = 0xA01AF8;
 	public const uint StinkbombLikelihoodAddress = 0xA01B00, PrankHappinessThresholdAddress = 0xA01B04, PrankLikelihoodAddress = 0xA01B08;
 	public const uint UmbrellaModifierAddress = 0xA01B5C, WeatherModifierFrequencyAddress = 0xA01B60, SlowestWeatherChangeResponseAddress = 0xA01B64, DiscardBalloonPctModifierAddress = 0xA01B68;
@@ -52,6 +53,13 @@ public sealed record ThemeParkIncGuestSettings
 	public float AveragePriceMultiplier { get; init; }
 	public float ExpensivePriceMultiplier { get; init; }
 	/// <summary>The opinion bytes the verdict records for far too expensive, expensive, cheap and fair.</summary>
+	/// <summary>
+	/// <c>PeepInfo.DecisionVariable1</c> and <c>DecisionVariable2</c> (the age in days below which a ride counts as new, and its score multiplier) and the seven <c>DecisionVar*Weight</c> words
+	/// from <c>0xA01AC4</c> (distance, queue, excitement, thirst, hunger, toilet, illness), which the attraction score <c>0x6101E0</c> reads. <c>DecisionVariable3</c> (indoors in rain) is unread.
+	/// </summary>
+	public DecisionVariables DecisionVariables { get; init; }
+	public DecisionWeights DecisionWeights { get; init; }
+
 	public int OpinionForMuchTooHigh { get; init; }
 	public int OpinionForTooHigh { get; init; }
 	public int OpinionForTooLow { get; init; }
@@ -110,11 +118,14 @@ public sealed record ThemeParkIncGuestSettings
 			return new ThemeParkIncWeatherRow( F( row ), F( row + 4 ), F( row + 8 ), F( row + 12 ) );
 		} ).ToArray();
 		(int X, int Y) Cell( uint address ) => (W( address ), W( address + 4 ));
+		uint Weight( int index ) => unchecked( (uint)W( DecisionVarDistWeightAddress + (uint)(4 * index) ) );
 		return new ThemeParkIncGuestSettings
 		{
 			SmallHappinessChange = W( SmallHappinessChangeAddress ), MediumHappinessChange = W( MediumHappinessChangeAddress ), BigHappinessChange = W( BigHappinessChangeAddress ),
 			ExcitementToCostDivisor = unchecked( (uint)W( ExcitementToCostDivisorAddress ) ), MinimumEntryFee = unchecked( (uint)W( MinimumEntryFeeAddress ) ),
 			CheapPriceMultiplier = F( CheapPriceMultiplierAddress ), AveragePriceMultiplier = F( AveragePriceMultiplierAddress ), ExpensivePriceMultiplier = F( ExpensivePriceMultiplierAddress ),
+			DecisionVariables = new( unchecked( (uint)W( DecisionVariable1Address ) ), unchecked( (uint)W( DecisionVariable2Address ) ), 0 ),
+			DecisionWeights = new( Weight( 0 ), Weight( 1 ), Weight( 2 ), Weight( 3 ), Weight( 4 ), Weight( 5 ), Weight( 6 ) ),
 			OpinionForMuchTooHigh = W( OpinionForMuchTooHighAddress ), OpinionForTooHigh = W( OpinionForTooHighAddress ), OpinionForTooLow = W( OpinionForTooLowAddress ),
 			OpinionForAboutRight = W( OpinionForAboutRightAddress ),
 			StinkbombLikelihood = W( StinkbombLikelihoodAddress ), PrankHappinessThreshold = W( PrankHappinessThresholdAddress ), PrankLikelihood = W( PrankLikelihoodAddress ),

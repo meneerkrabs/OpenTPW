@@ -200,6 +200,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool HasQueue => Parameters.HasQueue;
 	public IRideVisitorHost? Host { get; set; }
 	public bool IsOpen => ScriptRuns && isOpen() && takesGuests();
+	/// <summary>The owner's open word alone (Theme Park Inc's thing <c>+0x7C</c>, tp.exe's <c>+0x68</c>): <see cref="IsOpen"/> without the script and the coaster or track test.</summary>
+	public bool OpenWord => isOpen();
 	/// <summary>
 	/// The ride's script runs: a guest walking to it may join (state 10). Unlike <see cref="IsOpen"/> it ignores the open word, the breakdown and the coaster or track test,
 	/// which the original's join does not read either (the coaster predicate <c>0x00441970</c> is called by the choice, the reopen guard, the open routines and state 11 only).

@@ -460,6 +460,18 @@ public sealed partial class GuestSimulation
 			case ThemeParkIncGuestStates.WalkingToBin:
 				UpdateTpiWalkingToBin( guest, tpi );
 				break;
+			case ThemeParkIncGuestStates.WalkingToMajor:
+				UpdateTpiWalkingToMajor( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.StandingInQueue:
+				UpdateTpiStandingInQueue( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.TakingQueueStep:
+				UpdateTpiTakingQueueStep( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.BeingLoaded:
+				// [EXT:tpi-twp-guest-rules] state 16 (0x617F80) is phase P3b's: the guest walks, boards and rides by Theme Park World's boarding (UpdateTpiBridgedBoarding, after the dispatch)
+				break;
 			case ThemeParkIncGuestStates.LeavingPark:
 				UpdateTpiLeavingPark( guest, tpi );
 				break;
@@ -479,7 +491,7 @@ public sealed partial class GuestSimulation
 				UpdateTpiWaitingToBePickedUp( guest, tpi );
 				break;
 			case >= 0 and < ThemeParkIncGuestStates.Count:
-				// [EXT:tpi-capability-gates] states 10..21 and 24..26 are the later phases' (P3..P6); nothing of phases P1 and P2 enters them
+				// [EXT:tpi-capability-gates] states 10..12, 17..21 and 24..26 are the later phases' (P3b..P6); nothing of phases P1..P3a enters them
 				throw new NotSupportedException( $"Theme Park Inc guest state {tpi.State} ({ThemeParkIncGuestStates.Names[tpi.State]}) is not ported yet (docs/reverse/TPI-GUESTS.md)." );
 		}
 	}

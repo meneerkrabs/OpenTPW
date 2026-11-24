@@ -488,7 +488,7 @@ public sealed record GuestSimulationSnapshot
 	public const int ThingPoolSchemaVersion = 8;
 	/// <summary>The first schema whose guests all walk the cell map, the arrival walk's states 0 to 5 included (tp.exe 0x004FF520 and the states around it): earlier saves may hold guests on an arrival lane.</summary>
 	public const int ArrivalWalkSchemaVersion = 9;
-	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 9 as written now, 8 before the arrival walk on the cell map, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 10 as written now, 9 before Theme Park Inc's native guest states, 8 before the arrival walk on the cell map, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
 	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
 	public required int SchemaVersion { get; init; }
@@ -523,6 +523,13 @@ public sealed record GuestSimulationSnapshot
 	public ThingPoolSnapshot? Things { get; init; }
 	public required long Admissions { get; init; }
 	public required int Departed { get; init; }
+	/// <summary>
+	/// Whether the simulation ran Theme Park Inc's native guest states (<see cref="GuestSimulation.ThemeParkIncNativeGuests"/> with the park's settings, schema 10); absent (false) otherwise and in
+	/// older saves. A restore refuses a save whose value differs from the running simulation's: native guest blocks need the native machine, and a native park cannot continue guests of the
+	/// Theme Park World rules.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public bool ThemeParkIncNativeGuests { get; init; }
 	/// <summary>The park's visitor count (<see cref="GuestSimulation.VisitorCount"/>). Absent before schema 9: 0.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public int VisitorCount { get; init; }

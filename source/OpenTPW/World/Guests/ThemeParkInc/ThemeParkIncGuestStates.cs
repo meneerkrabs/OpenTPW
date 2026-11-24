@@ -61,6 +61,13 @@ public static class ThemeParkIncGuestStates
 	public static bool IsCatchable( int state ) =>
 		state is not ((>= 0 and <= 5) or (>= 0xE and <= 0x15) or (>= 0x17 and <= 0x1E));
 
+	/// <summary>
+	/// Whether this build runs <paramref name="state"/>'s handler and setter entry (phase P1): the arrival and leaving states, idle (its stub), the spot animation, frozen, first aid and the
+	/// unreachable 28 and 29. The later phases' states (7, 9..21, 24..26) are not ported; a restore refuses a guest in one.
+	/// </summary>
+	public static bool RunsInThisBuild( int state ) => state is (>= WalkingToCrossing and <= Idle) or SpotAnimation or LeavingPark or Frozen
+		or (>= WaitingForFirstAid and <= WaitingToBePickedUp);
+
 	/// <summary>The queue and ride predicate (<c>0x61AC40</c>): the state, or the saved state while a spot animation (8) runs, is 14..17.</summary>
 	// [BIN:TPI-EXE:0x61AC40 queue predicate] eax = +0x2C0, +0x2C4 when it is 8; 1 for 0xE <= eax <= 0x11 (signed jl/jg), else 0
 	public static bool InQueueOrLoading( int state, int saved )

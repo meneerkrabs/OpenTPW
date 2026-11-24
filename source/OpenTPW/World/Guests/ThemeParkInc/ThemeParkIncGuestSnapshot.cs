@@ -80,6 +80,11 @@ public sealed record ThemeParkIncGuestSnapshot
 			yield return $"Guest {guestId} Theme Park Inc state {State} is not one of the 31 states.";
 		if ( (uint)Saved >= ThemeParkIncGuestStates.Count )
 			yield return $"Guest {guestId} Theme Park Inc saved state {Saved} is not one of the 31 states.";
+		// a state this build cannot run would stop the guest's update mid-tick: a later phase's save, or an edited one
+		if ( (uint)State < ThemeParkIncGuestStates.Count && !ThemeParkIncGuestStates.RunsInThisBuild( State ) )
+			yield return $"Guest {guestId} Theme Park Inc state {State} ({ThemeParkIncGuestStates.Names[State]}) is not ported in this build.";
+		if ( State == ThemeParkIncGuestStates.SpotAnimation && (uint)Saved < ThemeParkIncGuestStates.Count && !ThemeParkIncGuestStates.RunsInThisBuild( Saved ) )
+			yield return $"Guest {guestId} Theme Park Inc spot animation returns to state {Saved} ({ThemeParkIncGuestStates.Names[Saved]}), which is not ported in this build.";
 		if ( (uint)Generation > 2 )
 			yield return $"Guest {guestId} Theme Park Inc generation {Generation} is not 0, 1 or 2.";
 		if ( Words2D0 is not { Length: ThemeParkIncGuestRecord.Words2D0Count } || Words1EC is not { Length: ThemeParkIncGuestRecord.Words1ECCount } )
@@ -88,18 +93,53 @@ public sealed record ThemeParkIncGuestSnapshot
 			yield return $"Guest {guestId} Theme Park Inc turn stamps are negative.";
 	}
 
-	/// <summary>The record's words in a fixed order, for the guest state hashes.</summary>
-	public static IEnumerable<long> HashWords( ThemeParkIncGuestRecord tpi )
+	/// <summary>The number of words <see cref="CopyHashWords"/> writes.</summary>
+	public const int HashWordCount = 1 + 37 + ThemeParkIncGuestRecord.Words2D0Count + ThemeParkIncGuestRecord.Words1ECCount;
+
+	/// <summary>The record's words in a fixed order, for the guest state hashes, into <paramref name="into"/> (at least <see cref="HashWordCount"/> long; nothing is allocated).</summary>
+	public static void CopyHashWords( ThemeParkIncGuestRecord tpi, Span<long> into )
 	{
-		yield return 0x54504947L;
-		foreach ( var word in new long[] { tpi.State, tpi.Saved, tpi.Mode, tpi.Heading, tpi.FeesPaid, tpi.ArrivalTurn, tpi.Target, tpi.Word206, tpi.Word208, tpi.Byte21B, tpi.Word21C,
-			tpi.Word220, tpi.Word224, tpi.Wait, tpi.Paid ? 1 : 0, tpi.SpotTurn, tpi.Word234, tpi.SpriteIndex, tpi.Byte28C, tpi.Word290, tpi.HoldsBalloon ? 1 : 0, tpi.BalloonCountdown,
-			tpi.Word29C, tpi.Generation, tpi.PreferredExcitement, tpi.BoredomThreshold, tpi.Byte2B1, tpi.FirstAidWait, tpi.Word2B8, tpi.Word2BC, tpi.Word2C8, tpi.QueueLink, tpi.QueueSlot,
-			tpi.WeatherDay, tpi.Word1B8, tpi.Word1DC, tpi.Word0E0 } )
-			yield return word;
-		foreach ( var word in tpi.Words2D0 )
-			yield return word;
-		foreach ( var word in tpi.Words1EC )
-			yield return word;
+		into[0] = 0x54504947L;
+		into[1] = tpi.State;
+		into[2] = tpi.Saved;
+		into[3] = tpi.Mode;
+		into[4] = tpi.Heading;
+		into[5] = tpi.FeesPaid;
+		into[6] = tpi.ArrivalTurn;
+		into[7] = tpi.Target;
+		into[8] = tpi.Word206;
+		into[9] = tpi.Word208;
+		into[10] = tpi.Byte21B;
+		into[11] = tpi.Word21C;
+		into[12] = tpi.Word220;
+		into[13] = tpi.Word224;
+		into[14] = tpi.Wait;
+		into[15] = tpi.Paid ? 1 : 0;
+		into[16] = tpi.SpotTurn;
+		into[17] = tpi.Word234;
+		into[18] = tpi.SpriteIndex;
+		into[19] = tpi.Byte28C;
+		into[20] = tpi.Word290;
+		into[21] = tpi.HoldsBalloon ? 1 : 0;
+		into[22] = tpi.BalloonCountdown;
+		into[23] = tpi.Word29C;
+		into[24] = tpi.Generation;
+		into[25] = tpi.PreferredExcitement;
+		into[26] = tpi.BoredomThreshold;
+		into[27] = tpi.Byte2B1;
+		into[28] = tpi.FirstAidWait;
+		into[29] = tpi.Word2B8;
+		into[30] = tpi.Word2BC;
+		into[31] = tpi.Word2C8;
+		into[32] = tpi.QueueLink;
+		into[33] = tpi.QueueSlot;
+		into[34] = tpi.WeatherDay;
+		into[35] = tpi.Word1B8;
+		into[36] = tpi.Word1DC;
+		into[37] = tpi.Word0E0;
+		for ( var index = 0; index < ThemeParkIncGuestRecord.Words2D0Count; index++ )
+			into[38 + index] = tpi.Words2D0[index];
+		for ( var index = 0; index < ThemeParkIncGuestRecord.Words1ECCount; index++ )
+			into[38 + ThemeParkIncGuestRecord.Words2D0Count + index] = tpi.Words1EC[index];
 	}
 }

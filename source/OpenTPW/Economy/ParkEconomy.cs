@@ -2887,11 +2887,23 @@ public sealed partial class ParkEconomy : IParkEconomy
 		feePaid = 0;
 		if ( IsBankrupt )
 			return false;
-		feePaid = EntranceFee;
-		Post( LedgerCategory.GateTakings, feePaid );
-		Counters.Add( ParkCounters.Admissions, 1 );
-		Raise( ParkEventKind.GuestPaid, feePaid, 0, 0, nameof( LedgerCategory.GateTakings ) );
+		feePaid = BookAdmission();
 		return true;
+	}
+
+	/// <summary>
+	/// Books the entrance fee with no refusal and returns it: Theme Park Inc's booth (<c>0x5C0E10</c>) has no bankruptcy test, so its native guests' paying verdict always books the fee.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5C0E10 admission fee] the park's +0x14 and +0x12C take the fee (+0x120), the analyser's +0x1FEF8 and +0x20148 too, then 0x5AEF40; nothing tests the bank's state
+	public int AdmitThemeParkIncVisitor() => BookAdmission();
+
+	private int BookAdmission()
+	{
+		var fee = EntranceFee;
+		Post( LedgerCategory.GateTakings, fee );
+		Counters.Add( ParkCounters.Admissions, 1 );
+		Raise( ParkEventKind.GuestPaid, fee, 0, 0, nameof( LedgerCategory.GateTakings ) );
+		return fee;
 	}
 
 	public bool TryBuy( int instanceId, long visitorCash, out int pricePaid )

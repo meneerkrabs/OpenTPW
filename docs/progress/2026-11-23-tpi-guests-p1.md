@@ -21,7 +21,8 @@ it on. It is off by default, so the default Theme Park Inc park and every Theme 
   - In this phase, idle (state 6) runs only its leave gate.
 - **Settings.** The guest states read Standard.sam's words by their addresses in the Standard object, and a test checks each address against its key.
 - **Saves.** The guest snapshot is now schema 10. A native guest saves an optional block with all of its fields. A save made with the switch off holds
-  no such block.
+  no such block. The save records the switch, and a restore refuses a save made with the other setting, and a native guest in a state this phase does
+  not run.
 
 Labels:
 - `[EXT:tpi-staff-crt-rand]` now also covers the guests' `rand()` sites. Its text was widened on 2026-11-22 (user decision). The weather delay

@@ -695,11 +695,8 @@ public sealed partial class GuestSimulation
 			default:
 				if ( verdict == BoothVerdictKind.Cheap )
 					guest.Happiness = MeterMath.Add( guest.Happiness, HappinessChange( settings, 1 ) );
-				// [BIN:TPI-EXE:0x615FA7 fee] 0x5C0E10 books the park's fee (+0x120 of the park record) with no refusal; the economy books it as the admission (a refused booking, a bankrupt park in
-				// Theme Park World's rules, still lets the guest in: Theme Park Inc's booth has no such test)
-				var fee = AdmissionFee;
-				if ( Payments != null )
-					Payments.TryPayAdmission( out fee );
+				// [BIN:TPI-EXE:0x615FA7 fee] 0x5C0E10 books the park's fee (+0x120 of the park record) with no refusal (IGuestPayments.PayThemeParkIncAdmission); +0x1C4 adds the fee booked
+				var fee = Payments?.PayThemeParkIncAdmission() ?? AdmissionFee;
 				Admissions++;
 				Observer?.Admitted( guest, fee );
 				if ( fee > 0 )
@@ -708,7 +705,7 @@ public sealed partial class GuestSimulation
 					MoneySpent?.Invoke( guest, fee, 0 );
 				}
 				tpi.Paid = true;
-				tpi.FeesPaid = unchecked( tpi.FeesPaid + AdmissionFee );
+				tpi.FeesPaid = unchecked( tpi.FeesPaid + fee );
 				SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.WaitingForPark );
 				return;
 		}

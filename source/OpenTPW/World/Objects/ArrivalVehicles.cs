@@ -58,8 +58,39 @@ public sealed class ArrivalVehicles : IArrivalVehicleHost
 			script.Variables[index] = value;
 	}
 
-	private OriginalObject? Find( int kind ) =>
-		objects.Objects.FirstOrDefault( item => Named( item.Entry, names[kind] ) );
+	// the vehicle found last per kind and whether each definition seen is named like a kind: the arrival update asks every turn, so a lookup allocates nothing once the entries are known
+	private readonly OriginalObject?[] found = new OriginalObject?[3];
+	private readonly Dictionary<ObjectCatalogEntry, int> kindOfEntry = new();
+
+	private OriginalObject? Find( int kind )
+	{
+		if ( found[kind] is { IsDeleted: false } cached )
+			return cached;
+		found[kind] = null;
+		var list = objects.Objects;
+		for ( var index = 0; index < list.Count; index++ )
+		{
+			var item = list[index];
+			if ( KindOf( item.Entry ) == kind )
+				return found[kind] = item;
+		}
+		return null;
+	}
+
+	private int KindOf( ObjectCatalogEntry entry )
+	{
+		if ( kindOfEntry.TryGetValue( entry, out var kind ) )
+			return kind;
+		kind = -1;
+		for ( var index = 0; index < names.Count; index++ )
+			if ( Named( entry, names[index] ) )
+			{
+				kind = index;
+				break;
+			}
+		kindOfEntry[entry] = kind;
+		return kind;
+	}
 
 	/// <summary>The first definition named like the vehicle: its archive's name, compared case-insensitively (the seaplane's Info.Name is "Plane" in three themes).</summary>
 	// [BIN:TPW-EXE:0x0051A50D vehicle definition] the definition list 0x007890A0 is walked in order and the name at definition +0x390 compared with _wcsicmp (0x0067B140)

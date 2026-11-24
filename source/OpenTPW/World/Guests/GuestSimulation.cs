@@ -936,6 +936,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return true;
 	}
 
+	/// <summary>Runs the vehicle dispatch of a group of <paramref name="size"/> (tests).</summary>
+	internal void DispatchArrivalVehicleForTest( int size ) => DispatchArrivalVehicle( size );
+
 	/// <summary>Puts <paramref name="kind"/> at work without a dispatch (tests).</summary>
 	internal void RestoreArrivalVehicleForTest( int kind ) => arrivalVehicle = kind;
 
@@ -4098,6 +4101,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Admissions = Admissions,
 			Departed = Departed,
 			VisitorCount = VisitorCount,
+			ThemeParkIncNativeGuests = NativeTpi != null,
 			ArrivalTimerStart = arrivalTimerStart,
 			DeliveringArrivals = deliveringArrivals,
 			SpawnTimer = spawnTimer,
@@ -4295,6 +4299,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Error( $"Admissions {snapshot.Admissions} is negative." );
 		if ( snapshot.Departed < 0 )
 			Error( $"Departed {snapshot.Departed} is negative." );
+		// the save's native switch must be the running simulation's: a native guest block needs the native machine (NativeTpi), and a native park cannot continue guests of the Theme Park World rules
+		if ( snapshot.ThemeParkIncNativeGuests != (NativeTpi != null) )
+			Error( snapshot.ThemeParkIncNativeGuests
+				? "The save was made with Theme Park Inc's native guest states on (--tpi-native-guests), which this park runs without."
+				: "The save was made without Theme Park Inc's native guest states, which this park runs (--tpi-native-guests)." );
+		if ( snapshot.ThemeParkIncNativeGuests && snapshot.SchemaVersion < GuestSimulationSnapshot.ThemeParkIncNativeSchemaVersion )
+			Error( $"A schema {snapshot.SchemaVersion} save cannot hold Theme Park Inc's native guest states." );
 		if ( snapshot.VisitorCount < 0 )
 			Error( $"VisitorCount {snapshot.VisitorCount} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
@@ -4473,7 +4484,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
 			if ( guest.Tpi is { } native )
 			{
-				if ( snapshot.SchemaVersion < GuestSimulationSnapshot.ThemeParkIncNativeSchemaVersion || !guest.TpiPrankCode.HasValue || Settings.TpiNative == null )
+				if ( snapshot.SchemaVersion < GuestSimulationSnapshot.ThemeParkIncNativeSchemaVersion || !guest.TpiPrankCode.HasValue || NativeTpi == null || !snapshot.ThemeParkIncNativeGuests )
 					Error( $"Guest {guest.Id} holds a Theme Park Inc native block that a schema {snapshot.SchemaVersion} save of this park cannot hold." );
 				foreach ( var problem in native.Problems( guest.Id ) )
 					Error( problem );
@@ -5015,6 +5026,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var hashesDisplayAge = ReadsDisplayAge;
 		if ( hashesDisplayAge )
 			hash.Add( 0x44415047L + displayTurnPhaseTicks );
+		Span<long> tpiWords = stackalloc long[ThemeParkIncGuestSnapshot.HashWordCount];
 		foreach ( var guest in guests )
 		{
 			hash.Add( guest.Id );
@@ -5086,8 +5098,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				hash.Add( tpiPrank );
 			// a native Theme Park Inc guest's own fields join the digest only on such a guest (every other park keeps its pins)
 			if ( guest.Tpi is { } nativeTpi )
-				foreach ( var word in ThemeParkIncGuestSnapshot.HashWords( nativeTpi ) )
+			{
+				ThemeParkIncGuestSnapshot.CopyHashWords( nativeTpi, tpiWords );
+				foreach ( var word in tpiWords )
 					hash.Add( word );
+			}
 			// a guard's drawn way out joins the digest only while a guest has one (every other park keeps its pins)
 			if ( guest.ExitSide is { } exitSide )
 				hash.Add( 0x45786974L + exitSide );
@@ -5199,6 +5214,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Add( things.NextId );
 		Add( Admissions );
 		Add( guests.Count );
+		Span<long> tpiWords = stackalloc long[ThemeParkIncGuestSnapshot.HashWordCount];
 		foreach ( var guest in guests )
 		{
 			Add( guest.Id );
@@ -5218,8 +5234,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Add( tpiPrank );
 			// a native Theme Park Inc guest's own fields join the hash only on such a guest (every other park keeps its pins)
 			if ( guest.Tpi is { } nativeTpi )
-				foreach ( var word in ThemeParkIncGuestSnapshot.HashWords( nativeTpi ) )
+			{
+				ThemeParkIncGuestSnapshot.CopyHashWords( nativeTpi, tpiWords );
+				foreach ( var word in tpiWords )
 					Add( word );
+			}
 			Add( guest.BalloonLife );
 			Add( guest.HasBalloon ? 1 : 0 );
 			Add( guest.InCostume ? 1 : 0 );

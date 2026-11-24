@@ -129,7 +129,8 @@ The verdict cases of state 4:
 - far too expensive: the walk to the bus stop, thought 6, state 22;
 - expensive: wait `50 + R % 50`, thought 6, minus `MediumHappinessChange`, and at a happiness byte of 0 the bus stop;
 - cheap: plus `MediumHappinessChange`;
-- cheap and fair: the fee, `+0x22C = 1`, `+0x1C4 += fee`, state 3.
+- cheap and fair: the fee, `+0x22C = 1`, `+0x1C4 += fee`, state 3. The fee is booked with no refusal, as `0x5C0E10` books it
+  (`ParkEconomy.AdmitThemeParkIncVisitor`; Theme Park World's booking refuses a bankrupt park), and `+0x1C4` adds the fee booked.
 
 **Walk to the bus stop `0x615D50`.**
 - Two world draws pick a point anywhere in the BusStopA cell, and the route request `0x60B8E0` asks for the walk there.
@@ -152,6 +153,14 @@ phases port (7, 9..21, 24..26) are unreachable in P1, and the dispatch refuses t
 Guest snapshot schema 10 adds an optional block `GuestSnapshot.Tpi` (`ThemeParkIncGuestSnapshot`) with every field of the record. A guest without it
 writes nothing new, so a save made with the switch off differs from schema 9 only by its version number. The block joins the state hashes only on a
 native guest.
+
+The snapshot also records whether the park ran the native machine (`GuestSimulationSnapshot.ThemeParkIncNativeGuests`). A restore refuses a save whose
+value differs from the running simulation's:
+- a save with native blocks into a park running with the switch off (its guests would need the native machine);
+- a schema 9 save, or a schema 10 save made with the switch off, into a Theme Park Inc park running with it on (its guests run Theme Park World's rules).
+
+A restore also refuses a native guest in a state this build cannot run (7, 9..21 and 24..26, or a spot animation 8 that returns to one), so a save of a
+later phase or an edited save never stops a guest's update mid-tick.
 
 ## Settings
 

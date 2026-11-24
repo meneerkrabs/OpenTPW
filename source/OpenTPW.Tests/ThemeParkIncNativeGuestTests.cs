@@ -69,7 +69,7 @@ public sealed class ThemeParkIncNativeGuestTests
 		BusStopA = (10, 5), BusStopB = (16, 5), BusStopC = (18, 5), EntranceA = (10, 17), EntranceB = (11, 17), FirstHourMinutes = 120
 	};
 
-	private static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false )
+	private static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false, ThemeParkIncGuestSettings? nativeSettings = null )
 	{
 		var grid = new GuestPathGrid( 30, 24 );
 		for ( var x = 4; x <= 20; x++ )
@@ -82,7 +82,7 @@ public sealed class ThemeParkIncNativeGuestTests
 		var settings = new GuestSettings
 		{
 			TpiGuestStart = new( Enumerable.Range( 0, 24 ).Select( i => new ThemeParkIncGuestType( 90 - i, 300 + 20 * i, 40 + i, i / 8 ) ).ToArray(), 400, 30, 15, 70, 20, 10, 10 ),
-			TpiNative = NativeSettings(),
+			TpiNative = nativeSettings ?? NativeSettings(),
 			ArrivalTimeBetween = 5
 		};
 		var payments = new Payments();
@@ -555,6 +555,241 @@ public sealed class ThemeParkIncNativeGuestTests
 		simulation.RestoreArrivalVehicleForTest( 1 );
 		var guest = simulation.SpawnArrival()!;
 		Assert.AreEqual( GuestNavigation.Centre( (16, 5) ), (guest.Navigation.X, guest.Navigation.Y), "0x5D79F0(1): BusStopB" );
+	}
+
+	// ---- Review follow-ups: the save switch, unported states, the fee, and more of the rule ------------------------------------------
+
+	[TestMethod]
+	public void ANativeSaveIsRefusedWithTheSwitchOffAndAPlainSaveWithItOn()
+	{
+		var (native, _, _) = Rig();
+		native.SpawnArrival();
+		var nativeSave = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( native.CaptureSnapshot() ) )!;
+		Assert.IsTrue( nativeSave.ThemeParkIncNativeGuests, "the save records the switch" );
+		var (off, _, _) = Rig( native: false );
+		var refusal = Assert.ThrowsException<System.IO.InvalidDataException>( () => off.RestoreSnapshot( nativeSave ) );
+		StringAssert.Contains( refusal.Message, "native guest states on" );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => off.RestoreSnapshot( nativeSave with { ThemeParkIncNativeGuests = false } ),
+			"a native block without the save's switch is refused too" );
+
+		var (plain, _, _) = Rig( native: false );
+		plain.SpawnInPark( 12, 17 );
+		var plainSave = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( plain.CaptureSnapshot() ) )!;
+		Assert.IsFalse( plainSave.ThemeParkIncNativeGuests );
+		var (on, _, _) = Rig();
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => on.RestoreSnapshot( plainSave ) ).Message, "without Theme Park Inc's native guest states" );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => on.RestoreSnapshot( plainSave with { SchemaVersion = 9 } ), "a schema 9 Theme Park Inc save with the switch on" );
+		var (alsoOff, _, _) = Rig( native: false );
+		alsoOff.RestoreSnapshot( plainSave with { SchemaVersion = 9 } );
+		Assert.AreEqual( plain.ComputeStateHash(), alsoOff.ComputeStateHash(), "with the switch off a schema 9 save restores as before" );
+	}
+
+	[TestMethod]
+	public void AGuestInAStateThisBuildCannotRunIsRefusedAtRestore()
+	{
+		var (simulation, _, _) = Rig();
+		simulation.SpawnInPark( 12, 17 );
+		var save = simulation.CaptureSnapshot();
+		GuestSimulationSnapshot With( int state, int saved )
+		{
+			var guest = save.Guests.Single();
+			return save with { Guests = [guest with { Tpi = guest.Tpi! with { State = state, Saved = saved }, State = ThemeParkIncGuestStates.Projection( state ) }] };
+		}
+		foreach ( var state in new[] { 7, 9, 13, 14, 17, 20, 21, 24, 26 } )
+			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state}" );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( 8, 14 ) ), "a spot animation that returns to a queue" );
+		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 22, 23, 27, 28, 29, 30 } )
+			Rig().Simulation.RestoreSnapshot( With( state, 6 ) );
+		Rig().Simulation.RestoreSnapshot( With( 8, 27 ) );
+	}
+
+	[TestMethod]
+	public void TheBoothBooksTheFeeEvenInABankruptParkAndFeesPaidAddsTheFeeBooked()
+	{
+		var (simulation, _, _) = Rig();
+		var economy = EconomyTestData.Park();
+		economy.OpenPark();
+		economy.SetEntranceFee( 15 );
+		simulation.Payments = new GuestEconomyBridge( () => economy, simulation );
+		simulation.ParkPoints = () => 0;
+		typeof( ParkEconomy ).GetField( "<IsBankrupt>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( economy, true );
+		Assert.IsFalse( economy.TryAdmitVisitor( out _ ), "Theme Park World's booking refuses a bankrupt park" );
+		var admissions = economy.Counters[ParkCounters.Admissions];
+		var takings = economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.GateTakings );
+		var guest = simulation.SpawnArrival()!;
+		simulation.PlaceForTest( guest, 10, 13 );
+		simulation.SetThemeParkIncState( guest, guest.Tpi!, ThemeParkIncGuestStates.PayingAtBooth );
+		Turns( simulation, 1 );
+		Assert.AreEqual( ThemeParkIncGuestStates.WaitingForPark, guest.Tpi!.State, "a fee of 15 against a park value of 20: fair" );
+		Assert.AreEqual( admissions + 1, economy.Counters[ParkCounters.Admissions], "0x5C0E10 books with no refusal" );
+		Assert.AreEqual( takings + 15, economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.GateTakings ) );
+		Assert.AreEqual( 15, guest.Tpi.FeesPaid );
+	}
+
+	[TestMethod]
+	public void TheVerdictsExpensiveCheapAndFairBandsActAndRecordTheirOpinions()
+	{
+		// a park value of 20 (no points): a fee of 30 is from 1.25 × 20 and below 2 × 20 (expensive), 21 is between 0.75 × 20 and 1.25 × 20 (fair); 6000 points give 686..1020, where 21 is cheap
+		foreach ( var (points, fee, state, opinion, happiness) in new[]
+		{
+			(0, 30, ThemeParkIncGuestStates.PayingAtBooth, 20, 60f - 15f),
+			(0, 21, ThemeParkIncGuestStates.WaitingForPark, 50, 60f),
+			(6000, 21, ThemeParkIncGuestStates.WaitingForPark, 100, 60f + 15f)
+		} )
+		{
+			var (simulation, payments, _) = Rig();
+			payments.Fee = fee;
+			simulation.ParkPoints = () => points;
+			var guest = simulation.SpawnArrival()!;
+			var tpi = guest.Tpi!;
+			guest.Happiness = 60;
+			simulation.PlaceForTest( guest, 10, 13 );
+			simulation.SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.PayingAtBooth );
+			Turns( simulation, 1 );
+			Assert.AreEqual( state, tpi.State, $"points {points}, fee {fee}" );
+			CollectionAssert.AreEqual( new[] { (0, opinion) }, payments.Opinions, $"points {points}, fee {fee}" );
+			Assert.AreEqual( happiness, guest.Happiness, $"points {points}, fee {fee}" );
+			if ( state == ThemeParkIncGuestStates.PayingAtBooth )
+			{
+				Assert.IsTrue( tpi.Wait is >= 50 and <= 99, "50 + R % 50 (0x615F04)" );
+				Assert.AreEqual( 0, payments.Admitted );
+				Assert.AreEqual( GuestThought.Dissatisfied, guest.Thought );
+			}
+			else
+				Assert.AreEqual( (1, fee, true), (payments.Admitted, tpi.FeesPaid, tpi.Paid) );
+		}
+	}
+
+	[TestMethod]
+	public void FairWeatherAndTheHeatWaveCloseAnOpenUmbrellaAndADueChangeIsCarriedOut()
+	{
+		foreach ( var weather in new[] { UmbrellaRules.WeatherNone, UmbrellaRules.WeatherHeatWave } )
+		{
+			var (simulation, _, _) = Rig();
+			var guest = simulation.SpawnInPark( 12, 17 );
+			guest.ExitLevel = 100000;
+			simulation.ArrivalWeatherState = () => weather;
+			simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateOpen );
+			BeforePhase( simulation, guest.Id & 3 );
+			var replay = new WorldRng( simulation.World.State );
+			var delay = replay.Next( 3 );
+			simulation.Tick( Tick );
+			Assert.AreEqual( UmbrellaRules.StateClosing, guest.UmbrellaState, $"weather {weather}: 0x61112A schedules the close" );
+			Assert.AreEqual( UmbrellaRules.DueTurn( simulation.ParkTurn, delay ), guest.UmbrellaDueTurn );
+			// the next phase updates of the same day carry the close out once due (0x611206 -> 0x614010)
+			for ( var update = 0; update < 4 && guest.UmbrellaState == UmbrellaRules.StateClosing; update++ )
+			{
+				BeforePhase( simulation, guest.Id & 3 );
+				simulation.Tick( Tick );
+			}
+			Assert.AreEqual( UmbrellaRules.StateClosed, guest.UmbrellaState, $"weather {weather}: carried out" );
+		}
+	}
+
+	[TestMethod]
+	public void BadWeatherCancelsACloseAndADueOpenReleasesTheBalloon()
+	{
+		var (simulation, _, _) = Rig();
+		var guest = simulation.SpawnInPark( 12, 17 );
+		guest.ExitLevel = 100000;
+		var tpi = guest.Tpi!;
+		simulation.ArrivalWeatherState = () => UmbrellaRules.WeatherStorm;
+		simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateClosing );
+		BeforePhase( simulation, guest.Id & 3 );
+		simulation.Tick( Tick );
+		Assert.AreEqual( UmbrellaRules.StateOpen, guest.UmbrellaState, "0x6111E3: state 1 becomes 4" );
+
+		simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateOpening );
+		guest.UmbrellaDueTurn = 0;
+		tpi.HoldsBalloon = true;
+		tpi.BalloonCountdown = 200;
+		guest.Happiness = 60;
+		guest.ToiletBonus = 25;
+		BeforePhase( simulation, guest.Id & 3 );
+		simulation.Tick( Tick );
+		Assert.AreEqual( UmbrellaRules.StateOpen, guest.UmbrellaState, "0x614010: a due open opens" );
+		Assert.AreEqual( (false, 0u), (tpi.HoldsBalloon, tpi.BalloonCountdown), "the balloon goes" );
+		Assert.AreEqual( MeterMath.Add( 60f - 15f, NativeSettings().HappinessWeather[tpi.Generation].Storm ), guest.Happiness,
+			"MediumHappinessChange for the balloon, then the storm's delta unsoftened: the switch read state 3, not 4 (0x6111AF)" );
+		Assert.AreEqual( 0, guest.ToiletBonus, "0x60B3F0(0)" );
+	}
+
+	[TestMethod]
+	public void NoUmbrellaChangeIsScheduledOnATrackCell()
+	{
+		var (simulation, _, _) = Rig();
+		var guest = simulation.SpawnInPark( 12, 17 );
+		guest.ExitLevel = 100000;
+		simulation.ArrivalWeatherState = () => UmbrellaRules.WeatherRain;
+		simulation.UmbrellaOnTrackCell = ( _, _ ) => true;
+		simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateClosed );
+		BeforePhase( simulation, guest.Id & 3 );
+		var replay = new WorldRng( simulation.World.State );
+		replay.NextWord();
+		simulation.Tick( Tick );
+		Assert.AreEqual( UmbrellaRules.StateClosed, guest.UmbrellaState, "0x613EA0 stands down on a track cell" );
+		Assert.AreEqual( replay.State, simulation.World.State, "and takes no draw (only the thought draw)" );
+	}
+
+	[TestMethod]
+	public void AGuestBuiltOnAParkCellDrawsNothingAfterItsAppearanceAndCountsAsAVisitor()
+	{
+		var (simulation, _, _) = Rig();
+		var (reference, _, _) = Rig( native: false );
+		var beams = 0;
+		simulation.Beamed += _ => beams++;
+		var first = simulation.SpawnInPark( 12, 17 );
+		var second = simulation.SpawnInPark( 13, 17 );
+		reference.SpawnInPark( 12, 17 );
+		reference.SpawnInPark( 13, 17 );
+		Assert.AreEqual( reference.World.State, simulation.World.State, "the in-park branch (0x60C9FE) draws neither R10 nor R11" );
+		Assert.AreEqual( (1, 2, 2), (first.VisitorNumber, second.VisitorNumber, simulation.VisitorCount) );
+		Assert.AreEqual( (ThemeParkIncGuestStates.Idle, 3), (first.Tpi!.State, first.Tpi.Mode) );
+		Assert.AreEqual( 0, beams );
+		Assert.AreEqual( first.Tpi.ArrivalTurn, simulation.ParkTurn, "+0x1FC = the world turn (0x60C589)" );
+	}
+
+	[TestMethod]
+	public void TheBoothPickFlipsToThePartnerBoothWhenItsRouteFails()
+	{
+		// booth 0 lies outside the map, where no search reaches; booth 1 is on the crossing
+		var settings = NativeSettings() with { TicketBooths = [(100, 100, 0), (11, 13, 1536), (0, 0, 0)] };
+		for ( var spawned = 0; spawned < 4; spawned++ )
+		{
+			var (simulation, _, _) = Rig( nativeSettings: settings );
+			for ( var skip = 0; skip < spawned; skip++ )
+				simulation.SpawnInPark( 12, 17 );
+			var guest = simulation.SpawnArrival()!;
+			Assert.AreEqual( (11, 13), (guest.Navigation.TargetX >> 16, guest.Navigation.TargetY >> 16), $"guest {guest.Id}: i ^= 1 after a refused route (0x60CAAB)" );
+			Assert.AreEqual( ThemeParkIncGuestStates.WalkingToBooth, guest.Tpi!.State );
+		}
+	}
+
+	[TestMethod]
+	public void TheDispatchOnlyTriggersAVehicleAtWorkAndDrawsTheKindForSizeZero()
+	{
+		var (simulation, _, vehicles) = Rig( withVehicles: true );
+		vehicles.Placed[1] = true;
+		simulation.RestoreArrivalVehicleForTest( 1 );
+		var before = simulation.World.State;
+		simulation.DispatchArrivalVehicleForTest( 0 );
+		Assert.AreEqual( 1, vehicles.Variables[1][ArrivalVehicleKind.TriggerVariable], "VAR 0 = 1 (0x64FF61)" );
+		Assert.AreEqual( 0, vehicles.Log.Count, "nothing destroyed or built" );
+		Assert.AreEqual( before, simulation.World.State );
+
+		var (empty, _, emptyVehicles) = Rig( withVehicles: true );
+		emptyVehicles.Placed[1] = true;
+		var replay = new WorldRng( empty.World.State );
+		var kind = (int)(replay.NextWord() % 3);
+		empty.DispatchArrivalVehicleForTest( 0 );
+		Assert.AreEqual( replay.State, empty.World.State, "the inline step of 0x64FCBB" );
+		Assert.AreEqual( kind, empty.ArrivalVehicle );
+		CollectionAssert.AreEqual( new[] { "destroy 1", $"create {kind}" }, emptyVehicles.Log.ToArray() );
+
+		var (intro, _, introVehicles) = Rig( withVehicles: true );
+		intro.IntroWorld = true;
+		intro.DispatchArrivalVehicleForTest( 2 );
+		Assert.AreEqual( (-1, 0), (intro.ArrivalVehicle, introVehicles.Log.Count), "game mode 3 returns at once (0x64FBDF)" );
 	}
 
 	// ---- The guard and the save ----------------------------------------------------------------------------------------------

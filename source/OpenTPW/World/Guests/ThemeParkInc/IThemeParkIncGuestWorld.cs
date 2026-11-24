@@ -55,4 +55,17 @@ public interface IThemeParkIncGuestWorld
 	/// (phase P3a). None by default: a world without rides offers no choice.
 	/// </summary>
 	IReadOnlyList<ThemeParkIncAttractionView> Attractions() => [];
+
+	/// <summary>
+	/// The type of any live thing in the thing slot <paramref name="thingId"/> (the table <c>0xAA18B0</c>, the type word <c>+0x16</c>), or null for an empty slot: the score's same-type gate reads it for
+	/// the last used thing, whatever kind of thing that is. By default only the choosable attractions are known.
+	/// </summary>
+	int? ThingTypeId( ushort thingId )
+	{
+		var list = Attractions();
+		for ( var index = 0; index < list.Count; index++ )
+			if ( list[index].ThingId == thingId )
+				return list[index].Ride.TypeId;
+		return null;
+	}
 }

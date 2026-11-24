@@ -223,7 +223,11 @@ public sealed partial class GuestSimulation
 			guest.ToiletBonus = UmbrellaRules.SpeedTerm( guest.UmbrellaState, SpeedTermWord( term ) );
 			// [BIN:TPI-EXE:0x619E63 thought draw] outside states 0x14 and 0x15 and on a park cell (0x60BE00): one world draw, R % 10 == 0 runs the pick 0x60FC60; then the balloon countdown 0x619E9E:
 			// +0x298 above 0 (unsigned) loses 1 and at 0 the balloon goes (0x613D00(0)). Either test failing jumps to 0x619EBB, past the countdown: a guest on an object, held or outside the park keeps its balloon's time
-			if ( tpi.State is not (ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl) && OnParkCellTypeAt( cx, cy ) )
+			// [EXT:tpi-twp-guest-rules] the bridged boarding's ride (state 16 with Theme Park World's Using) stands in for state 0x14, the guest under the ride's control (0x619E6A), so it skips the draw too; the
+			// bridged boarding's draw stream still differs: 17's entry roll 0x5E7A00 (one draw at 0x5E7A2D) is missing, Theme Park World's balloon give-back and balloon shop reseed and take two draws each
+			// (FinishUse, ApplyAppearance), a won sideshow takes a tail draw, and its small-portion draws stand in for 0x612AEC/0x612BCF at another moment (TPI-GUESTS.md, "The bridged boarding")
+			if ( tpi.State is not (ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl)
+				&& !(tpi.State == ThemeParkIncGuestStates.BeingLoaded && guest.State == GuestState.Using) && OnParkCellTypeAt( cx, cy ) )
 			{
 				if ( random.NextWord() % 10 == 0 )
 					ThemeParkIncThoughtPick( guest, settings );

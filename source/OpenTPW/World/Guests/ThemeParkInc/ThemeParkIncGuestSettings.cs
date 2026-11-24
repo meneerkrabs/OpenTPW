@@ -52,14 +52,13 @@ public sealed record ThemeParkIncGuestSettings
 	public float CheapPriceMultiplier { get; init; }
 	public float AveragePriceMultiplier { get; init; }
 	public float ExpensivePriceMultiplier { get; init; }
-	/// <summary>The opinion bytes the verdict records for far too expensive, expensive, cheap and fair.</summary>
 	/// <summary>
 	/// <c>PeepInfo.DecisionVariable1</c> and <c>DecisionVariable2</c> (the age in days below which a ride counts as new, and its score multiplier) and the seven <c>DecisionVar*Weight</c> words
 	/// from <c>0xA01AC4</c> (distance, queue, excitement, thirst, hunger, toilet, illness), which the attraction score <c>0x6101E0</c> reads. <c>DecisionVariable3</c> (indoors in rain) is unread.
 	/// </summary>
 	public DecisionVariables DecisionVariables { get; init; }
 	public DecisionWeights DecisionWeights { get; init; }
-
+	/// <summary>The opinion bytes the verdict records for far too expensive, expensive, cheap and fair.</summary>
 	public int OpinionForMuchTooHigh { get; init; }
 	public int OpinionForTooHigh { get; init; }
 	public int OpinionForTooLow { get; init; }

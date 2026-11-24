@@ -153,6 +153,8 @@ public sealed class ThemeParkIncNativeQueueTests
 		CollectionAssert.IsSubsetOf( new[] { 13, 14, 15, 16 }, seen.ToArray(), "the walk, the queue step, the queue and the bridged boarding" );
 		Assert.IsTrue( boarded && rig.Ride.BoardedTotal == 1, "the bridged boarding rides through the bridge" );
 		Assert.AreEqual( (0, 0, 0), (tpi.Target, guest.AttractionId, rig.Ride.QueueLength), "back idle, no target and out of the list" );
+		CollectionAssert.AreEqual( new[] { (int)Thing, 0, 0, 0 }, guest.UsedHistory,
+			"the use routine 0x6118D0 pushes the thing id, not Theme Park World's attraction id, into +0x20A" );
 	}
 
 	[TestMethod]
@@ -225,7 +227,7 @@ public sealed class ThemeParkIncNativeQueueTests
 		rig.HoldAdmission();
 		var (guest, tpi) = Native( rig );
 		SendToRide( rig, guest, tpi );
-		uint first = 0, second = 0;
+		uint second = 0;
 		var heading = 0;
 		var before = StandThenOneUpdate( rig, guest, tpi, () =>
 		{
@@ -238,7 +240,6 @@ public sealed class ThemeParkIncNativeQueueTests
 				var replica = new WorldRng( seed );
 				if ( replica.NextWord() % 10 != 0 )
 					continue;
-				first = 0;
 				second = replica.NextWord();
 				rig.Simulation.World.Reseed( seed );
 				break;
@@ -251,7 +252,6 @@ public sealed class ThemeParkIncNativeQueueTests
 		replicaAfter.NextWord();
 		replicaAfter.NextWord();
 		Assert.AreEqual( replicaAfter.State, rig.Simulation.World.State, "two world draws, nothing else" );
-		_ = first;
 	}
 
 	[TestMethod]
@@ -357,5 +357,34 @@ public sealed class ThemeParkIncNativeQueueTests
 			copy.StepTurn();
 		}
 		Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), "and runs the same" );
+	}
+
+	/// <summary>
+	/// A guest of the bridged boarding saved mid-ride (state 16 with Theme Park World's Using) restores and finishes the ride the same way: idle, out of the list and with the thing in its used history
+	/// (TPI-GUESTS.md, "Phases after P2": phase P3b maps such a save to state 20).
+	/// </summary>
+	[TestMethod]
+	public void AGuestMidRideRoundTripsThroughTheSave()
+	{
+		var (rig, _) = Rig( takesGuests: true );
+		var (guest, tpi) = Native( rig );
+		SendToRide( rig, guest, tpi );
+		Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.BeingLoaded && guest.State == GuestState.Using, 2000 ), "the guest rides" );
+		// through the save file's codec, with the ride script's own state (its heap holds the rider)
+		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
+		Assert.AreEqual( "", string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ), "a guest mid-ride in the bridged state 16 is restorable" );
+		var saved = snapshot.Guests.Single( item => item.Id == guest.Id );
+		Assert.AreEqual( (ThemeParkIncGuestStates.BeingLoaded, GuestState.Using), (saved.Tpi!.State, saved.State) );
+		var script = ParkResumeJson.Deserialize<RideVMSnapshot>( ParkResumeJson.Serialize( rig.Script.CaptureSnapshot() ) );
+		var (copy, _) = Rig( takesGuests: true );
+		copy.Simulation.RestoreSnapshot( snapshot );
+		script.ValidateSnapshot();
+		copy.Script.RestoreSnapshot( script );
+		Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), "the restored park hashes the same" );
+		var restored = copy.Simulation.Guests.Single( item => item.Id == guest.Id );
+		Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.Idle, 2000 ) );
+		Assert.IsTrue( RunUntil( copy, () => restored.Tpi!.State == ThemeParkIncGuestStates.Idle, 2000 ), "the restored guest finishes the ride" );
+		Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), "and finishes the ride the same" );
+		CollectionAssert.AreEqual( new[] { (int)Thing, 0, 0, 0 }, restored.UsedHistory, "the restored guest's use pushes the thing id" );
 	}
 }

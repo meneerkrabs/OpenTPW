@@ -294,6 +294,9 @@ public sealed partial class GuestSimulation
 			return;
 		}
 		tpi.Word234 = BitConverter.SingleToInt32Bits( guest.Happiness );
+		// [BIN:TPI-EXE:0x6119A6 join happiness] the use routine's fare term reads +0x234 (byte(+0x1BC) − byte(+0x234)) × 3, as tp.exe's does from its own copy: the bridged boarding's FinishUse reads
+		// the shared record's QueueJoinHappiness, so the join mirrors +0x234 there
+		guest.QueueJoinHappiness = guest.Happiness;
 		guest.AttractionId = ride.AttractionId;
 		guest.QueueJoinTurn = ParkTurn;
 		TpiAddToQueue( ride, guest );
@@ -491,8 +494,8 @@ public sealed partial class GuestSimulation
 	// ---- The ride's side ---------------------------------------------------------------------------------------------------------
 
 	/// <summary>The ride calls a native guest at the head of its queue (<c>0x619670</c>, OnAdmittance): the call word <c>+0x220</c>, which state 14 answers.</summary>
-	// [BIN:TPI-EXE:0x619670 on admittance] "Person %d: OnAdmittance": +0x220 = 1 and +0x1B4 = the ride's price word +0x94 (0x5E6200), the fee the exit charges (0x6126D0); the bridged boarding of phase P3a
-	// books the fee by Theme Park World's boarding instead (IGuestPayments.TryPayVisit, ECON-062)
+	// [BIN:TPI-EXE:0x619670 on admittance] "Person %d: OnAdmittance": +0x220 = 1 and +0x1B4 = the ride's price word +0x94 (0x5E6200), the fee the exit charges (0x6126D0)
+	// [EXT:tpi-capability-gates] the fee word +0x1B4 is not kept: the bridged boarding of phase P3a books the fee by Theme Park World's boarding instead (IGuestPayments.TryPayVisit, ECON-062)
 	private static void OfferThemeParkIncGuest( Guest guest, ThemeParkIncGuestRecord tpi )
 	{
 		tpi.Word220 = 1;
@@ -536,7 +539,8 @@ public sealed partial class GuestSimulation
 	/// <summary>
 	/// State 14 sets 16 ("being loaded", the walk to the stand point already requested): phase P3b ports 16, 17, 19 and 20. Until then the guest boards, rides and leaves by Theme Park World's
 	/// boarding, as the default path's Theme Park Inc guests do (<c>[EXT:tpi-twp-guest-rules]</c>): the state word is 16 throughout, the shared record carries the walk, and the guest is idle again when it is
-	/// done. Every draw up to the setter of 16 is the original's; state 16 itself draws nothing, and the draws from 17's entry (<c>0x5E7A00</c>) on are Theme Park World's boarding's.
+	/// done. Every draw up to the setter of 16 is the original's and state 16 itself draws nothing; the differences after that (17's missing entry roll <c>0x5E7A00</c>, Theme Park World's balloon
+	/// reseeds, sideshow tail and small-portion draws) are listed in TPI-GUESTS.md, "The bridged boarding".
 	/// </summary>
 	// [BIN:TPI-EXE:0x6177AB being loaded] "Person %d being loaded to ride %d" and setter(0x10): the entry's mode 1 only (0x61A9E2)
 	// [EXT:tpi-twp-guest-rules] the boarding from state 16 on (0x617F80, 0x61A21D, 0x61A77E, 0x618380, 0x619980: the price test, the admission, 17's roll 0x5E7A00, the ride's control and the unloading) runs

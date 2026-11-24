@@ -35,13 +35,21 @@ public sealed partial class Level
 	}
 
 	/// <summary>
-	/// An attraction thing as the ride choice reads it (phase P3a): its ride bridge, its type's score words (the keys of the type record words the score <c>0x6101E0</c> reads; a key the type's .sam leaves out
-	/// reads 0, as the record the loader zeroes) and whether the save's special-ride table names its thing.
+	/// The attractions the ride choice reads (phase P3a), from the object list's walk (newest first): the choosable things (the flag <c>+0x42</c> bit 4, <c>Info.IsChoosable</c>) whose ride bridge
+	/// the guests host, each with its type's score words (the keys of the type record words the score <c>0x6101E0</c> reads; a key the type's .sam leaves out reads 0, as the record the loader
+	/// zeroes) and whether the save's special-ride table names its thing.
 	/// </summary>
 	// [DATA:<attraction>.sam:Info.GenderSpecific] type +0x78; UsageInfo.AppearanceEffect +0x21C, UsageInfo.IsInfoDesk +0x244 (the key table 0x9A4520, four bytes a key from GoldenTicketCost +0x174);
 	// WeatherModifier.Snow/Rain/Storm/HeatWavePercentage +0xF0..+0xFC and GenerationModifier.Kid/Parent/GrandparentScorePercentage +0x110..+0x118
-	private static ThemeParkIncAttractionView ThemeParkIncAttractionViewOf( OriginalObject item, HashSet<int>? special ) =>
-		new( (ushort)item.ThingId, item.ThingCell, item.Visitors, ThemeParkIncScoreTermsOf( item.Entry.Settings ), special?.Contains( item.ThingId ) == true );
+	// [BIN:TPI-EXE:0x6242F0 special ride] the table 0xAA0420 (stride 0xF4, count 0xAA071C) of the park's special rides, which only the park loader 0x6244B0 fills: the prebuilt park's records
+	internal static ThemeParkIncAttractionView[] ThemeParkIncAttractionViews(
+		IEnumerable<(int ThingId, (int X, int Y) Cell, ObjectSettings Settings, RideVisitorBridge Visitors)> listed, GuestSimulation guests, ThemeParkIncSaveWorld? save )
+	{
+		var special = save?.SpecialRides is { Count: > 0 } rides ? rides.Select( ride => (int)ride.Id ).ToHashSet() : null;
+		return listed.Where( item => item.ThingId is > 0 and <= ushort.MaxValue && item.Settings.GetInt( "Info.IsChoosable" ) != 0 && guests.Hosts( item.Visitors ) )
+			.Select( item => new ThemeParkIncAttractionView( (ushort)item.ThingId, item.Cell, item.Visitors, ThemeParkIncScoreTermsOf( item.Settings ), special?.Contains( item.ThingId ) == true ) )
+			.ToArray();
+	}
 
 	/// <summary>The score words of an attraction's type (<see cref="ThemeParkIncScoreTerms"/>); a key the .sam leaves out reads 0.</summary>
 	internal static ThemeParkIncScoreTerms ThemeParkIncScoreTermsOf( ObjectSettings settings )
@@ -62,6 +70,7 @@ public sealed partial class Level
 		private ThemeParkIncThingView[] bins = [];
 		private ThemeParkIncThingView[] shows = [];
 		private ThemeParkIncAttractionView[] attractions = [];
+		private Dictionary<int, int> thingTypes = [];
 
 		/// <summary>Forgets the views: an object was placed or removed.</summary>
 		internal void Invalidate() => fresh = false;
@@ -73,11 +82,15 @@ public sealed partial class Level
 			fresh = true;
 			bins = level.ThemeParkIncObjectsWith( "UsageInfo.HoldsLitter" ).Select( level.ThemeParkIncViewOf ).ToArray();
 			shows = level.ThemeParkIncObjectsWith( "UsageInfo.IsFireworks" ).Select( level.ThemeParkIncViewOf ).ToArray();
-			// [BIN:TPI-EXE:0x6242F0 special ride] the table 0xAA0420 (stride 0xF4, count 0xAA071C) of the park's special rides, which only the park loader 0x6244B0 fills: the prebuilt park's records
-			var special = level.OriginalPark?.Save?.ThemeParkIncWorld?.SpecialRides is { Count: > 0 } rides ? rides.Select( ride => (int)ride.Id ).ToHashSet() : null;
 			attractions = level.Guests is { } guests
-				? level.ThemeParkIncObjectsWith( "Info.IsChoosable" ).Where( item => guests.Hosts( item.Visitors ) ).Select( item => ThemeParkIncAttractionViewOf( item, special ) ).ToArray()
+				? ThemeParkIncAttractionViews( level.ThemeParkIncObjectsWith( "Info.IsChoosable" ).Select( item => (item.ThingId, item.ThingCell, item.Entry.Settings, item.Visitors) ), guests,
+					level.OriginalPark?.Save?.ThemeParkIncWorld )
 				: [];
+			// [BIN:TPI-EXE:0x61035F thing slot] the thing table 0xAA18B0 holds every live thing; OriginalObjectRuntime's ride bridges carry the type as Entry.InfoId (RideVisitorBridge.TypeId)
+			thingTypes = [];
+			foreach ( var item in level.Objects.Objects )
+				if ( !item.IsDeleted && item.ThingId is > 0 and <= ushort.MaxValue )
+					thingTypes.TryAdd( item.ThingId, item.Entry.InfoId );
 		}
 
 		public IReadOnlyList<ThemeParkIncThingView> Bins()
@@ -96,6 +109,12 @@ public sealed partial class Level
 		{
 			Refresh();
 			return attractions;
+		}
+
+		public int? ThingTypeId( ushort thingId )
+		{
+			Refresh();
+			return thingTypes.TryGetValue( thingId, out var type ) ? type : null;
 		}
 
 		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => level.TpiStaffWorld?.Entertainers( level.Park?.Economy ) ?? [];

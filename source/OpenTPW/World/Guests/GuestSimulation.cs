@@ -1139,10 +1139,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// a native Theme Park Inc guest runs Theme Park Inc's pre-update and dispatch, never Theme Park World's handlers (GuestSimulation.ThemeParkInc)
 		if ( guest.Tpi is { } tpi )
 		{
+			// the bridged boarding runs only for a guest that was already in state 16 when this update began: the turn on which state 14 sets 16 (its front call) ends with that
+			// set, as the original's dispatch does, and Theme Park World's boarding step first runs on the next update
+			var wasBeingLoaded = tpi.State == ThemeParkIncGuestStates.BeingLoaded;
 			if ( turnStarted )
 				UpdateThemeParkIncGuest( guest, tpi );
 			// [EXT:tpi-twp-guest-rules] the bridged boarding (state 16 until phase P3b) runs Theme Park World's boarding states after Theme Park Inc's pre-update
-			if ( tpi.State == ThemeParkIncGuestStates.BeingLoaded )
+			if ( wasBeingLoaded && tpi.State == ThemeParkIncGuestStates.BeingLoaded )
 				UpdateTpiBridgedBoarding( guest, tpi, dt );
 			if ( !guest.HasWaypoint && guest.State is not GuestState.Boarding )
 				guest.IsMoving = false;
@@ -3829,8 +3832,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 		}
 		Payments?.VisitFinished( ride );
+		if ( guest.Tpi != null )
+			// [BIN:TPI-EXE:0x6118E9 used history] Theme Park Inc's use routine 0x6118D0 pushes the thing id (0x6375C0) into the four words +0x20A with the bug-compatible shift
+			// (0x6118EC..0x611906: [a, b, c, d] becomes [id, a, b, b]); Theme Park World's decision hook does not run for a native guest
+			PushThemeParkIncHistory( guest.UsedHistory, TpiAttractionOf( ride )?.ThingId ?? 0 );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
-		if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )
+		else if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )
 			PushHistory( guest.UsedHistory, ride.AttractionId );
 		// [BIN:TPW-EXE:0x004FD9EE use fatigue] a completed use, won or lost, lowers the meter +0x1B8 by the type's UsageInfo.FatigueEffect (type +0xE8) through the clamped adder 0x004FB4F0, before the use routine; only the save reads the meter (0x004FC026)
 		guest.Energy = MeterMath.Add( guest.Energy, -(float)ride.FatigueEffect );
@@ -4518,7 +4525,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					Error( $"Guest {guest.Id} holds a Theme Park Inc native block that a schema {snapshot.SchemaVersion} save of this park cannot hold." );
 				foreach ( var problem in native.Problems( guest.Id ) )
 					Error( problem );
-				if ( native.State < ThemeParkIncGuestStates.Count && ThemeParkIncGuestStates.Projection( native.State ) != guest.State )
+				// [EXT:tpi-twp-guest-rules] the bridged boarding keeps the state word 16 through Theme Park World's boarding, waiting, ride and exit states (BeginTpiBridgedBoarding)
+				if ( native.State < ThemeParkIncGuestStates.Count && ThemeParkIncGuestStates.Projection( native.State ) != guest.State
+					&& !(native.State == ThemeParkIncGuestStates.BeingLoaded && IsBridgedBoardingState( guest.State )) )
 					Error( $"Guest {guest.Id} state {guest.State} is not the projection of its Theme Park Inc state {native.State}." );
 			}
 			if ( guest.KidSetDraw is < 0 or > uint.MaxValue )

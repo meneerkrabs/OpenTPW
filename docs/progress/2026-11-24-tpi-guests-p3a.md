@@ -15,7 +15,10 @@ queue, move up and are called to the stand point as Theme Park Inc's guests do. 
   queue states and the ride's roll from state 17 on.
 - **The ride's side**: the call (OnAdmittance `0x619670`), the closed or broken ride's head step, the queue edit's re-evaluation `0x6197F0` and the removal message's queue branch.
 - **The boarding** (states 16, 17, 19 and 20) is phase P3b's. A called guest enters state 16 as in the original and then boards, rides and leaves by Theme Park World's boarding
-  (`[EXT:tpi-twp-guest-rules]`), coming back idle. Every world draw up to the boarding point is the original's.
+  (`[EXT:tpi-twp-guest-rules]`), coming back idle. Every world draw up to the boarding point is the original's; the known differences after it (state 17's missing entry roll,
+  Theme Park World's balloon reseeds, sideshow tail and small-portion draws) are listed in TPI-GUESTS.md. The end of a bridged ride writes the thing id into the used history with
+  Theme Park Inc's shift (`0x6118E9`), the fare's happiness term reads the happiness at the join (`+0x234`), the ride skips the pre-update's thought draw as state 20 does, and the
+  bridged step first runs on the update after the one that entered state 16.
 
 Labels:
 - `[EXT:tpi-staff-crt-rand]` covers the CRT `rand()` at `0x61795E` (the delayed weather reaction in an umbrella shop's queue), as `world.Next(SlowestWeatherChangeResponse)`.
@@ -25,14 +28,16 @@ Labels:
 
 No new approximation or label is added, and no new CRT `rand()` site was found.
 
-Saves: no new field. A native guest in states 13 to 16 now restores; a guest in a queue state must be in the list of the ride it names.
+Saves: no new field. A native guest in states 13 to 16 now restores, including a guest saved mid-ride in the bridged boarding; a guest in a queue state must be in the list of
+the ride it names. TPI-GUESTS.md states how phase P3b will map or refuse such a mid-ride guest.
 
 Verified with these checks:
 
 - The native oracle `tpi_guest_states_oracle.py` found no mismatch at control word `0x7F` over 1000 scores, 1000 cases of the queue functions and the limit, 1000 cases each of
   states 13 and 14, state 15 and the earlier phases' routines; a separate run of 5000 scores agreed too.
 - New tests (`ThemeParkIncNativeQueueTests`) for the score, the limit, a guest that chooses, queues, boards and comes back idle, the links and places, the refusals, the needs bands,
-  the head's turn, the umbrella shop's weather draw, the removal message and a save of a queued guest; a Science play test where native guests queue and ride the prebuilt rides.
+  the head's turn, the umbrella shop's weather draw, the removal message and saves of a queued guest and of a guest mid-ride; a Science play test where native guests queue and ride
+  the prebuilt rides, and one for the level's attraction view (choosable, hosted, the special-ride table).
 - The Theme Park Inc, save, resume and guest filters pass with the retail data, the Theme Park World filters pass with its data, and the determinism pins do not move.
 - The silent, offscreen Science smoke passes with the switch off and with it on.
 

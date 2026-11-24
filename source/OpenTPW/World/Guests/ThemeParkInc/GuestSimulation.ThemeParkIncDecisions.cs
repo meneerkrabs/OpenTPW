@@ -58,7 +58,8 @@ public sealed partial class GuestSimulation
 		var (gx, gy) = TpiCell( guest );
 		var (bx, by) = ThemeParkIncGuestSettings.CellOf( back );
 		var last = guest.UsedHistory[0];
-		var sameType = last != 0 && TpiAttraction( last ) is { } used && used.Ride.TypeId == ride.TypeId;
+		// [BIN:TPI-EXE:0x61035F same type] the last used thing's slot in 0xAA18B0, whatever kind of thing it holds, and its type word +0x16 against the candidate's
+		var sameType = last != 0 && ThemeParkIncWorld?.ThingTypeId( (ushort)last ) is { } lastType && lastType == ride.TypeId;
 		var input = new ThemeParkIncAttractionScoreInput( view.Special, ThemeParkIncSpriteIsFemale( guest ), sameType, view.Terms, guest.UmbrellaState,
 			ArrivalWeatherState?.Invoke() ?? UmbrellaRules.WeatherNone, tpi.HoldsBalloon, tpi.BalloonCountdown, gx, gy, bx, by, Litter?.Environment.At( bx, by ).Attraction ?? 0,
 			TpiQueuePosition( ride, 0 ), ride.QueueSizeInCells, ride.LiveExcitement & 0xFF, (ride.StaticExcitementLevel & 0xFF) != 0, tpi.PreferredExcitement & 0xFF, guest.Thirst, guest.Hunger,

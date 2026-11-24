@@ -127,6 +127,8 @@ public class ThemeParkIncPlayTests
 		public readonly ParkPathBuilder Paths;
 		public readonly RideScriptWorld Scripts = new();
 		public readonly List<OriginalObjectRuntime> Runtimes = new();
+		/// <summary>The save record each runtime was built from, in <see cref="Runtimes"/>' order.</summary>
+		public readonly List<SaveObject> Records = new();
 		/// <summary>Cells the world's own records hold (placed objects and fixed items of a prebuilt save).</summary>
 		public readonly HashSet<(int X, int Y)> Occupied = new();
 
@@ -157,6 +159,7 @@ public class ThemeParkIncPlayTests
 					Occupied.Add( (cell.X, cell.Y) );
 				var runtime = new OriginalObjectRuntime( entry, Scripts, open: true );
 				Runtimes.Add( runtime );
+				Records.Add( record );
 				Level.RegisterWithGuests( runtime, ObjectFootprint.GetAccessPoints( entry.Shape, record.X, record.Y, record.Rotation ), Guests, record.Rotation );
 			}
 		}
@@ -322,19 +325,59 @@ public class ThemeParkIncPlayTests
 		Assert.IsTrue( queueing > 0, "an arrived guest queues at a prebuilt attraction within two minutes" );
 	}
 
-	/// <summary>The prebuilt park's choosable attractions as the native guests read them, newest first, with stand-in thing ids (the slice holds no thing pool).</summary>
+	/// <summary>
+	/// The prebuilt park's objects as the level's object list walk hands them to <see cref="Level.ThemeParkIncAttractionViews"/>, newest first, with the save's attraction thing ids (0 for a record without
+	/// one) and the type's thing cell.
+	/// </summary>
+	private static IEnumerable<(int ThingId, (int X, int Y) Cell, ObjectSettings Settings, RideVisitorBridge Visitors)> SliceObjectList( SlicePark park ) =>
+		park.Runtimes.Select( ( runtime, index ) => (runtime, record: park.Records[index]) ).Reverse().Select( item =>
+		{
+			var settings = item.runtime.Entry.Settings;
+			var thing = park.Park.Save!.FindThemeParkIncAttraction( item.record )?.Id ?? 0;
+			return ((int)thing, OriginalObject.ThingCellOf( settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ), item.record.X, item.record.Y, item.record.Rotation ),
+				settings, item.runtime.Visitors);
+		} );
+
+	/// <summary>The prebuilt park's choosable attractions as the native guests read them: the level's own view (<see cref="Level.ThemeParkIncAttractionViews"/>) over the slice's object list.</summary>
 	private sealed class SliceAttractions( SlicePark park ) : IThemeParkIncGuestWorld
 	{
-		private readonly ThemeParkIncAttractionView[] views = park.Runtimes.Select( ( runtime, index ) => (runtime, index) ).Reverse()
-			.Where( item => item.runtime.Entry.Settings.GetInt( "Info.IsChoosable" ) != 0 && park.Guests.Attractions.Contains( item.runtime.Visitors ) )
-			.Select( item => new ThemeParkIncAttractionView( (ushort)(1000 + item.index), item.runtime.Visitors.PositionCell ?? item.runtime.Visitors.EntranceCell, item.runtime.Visitors,
-				Level.ThemeParkIncScoreTermsOf( item.runtime.Entry.Settings ), false ) ).ToArray();
+		private readonly ThemeParkIncAttractionView[] views = Level.ThemeParkIncAttractionViews( SliceObjectList( park ), park.Guests, park.Park.Save?.ThemeParkIncWorld );
 		public IReadOnlyList<ThemeParkIncThingView> Bins() => [];
 		public IReadOnlyList<ThemeParkIncThingView> Shows() => [];
 		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => [];
 		public ThemeParkIncThingView? Thing( ushort thingId ) => null;
 		public void RecordCustomer( ushort thingId ) { }
 		public IReadOnlyList<ThemeParkIncAttractionView> Attractions() => views;
+	}
+
+	/// <summary>
+	/// The level's attraction view (phase P3a) over the prebuilt Science park: only the choosable types (<c>Info.IsChoosable</c>, the flag <c>+0x42</c> bit 4) whose ride bridge the guests host, in the
+	/// object list's order, with the save's thing ids, and special exactly when the save's special-ride table (<c>0x6242F0</c>) names the thing.
+	/// </summary>
+	[TestMethod]
+	public void TheLevelsAttractionViewReadsTheChoosableHostedRidesAndTheSpecialTable()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science" );
+		var listed = SliceObjectList( park ).ToList();
+		var special = park.Park.Save!.ThemeParkIncWorld!.SpecialRides.Select( ride => (int)ride.Id ).ToHashSet();
+		var views = Level.ThemeParkIncAttractionViews( listed, park.Guests, park.Park.Save.ThemeParkIncWorld );
+		var expected = listed.Where( item => item.ThingId > 0 && item.Settings.GetInt( "Info.IsChoosable" ) != 0 && park.Guests.Attractions.Contains( item.Visitors ) ).ToList();
+		Assert.IsTrue( expected.Count > 0, "the prebuilt park has choosable hosted attractions" );
+		Assert.IsTrue( listed.Any( item => item.ThingId > 0 && item.Settings.GetInt( "Info.IsChoosable" ) == 0 ), "the object list also holds things the choice skips" );
+		CollectionAssert.AreEqual( expected.Select( item => item.ThingId ).ToArray(), views.Select( view => (int)view.ThingId ).ToArray(), "the choosable hosted things, newest first" );
+		foreach ( var view in views )
+		{
+			Assert.AreEqual( special.Contains( view.ThingId ), view.Special, $"thing {view.ThingId}: special exactly when the save's table names it" );
+			Assert.AreEqual( Level.ThemeParkIncScoreTermsOf( expected.First( item => item.ThingId == view.ThingId ).Settings ), view.Terms, $"thing {view.ThingId}: its type's score words" );
+		}
+		// a ride the guests no longer host (unregistered, as the removal does) leaves the view
+		var gone = views[0].Ride;
+		park.Guests.Unregister( gone );
+		Assert.IsFalse( Level.ThemeParkIncAttractionViews( listed, park.Guests, park.Park.Save.ThemeParkIncWorld ).Any( view => ReferenceEquals( view.Ride, gone ) ),
+			"an attraction the guests do not host is not offered" );
+		// without the save's special-ride table nothing is special
+		Assert.IsFalse( Level.ThemeParkIncAttractionViews( listed, park.Guests, null ).Any( view => view.Special ) );
 	}
 
 	/// <summary>

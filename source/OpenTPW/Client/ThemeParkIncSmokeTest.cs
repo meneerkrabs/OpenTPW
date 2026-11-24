@@ -310,6 +310,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			PlanFacilities();
 		if ( flow.Level?.LevelName == "science" )
 			PlanChallenges();
+		if ( flow.Level?.LevelName == "science" )
+			PlanSpecialRide();
 		Do( "round-trip Science state", () =>
 		{
 			var live = Level;
@@ -843,6 +845,47 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "close the challenge panel", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
 		Wait( "challenge panel closes", 2 );
 		Do( "the challenge panel is closed", () => Require( Hud.Screen.Find( "challengePanelList" ) is { Visible: false } && !Hud.MenuOpen, "Escape closes the challenge panel" ) );
+	}
+
+	/// <summary>
+	/// The prebuilt Water Ride awaits its activation: selected, it shows its staff slot and its golden ticket and the Activate Ride button stays disabled; with a gardener in its slot and a ticket
+	/// in hand the button activates it.
+	/// </summary>
+	private void PlanSpecialRide()
+	{
+		OriginalObject? water = null;
+		Do( "select the Water Ride", () =>
+		{
+			water = Level.Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Entry.InfoId == 1160 );
+			Require( water != null && Level.GetEconomyInstance( water ) is { } instance && Level.Park!.Economy.IsThemeParkIncSpecialRidePending( instance ),
+				"the prebuilt Science park's Water Ride awaits its activation" );
+			Log.Info( $"Theme Park Inc smoke: special rides open at the start: {string.Join( ", ", Level.Objects.Objects.Where( item => item.Entry.InfoId is 1110 or 1160 or 1170 or 1180 ).Select( item => $"{item.Entry.InfoId} {(item.IsOpen ? "open" : "closed")}" ) )}" );
+			Hud.SelectForSmoke( water! );
+		} );
+		Wait( "the activation lines show", 2 );
+		Do( "the activation lines name the slot and the ticket", () =>
+		{
+			Require( Hud.Screen.Find( "specialRideLines" ) is { Visible: true } && Hud.Screen.Find( "specialRideActivate" ) is { Visible: true, Enabled: false },
+				"the lines show and the button waits for the staff and the ticket" );
+			var lines = LabelText( "specialRideLines" );
+			Require( lines.StartsWith( Hud.Strings.Entry( ThemeParkIncHud.SpecialRideTitle ), StringComparison.Ordinal ) && lines.Contains( Hud.Strings.Ability( 10 ), StringComparison.Ordinal ),
+				"the lines carry UITEXT 116 and the Water/Drainage slot" );
+			var economy = Level.Park!.Economy;
+			var instance = Level.GetEconomyInstance( water! )!.Value;
+			economy.TpiSpecialRides!.Assign( new ThemeParkIncStaffMember( 900, ThemeParkIncStaffRole.Gardener, 0, 20000, 20, 0, 0 ) { ThingId = 900, Ability = 10 }, _ => false );
+			economy.TpiCareer!.AddGoldenTickets( 1 );
+			Require( economy.CanActivateThemeParkIncSpecialRide( instance ), "a gardener in the slot and a ticket enable the button" );
+		} );
+		Wait( "the button is enabled", 2 );
+		Do( "press Activate Ride", () => Click( Hud.Screen, "specialRideActivate" ) );
+		Wait( "the activation", 2 );
+		Do( "the Water Ride is activated", () =>
+		{
+			var economy = Level.Park!.Economy;
+			var instance = Level.GetEconomyInstance( water! )!.Value;
+			Require( economy.TpiSpecialRides!.IsActivated( instance ) && !economy.IsThemeParkIncSpecialRidePending( instance ), "the button activated the ride" );
+			Require( Hud.Screen.Find( "specialRideLines" ) is { Visible: false }, "the lines are gone with the selection" );
+		} );
 	}
 
 	private void PlanHandyman()

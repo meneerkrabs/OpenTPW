@@ -319,8 +319,23 @@ the tickets, the rank and the mission counter are the career's (`ThemeParkIncCar
 Science continuation save. The system draws no random number.
 
 What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count comes from the sale bookings), 25 (the least happy staff member; the trigger is an
-entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
-or value reads park state OpenTPW does not model. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
+entertainer's experience), 41 (no strike; the trigger is the staff count), and since November 24, 2026 the first share-prize types: 17 (riders on a special ride), 46
+(the worst ride's state of repair), 52 (riders and the ride's repair) and 58 (riders as a percentage of the guests in the park). Their trigger is the special ride's
+activation, or, before the ride stands, the research lab's current project (`0x5C3828`); type 46's is the park analyser's breakdown count, which is never raised in play.
+A guest boarding a Theme Park Inc ride counts for 17, 52, 58 and the first value of 57, from the boarding of Theme Park World's guest that stands in for the native guest's
+admission (`[EXT:tpi-twp-guest-rules]`). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger or value reads park state OpenTPW does not
+model: 48 and 56 (the attraction satisfaction's mood rings), 50 and 55 (the guests' top three thoughts), 53 and 56's rating byte (the track-ride and coaster branches), 51
+(the Arabian palace coaster, a special ride no OpenTPW world places) and 57 (the photo booth's users, an add-on OpenTPW cannot place).
+
+**Special rides.** Since November 24, 2026 the special rides of a Theme Park Inc park (`Info.IsSpecial` 1: the prebuilt Science park's Water Ride, Tour Ride, Log Mill and
+Victorian House) await their activation ([TPI-CHALLENGE-SYSTEM.md, section 11](reverse/TPI-CHALLENGE-SYSTEM.md#11-special-rides-and-the-share-prize-types)). A placed special
+ride gets a record of the staff its `SkillSet[n].Num` keys ask for (a gardener in Water/Drainage for the Water Ride); a member whose training ends takes a slot that asks for
+his staff type and new ability, and leaves it when he goes to train again. Selecting such a ride shows its activation lines in the text HUD (the game's own words: the
+title, the staff slots, the golden tickets needed and the note on undiscovered abilities) and an Activate Ride button, enabled once every slot is filled and the career
+holds the ride's `UsageInfo.GoldenTicketCost`; the button spends the tickets and marks the ride activated (`[EXT:tpi-text-hud]` stands in for the original's activation
+window). The activation's camera fly-over and the track tool it starts for a special track ride are not ported (`[EXT:tpi-capability-gates]`). The table and the
+activated rides are saved in the Science continuation save. OpenTPW imports the four Science special rides open and its Theme Park World guests may ride them before their
+activation; the original saved them closed and its guests skip a ride that awaits its activation (`0x6101FD`), which the native guests will port. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
 but its completion waits for the mission window's complete button, which the slice does not offer yet, so a career stays at mission 0 unless the cheats extension's
 Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. A win
 pays its share prize and raises the share price, a slot's first loss lowers it (the shares game, below). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
@@ -373,7 +388,8 @@ training (half the staff trained, ten staff at least), the fastest go-kart track
 zone that beats its holder's value; the career counts the awards ever won. The two coaster awards are not decided: their measure needs a coaster's "viewed" byte, which only
 the original's attraction window sets, and its track record (`[EXT:tpi-capability-gates]`). The shares game starts the career with 1000 shares at a price of 100; a won
 challenge pays its share prize and raises the price by its `SharePriceEffectWon` (4 %), a slot's first loss lowers it by its `SharePriceEffectLost` (2 %). The thirteen share
-prizes add up to exactly the 15300 shares miss17's 51 % needs; none of those challenges is offered yet (their types are unmeasured), so the 51 % is reachable only through the cheat below until they are ported. The annual report's score and price step are ported, but the report is not run at the year change: it reads
+prizes add up to exactly the 15300 shares miss17's 51 % needs. Since November 24, 2026 the Science rows 8, 14 and 22 (types 17, 46 and 17; 2900 shares) can be offered and won;
+the other ten wait for their types or for their zone's special rides, so the 51 % is reachable only through the cheat below until they are ported. The annual report's score and price step are ported, but the report is not run at the year change: it reads
 analyser rings OpenTPW does not keep (`[EXT:tpi-capability-gates]`). The text HUD's challenge panel shows the shares owned, the percentage, the price and the awards held,
 and an award decided becomes a note, in the game's own words (UITEXT); the native share portfolio and Park Awards panels and the advisor's award messages are not ported
 (`[EXT:tpi-text-hud]`, `[EXT:tpi-capability-gates]`). The shares are kept with the career, in the player file and the Science continuation save. The cheats extension's

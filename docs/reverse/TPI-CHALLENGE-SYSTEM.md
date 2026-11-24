@@ -409,18 +409,15 @@ the cheats extension's Skip Mission advances it. Every Science row except 8 and 
 `0x5E5DE0`, which `ParkEconomy.BookShopSale` posts for a paid Theme Park Inc sale: types 12, 1–8 and 45 for a shop, 13 for a sideshow, and the negated costs of
 `0x5E60E0`), type 25 (trigger `0x5B32F0(6)`, the highest entertainer experience, 0 with no entertainer; value `0x5AFED0`, the lowest truncated staff happiness byte,
 100 with no staff) and type 41 (trigger `0x5B2F40`, the placed staff members; value and win `0x634240`, any role's active strike). The staff accessors read
-`ParkEconomy.TpiStaff` (kinds 4–8 and 0x14 are its roles).
+`ParkEconomy.TpiStaff` (kinds 4–8 and 0x14 are its roles). Since November 24, 2026 also types 17, 46, 52 and 58 (section 11).
 
 **Gates (`[EXT:tpi-capability-gates]`).**
 
 - **Unmeasured types are never offered.** `CalcAvailTime` never latches a slot whose type is not measured, so `MaxDaysTilTrigger` cannot make it available
   either. The Science level's unmeasured types and why: 35 (trigger `0x61D670(2)`, researched sideshows: research is refused; value `0x5B69C0` reads the attraction
-  satisfaction rings `0x5E6D80`, whose rings B–E are unread), 46 (trigger `+0x14` of an unread object; value `0x5B7D30`, ride repair), 36 (trigger park
-  `+0x22830`, unread; value `0x5AF940`, guest `+0x1BC`, whose OpenTPW counterpart is not established), 56 (value `0x5E41D0(0)`, the computed excitement
-  `0x403AE4`, unread), 17 and 48 (trigger `0x5C3828`: the target ride's `mBeenActivated` (`+0x12C`, set by the special-ride activation `0x5E8910`) or
-  `mHasBeenOpenedAtSomePoint` (`+0x12D`), neither modelled at run time, and the record `+0x5C` test is only a candidate reading; type 17's ride-use sender
-  `0x61A85B` and type 48's satisfaction value are not wired). All other types (the Arabian and Water levels' included) are unmeasured as well; types 19 and 28 also
-  have unported win tests.
+  satisfaction rings `0x5E6D80`, whose rings B–E are unread), 36 (trigger park `+0x22830`, unread; value `0x5AF940`, guest `+0x1BC`, whose OpenTPW counterpart is
+  not established), 56 (value `0x5E41D0(0)`, the rating byte's coaster branch, and `0x5E6D80`'s mood rings) and 48 (value `0x5E6D80`). The other share-prize types
+  are listed in section 11. All other types (the Arabian and Water levels' included) are unmeasured as well; types 19 and 28 also have unported win tests.
 - **Shares.** Ported since November 23, 2026: the won branch's `0x621CE0(SharePrize)` and `0x621D30(SharePriceEffectIfWon)` and the first loss's
   `0x621D30(-SharePriceEffectIfLost)` act on the shares game ([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)).
 - **Promotions.** `PromoGiven` (message `0x25` → `0x74C450`: the rank and the firing line of `FiringLineForRank`) is left off: promotions are not ported, so the
@@ -438,3 +435,70 @@ again; whether the original's lost mail reaches the accept control is unread (§
 **Open.** Missions (the mission counter), promotions and the shares; the unmeasured types' accessors; the challenge mail text; type 11's admission event
 (`0x5AEF40`, delivered through the message queue) and the type-16 and guard senders; the Science prebuilt save's own challenge records (`CHHQ`, which the slice
 does not restore, as it restores none of the prebuilt's economy).
+
+## 11. Special rides and the share-prize types
+
+Ported November 24, 2026 (`ThemeParkIncSpecialRides`, `ParkEconomy.ThemeParkIncSpecialRides.cs`, the text HUD's `ThemeParkIncHud.SpecialRides.cs`), from the spec in the
+notes (`research/tpi-campaign/share-prize-challenges-spec.md`), whose claims used here were re-read in the listing.
+
+### 11.1 The special-ride table
+
+The world keeps a table of the special rides that await their activation (`0xAA0330`, records of `0xF4` bytes; the count `0xAA071C` lies inside the fifth record, so four
+fit). A record is the ride's thing (`+0xF0`) and 20 staff slots of 12 bytes: `+0` the staff type code, `+4` the ability, `+8` the staff thing that fills it (the World tail's
+loader `0x6244B0` stores `AllSpecialRidesType`, `AllSpecialRidesAbility` and `AllSpecialRidesThingId` there).
+
+- **Placed.** The attraction placement appends a record for a type whose `Info.IsSpecial` (`+0x5C`) is exactly 1 (`0x5DBD7B` → `0x623D80`). The builder `0x623DC0`
+  reads the type record's fourteen `SkillSet[n].Num` dwords (`+0x380 + 4n`, key table entry 195) and appends that many slots of ability n + 1 and its staff type
+  (`0x62B640`: 1..6 the mechanic's code 1, 7 and 8 the handyman's 0, 9 the guard's 3, 10..14 the gardener's 5); the rest ask for nothing (type 7). The prebuilt Science
+  park's four records are exactly what the builder makes from the files' last `SkillSet` values (1180: Tunnelling and Logging; 1160: Water/Drainage; 1170: Construction and
+  Logging; 1110: Water/Drainage and Landscaping twice). Its saved records are imported as they are, with the rides' saved `mBeenActivated` (none is set).
+- **Staff.** A member whose training ends (message `0x2B`, `0x63256F`: after the staff HQ's assign) takes the first empty slot, in table order, whose staff type is his
+  (`0x62AF70`) and whose ability is his trained one (`0x623FB0`), of a record whose ride stands on owned land (the square flag 0x40, `0x67ECA0`); the HQ's release
+  (`0x634730`, a member with an ability leaving for training) empties the first slot that holds him (`0x6241B0`). A member who was already trained when hired is never
+  assigned: no other caller reaches `0x623FB0` (`0x6346C0`, the other, is uncalled).
+- **The activation window.** A click on a ride that is no photo booth, whose type is special and that `0x6242F0` does not free opens the activation window `0x5863E0`
+  instead of the ride window (`0x5036CD`). Its Activate Ride button (control `0x4E24`, UITEXT 984) is enabled while `0x6243C0` holds: the ride has a record, the career's
+  golden tickets reach the type's `UsageInfo.GoldenTicketCost` (`+0x174`) and every slot up to the first of type 7 is filled (a debug toggle `0xAA0720`, 0 in play,
+  overrides). The window lists the slots (UITEXT 982, 983), the tickets (UITEXT 986 or 987 with the cost and the career's tickets) and, while an ability its ride needs is
+  undiscovered (`0x624330`, the career's `+0x1064`), UITEXT 115.
+- **The activation** (`0x586D40` → `0x5E8230`): the cost is spent through `0x74C8C0` (its answer dropped: the button was enabled), a camera fly-over runs and, for a type
+  whose `Bumper.BumperType` (`+0x150`) is nonzero, the track tool starts; then `mHasBeenOpenedAtSomePoint` (`+0x12D`) and `mBeenActivated` (`+0x12C`) are set and
+  `0x624280` empties the ride's record (its id becomes 0; the slots keep their members and the count keeps the record), so `0x6242F0` frees the ride.
+- **Unactivated rides.** The attraction constructor opens every attraction (`+0x7C = 1`, `0x5DB5FB`), but the guests' candidate test `0x6101E0` refuses a ride that
+  `0x6242F0` does not free (`0x6101FD`), and so do the park measures that call it. The prebuilt Science park saved its four special rides closed (`mCanLoad` 0).
+
+### 11.2 The trigger and the types
+
+- **Trigger `0x5C3828`** (types 17, 48, 50..53, 55..58, by the byte table `0x5C3C14`): the first attraction thing of `mTargetObj` (`0x647850`); when there is one, its type
+  record's `+0x5C` above 0 answers `mBeenActivated`, else `mHasBeenOpenedAtSomePoint`; with none, the research lab (`0x64EB20`) answers `0x61E6A0`: the target is the
+  object of slot 0's project, or of slot 1's only while slot 0 holds none.
+- **Trigger `0x5C3927`** (type 46): the park analyser's `mNumBreakdownsEver` (`+0x14`) ≥ `TriggerData`. The analyser's constructor zeroes it (`0x5AC84D`) and its only
+  writer `0x5B9A70` is never called, so it stays 0 (the prebuilt park saves 0) and row 14's `TriggerData` 0 always passes.
+- **Values** (`0x5C4DD0`): 46 polls the lowest truncated state-of-repair byte of the rides (`0x5B7D30`: `Info.WhichUIType` 0, from 100, the first ride taken whatever its
+  byte); 52 its target's byte into the second value (`0x5C520C`); 58 the guests in the park into the second value (`0x5B2060(4)`); 17 and 57 poll nothing.
+- **Admission events** (the guest state 20's entry `0x61A77E`): `0x5C8940` with 17, 52 and 58 for the ride's type, then 57 into the first value, or, for a photo booth,
+  into the second value for its host ride's type (`0x61A8BA`).
+- **Win and failure:** the existing tables (section 7).
+
+### 11.3 What OpenTPW measures and gates
+
+Measured: 17, 46, 52 and 58 (`ThemeParkIncChallenges.IsPorted`). The admission events ride on the boarding of Theme Park World's guest, which stands in for the state-20
+entry while Theme Park Inc's guests are Theme Park World's (`[EXT:tpi-twp-guest-rules]`, `ParkEconomy.RecordRideUse`); the native guests' state 20 takes the call over.
+
+Gated (`[EXT:tpi-capability-gates]`):
+
+- the trigger's `+0x12D` branch (a target that is not special): `mHasBeenOpenedAtSomePoint` is not kept, and every retail row targets a special ride;
+- the activation's camera fly-over and track tool (`0x5E82B2..0x5E890D`), and the advisor's lines when a ride can be activated (`0x6240C4`: 0x21F or 0x1E7);
+- type 48 and 56's satisfaction (`0x5E6D80` reads the mood rings of the visit outcome `0x612740`, the guests' P3), 50 and 55's top three thoughts (`0x5B0830`,
+  Theme Park Inc's thought pick `0x60FC60`, the guests' P1), 53 and 56's rating byte (`0x5E3DF0`'s track-ride handle and coaster branches), 51 (its target 3180 is never
+  placed: new zones place no special ride, `0x647BF0`'s special branch is not ported, and the coaster count `0x5B70E0` reads the track record's `+0x108`), and 57
+  (its second value counts a photo booth's users; a booth is an add-on, which OpenTPW cannot place);
+- the guests' refusal of an unactivated ride (`0x6101FD`): OpenTPW imports the Science special rides open and its stand-in guests may ride them before their activation.
+
+`[EXT:tpi-text-hud]`: the activation window is a text block and a button under the selection line, shown while a special ride that awaits its activation is selected.
+
+No random number is drawn on these paths. The CRT `rand()` beside them is the advisor's close animation (`0x716A2C`, reached from the accept's and the final day's sender
+advice), which is not ported.
+
+**Share prizes in play.** Of the thirteen share-prize rows, the Science rows 8 and 22 (type 17 on the Water Ride and the Tour Ride) and 14 (type 46) can be offered and won;
+row 14 needs mission 2. Rows 20 and 21 (48, 56) stay unoffered; the Water and Arabian rows wait for their zones' special rides and their types.

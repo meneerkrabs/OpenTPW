@@ -89,6 +89,9 @@ public sealed partial class ThemeParkIncHud
 		return string.Join( "\n", lines );
 	}
 
+	/// <summary>Selects an object as the park click does (the slice smoke test's step).</summary>
+	internal void SelectForSmoke( OriginalObject item ) => selectedObject = item;
+
 	/// <summary>The Activate Ride button: the selected special ride is activated when the original's control would be enabled (<c>0x586D40</c>), and the selection ends, as the window closes.</summary>
 	internal void ActivateSelectedSpecialRide()
 	{

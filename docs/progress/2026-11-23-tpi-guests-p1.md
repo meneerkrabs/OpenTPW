@@ -50,5 +50,6 @@ Verified with these checks:
   - the booth's verdicts, the leaving states and the vehicle dispatch;
   - the save block and the settings' addresses.
 - The Theme Park Inc, save, resume and Theme Park World guest and determinism filters pass with the retail data.
+- The silent, offscreen Science smoke passes with the switch off and with it on; with it on, its walk check sends the idle guests to the bus stop, because idle runs only its leave gate in this phase.
 
 The original game was not launched, and no binary or data is included.

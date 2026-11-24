@@ -40,14 +40,16 @@ public sealed partial class Level
 	/// </summary>
 	// [DATA:<attraction>.sam:Info.GenderSpecific] type +0x78; UsageInfo.AppearanceEffect +0x21C, UsageInfo.IsInfoDesk +0x244 (the key table 0x9A4520, four bytes a key from GoldenTicketCost +0x174);
 	// WeatherModifier.Snow/Rain/Storm/HeatWavePercentage +0xF0..+0xFC and GenerationModifier.Kid/Parent/GrandparentScorePercentage +0x110..+0x118
-	private ThemeParkIncAttractionView ThemeParkIncAttractionViewOf( OriginalObject item, HashSet<int>? special )
+	private static ThemeParkIncAttractionView ThemeParkIncAttractionViewOf( OriginalObject item, HashSet<int>? special ) =>
+		new( (ushort)item.ThingId, item.ThingCell, item.Visitors, ThemeParkIncScoreTermsOf( item.Entry.Settings ), special?.Contains( item.ThingId ) == true );
+
+	/// <summary>The score words of an attraction's type (<see cref="ThemeParkIncScoreTerms"/>); a key the .sam leaves out reads 0.</summary>
+	internal static ThemeParkIncScoreTerms ThemeParkIncScoreTermsOf( ObjectSettings settings )
 	{
-		var settings = item.Entry.Settings;
 		int Key( string key ) => settings.Has( key ) ? settings.GetInt( key ) : 0;
-		var terms = new ThemeParkIncScoreTerms( Key( "Info.GenderSpecific" ), Key( "UsageInfo.AppearanceEffect" ), Key( "UsageInfo.IsInfoDesk" ) != 0,
+		return new ThemeParkIncScoreTerms( Key( "Info.GenderSpecific" ), Key( "UsageInfo.AppearanceEffect" ), Key( "UsageInfo.IsInfoDesk" ) != 0,
 			Key( "WeatherModifier.SnowPercentage" ), Key( "WeatherModifier.RainPercentage" ), Key( "WeatherModifier.StormPercentage" ), Key( "WeatherModifier.HeatWavePercentage" ),
 			Key( "GenerationModifier.KidScorePercentage" ), Key( "GenerationModifier.ParentScorePercentage" ), Key( "GenerationModifier.GrandparentScorePercentage" ) );
-		return new ThemeParkIncAttractionView( (ushort)item.ThingId, item.ThingCell, item.Visitors, terms, special?.Contains( item.ThingId ) == true );
 	}
 
 	/// <summary>
@@ -74,7 +76,7 @@ public sealed partial class Level
 			// [BIN:TPI-EXE:0x6242F0 special ride] the table 0xAA0420 (stride 0xF4, count 0xAA071C) of the park's special rides, which only the park loader 0x6244B0 fills: the prebuilt park's records
 			var special = level.OriginalPark?.Save?.ThemeParkIncWorld?.SpecialRides is { Count: > 0 } rides ? rides.Select( ride => (int)ride.Id ).ToHashSet() : null;
 			attractions = level.Guests is { } guests
-				? level.ThemeParkIncObjectsWith( "Info.IsChoosable" ).Where( item => guests.Hosts( item.Visitors ) ).Select( item => level.ThemeParkIncAttractionViewOf( item, special ) ).ToArray()
+				? level.ThemeParkIncObjectsWith( "Info.IsChoosable" ).Where( item => guests.Hosts( item.Visitors ) ).Select( item => ThemeParkIncAttractionViewOf( item, special ) ).ToArray()
 				: [];
 		}
 

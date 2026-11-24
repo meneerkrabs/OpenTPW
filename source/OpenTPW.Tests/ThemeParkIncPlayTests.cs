@@ -322,6 +322,58 @@ public class ThemeParkIncPlayTests
 		Assert.IsTrue( queueing > 0, "an arrived guest queues at a prebuilt attraction within two minutes" );
 	}
 
+	/// <summary>The prebuilt park's choosable attractions as the native guests read them, newest first, with stand-in thing ids (the slice holds no thing pool).</summary>
+	private sealed class SliceAttractions( SlicePark park ) : IThemeParkIncGuestWorld
+	{
+		private readonly ThemeParkIncAttractionView[] views = park.Runtimes.Select( ( runtime, index ) => (runtime, index) ).Reverse()
+			.Where( item => item.runtime.Entry.Settings.GetInt( "Info.IsChoosable" ) != 0 && park.Guests.Attractions.Contains( item.runtime.Visitors ) )
+			.Select( item => new ThemeParkIncAttractionView( (ushort)(1000 + item.index), item.runtime.Visitors.PositionCell ?? item.runtime.Visitors.EntranceCell, item.runtime.Visitors,
+				Level.ThemeParkIncScoreTermsOf( item.runtime.Entry.Settings ), false ) ).ToArray();
+		public IReadOnlyList<ThemeParkIncThingView> Bins() => [];
+		public IReadOnlyList<ThemeParkIncThingView> Shows() => [];
+		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => [];
+		public ThemeParkIncThingView? Thing( ushort thingId ) => null;
+		public void RecordCustomer( ushort thingId ) { }
+		public IReadOnlyList<ThemeParkIncAttractionView> Attractions() => views;
+	}
+
+	/// <summary>
+	/// Phase P3a of the native guest states (docs/reverse/TPI-GUESTS.md): native guests in the prebuilt Science park choose its rides by Theme Park Inc's score, walk to them, queue and board (through the
+	/// bridged state 16).
+	/// </summary>
+	[TestMethod]
+	public void NativeGuestsChooseQueueAndBoardTheScienceRides()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science" );
+		park.Guests.ArrivalsEnabled = false;
+		park.Guests.ThemeParkIncNativeGuests = true;
+		var world = new SliceAttractions( park );
+		park.Guests.ThemeParkIncWorld = world;
+		Assert.IsTrue( world.Attractions().Count > 0, "the prebuilt park has choosable attractions" );
+		Assert.IsTrue( world.Attractions().Any( view => view.Terms.KidPercentage != 0 ), "the Science types carry their GenerationModifier words" );
+		var cells = Enumerable.Range( 0, 128 ).SelectMany( x => Enumerable.Range( 0, 128 ).Select( y => (x, y) ) ).Where( cell => park.Grid.IsWalkable( cell.x, cell.y ) ).ToList();
+		var guests = Enumerable.Range( 0, 30 ).Select( index => park.Guests.SpawnInPark( cells[index * 7 % cells.Count].x, cells[index * 7 % cells.Count].y ) ).ToList();
+		Assert.IsTrue( guests.All( guest => guest.Tpi != null ), "the switch makes native guests" );
+		foreach ( var guest in guests )
+			(guest.Happiness, guest.ExitLevel) = (60, 100000);
+		var seen = new HashSet<int>();
+		var rode = false;
+		for ( var step = 0; step < 300 * FixedStepClock.TicksPerSecond && !(rode && seen.Contains( ThemeParkIncGuestStates.StandingInQueue )); step++ )
+		{
+			park.Step( FixedStepClock.TickDuration );
+			foreach ( var guest in guests )
+			{
+				if ( guest.Tpi is { } tpi )
+					seen.Add( tpi.State );
+				rode |= guest.State == GuestState.Using && guest.Tpi?.State == ThemeParkIncGuestStates.BeingLoaded;
+			}
+		}
+		CollectionAssert.IsSubsetOf( new[] { ThemeParkIncGuestStates.WalkingToMajor, ThemeParkIncGuestStates.TakingQueueStep, ThemeParkIncGuestStates.StandingInQueue }, seen.ToArray(),
+			$"the guests walk to the rides and queue (states seen: {string.Join( ", ", seen.OrderBy( state => state ) )})" );
+		Assert.IsTrue( rode, "a native guest boards a Science ride" );
+	}
+
 	// ---- The money over the corpus (docs/THEME-PARK-INC.md, "Economy") --------------------
 
 	[TestMethod]

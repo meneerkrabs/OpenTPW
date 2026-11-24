@@ -1,4 +1,4 @@
-"""Theme Park Inc's native guest states (phases P1 and P2) run in the x86 oracle sandbox and compared with the C# port's reading (ThemeParkIncGuestStates, GuestSimulation.ThemeParkInc).
+"""Theme Park Inc's native guest states (phases P1 to P3a) run in the x86 oracle sandbox and compared with the C# port's reading (ThemeParkIncGuestStates, GuestSimulation.ThemeParkInc).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified Theme Park Inc no-CD Game.exe (OPENTPW_TPI_EXE, SHA-256 pinned) are needed, nothing here is shipped.
 Phase P1's four routines run natively, at the game thread's x87 control word 0x7F (24-bit significand):
@@ -22,6 +22,13 @@ Phase P2 adds:
 - the spot animation 0x60FB30 for the animations 0..15 (the id, the mode store native; the sound and the setter recorded) and the mood 0x60CDD0 over generations -1..3 and the bank's byte +0x206;
 - the dispatch 0x619FF0 in states 7 (0x61A179) and 8 (0x61A382), the walk, the wander, the restore and the setter stubbed;
 - state 9 (0x616F10) with the walk, the bin's customer, its script variables and the drop stubbed; the dirt test 0x5E3990 and its rows, which the port gates, are left out of the comparison.
+Phase P3a adds:
+- the attraction score 0x6101E0 over random guests, cells, meters, histories, weights, type words (gender, appearance, golden ticket, upgrade, weather and generation percentages) and park
+  weather: the id, the region record and _ftol native, the special-ride test, the type record, the bank's gender, the back cell, the desk's target, the queue count, the rating, the park
+  record and the age stubbed; against ThemeParkIncAttractionScore.Compute (port_score);
+- the queue place 0x5E0280, the room 0x5DFDD0 and the length test 0x5DFF10 with the limit 0x5DFE00 over random lists of guests in random states, the predicate 0x61AC40 native;
+- states 13 (0x616AC0) and 14 (0x6176C0) with every callee but the world generator, _ftol and the id stubbed and recorded (the CRT rand() at 0x61795E among them), and state 15 in the
+  dispatch; the calls, the fields and the draws against UpdateTpiWalkingToMajor, UpdateTpiStandingInQueue and UpdateTpiTakingQueueStep.
 
 Usage: python3 -I tools/ppc-analysis/oracle_x86/tpi_guest_states_oracle.py [cases]
 """

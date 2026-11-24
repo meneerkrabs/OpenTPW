@@ -9,19 +9,19 @@ public sealed partial class Level
 	{
 		if ( Guests is not { ThemeParkIncNativeGuests: true } guests || !GameEditions.IsThemeParkInc )
 			return;
-		guests.ThemeParkIncWorld = new ThemeParkIncGuestWorld( this );
-		if ( tpiGuestRemovalHooked )
-			return;
-		tpiGuestRemovalHooked = true;
+		var world = new ThemeParkIncGuestWorld( this );
+		guests.ThemeParkIncWorld = world;
+		// a placement or a removal between two sweeps (the player's, at any frame) is seen by the next guest that looks
+		Objects.ObjectPlaced += _ => world.Invalidate();
+		Objects.ObjectRemoved += _ => world.Invalidate();
 		// [BIN:TPI-EXE:0x637C40 thing destroy] the destroy broadcasts message 0xA at the click (OnThemeParkIncObjectRemoving); every guest hears it through its handler 0x60D120
 		Objects.ObjectRemoving += item =>
 		{
+			world.Invalidate();
 			if ( item.ThingId is > 0 and <= ushort.MaxValue )
 				Guests?.ThemeParkIncObjectRemoved( item.ThingId );
 		};
 	}
-
-	private bool tpiGuestRemovalHooked;
 
 	/// <summary>An attraction thing as the guests read it: its thing cell, its entrance word <c>+0x46</c>, its angle, its type's stand position and its script's variables.</summary>
 	// [DATA:<facility>.sam:UsageInfo.EntryCellStandPosX/Y] the type record's +0x184 and +0x188; every shipped Theme Park Inc litter bin declares both (science 0.5/0.0, water 0.9/0.0, arabian 0.99/0.5)
@@ -34,24 +34,26 @@ public sealed partial class Level
 			settings.GetFloat( "UsageInfo.EntryCellStandPosX", 0.5f ), settings.GetFloat( "UsageInfo.EntryCellStandPosY", 0.5f ), item.Runtime.Script?.Variables );
 	}
 
-	/// <summary>The level's side of <see cref="IThemeParkIncGuestWorld"/>; the object views are built once per tick of the guest simulation (the sweep reads them for every idle guest).</summary>
+	/// <summary>
+	/// The level's side of <see cref="IThemeParkIncGuestWorld"/>. The object views are built when a guest first looks after a placement or a removal (the sweep reads them for every idle guest); a
+	/// script variable is read live through its array, and the entertainers are read live from the staff.
+	/// </summary>
 	private sealed class ThemeParkIncGuestWorld( Level level ) : IThemeParkIncGuestWorld
 	{
-		private long viewsTick = -1;
+		private bool fresh;
 		private ThemeParkIncThingView[] bins = [];
 		private ThemeParkIncThingView[] shows = [];
-		private IReadOnlyList<ThemeParkIncEntertainerView> entertainers = [];
 
-		/// <summary>The views of this tick: a placement or a removal happens between two ticks, and a script variable is read live through its array.</summary>
+		/// <summary>Forgets the views: an object was placed or removed.</summary>
+		internal void Invalidate() => fresh = false;
+
 		private void Refresh()
 		{
-			var tick = level.Guests?.TickCount ?? 0;
-			if ( tick == viewsTick )
+			if ( fresh )
 				return;
-			viewsTick = tick;
+			fresh = true;
 			bins = level.ThemeParkIncObjectsWith( "UsageInfo.HoldsLitter" ).Select( level.ThemeParkIncViewOf ).ToArray();
 			shows = level.ThemeParkIncObjectsWith( "UsageInfo.IsFireworks" ).Select( level.ThemeParkIncViewOf ).ToArray();
-			entertainers = level.TpiStaffWorld?.Entertainers( level.Park?.Economy ) ?? [];
 		}
 
 		public IReadOnlyList<ThemeParkIncThingView> Bins()
@@ -66,11 +68,7 @@ public sealed partial class Level
 			return shows;
 		}
 
-		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers()
-		{
-			Refresh();
-			return entertainers;
-		}
+		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => level.TpiStaffWorld?.Entertainers( level.Park?.Economy ) ?? [];
 
 		public ThemeParkIncThingView? Thing( ushort thingId )
 		{

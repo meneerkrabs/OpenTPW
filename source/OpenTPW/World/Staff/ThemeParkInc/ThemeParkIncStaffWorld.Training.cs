@@ -122,6 +122,8 @@ public sealed partial class ThemeParkIncStaffWorld
 					Rooms!.AddOccupancy( room.Thing, +1 );
 				SetState( economy, member, ThemeParkIncTraining.Training, turn );
 				economy.TpiStaff!.Hq.Release( economy.TpiStaff.Members, member );
+				// [BIN:TPI-EXE:0x634771 special ride release] the HQ's release calls 0x6241B0 for a member with an ability before it looks at its own slots
+				economy.ThemeParkIncReleaseSpecialRides( member );
 				break;
 			case WalkResult.Stuck:
 				member.AddHappiness( -(float)settings.HappyHitRoomInaccessible );
@@ -150,6 +152,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	private void FinishTraining( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		economy.TpiStaff!.Hq.TrainingFinished( member );
+		economy.ThemeParkIncTrainingFinishedSpecialRides( member );
 		if ( TrainingRoom is { } room )
 			Rooms!.AddOccupancy( room.Thing, -1 );
 		ShowAgain( member );

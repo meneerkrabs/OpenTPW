@@ -89,6 +89,7 @@ public sealed partial class ThemeParkIncHud
 		BuildWindow();
 		BuildStaffPanel();
 		BuildChallengePanel();
+		BuildSpecialRidePanel();
 		removeButton = ToolButton( "remove", () => T( OpenTpwText.TpiRemove ), T( OpenTpwText.TpiRemoveHelp ),
 			() => { level.IsRemovingObjects = !level.IsRemovingObjects; if ( level.IsRemovingObjects ) DisarmBuild(); }, 1 );
 		removeButton.Selected = () => level.IsRemovingObjects;
@@ -552,6 +553,7 @@ public sealed partial class ThemeParkIncHud
 		// as the Theme Park World park click does (ParkHud)
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsRemovingObjects && input.LeftReleased && !toolPress )
 			selectedObject = level.Objects.FindAt( cursorX, cursorY );
+		UpdateSpecialRidePanel();
 		if ( input.LeftReleased )
 		{
 			toolPress = false;

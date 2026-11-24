@@ -228,6 +228,32 @@ public sealed partial class ParkEconomy
 
 		public void Offered( int index ) => economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Offered ) );
 
+		// [BIN:TPI-EXE:0x647850 find attraction] the first class-3 thing of the type in the attraction list; its type record's +0x5C and the thing's +0x12C and +0x54 (ParkEconomy.ThemeParkIncChallengeTargetOf)
+		public ThemeParkIncChallengeTarget FindTarget( ushort type ) => economy.ThemeParkIncChallengeTargetOf( type );
+
+		// [BIN:TPI-EXE:0x61E6A0 lab project] slot 0's project index (+0x14) above -1 answers whether its object (+0x88 + 0x24 × i, ThemeParkIncLabProject.ObjectId) is the type; only an empty slot 0 lets
+		// slot 1 (+0x18) answer; a park without a ported lab answers false
+		public bool LabResearching( ushort type )
+		{
+			if ( economy.TpiResearch is not { } research )
+				return false;
+			foreach ( var slot in research.SlotProjects )
+			{
+				if ( slot > -1 )
+					return slot < research.Projects.Count && research.Projects[slot].ObjectId == type;
+			}
+			return false;
+		}
+
+		// [BIN:TPI-EXE:0x5AC84D breakdown count] the analyser's constructor zeroes +0x14, and its only writer 0x5B9A70 (incl 0x14(%ecx), thunk 0x40AABA) has no caller and no address reference in the
+		// executable, so the count is the constructor's 0 in a new world and the park file's in a loaded one: the prebuilt Science park saves mNumBreakdownsEver 0 (ThemeParkIncShareChallengeTests)
+		public int BreakdownsEver => 0;
+
+		public int LeastRideRepair() => economy.ThemeParkIncLeastRideRepair();
+
+		// [BIN:TPI-EXE:0x5B2060 guests in park] argument 4 counts every class-1 thing whose square passes 0x60BE00, whatever its generation: Theme Park World's census (as the mission statistics read it)
+		public int GuestsInPark => economy.guestStatistics.GuestCensus;
+
 		private static ThemeParkIncStaffRole? RoleOfKind( int kind ) => kind switch
 		{
 			4 => ThemeParkIncStaffRole.Mechanic,

@@ -354,6 +354,7 @@ public partial class Level
 				instances[thing] = instance;
 		var list = ThemeParkIncObjectListOf( world, instances );
 		economy.RestoreThemeParkIncObjectList( list );
+		ImportThemeParkIncSpecialRides( economy, world, instances );
 		// a thing of the list that no object of OpenTPW's is (the tool entry 1710 of the prebuilt) is still a thing of the original's park: its slot is held, so its id is not handed out again
 		// while the list names it
 		// [BIN:TPI-EXE:0x64D759 free list rebuild] after the thing list's ENOD the World loader rebuilds the free list from the slots no saved thing occupies (0xAA18C4 on, stride 20, the head
@@ -369,6 +370,17 @@ public partial class Level
 				throw new InvalidDataException( $"The Theme Park Inc save's object list names thing {-key}, which no object rebuilds and whose slot of the thing pool cannot be held." );
 		}
 	}
+
+	/// <summary>
+	/// A park built from a Theme Park Inc save takes its special-ride table, each record's ride by the economy instance of its saved thing and its slots as saved, and the activated flag of each imported
+	/// attraction.
+	/// </summary>
+	// [BIN:TPI-EXE:0x624701 special rides load] the World's tail brings the special-ride table after the things; [BIN:TPI-EXE:0x5DC430 attraction serializer] each attraction its mBeenActivated
+	internal static void ImportThemeParkIncSpecialRides( ParkEconomy economy, ThemeParkIncSaveWorld world, IReadOnlyDictionary<int, int> instances ) =>
+		economy.TpiSpecialRides?.Import(
+			world.SpecialRides.Select( ride => (ride.Id, (IReadOnlyList<ThemeParkIncSpecialRideStaffSlot>)ride.Entries.Select( slot =>
+				new ThemeParkIncSpecialRideStaffSlot( unchecked( (int)slot.Type ), unchecked( (int)slot.Ability ), slot.ThingId ) ).ToArray()) ).ToList(),
+			world.Attractions.Where( attraction => attraction.BeenActivated && instances.ContainsKey( attraction.Id ) ).Select( attraction => instances[attraction.Id] ).ToList(), instances );
 
 	/// <summary>
 	/// The saved object list of a Theme Park Inc World, newest first: the thing an imported object was built from as its economy instance (<paramref name="instances"/>, by saved thing id),

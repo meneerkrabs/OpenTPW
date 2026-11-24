@@ -1107,15 +1107,15 @@ public static class ParkSaveFile
 	internal const string TagTubeMissing = "This Theme Park Inc park was saved before OpenTPW kept the tag tube (the park's letters) and cannot be continued; start a new game from the Personnel File.";
 
 	/// <summary>
-	/// The refusal of a Theme Park Inc park save from before the shares game (<see cref="ThemeParkIncCareerSnapshot.Shares"/>): the career's holding and share price, which challenge wins and losses
-	/// moved, are not in it.
-	/// </summary>
-	/// <summary>
 	/// The refusal of a Theme Park Inc park save from before the special rides (<see cref="Data.TpiSpecialRides"/>): which special rides await their activation, the staff in their slots and which
 	/// were activated are not in it, and the share challenges' availability reads them.
 	/// </summary>
 	internal const string SpecialRidesMissing = "This Theme Park Inc park was saved before OpenTPW kept the special rides (their activation and the staff they need) and cannot be continued; start a new game from the Personnel File.";
 
+	/// <summary>
+	/// The refusal of a Theme Park Inc park save from before the shares game (<see cref="ThemeParkIncCareerSnapshot.Shares"/>): the career's holding and share price, which challenge wins and losses
+	/// moved, are not in it.
+	/// </summary>
 	internal const string SharesMissing = "This Theme Park Inc park was saved before OpenTPW kept the shares game (the career's shares and share price) and cannot be continued; start a new game from the Personnel File.";
 
 	private static void ValidateEdition( Data data )
@@ -1172,7 +1172,7 @@ public static class ParkSaveFile
 			// ones; it is refused here, before the asset manifest is compared
 			if ( data.TpiStaff != null && data.TpiSpecialRides == null )
 				throw new InvalidDataException( SpecialRidesMissing );
-			if ( data.TpiStaff == null && data.TpiSpecialRides != null || !ThemeParkIncSpecialRides.IsValid( data.TpiSpecialRides ) )
+			if ( !ThemeParkIncSpecialRides.IsValid( data.TpiSpecialRides ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc special rides." );
 			// user decision 2026-11-21: a Theme Park Inc park save from before the mechanics and the ride wear is refused: its rides were worn by other rules (or not at all), so it is not the
 			// park the ported rules would have made

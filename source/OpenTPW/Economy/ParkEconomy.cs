@@ -3109,6 +3109,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		Counters.Add( ParkCounters.RideUses( item.InfoId ), 1 );
 		// [BIN:TPW-EXE:0x5021c5 ride use] the event carries the used ride's thing id as its object (parameter B of 0x004D27A0), which a carried object (ECON-055) must equal
 		Counters.Add( ParkCounters.RideUsesOfThing( item.Id ), 1 );
+		// [EXT:tpi-twp-guest-rules] Theme Park Inc's boarding of a Theme Park World guest (GuestEconomyBridge.TryPayVisit) posts the challenge events of the native guest's admission (0x61A77E); the
+		// native guests' state 20 (guest plan P3) takes this call over
 		if ( Rules.ThemeParkInc )
 			PostThemeParkIncAdmissionEvents( item );
 	}

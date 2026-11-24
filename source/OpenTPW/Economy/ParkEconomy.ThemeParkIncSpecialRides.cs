@@ -113,7 +113,10 @@ public sealed partial class ParkEconomy
 		return objects.Values.Where( item => item.InfoId == type ).Select( item => item.Id ).DefaultIfEmpty( 0 ).Min();
 	}
 
-	/// <summary>A challenge's target as the trigger and the value poll read it.</summary>
+	/// <summary>
+	/// A challenge's target as the trigger and the value poll read it. The catalogue keeps <c>Info.IsSpecial</c> as "is 1" (the wear's test) where the trigger tests "above 0"; every shipped type
+	/// declares 0 or 1, so the two agree.
+	/// </summary>
 	internal ThemeParkIncChallengeTarget ThemeParkIncChallengeTargetOf( ushort type )
 	{
 		var instance = ThemeParkIncFirstObjectOfType( type );

@@ -344,19 +344,68 @@ public sealed class ThemeParkIncNativeIdleTests
 	}
 
 	[TestMethod]
-	public void TheGatedPranksFindNoTargetAndGoToTheDecision()
+	public void ThePranksWithoutATargetGoToTheDecision()
 	{
-		foreach ( var code in new[] { 3, 4, 6, 7, 8 } )
+		// A & 3 == 3 with a first world draw that passes: the decision draws twice after A (0x615318, 0x615328), so a case that reaches it shows in the stream
+		var seed = SeedWhere( rng => { var a = rng.NextWord(); return a % 100 < 10 && (a & 3) == 3 && rng.Next( 0x8000 ) < 0x3FFF; } );
+		foreach ( var code in new[] { 3, 4, 6 } )
 		{
 			var (simulation, guest, tpi, _) = Rig();
 			guest.Happiness = 10;
 			guest.TpiPrankCode = code;
-			tpi.Word224 = (int)simulation.ParkTurn;
-			var seed = SeedWhere( rng => { var a = rng.NextWord(); return a % 100 < 10 && (a & 3) == 0; } );
 			Idle( simulation, guest, seed );
 			Assert.AreEqual( (ThemeParkIncGuestStates.Idle, 10f), (tpi.State, guest.Happiness), $"code {code}" );
-			Assert.AreEqual( After( seed, 1 ), simulation.World.State, $"code {code} draws nothing more" );
+			Assert.AreEqual( After( seed, 3 ), simulation.World.State, $"code {code}: no bin, plant or victim, so the decision runs" );
 		}
+	}
+
+	[TestMethod]
+	public void RumoursAndWhingingStandTheGuestAndEndTheUpdate()
+	{
+		var seed = SeedWhere( rng => { var a = rng.NextWord(); return a % 100 < 10 && (a & 3) == 3 && rng.Next( 0x8000 ) < 0x3FFF; } );
+		foreach ( var code in new[] { 7, 8 } )
+		{
+			var (simulation, guest, tpi, _) = Rig();
+			guest.Happiness = 10;
+			guest.TpiPrankCode = code;
+			Idle( simulation, guest, seed );
+			Assert.AreEqual( (ThemeParkIncGuestStates.Idle, 3, 10f), (tpi.State, tpi.Mode, guest.Happiness), $"code {code}: 0x60B6E0's stand animation; the entry of 24 or 25 is gated" );
+			Assert.AreEqual( After( seed, 1 ), simulation.World.State, $"code {code} returns at 0x6151C8 / 0x615188 without the decision" );
+		}
+	}
+
+	[TestMethod]
+	public void ABinPrankTargetsTheBinAndEndsTheUpdate()
+	{
+		var seed = SeedWhere( rng => { var a = rng.NextWord(); return a % 100 < 10 && (a & 3) == 3 && rng.Next( 0x8000 ) < 0x3FFF; } );
+		var (simulation, guest, tpi, world) = Rig();
+		world.BinList.Add( Bin() );
+		guest.Happiness = 10;
+		guest.TpiPrankCode = 3;
+		Idle( simulation, guest, seed );
+		Assert.AreEqual( (ThemeParkIncGuestStates.Idle, 40), (tpi.State, tpi.Target), "+0x204 = the bin; state 10's entry is gated" );
+		Assert.AreEqual( (14, 17), (guest.Navigation.TargetX >> 16, guest.Navigation.TargetY >> 16), "the search's route request to the bin" );
+		Assert.AreEqual( After( seed, 1 ), simulation.World.State, "the update ends at 0x61510A" );
+
+		var (pranked, prankedGuest, prankedTpi, prankedWorld) = Rig();
+		var used = Bin();
+		used.SetVariable( 10, 1 );
+		prankedWorld.BinList.Add( used );
+		prankedGuest.Happiness = 10;
+		prankedGuest.TpiPrankCode = 3;
+		Idle( pranked, prankedGuest, seed );
+		Assert.AreEqual( (0, After( seed, 3 )), (prankedTpi.Target, pranked.World.State), "a bin already pranked (VAR 10) is not found: the decision runs" );
+	}
+
+	[TestMethod]
+	public void ABalloonInANativeBlockIsRefused()
+	{
+		var (simulation, _, _, _) = Rig();
+		var save = simulation.CaptureSnapshot();
+		var block = save.Guests.Single().Tpi!;
+		Assert.IsFalse( block.Problems( 1 ).Any() );
+		Assert.IsTrue( (block with { HoldsBalloon = true }).Problems( 1 ).Any() );
+		Assert.IsTrue( (block with { BalloonCountdown = 5 }).Problems( 1 ).Any() );
 	}
 
 	[TestMethod]

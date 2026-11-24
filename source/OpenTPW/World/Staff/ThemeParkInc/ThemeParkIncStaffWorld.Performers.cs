@@ -284,19 +284,24 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x5D1380 entertainer list] the constructor puts the entertainer at the head of the list world +0x1EAB82 (0x64F050, next +0x5D0) at his drop, which is when ThemeParkIncStaff.EndHire puts
 	// the member at the front of the members: the placed entertainers of the members, in order, are the list
 	// [BIN:TPI-EXE:0x614D9B performing] the guest's reaction reads the member's state word +0x1B4 against 0x17
+	/// <remarks>The list is this world's own buffer, filled again by every call (the guests' sweep asks once per idle guest): read it before the next call.</remarks>
 	public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers( ParkEconomy? economy )
 	{
+		entertainerViews.Clear();
 		if ( economy?.TpiStaff is not { } staff )
-			return Array.Empty<ThemeParkIncEntertainerView>();
-		List<ThemeParkIncEntertainerView>? views = null;
-		foreach ( var member in staff.Members )
+			return entertainerViews;
+		var members = staff.Members;
+		for ( var index = 0; index < members.Count; index++ )
 		{
+			var member = members[index];
 			if ( member.Role != ThemeParkIncStaffRole.Entertainer || member.Navigation is not { } navigation || member.ThingId is not (> 0 and <= ushort.MaxValue) )
 				continue;
-			(views ??= new()).Add( new ThemeParkIncEntertainerView( (ushort)member.ThingId, navigation.Cell, member.State == Performing ) );
+			entertainerViews.Add( new ThemeParkIncEntertainerView( (ushort)member.ThingId, navigation.Cell, member.State == Performing ) );
 		}
-		return views ?? (IReadOnlyList<ThemeParkIncEntertainerView>)Array.Empty<ThemeParkIncEntertainerView>();
+		return entertainerViews;
 	}
+
+	private readonly List<ThemeParkIncEntertainerView> entertainerViews = new();
 
 	/// <summary>The entertainer's and the guard's starts at the drop (0x5D1380, 0x5D3140 with 0x5D3230): the effect on the cell, then the first search.</summary>
 	// [BIN:TPI-EXE:0x5D1380 entertainer constructor] 0x626190 (kind 6), +0x5D0 = 0 and the list's head (0x64F050), category 8 and the variant on the sprite source (0x5D1000(3, 8, variant)), 0x62C970(0) (the

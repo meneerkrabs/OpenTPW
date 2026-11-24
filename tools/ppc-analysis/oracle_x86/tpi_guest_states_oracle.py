@@ -17,7 +17,8 @@ Phase P2 adds:
   0x91E074 run natively; the mood 0x60CDD0, the spot animation 0x60FB30, the drop 0x5D8C80, the sounds, the bin search 0x618D10, the closed park 0x64FA30, the bus-stop walk 0x615D50, the setter,
   the show finder 0x6193B0, the kind finder 0x5B1B20, the entertainer finder 0x619100, the thought, the message post 0x436DD0, the major decision 0x610080, the wander 0x609F70, the CRT rand()
   0x870D38 and the gated searches (the plant, the infodesk, the guest finder) are stubbed and recorded, the searches finding nothing where the port gates them; the calls, the meters, +0x1B8, the
-  heading, +0x29C, +0x2B1, the prank code, +0x204, +0x224, the walk mask and the draws are compared with UpdateTpiIdle (prank codes 7 and 8, whose rumours and whinging are phase P5's, are left out);
+  heading, +0x29C, +0x2B1, the prank code, +0x204, +0x224, the walk mask and the draws are compared with UpdateTpiIdle, prank codes 0..8 included (the bin prank's search and VAR 10, rumours and
+  whinging with the setter, the stand animation 0x60B6E0 and the thought recorded; the setter's state 10, 24 or 25 is the port's gated entry, recorded at the same point);
 - the spot animation 0x60FB30 for the animations 0..15 (the id, the mode store native; the sound and the setter recorded) and the mood 0x60CDD0 over generations -1..3 and the bank's byte +0x206;
 - the dispatch 0x619FF0 in states 7 (0x61A179) and 8 (0x61A382), the walk, the wander, the restore and the setter stubbed;
 - state 9 (0x616F10) with the walk, the bin's customer, its script variables and the drop stubbed; the dirt test 0x5E3990 and its rows, which the port gates, are left out of the comparison.
@@ -262,6 +263,17 @@ def port_idle(g: dict, sc: dict, world: World) -> dict:
             g['w29c'] = 1
         elif s == 2:
             calls.append(('bins', 6))
+            if sc['bin6']:
+                calls.append(('var', 10))
+                if sc['var10'] == 0:
+                    g['target'] = sc['bin6']
+                    calls.append(('setter', 10))
+                    return finish(g, calls)
+        elif s in (6, 7):
+            calls.append(('setter', 0x19 if s == 6 else 0x18))
+            calls.append('stand')
+            calls.append(('thought', 0x12))
+            return finish(g, calls)
         elif s == 3:
             calls.append('plant')
         elif s == 4:
@@ -329,7 +341,7 @@ def idle_rounds(image: Image, rng: random.Random, cases: int) -> int:
 
     def bins(sb: Sandbox):
         calls.append(('bins', sb.arg(1)))
-        sb.write(sb.arg(0), 'H', sc['bin'] if sb.arg(1) == 3 else 0)
+        sb.write(sb.arg(0), 'H', sc['bin'] if sb.arg(1) == 3 else sc['bin6'])
         return 0, 8
 
     def bus(sb: Sandbox):
@@ -380,10 +392,12 @@ def idle_rounds(image: Image, rng: random.Random, cases: int) -> int:
              0x4080F8: lambda sb: (int(sc['closed']), 0), 0x405EC5: bus, 0x4096E2: setter, 0x40938B: show, 0x40144C: lambda sb: (0x7000000, 0), 0x402734: square,
              0x40B442: nearest, 0x4071EE: lambda sb: (calls.append(('thought', sb.arg(0))), (0, 8))[1], 0x40B76C: post, 0x4052FE: major,
              0x40BAA0: lambda sb: (calls.append('wander'), (int(sc['wander']), 0))[1], 0x870D38: rand, 0x406AE1: found_none('infodesk'), 0x403D9B: found_none('guests'),
-             0x4094EE: plant}
+             0x4094EE: plant, 0x40A4CA: lambda sb: (calls.append('stand'), (0, 0))[1], 0x40AE89: lambda sb: (0x7300000, 0),
+             0x4078BA: lambda sb: (calls.append(('var', sb.arg(1))), (sc['var10'], 0))[1]}
     idle = Sandbox(image, [(0x614A40, 0x615412), (0x6493E0, 0x649415), (0x86FAB0, 0x86FAD7), (0x6375C0, 0x6375CD), (0x614460, 0x6144E3), (0x91E074, 0x91E1B4)]
                    + thunks(0x40A92F, 0x4080E9, 0x406C26), stubs=stubs, budget=20000)
     meters = [0.0, 10.0, 14.0, 15.0, 50.0, 80.0, 81.0, 89.5, 90.0, 95.0, 100.0]
+    covered: dict = {}
     for index in range(cases * 25):
         idle.reset()
         idle.set_fpcw(CONTROL_WORD)
@@ -394,14 +408,15 @@ def idle_rounds(image: Image, rng: random.Random, cases: int) -> int:
         near = lambda: (min(127, max(0, x + rng.randrange(-2, 3))), min(127, max(0, y + rng.randrange(-2, 3))))
         sc.clear()
         sc.update(turn=turn, mood=rng.choice([5, 6, 7, 8, 9]), closed=rng.random() < 0.1, bus=rng.random() < 0.7, bin=rng.choice([0, 0, rng.randrange(1, 0x4000)]),
+                  bin6=rng.choice([0, rng.randrange(1, 0x4000)]), var10=rng.choice([0, 0, 1]),
                   tile=rng.choice([0, 0, 0, 3]), show=rng.choice([0, 0, 0, rng.randrange(0x4000, 0x5000)]), show_cell=near(), square=rng.random() < 0.3,
                   ent=rng.randrange(0x5000, 0x6000), ent_cell=near(), ent_state=rng.choice([0, 1, 0x17, 0x17]), wander=rng.random() < 0.6,
                   r1=rng.choice([0, 0x3FFE, 0x3FFF, rng.randrange(0, 0x8000)]), r2=rng.choice([0, 0x3FFE, 0x3FFF, rng.randrange(0, 0x8000)]))
         sc['rands'] = [sc['r1'], sc['r2']]
-        g = {'id': thing_id, 'cell': (x, y), 'happiness': f32(rng.choice(meters + [rng.uniform(0, 100)])), 'illness': f32(rng.choice(meters)),
+        g = {'id': thing_id, 'cell': (x, y), 'happiness': f32(rng.choice([5.0, 10.0, 14.0]) if rng.random() < 0.4 else rng.choice(meters + [rng.uniform(0, 100)])), 'illness': f32(rng.choice(meters)),
              'litter': f32(rng.choice(meters)), 'toilet': f32(rng.uniform(0, 100)), 'exit': rng.choice([0, 1, 400, (-3) & MASK]), 'umbrella': rng.randrange(0, 5),
              'spot': rng.choice([turn, (turn - 101) & MASK, (turn - 100) & MASK, rng.randrange(0, 1 << 32)]), 'w224': rng.choice([turn, (turn - 30) & MASK, (turn - 31) & MASK, 0]),
-             'w29c': rng.choice([0, 0, 1]), 'b2b1': rng.choice([0, 0, 0, 1]), 'code': rng.choice([0, 1, 2, 3, 4, 5, 6]), 'target': rng.randrange(0, 0x4000),
+             'w29c': rng.choice([0, 0, 1]), 'b2b1': rng.choice([0, 1]), 'code': rng.choice([0, 1, 2, 3, 4, 5, 6, 7, 8]), 'target': rng.randrange(0, 0x4000),
              'heading': rng.randrange(0, 0x800), 'mask': 0}
         seed = rng.randrange(0, 1 << 32)
         world = idle.object(0x1EAC00, {TURN: ('I', turn), SEED: ('I', seed)})
@@ -414,6 +429,9 @@ def idle_rounds(image: Image, rng: random.Random, cases: int) -> int:
                                (0xA01B08, PEEP['likelihood'])):
             idle.write(address, 'I', value)
         idle.write(0xA09728, 'I', 0x7100000)
+        idle.write(0xA01B0C, 'I', 180)
+        if sc['bin6']:
+            idle.write(0xAA18B0 + 20 * sc['bin6'], 'I', idle.object(0x300, {0x2C: ('I', 1)}))
         for other, (cx, cy), field in ((sc['show'], sc['show_cell'], 0), (sc['ent'], sc['ent_cell'], sc['ent_state'])):
             if other:
                 record = idle.object(0x300, {0x5: ('B', cx), 0x7: ('B', cy), 0x1B4: ('I', field)})
@@ -427,6 +445,13 @@ def idle_rounds(image: Image, rng: random.Random, cases: int) -> int:
                   'toilet': idle.read(thing + 0x1D0, 'f'), 'w1b8': idle.read(thing + 0x1B8, 'I'), 'heading': idle.read(thing + 0x2C, 'I'), 'w29c': idle.read(thing + 0x29C, 'I'),
                   'b2b1': idle.read(thing + 0x2B1, 'B'), 'code': idle.read(thing + 0x1E4, 'I'), 'target': idle.read(thing + 0x204, 'H'), 'w224': idle.read(thing + 0x224, 'I'),
                   'mask': idle.read(thing + 0x1A0, 'I'), 'seed': idle.read(world + SEED, 'I')}
+        for call in calls:
+            key = {('setter', 10): 'bin prank', ('setter', 0x18): 'whinging', ('setter', 0x19): 'rumours', ('setter', 9): 'bin walk', ('spot', 0xC): 'vomit'}.get(call) \
+                if isinstance(call, tuple) else None
+            if call == 'nearest' or (isinstance(call, tuple) and call[0] in ('post',)):
+                key = 'entertainer' if call == 'nearest' else 'prank tail'
+            if key:
+                covered[key] = covered.get(key, 0) + 1
         replica = World(seed)
         port = port_idle(g, sc, replica)
         port['seed'] = replica.state
@@ -436,6 +461,7 @@ def idle_rounds(image: Image, rng: random.Random, cases: int) -> int:
                 if bad <= 5:
                     print(f'idle id {thing_id}: {key} native {value} port {port[key]}')
                 break
+    print(f'state 6 branches reached: {dict(sorted(covered.items()))}')
     return bad
 
 

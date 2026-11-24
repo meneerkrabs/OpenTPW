@@ -169,8 +169,12 @@ The verdict cases of state 4:
    retail): `+0x2B1 = 0`, then the switch `0x615414` on the prank code − 1:
    - 0 (code 1): `A % 100` below `StinkbombLikelihood`: a stinkbomb (litter 8), the sound 0xCF and the tail;
    - 1 (code 2): the toilet meter 80 and `+0x29C = 1`, which shuts the gate for good;
+   - 2 (code 3): the bin search of radius 6 (its route requests included); a bin whose `VAR_PRANKED` (10) is 0 becomes the target `+0x204` and the update ends (`0x61510A`), state
+     10's entry gated (below); no bin goes on;
    - 4 (code 5, which no birth gives): litter `A % 5 + 1`, the code 0, state 7 and the tail;
-   - 2, 3, 5, 6, 7: gated (below).
+   - 6 and 7 (codes 7 and 8, 16 of the 20 adult entries of the prank table): the stand animation 3 (`0x60B6E0`) and the update ends (`0x6151C8`, `0x615188`) with no draw and
+     no decision; the entries of 25 and 24 and their words are gated (below);
+   - 3 and 5: gated (below).
 
    The tail `0x614F14` posts the prank message (`ThemeParkIncPrankPosted`: kind 1, 5 or 6 and the guest's id) and adds 1 to happiness; the update goes on.
 8. **Decision on `A & 3` `0x61523F`.**
@@ -201,9 +205,14 @@ control and alt keys (`GetAsyncKeyState`) and freezes the person it keeps in `[0
 text. The freeze itself: not in the queue states (`0x61AC40`), on a park cell (`0x60BE00`) and outside the states 0x13, 0x14 and 0x1B, the old state goes into `+0x2C4` (unless it
 is 23), state 23 and the heading 0. It is UI only and is not ported in P2; state 23's handler (P1) is.
 
-**Gated in P2** (`[EXT:tpi-capability-gates]`, each read as a search that finds nothing, none of them draws):
-- the prank switch's cases 2 (the bin of radius 6 and its `VAR_PRANKED`, state 10) and 3 (the plant, state 11), phase P4; case 5 (a guest on the cell holding a balloon, `0x613D00`
-  with litter), phase P4 after the balloons of P3; cases 6 and 7 (rumours and whinging, states 25 and 24), phase P5;
+**Gated in P2** (`[EXT:tpi-capability-gates]`; none of them draws):
+- the prank switch's state entries: 10 after a bin is found (the walk to the bin for the prank `0x617140`, phase P4: the guest keeps its target and walk and stays idle), and 25 and 24
+  after rumours or whinging (phase P5: the guest stays idle, and the words `+0x1E8` = `WhingeDuration` and `+0x2B0` = 0, which only those states read, are not held; the thought 0x12
+  is not shown). The update ends where the original's does, so the draws match;
+- case 3, the plant search `0x618EF0` (with the fire test `0x618F30`, phase P4), is read as finding no plant: a prankster of code 4 within six cells of a plant goes on to the decision
+  where the original's update ends (state 11), so the draws differ there;
+- case 5 finds no victim (a guest on the cell holding a balloon, `0x613D00` with litter): exact while no native guest holds a balloon, which none can before phase P3; a restore refuses a
+  block that holds one;
 - the major decision's ride scan (phase P3), so `+0x204` stays 0 and the guest pauses;
 - the walk to another guest (`0x619240`) and the infodesk (`0x618B60`, state 12), phase P5;
 - the prank thought 0x15 ("I pranked", held 120 turns): the bubbles are Theme Park World's, which has no such thought;

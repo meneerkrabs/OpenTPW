@@ -9,7 +9,8 @@ get rid of their litter as Theme Park Inc's guests do. With the switch off, Them
   - the litter urge, with Theme Park Inc's bin search `0x618D10` (the bins' script variables and their stand point) or litter on the cell;
   - the leave gate, which goes on to the later steps, as the original's does;
   - the turn towards a show and the reaction to a performing entertainer (`0x614D41`), which the entertainer's port had left gated;
-  - the prank gate on Standard.sam's prank words and the prank switch: the stinkbomb, the toilet prank and the litter prank, with the prank report as an event;
+  - the prank gate on Standard.sam's prank words and the prank switch: the stinkbomb, the toilet prank and the litter prank, with the prank report as an event; the bin prank's search and
+    the start of rumours and whinging, which end the update as the original's do;
   - the four-way decision: the can't-decide pause, the wander, and the two `rand()` draws towards an infodesk or another guest, which are world draws.
 - **Wander (state 7)** and **the walk to a bin (state 9)** run, with the wander flag, state 7's entry and the bin's `VAR_USE`, capacity and fire tests.
 - **The removal message** `0x60D120` sends a guest whose target is demolished back to idle.
@@ -18,7 +19,8 @@ get rid of their litter as Theme Park Inc's guests do. With the switch off, Them
 Labels:
 - `[EXT:tpi-staff-crt-rand]` now also covers the two draws of `0x615318` and `0x615328`, as `world.Next(0x8000) < 0x3FFF` (the lead's decision of 2026-11-23).
 - `[EXT:tpi-capability-gates]` covers:
-  - the prank switch's bin and plant pranks and the balloon burst (phase P4), and its rumours and whinging (phase P5);
+  - the prank switch's state entries of the bin prank (phase P4) and of rumours and whinging (phase P5), the plant search (phase P4) and the balloon burst, which no native guest can
+    meet before phase P3 (a restore refuses a native guest holding a balloon);
   - the major decision's ride scan (phase P3);
   - the infodesk and the walk to another guest (phase P5);
   - the prank thought 0x15;
@@ -36,7 +38,7 @@ Saves: the native block gains one optional member, the wander flag `+0xE8`, whic
 Verified with these checks:
 
 - The native oracle `tpi_guest_states_oracle.py` runs at the game thread's 24-bit precision. It found no mismatch over:
-  - 1000 cases of state 6, with the searches stubbed;
+  - 1000 cases of state 6 over the prank codes 0..8, with the searches stubbed;
   - 3200 spot animations and 3000 mood cases;
   - 1000 cases of the dispatch in states 7 and 8;
   - 1000 cases of state 9;

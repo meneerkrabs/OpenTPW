@@ -31,7 +31,8 @@ public sealed partial class GuestSimulation
 
 	/// <summary>
 	/// Whether the guest's sprite bank is female (<c>0x68E7B0</c>: the bank object's byte <c>+0x206</c>, which the bank loader <c>0x68EA60</c> reads from the ESP header's byte <c>0x10D</c>): the bank of its
-	/// generation its appearance draw picks, as the renderer picks it. A simulation without loaded banks (a headless rig) reads male; the answer only picks a mood animation's number, which is presentation.
+	/// generation its appearance draw picks, as the renderer picks it. A simulation without loaded banks (a headless rig) reads male. The answer picks the mood animation's number only, which goes into the sprite's
+	/// mode (<c>+0x20</c>, <see cref="ThemeParkIncGuestRecord.Mode"/>): saved and hashed, but read by no rule.
 	/// </summary>
 	// [DATA:esprites.wad/Generic/{Kids,Parents,Grandparents}/SPR_xx.ESP] byte 0x10D: BD 0, GB 1, GK 1, KB 0; FA 0, MO 1; GM 1, GR 0
 	private bool ThemeParkIncSpriteIsFemale( Guest guest )
@@ -147,7 +148,8 @@ public sealed partial class GuestSimulation
 		}
 		if ( TurnToThemeParkIncShow( guest, tpi ) || TurnToThemeParkIncPerformer( guest, tpi ) )
 			return;
-		ThemeParkIncPrank( guest, tpi, settings, a );
+		if ( ThemeParkIncPrank( guest, tpi, settings, a ) )
+			return;
 		ThemeParkIncIdleDecision( guest, tpi, settings, a, turn );
 	}
 
@@ -234,20 +236,20 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// The prank gate (<c>0x614E56</c>) and the prank switch (<c>0x615414</c>) on the guest's prank code (<c>+0x1E4</c>, fixed at birth). The idle decision follows every case this build runs, a
-	/// stinkbomb or litter included (the switch's own returns are the gated cases 2, 3, 6 and 7).
+	/// The prank gate (<c>0x614E56</c>) and the prank switch (<c>0x615414</c>) on the guest's prank code (<c>+0x1E4</c>, fixed at birth). True when the update ends here (a bin found for a prank,
+	/// rumours or whinging); false to go on to the idle decision, which also follows a stinkbomb, litter or a burst balloon.
 	/// </summary>
 	// [BIN:TPI-EXE:0x614E56 prank gate] the happiness byte at least PrankHappinessThreshold (0xA01B04, signed jge), or +0x29C nonzero, or A % 100 at least PrankLikelihood (0xA01B08, unsigned jb) with
 	// +0x2B1 zero go to the decision 0x61523F; else +0x2B1 = 0 (0x614EA9), S = +0x1E4 − 1 above 7 (unsigned) goes to the decision, else the table 0x615414
 	// [BIN:TPI-EXE:0x615414 prank switch] S 0 0x614EC0 (stinkbomb), 1 0x61508B (toilet), 2 0x6150AC (a bin, state 10), 3 0x61511D (a plant, state 11), 4 0x614F8E (litter), 5 0x614FE2 (a balloon
 	// to burst), 6 0x61519B (rumours, state 25), 7 0x61515B (whinging, state 24)
-	private void ThemeParkIncPrank( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncGuestSettings settings, uint a )
+	private bool ThemeParkIncPrank( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncGuestSettings settings, uint a )
 	{
 		if ( MeterMath.Byte( guest.Happiness ) >= settings.PrankHappinessThreshold || tpi.Word29C != 0 )
-			return;
+			return false;
 		var hundred = a % 100;
 		if ( hundred >= unchecked( (uint)settings.PrankLikelihood ) && tpi.Byte2B1 == 0 )
-			return;
+			return false;
 		tpi.Byte2B1 = 0;
 		int kind;
 		switch ( unchecked( (uint)((guest.TpiPrankCode ?? 0) - 1) ) )
@@ -256,7 +258,7 @@ public sealed partial class GuestSimulation
 				// [BIN:TPI-EXE:0x614EC0 stinkbomb] A % 100 at least StinkbombLikelihood (0xA01B00, unsigned jae) goes to the decision; else the stinkbomb 0x5D8C80(the cell's record, 8), the sound 0xCF
 				// for every guest (0x60BE90) and the tail with kind 1
 				if ( hundred >= unchecked( (uint)settings.StinkbombLikelihood ) )
-					return;
+					return false;
 				DropThemeParkIncLitter( guest, LitterType.Stinkbomb );
 				Voiced?.Invoke( guest, ThemeParkIncStinkbombVoice );
 				kind = ThemeParkIncStinkbombPrank;
@@ -265,7 +267,7 @@ public sealed partial class GuestSimulation
 				// [BIN:TPI-EXE:0x61508B toilet prank] +0x1D0 (the toilet meter) = 80.0f and +0x29C = 1, which shuts the prank gate for good; then the decision
 				guest.Toilet = 80f;
 				tpi.Word29C = 1;
-				return;
+				return false;
 			case 4:
 				// [BIN:TPI-EXE:0x614F8E litter prank] type A % 5 + 1 (a literal 5), the drop 0x5D8C80(the cell's record, type), +0x1E4 = 0, setter(7) and the tail with kind 5; no prank code of the
 				// table 0x9D0624 is 5, so only the dead +0x2B1 commands could reach it
@@ -274,18 +276,37 @@ public sealed partial class GuestSimulation
 				SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.Wandering );
 				kind = ThemeParkIncLitterPrank;
 				break;
+			case 2:
+				// [BIN:TPI-EXE:0x6150AC bin prank] the bin search 0x618D10 with radius 6 (its route requests included); a bin whose VAR_PRANKED (10, read again through 0x6B0740/0x6B0C90) is 0: +0x204 =
+				// the bin, setter(10) and return (0x61510A); no bin, or the variable set, goes to the decision
+				var bin = ThemeParkIncBinSearch( guest, 6 );
+				if ( bin == 0 || ThemeParkIncWorld?.Thing( bin ) is not { } found || found.Variable( 10 ) != 0 )
+					return false;
+				tpi.Target = bin;
+				// [EXT:tpi-capability-gates] state 10 (0x617140, the walk to the bin for the prank: VARs 2, 4, 10 and 12, the deposit and the prank tail with kind 3) is phase P4's: the entry is not made,
+				// the guest stays idle with its target and its walk to the bin, and the update ends as the original's does
+				return true;
+			case 6:
+			case 7:
+				// [BIN:TPI-EXE:0x61519B rumours] case 6: +0x1E8 = WhingeDuration (0xA01B0C), +0x2B0 = 0, setter(0x19), 0x60B6E0 (the stand animation 3 on the sprite), thought 0x12 and return (0x6151C8);
+				// [BIN:TPI-EXE:0x61515B whinging] case 7 the same with setter(0x18), returning at 0x615188; neither draws, and neither reaches the decision
+				// [EXT:tpi-capability-gates] states 24 and 25 (0x6161C0, 0x616100: whinging to the staff and spreading rumours) are phase P5's: their entry is not made, and the words +0x1E8 and +0x2B0,
+				// which only those two states read, are not held; the guest stays idle. The thought 0x12 is not shown (Theme Park World's bubbles). The stand animation is made and the update ends
+				tpi.Mode = 3;
+				return true;
 			default:
-				// [EXT:tpi-capability-gates] cases 2 (the bin search of radius 6 0x618D10 and the bin's VAR_PRANKED, state 10) and 3 (the plant search 0x618EF0, state 11) are phase P4's, case 5 (a guest on
-				// the cell holding a balloon or a balloon countdown, 0x613D00(victim, 1)) is phase P4's and needs balloons (phase P3), cases 6 and 7 (rumours and whinging: +0x1E8 = WhingeDuration
-				// 0xA01B0C, +0x2B0 = 0, state 25 or 24, 0x60B6E0, thought 18) are phase P5's: each is read as finding no target and goes to the decision, as an empty search does; none draws
-				return;
+				// [EXT:tpi-capability-gates] case 3 (the plant search 0x618EF0 with radius 6 and its fire test 0x618F30; a plant found sets +0x204 and state 11 and returns at 0x615148) is phase P4's: it is
+				// read as finding no plant, so a prankster with code 4 within six cells of a plant goes on to the decision where the original's update ends. Case 5 (the first guest on the cell holding
+				// a balloon or a balloon countdown: 0x613D00(victim, 1) and the tail with kind 6) finds no victim, which is exact while no native guest holds a balloon (none can before phase P3: a
+				// restore refuses a block that holds one); neither draws
+				return false;
 		}
 		// [BIN:TPI-EXE:0x614F14 prank tail] the thought object takes thought 0x15 (0x638960(0x15, 0)), the message 0x436DD0 with the template 0x93E6B0 (the kind, the guest's id; the buffer 0xA09728
 		// is allocated on first use), happiness += 1.0f clamped to 0..100 (0x6151F3..0x615239), then the decision 0x61523F (no return)
 		// [EXT:tpi-capability-gates] thought 0x15 ("I pranked", held 120 turns by 0x6388F0 and 0x638960) is not shown: the bubbles are Theme Park World's (Think), which has no thought 0x15; it draws nothing
 		ThemeParkIncPrankPosted?.Invoke( guest, kind );
 		guest.Happiness = MeterMath.Add( guest.Happiness, 1f );
-		return;
+		return false;
 	}
 
 	/// <summary>
@@ -488,8 +509,9 @@ public sealed partial class GuestSimulation
 			return;
 		if ( walk == WalkResult.Arrived && tpi.Target != 0 )
 		{
-			// [EXT:original-undefined-reads] the target is a thing id the original reads through the thing table whatever holds the slot now; a slot that no litter bin holds (the bin sold on the way)
-			// is read as a thing without a script and without a history: its variables read 0, so it counts as full
+			// a bin's destroy sends message 0xA first, and its handler 0x60D120 (ThemeParkIncObjectRemoved) clears every walker's target, so this branch is defensive: in the original a slot another
+			// thing took since is a defined read of that thing, and an empty slot a null dereference
+			// [EXT:original-undefined-reads] a target that no litter bin holds is read as a thing without a script and without a history: its variables read 0, so it counts as full
 			var bin = ThemeParkIncWorld?.Thing( unchecked( (ushort)tpi.Target ) );
 			if ( bin is { } found )
 				ThemeParkIncWorld!.RecordCustomer( found.ThingId );

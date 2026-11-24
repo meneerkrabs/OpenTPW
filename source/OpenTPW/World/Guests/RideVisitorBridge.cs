@@ -284,6 +284,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 	}
 	public int QueueLength => links.Count;
+	/// <summary>The queue's head (the list's first guest, the original's head word), 0 for an empty queue; with <see cref="NextInQueue"/> a walk of the list that allocates nothing.</summary>
+	internal int QueueHead => head;
+	/// <summary>The guest after <paramref name="guestId"/> in the queue (the next word), 0 at the tail or for a guest the list does not hold.</summary>
+	internal int NextInQueue( int guestId ) => links.TryGetValue( guestId, out var link ) ? link.Next : 0;
+	/// <summary>The guest before <paramref name="guestId"/> in the queue (the previous word), 0 at the head or for a guest the list does not hold.</summary>
+	internal int PreviousInQueue( int guestId ) => links.TryGetValue( guestId, out var link ) ? link.Previous : 0;
 	/// <summary>Guests the script holds (boarded and not yet released).</summary>
 	public IReadOnlyList<int> Riders => onRide;
 	public int BoardedTotal { get; private set; }

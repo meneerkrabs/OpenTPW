@@ -46,15 +46,15 @@ public sealed partial class GuestSimulation
 	// person %d in the queue" and −1. tp.exe's 0x004DDF50 with its predicate 0x00502430
 	internal int TpiQueuePosition( RideVisitorBridge ride, int guestId )
 	{
-		var queue = ride.Queue;
-		for ( var index = 0; index < queue.Count; index++ )
+		var index = 0;
+		for ( var current = ride.QueueHead; current != 0; current = ride.NextInQueue( current ), index++ )
 		{
-			if ( queue[index] == guestId )
+			if ( current == guestId )
 				return index;
-			if ( !(Find( queue[index] ) is { Tpi: { } tpi } && ThemeParkIncGuestStates.InQueueOrLoading( tpi.State, tpi.Saved )) )
+			if ( !(Find( current ) is { Tpi: { } tpi } && ThemeParkIncGuestStates.InQueueOrLoading( tpi.State, tpi.Saved )) )
 				return guestId == 0 ? index + 1 : -1;
 		}
-		return guestId == 0 ? queue.Count : -1;
+		return guestId == 0 ? index : -1;
 	}
 
 	/// <summary>The queue has room (<c>0x5DFDD0</c>): its length below four places a cell (<c>+0x50</c>).</summary>
@@ -107,13 +107,10 @@ public sealed partial class GuestSimulation
 	/// <summary>Writes the list's links into the native guests' words <c>+0x2CC</c> (next, <see cref="ThemeParkIncGuestRecord.QueueLink"/>) and <c>+0x2CE</c> (previous, <see cref="ThemeParkIncGuestRecord.QueueSlot"/>).</summary>
 	private void SyncThemeParkIncQueueLinks( RideVisitorBridge ride )
 	{
-		var queue = ride.Queue;
-		for ( var index = 0; index < queue.Count; index++ )
+		for ( var current = ride.QueueHead; current != 0; current = ride.NextInQueue( current ) )
 		{
-			if ( Find( queue[index] ) is not { Tpi: { } tpi } )
-				continue;
-			tpi.QueueSlot = index > 0 ? queue[index - 1] : 0;
-			tpi.QueueLink = index + 1 < queue.Count ? queue[index + 1] : 0;
+			if ( Find( current ) is { Tpi: { } tpi } )
+				(tpi.QueueSlot, tpi.QueueLink) = (ride.PreviousInQueue( current ), ride.NextInQueue( current ));
 		}
 	}
 

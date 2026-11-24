@@ -397,7 +397,7 @@ public sealed partial class GuestSimulation
 	// the queue (0x619700(0)); then happiness += −byte [0xA01A78] (0x60D0D0), +0x204 = 0 and setter(6); then +0x206 equal is cleared, and each of the four words +0x20A..+0x210 equal is cleared with
 	// the word 8 bytes on (+0x212..+0x218, the temporary history)
 	// [EXT:tpi-twp-guest-rules] a guest of the bridged boarding (state 16 until phase P3b) leaves the removed ride by Theme Park World's removal (DropForRemovedAttraction: on the ride, the model back
-	// and the sound 0x80 as for 0x14; in the queue, the medium step), then the small step and state 6 as below
+	// and the sound 0x80 as for 0x14; on the way to the stand point, the medium step; then its own small step), and state 6 as below
 	internal void ThemeParkIncObjectRemoved( int thingId )
 	{
 		if ( NativeTpi is not { } settings || thingId == 0 )

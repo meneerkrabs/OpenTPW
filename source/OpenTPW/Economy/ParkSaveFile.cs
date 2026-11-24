@@ -1172,6 +1172,8 @@ public static class ParkSaveFile
 			// ones; it is refused here, before the asset manifest is compared
 			if ( data.TpiStaff != null && data.TpiSpecialRides == null )
 				throw new InvalidDataException( SpecialRidesMissing );
+			if ( data.TpiStaff == null && data.TpiSpecialRides != null )
+				throw new InvalidDataException( "Park save has Theme Park Inc special rides without the Theme Park Inc staff that fill their slots." );
 			if ( !ThemeParkIncSpecialRides.IsValid( data.TpiSpecialRides ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc special rides." );
 			// user decision 2026-11-21: a Theme Park Inc park save from before the mechanics and the ride wear is refused: its rides were worn by other rules (or not at all), so it is not the

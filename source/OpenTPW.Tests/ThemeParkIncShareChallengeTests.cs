@@ -337,8 +337,8 @@ public class ThemeParkIncShareChallengeTests : ThemeParkIncScienceTestBase
 		Run( 3, 57, WaterRide );
 		Run( 4, 17, TourRide );
 		// [BIN:TPI-EXE:0x61A867 admission events]
-		economy.RecordRideUse( water.Id );
-		economy.RecordRideUse( water.Id );
+		economy.ThemeParkIncRideAdmitted( water.Id );
+		economy.ThemeParkIncRideAdmitted( water.Id );
 		CollectionAssert.AreEqual( new[] { 2, 2, 2, 2, 0 }, challenges.Slots.Take( 5 ).Select( slot => slot.Value ).ToArray() );
 		Assert.IsTrue( challenges.Slots.Take( 5 ).All( slot => slot.Value2 == 0 ), "the booth's second value is not reached" );
 	}
@@ -361,12 +361,122 @@ public class ThemeParkIncShareChallengeTests : ThemeParkIncScienceTestBase
 		var owned = career.Shares.Owned;
 		var price = career.Shares.Price;
 		for ( var rider = 0; rider < 20; rider++ )
-			economy.RecordRideUse( water.Id );
+			economy.ThemeParkIncRideAdmitted( water.Id );
 		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 1 ) - economy.Tick );
 		Assert.AreEqual( ThemeParkIncChallengeStatus.Won, challenges.Slots[7].Status );
 		// [BIN:TPI-EXE:0x5C4344 share prize] [BIN:TPI-EXE:0x5C4352 won price]
 		Assert.AreEqual( owned + 600, career.Shares.Owned, "the SharePrize reaches the shares game" );
 		Assert.AreEqual( price + price * 4 / 100, career.Shares.Price );
+	}
+
+	/// <summary>A ride bridge with an id and a kind, for the boarding and the score.</summary>
+	private sealed class Ride( int id ) : IRideVisitorBridge
+	{
+		public IRideVisitorHost? Host { get; set; }
+		public int AttractionId => id;
+		public string Name => "Ride";
+		public RideVisitorKind Kind => RideVisitorKind.Ride;
+		public bool IsOpen => true;
+		public int Capacity => 1;
+		public int ExcitementLevel => 50;
+		public int AttractionValue => 0;
+		public GuestNeeds Satisfies => GuestNeeds.None;
+		public int Price => 0;
+		public (int X, int Y) EntranceCell => (0, 0);
+		public (int X, int Y) ExitCell => (0, 0);
+		public int QueueLength => 0;
+		public int MaximumQueueLength => 0;
+		public uint QueueLimit => 0;
+		public bool HasQueue => false;
+		public bool ProvidesRelief => false;
+		public bool IsBroken => false;
+		public bool IsBrokenDown => false;
+		public bool ReliefWornOut => false;
+		public bool IsRunning => false;
+		public int RidersOnBoard => 0;
+		public int Speed => 0;
+		public IReadOnlyList<(int X, int Y)> QueueCells => Array.Empty<(int X, int Y)>();
+		public int QueueSizeInCells => 1;
+		public (int X, int Y)? JoinCell => null;
+		public int QueueEditCount => 0;
+		public int CalledGuest => 0;
+		public bool TryJoinQueue( int guestId ) => false;
+		public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null ) => QueueJoinResult.Closed;
+		public QueueJoinResult CheckJoinRoom( int guestId ) => QueueJoinResult.Closed;
+		public void AppendToQueue( int guestId ) { }
+		public int JoinDifference( int preferredExcitement ) => 0;
+		public int GetQueuePosition( int guestId ) => -1;
+		public bool LeaveQueue( int guestId ) => false;
+		public bool RecomputeQueue( GuestPathGrid grid ) => false;
+		public int DirectionTowardsFront( int index ) => 0;
+		public bool PresentForBoarding( int guestId ) => false;
+	}
+
+	[TestMethod]
+	public void AGuestScoresASpecialRideThatAwaitsItsActivationZeroWhateverItsOpenWord()
+	{
+		var economy = ScienceEconomy();
+		var water = Build( economy, WaterRide );
+		var swing = Build( economy, RobotSwing );
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		simulation.Payments = bridge;
+		bridge.Link( 1, water.Id );
+		bridge.Link( 2, swing.Id );
+		var guest = simulation.SpawnInPark( 19, 5 );
+		var (pending, ordinary) = (new Ride( 1 ), new Ride( 2 ));
+		// [BIN:TPI-EXE:0x6101FD awaiting activation] the open ride still scores 0 while its record names it
+		Assert.IsTrue( bridge.AwaitsActivation( pending ) && !bridge.AwaitsActivation( ordinary ) );
+		Assert.AreEqual( 0u, simulation.HostScore( guest, pending, 77 ) );
+		Assert.AreEqual( 77u, simulation.HostScore( guest, ordinary, 77 ) );
+		economy.TpiSpecialRides!.Activate( water.Id );
+		Assert.IsFalse( bridge.AwaitsActivation( pending ) );
+		Assert.AreEqual( 77u, simulation.HostScore( guest, pending, 77 ), "the activated ride scores as any other" );
+		Assert.IsFalse( new GuestEconomyBridge( () => TpwEconomy(), simulation ).AwaitsActivation( pending ), "nothing awaits activation in Theme Park World" );
+	}
+
+	private static ParkEconomy TpwEconomy() => new( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
+
+	[TestMethod]
+	public void OnlyAnAdmittedBoardingPostsTheAdmissionEvents()
+	{
+		var economy = ScienceEconomy();
+		var water = Build( economy, WaterRide );
+		var slot = economy.TpiChallenges!.Slots[7];
+		slot.Status = ThemeParkIncChallengeStatus.Running;
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		bridge.Link( 1, water.Id );
+		Assert.IsTrue( water.Price > 0, "the Water Ride charges its UsageInfo.InitPricePerUse" );
+		// [BIN:TPI-EXE:0x61243A price refused] the price test refuses a guest who cannot pay before the state-20 entry posts anything
+		Assert.IsFalse( bridge.TryPayVisit( new Ride( 1 ), water.Price - 1, out _, out _ ) );
+		Assert.AreEqual( 0, slot.Value, "a refused boarding posts no admission event" );
+		Assert.IsTrue( bridge.TryPayVisit( new Ride( 1 ), water.Price, out _, out _ ) );
+		Assert.AreEqual( 1, slot.Value, "an admitted boarding posts type 17" );
+	}
+
+	[TestMethod]
+	public void TheActivationLinesUseTheWindowsOwnHeadsAndTheGamesWords()
+	{
+		var ui = new string[990];
+		ui[ThemeParkIncHud.SpecialRideTitle] = "Special Ride: ";
+		ui[ThemeParkIncHud.NameColumn] = "Name";
+		ui[ThemeParkIncHud.EmployeeAssignedColumn] = "Employee Assigned";
+		ui[ThemeParkIncHud.UndiscoveredAbilitiesNote] = "Undiscovered";
+		var abilities = Enumerable.Range( 0, 15 ).Select( index => $"Ability{index}" ).ToArray();
+		var staffTypes = Enumerable.Range( 0, 12 ).Select( index => index % 2 == 0 ? $"Type{index / 2}" : "" ).ToArray();
+		var names = Enumerable.Range( 0, 6 ).Select( role => new[] { $"Role{role}Name0", $"Role{role}Name1" } ).ToArray();
+		var strings = new OpenTPW.UI.Original.UiStringTable( "English", ui, new string[20], new string[4], new string[1], staffTypes: staffTypes, staffNames: names, abilities: abilities );
+		var rides = new ThemeParkIncSpecialRides();
+		rides.Add( 4, SkillSet( (9, 1), (11, 1) ) );
+		var gardener = Member( 300, ThemeParkIncStaffRole.Gardener, 10 );
+		rides.Assign( gardener, _ => false );
+		var lines = ThemeParkIncHud.ComposeSpecialRideLines( strings, new ThemeParkIncMissionWindowTests.FakeTexts(), "Water Ride", rides.Records[0], new[] { gardener }, 1, 0, false ).Split( '\n' );
+		// [BIN:TPI-EXE:0x5865AC activation columns] UITEXT 234, STAFFSTATES.str entry 8, UITEXT 983
+		CollectionAssert.AreEqual( new[] { "Special Ride: Water Ride", "Name - StaffStates8 - Employee Assigned", "Type5 - Ability10 - Role5Name0", "Type5 - Ability12 - -",
+			"UiText986[p50=1,p51=0]", "Undiscovered" }, lines );
+		var two = ThemeParkIncHud.ComposeSpecialRideLines( strings, new ThemeParkIncMissionWindowTests.FakeTexts(), "Water Ride", rides.Records[0], new[] { gardener }, 2, 5, true ).Split( '\n' );
+		Assert.AreEqual( "UiText987[p50=2,p51=5]", two[^1], "two tickets take UITEXT 987; with every ability known no note" );
 	}
 
 	// ---- the save ------------------------------------------------------------------------------
@@ -399,6 +509,16 @@ public class ThemeParkIncShareChallengeTests : ThemeParkIncScienceTestBase
 		Assert.IsFalse( ThemeParkIncSpecialRides.IsValid( saved with { Records = saved.Records.Concat( saved.Records ).Concat( saved.Records ).ToArray() } ), "more than four records" );
 		Assert.IsFalse( ThemeParkIncSpecialRides.IsValid( saved with { Activated = new[] { water.Id, water.Id } } ) );
 		Assert.IsFalse( ThemeParkIncSpecialRides.IsValid( saved with { Records = new[] { saved.Records[1], saved.Records[1] } } ), "a ride named twice" );
+	}
+
+	[TestMethod]
+	public void SpecialRidesWithoutTheStaffAreRefused()
+	{
+		var economy = ScienceEconomy();
+		var node = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
+		Assert.IsTrue( node.Remove( "TpiStaff" ) );
+		var refused = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() ) ) );
+		StringAssert.Contains( refused.Message, "special rides without the Theme Park Inc staff" );
 	}
 
 	[TestMethod]

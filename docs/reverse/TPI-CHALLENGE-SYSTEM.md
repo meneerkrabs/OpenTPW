@@ -459,13 +459,19 @@ loader `0x6244B0` stores `AllSpecialRidesType`, `AllSpecialRidesAbility` and `Al
 - **The activation window.** A click on a ride that is no photo booth, whose type is special and that `0x6242F0` does not free opens the activation window `0x5863E0`
   instead of the ride window (`0x5036CD`). Its Activate Ride button (control `0x4E24`, UITEXT 984) is enabled while `0x6243C0` holds: the ride has a record, the career's
   golden tickets reach the type's `UsageInfo.GoldenTicketCost` (`+0x174`) and every slot up to the first of type 7 is filled (a debug toggle `0xAA0720`, 0 in play,
-  overrides). The window lists the slots (UITEXT 982, 983), the tickets (UITEXT 986 or 987 with the cost and the career's tickets) and, while an ability its ride needs is
+  overrides). The window lists the slots under its column heads (control `0x4E28` UITEXT 234 "Name", `0x5865AC`; `0x4E29` entry 8 "Training" of the table
+  `0xA0D60C`, the language loader's `+0x724`, `STAFFSTATES.str`, `0x58662C`; `0x4E2A` UITEXT 983 "Employee Assigned", `0x5866B5`), the tickets (UITEXT 986 or 987 with the cost and the career's tickets) and, while an ability its ride needs is
   undiscovered (`0x624330`, the career's `+0x1064`), UITEXT 115.
 - **The activation** (`0x586D40` → `0x5E8230`): the cost is spent through `0x74C8C0` (its answer dropped: the button was enabled), a camera fly-over runs and, for a type
   whose `Bumper.BumperType` (`+0x150`) is nonzero, the track tool starts; then `mHasBeenOpenedAtSomePoint` (`+0x12D`) and `mBeenActivated` (`+0x12C`) are set and
   `0x624280` empties the ride's record (its id becomes 0; the slots keep their members and the count keeps the record), so `0x6242F0` frees the ride.
 - **Unactivated rides.** The attraction constructor opens every attraction (`+0x7C = 1`, `0x5DB5FB`), but the guests' candidate test `0x6101E0` refuses a ride that
-  `0x6242F0` does not free (`0x6101FD`), and so do the park measures that call it. The prebuilt Science park saved its four special rides closed (`mCanLoad` 0).
+  `0x6242F0` does not free (`0x6101FD`, whatever its open word), and so do the park measures that call it. The prebuilt Science park saved its four special rides closed
+  (`mCanLoad` 0). The activation writes no open word: an activated ride opens through the ride window's open toggle.
+- **The ride window's open toggle** (control `0x2EE4`, help ids 12 "Close attraction" and 11 "Open attraction"): a press (`0x57FF8E`) on a closed ride (`0x5E3C20`) opens it
+  through `0x50FB10(0)` and `0x5E1DC0` (open word 1, `VAR_RIDECLOSED` 0), else closes it (`0x5E1CD0`). The toggle is enabled (`0x57D370`) while the queue link `0x5E07B0`
+  holds and, closed, the open guard `0x5E1A50` passes (the park open, no weather closure, no running type-42 challenge on a `SpecialIngredient` ride) or, open, `0x5E1BC0`
+  passes (no running type-46 challenge for a ride); the window's own word `+8` (8, 0x1E, 0x1F) and the exit-cell link `0x5E0940` also disable it.
 
 ### 11.2 The trigger and the types
 
@@ -483,7 +489,12 @@ loader `0x6244B0` stores `AllSpecialRidesType`, `AllSpecialRidesAbility` and `Al
 ### 11.3 What OpenTPW measures and gates
 
 Measured: 17, 46, 52 and 58 (`ThemeParkIncChallenges.IsPorted`). The admission events ride on the boarding of Theme Park World's guest, which stands in for the state-20
-entry while Theme Park Inc's guests are Theme Park World's (`[EXT:tpi-twp-guest-rules]`, `ParkEconomy.RecordRideUse`); the native guests' state 20 takes the call over.
+entry while Theme Park Inc's guests are Theme Park World's (`[EXT:tpi-twp-guest-rules]`, `ParkEconomy.ThemeParkIncRideAdmitted`); they are posted only once the boarding
+is admitted (the original's price test `0x61243A` refuses a guest before state 20), and the native guests' state 20 takes the call over.
+
+Ported: the guests' refusal of a ride that awaits its activation (`0x6101FD`, whatever its open word), in the stand-in guests' candidate filter and the umbrella host score;
+the prebuilt park's saved open word (`mCanLoad` 0 closes an idle attraction, as the Theme Park World import does); and the ride window's open toggle, as a HUD button with the
+toggle's own help texts (`[EXT:tpi-text-hud]`).
 
 Gated (`[EXT:tpi-capability-gates]`):
 
@@ -493,9 +504,10 @@ Gated (`[EXT:tpi-capability-gates]`):
   Theme Park Inc's thought pick `0x60FC60`, the guests' P1), 53 and 56's rating byte (`0x5E3DF0`'s track-ride handle and coaster branches), 51 (its target 3180 is never
   placed: new zones place no special ride, `0x647BF0`'s special branch is not ported, and the coaster count `0x5B70E0` reads the track record's `+0x108`), and 57
   (its second value counts a photo booth's users; a booth is an add-on, which OpenTPW cannot place);
-- the guests' refusal of an unactivated ride (`0x6101FD`): OpenTPW imports the Science special rides open and its stand-in guests may ride them before their activation.
+- the open toggle's window word `+8` and its exit-cell link test `0x5E0940`: the queue link and the open guards are ported, the rest of the ride window is not.
 
-`[EXT:tpi-text-hud]`: the activation window is a text block and a button under the selection line, shown while a special ride that awaits its activation is selected.
+`[EXT:tpi-text-hud]`: the activation window is a text block and a button under the selection line, shown while a special ride that awaits its activation is selected;
+another selected ride shows the open toggle's button.
 
 No random number is drawn on these paths. The CRT `rand()` beside them is the advisor's close animation (`0x716A2C`, reached from the accept's and the final day's sender
 advice), which is not ported.

@@ -22,7 +22,9 @@ internal enum ThemeParkIncTable
 	/// <summary><c>STAT_TITLES.str</c> (<c>0xA0D660</c>).</summary>
 	StatTitles,
 	/// <summary><c>OBJECTIVE_COMPLETE.str</c> (<c>0xA0D66C</c>).</summary>
-	ObjectiveComplete
+	ObjectiveComplete,
+	/// <summary><c>STAFFSTATES.str</c> (<c>0xA0D60C</c>, the language loader's <c>+0x724</c>, <c>mUIStaffStates</c>, <c>0x446CEF</c>).</summary>
+	StaffStates
 }
 
 /// <summary>
@@ -69,6 +71,7 @@ internal sealed class ThemeParkIncTexts( UiStringTable strings, Func<string, Str
 			ThemeParkIncTable.Operation => "OPERATION.str",
 			ThemeParkIncTable.PromotionLevels => "PROMOTIONLEVELS.str",
 			ThemeParkIncTable.StatTitles => "STAT_TITLES.str",
+			ThemeParkIncTable.StaffStates => "STAFFSTATES.str",
 			_ => "OBJECTIVE_COMPLETE.str"
 		};
 		try

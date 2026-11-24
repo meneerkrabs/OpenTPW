@@ -79,12 +79,12 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x61A867 admission events] after its side effects the state-20 entry posts 0x5C8940(0x11, 1, ride +0x16, 0) (0x61A867), (0x34, 1, type, 0) (0x61A87F) and (0x3A, 1, type, 0) (0x61A897); then a
 	// type record whose +0xCC (UsageInfo.IsPhotoBooth) is nonzero posts (0x39, 1, the type of the booth's host thing +0x38, 1) (0x61A8BA pushl $1), any other (0x39, 1, type, 0) (0x61A902 pushl %ebx); no
 	// random number is drawn in 0x61A77E..0x61A8FF
-	// [EXT:tpi-twp-guest-rules] the events ride on the boarding of Theme Park World's guest (GuestEconomyBridge.TryPayVisit's Theme Park Inc branch, RecordRideUse), which stands in for the state-20
-	// entry while Theme Park Inc's guests are Theme Park World's; the guests' state machine (guest plan P3, 0x61A77E) takes this call over, and no second sender is added. The photo booth's branch is
-	// not reached: a booth is an add-on, which OpenTPW cannot place, so every admission takes the other branch
-	private void PostThemeParkIncAdmissionEvents( ParkObjectState item )
+	// [EXT:tpi-twp-guest-rules] the events ride on the admitted boarding of Theme Park World's guest (GuestEconomyBridge.TryPayVisit's Theme Park Inc branch, after TryAdmitVisit), which stands in for the
+	// state-20 entry while Theme Park Inc's guests are Theme Park World's; the guests' state machine (guest plan P3, 0x61A77E) takes this call over, and no second sender is added. The photo booth's
+	// branch is not reached: a booth is an add-on, which OpenTPW cannot place, so every admission takes the other branch
+	internal void ThemeParkIncRideAdmitted( int instance )
 	{
-		if ( TpiChallenges is not { } challenges )
+		if ( TpiChallenges is not { } challenges || !Rules.ThemeParkInc || !objects.TryGetValue( instance, out var item ) )
 			return;
 		var type = unchecked( (ushort)item.InfoId );
 		challenges.AddEvent( 17, 1, type, false );

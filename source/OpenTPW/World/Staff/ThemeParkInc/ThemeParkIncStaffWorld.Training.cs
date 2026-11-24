@@ -122,7 +122,8 @@ public sealed partial class ThemeParkIncStaffWorld
 					Rooms!.AddOccupancy( room.Thing, +1 );
 				SetState( economy, member, ThemeParkIncTraining.Training, turn );
 				economy.TpiStaff!.Hq.Release( economy.TpiStaff.Members, member );
-				// [BIN:TPI-EXE:0x634771 special ride release] the HQ's release calls 0x6241B0 for a member with an ability before it looks at its own slots
+				// [BIN:TPI-EXE:0x634771 special ride release] the HQ's release 0x634730 calls 0x6241B0 for a member with an ability, after its trained-staff count and before its own slot; the special-ride
+				// table and the HQ's slots do not touch each other, so releasing the HQ's side first leaves the same state
 				economy.ThemeParkIncReleaseSpecialRides( member );
 				break;
 			case WalkResult.Stuck:

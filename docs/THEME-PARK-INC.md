@@ -334,8 +334,9 @@ his staff type and new ability, and leaves it when he goes to train again. Selec
 title, the staff slots, the golden tickets needed and the note on undiscovered abilities) and an Activate Ride button, enabled once every slot is filled and the career
 holds the ride's `UsageInfo.GoldenTicketCost`; the button spends the tickets and marks the ride activated (`[EXT:tpi-text-hud]` stands in for the original's activation
 window). The activation's camera fly-over and the track tool it starts for a special track ride are not ported (`[EXT:tpi-capability-gates]`). The table and the
-activated rides are saved in the Science continuation save. OpenTPW imports the four Science special rides open and its Theme Park World guests may ride them before their
-activation; the original saved them closed and its guests skip a ride that awaits its activation (`0x6101FD`), which the native guests will port. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
+activated rides are saved in the Science continuation save. The prebuilt park's attractions keep their saved open word (the four special rides were saved closed), guests
+skip a ride that awaits its activation whatever its open word (`0x6101FD`), and the activation does not open the ride: a selected ride shows the ride window's open toggle as a
+HUD button (`[EXT:tpi-text-hud]`), enabled while its queue joins a path and the open guards pass. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
 but its completion waits for the mission window's complete button, which the slice does not offer yet, so a career stays at mission 0 unless the cheats extension's
 Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. A win
 pays its share prize and raises the share price, a slot's first loss lowers it (the shares game, below). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by

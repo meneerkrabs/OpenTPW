@@ -35,7 +35,7 @@ public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOf
 /// <param name="IsSpecial">Theme Park Inc only: <c>Info.IsSpecial</c> (+0x5C): a special ride's life gauge loses nothing to wear or to a breakdown (<c>0x5E26FB</c>, <c>0x5E493B</c>).</param>
 /// <param name="RunsContinuously"><c>Info.RunsContinuously</c> (Theme Park Inc +0x6C, the thing flag +0x43 bit 1): the ride wears whether or not its script reports it running (<c>0x5E2604</c>).</param>
 /// <param name="BreakdownImminent">Theme Park Inc only: <c>RideBreakDown.Imminent</c> (+0x3C8): below this state of repair byte a mechanic's search takes the ride and requests its maintenance, and the wear posts the imminent advice; 0 without the key.</param>
-/// <param name="SkillSet">Theme Park Inc only: <c>SkillSet[n].Num</c> (type record +0x380 + 4 × n, n = 0..13): the staff trained in ability n + 1 a special ride's activation needs; null for a synthetic object.</param>
+/// <param name="SkillSet">Theme Park Inc only: <c>SkillSet[n].Num</c> (type record +0x380 + 4 × n, n = 0..13): the staff trained in ability n + 1 a special ride's activation needs; null in Theme Park World and for a synthetic object.</param>
 /// <param name="BreakdownWarnPlayer">Theme Park Inc only: <c>RideBreakDown.WarnPlayer</c> (+0x3CC): below this state of repair byte the wear reports the ride worn (VAR_WORN); 0 without the key.</param>
 public sealed record EconomyObjectInfo(
 	int InfoId,
@@ -211,7 +211,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			// [BIN:TPI-EXE:0x623DC0 skill sets] the special-ride record builder reads the type record's fourteen dwords +0x380 + 4n, the SkillSet[n].Num keys (key table entry 195, an array of 14 after
 			// Attraction[3].NewBonus), as the staff each ability n + 1 needs; the prebuilt Science park's records (1180: abilities 5 and 14; 1160: 10; 1170: 2 and 14; 1110: 10, 12 and 12) are the
 			// files' last values of those keys
-			SkillSet: Enumerable.Range( 0, ThemeParkIncSpecialRides.SkillSets ).Select( set => settings.GetInt( $"SkillSet[{set}].Num", 0, optional: true ) ).ToArray() );
+			SkillSet: GameEditions.IsThemeParkInc
+				? Enumerable.Range( 0, ThemeParkIncSpecialRides.SkillSets ).Select( set => settings.GetInt( $"SkillSet[{set}].Num", 0, optional: true ) ).ToArray() : null );
 	}
 
 	/// <summary>

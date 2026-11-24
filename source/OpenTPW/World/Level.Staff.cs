@@ -355,6 +355,7 @@ public partial class Level
 		var list = ThemeParkIncObjectListOf( world, instances );
 		economy.RestoreThemeParkIncObjectList( list );
 		ImportThemeParkIncSpecialRides( economy, world, instances );
+		ImportThemeParkIncOpenWords( world, instances );
 		// a thing of the list that no object of OpenTPW's is (the tool entry 1710 of the prebuilt) is still a thing of the original's park: its slot is held, so its id is not handed out again
 		// while the list names it
 		// [BIN:TPI-EXE:0x64D759 free list rebuild] after the thing list's ENOD the World loader rebuilds the free list from the slots no saved thing occupies (0xAA18C4 on, stride 20, the head

@@ -848,28 +848,29 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	}
 
 	/// <summary>
-	/// The prebuilt Water Ride awaits its activation: selected, it shows its staff slot and its golden ticket and the Activate Ride button stays disabled; with a gardener in its slot and a ticket
-	/// in hand the button activates it.
+	/// The prebuilt Water Ride awaits its activation: selected, it shows its staff slot and its golden ticket, and the Activate Ride button stays disabled; with a gardener in its slot and a ticket
+	/// in hand the button activates it. The prebuilt park saved it closed, and the activation does not open it: the ride window's open toggle is offered, enabled only while the ride's queue joins a path.
 	/// </summary>
 	private void PlanSpecialRide()
 	{
 		OriginalObject? water = null;
 		Do( "select the Water Ride", () =>
 		{
-			water = Level.Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.Entry.InfoId == 1160 );
-			Require( water != null && Level.GetEconomyInstance( water ) is { } instance && Level.Park!.Economy.IsThemeParkIncSpecialRidePending( instance ),
-				"the prebuilt Science park's Water Ride awaits its activation" );
-			Log.Info( $"Theme Park Inc smoke: special rides open at the start: {string.Join( ", ", Level.Objects.Objects.Where( item => item.Entry.InfoId is 1110 or 1160 or 1170 or 1180 ).Select( item => $"{item.Entry.InfoId} {(item.IsOpen ? "open" : "closed")}" ) )}" );
-			Hud.SelectForSmoke( water! );
+			var specials = Level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.InfoId is 1110 or 1160 or 1170 or 1180 ).ToList();
+			Require( specials.Count == 4 && specials.All( item => Level.GetEconomyInstance( item ) is { } instance && Level.Park!.Economy.IsThemeParkIncSpecialRidePending( instance ) ),
+				"the prebuilt Science park's four special rides await their activation" );
+			Require( specials.All( item => !item.IsOpen ), "the prebuilt park's special rides keep their saved open word 0: closed" );
+			water = specials.Single( item => item.Entry.InfoId == 1160 );
+			Hud.SelectForSmoke( water );
 		} );
 		Wait( "the activation lines show", 2 );
 		Do( "the activation lines name the slot and the ticket", () =>
 		{
-			Require( Hud.Screen.Find( "specialRideLines" ) is { Visible: true } && Hud.Screen.Find( "specialRideActivate" ) is { Visible: true, Enabled: false },
-				"the lines show and the button waits for the staff and the ticket" );
+			Require( Hud.Screen.Find( "specialRideLines" ) is { Visible: true } && Hud.Screen.Find( "specialRideActivate" ) is { Visible: true, Enabled: false } && Hud.Screen.Find( "rideDoor" ) is { Visible: false },
+				"the lines show, the button waits for the staff and the ticket, and a pending ride offers no open toggle" );
 			var lines = LabelText( "specialRideLines" );
-			Require( lines.StartsWith( Hud.Strings.Entry( ThemeParkIncHud.SpecialRideTitle ), StringComparison.Ordinal ) && lines.Contains( Hud.Strings.Ability( 10 ), StringComparison.Ordinal ),
-				"the lines carry UITEXT 116 and the Water/Drainage slot" );
+			Require( lines.StartsWith( Hud.Strings.Entry( ThemeParkIncHud.SpecialRideTitle ), StringComparison.Ordinal ) && lines.Contains( Hud.Strings.Ability( 10 ), StringComparison.Ordinal )
+				&& lines.Contains( Hud.Strings.Entry( ThemeParkIncHud.NameColumn ), StringComparison.Ordinal ), "the lines carry UITEXT 116, the window's heads and the Water/Drainage slot" );
 			var economy = Level.Park!.Economy;
 			var instance = Level.GetEconomyInstance( water! )!.Value;
 			economy.TpiSpecialRides!.Assign( new ThemeParkIncStaffMember( 900, ThemeParkIncStaffRole.Gardener, 0, 20000, 20, 0, 0 ) { ThingId = 900, Ability = 10 }, _ => false );
@@ -879,14 +880,25 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Wait( "the button is enabled", 2 );
 		Do( "press Activate Ride", () => Click( Hud.Screen, "specialRideActivate" ) );
 		Wait( "the activation", 2 );
-		Do( "the Water Ride is activated", () =>
+		Do( "the Water Ride is activated and stays closed", () =>
 		{
 			var economy = Level.Park!.Economy;
 			var instance = Level.GetEconomyInstance( water! )!.Value;
 			Require( economy.TpiSpecialRides!.IsActivated( instance ) && !economy.IsThemeParkIncSpecialRidePending( instance ), "the button activated the ride" );
 			Require( Hud.Screen.Find( "specialRideLines" ) is { Visible: false }, "the lines are gone with the selection" );
+			Require( !water!.IsOpen, "the activation does not open the ride (0x5E8230 writes no open word)" );
+			Hud.SelectForSmoke( water );
+		} );
+		Wait( "the ride's open toggle shows", 2 );
+		Do( "the open toggle follows the open guard", () =>
+		{
+			var door = Level.ThemeParkIncDoorOf( water! );
+			var linked = water!.Runtime.Visitors is not RideVisitorBridge bridge || ParkGate.QueueConnected( Level.Guests!.Grid, bridge );
+			Require( door is { Shown: true, Open: false } && door.Enabled == linked && Hud.Screen.Find( "rideDoor" ) is UiButton { Visible: true } button && button.Enabled == linked,
+				$"the activated ride offers its open toggle, enabled only while its queue joins a path ({door}, queue linked {linked})" );
 		} );
 	}
+
 
 	private void PlanHandyman()
 	{

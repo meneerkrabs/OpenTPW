@@ -47,4 +47,9 @@ public interface IGuestPayments
 	void ArrivalCreated() { }
 	/// <summary>A guest that paid its admission reached the stop to leave after <paramref name="days"/> days in the park: the analyser's stay ring takes it (tp.exe <c>0x004C7600</c>).</summary>
 	void StayEnded( int days ) { }
+	/// <summary>
+	/// Theme Park Inc: the attraction is a special ride that awaits its activation (<c>0x6242F0</c> does not free it), which a guest's attraction score refuses (<c>0x6101FD</c>). False in Theme Park World
+	/// and for an attraction without an economy record.
+	/// </summary>
+	bool AwaitsActivation( IRideVisitorBridge attraction ) => false;
 }

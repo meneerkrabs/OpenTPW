@@ -580,10 +580,12 @@ public sealed class ThemeParkIncNativeGuestTests
 		Assert.IsFalse( plainSave.ThemeParkIncNativeGuests );
 		var (on, _, _) = Rig();
 		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => on.RestoreSnapshot( plainSave ) ).Message, "without Theme Park Inc's native guest states" );
-		Assert.ThrowsException<System.IO.InvalidDataException>( () => on.RestoreSnapshot( plainSave with { SchemaVersion = 9 } ), "a schema 9 Theme Park Inc save with the switch on" );
+		Assert.AreEqual( 9, plainSave.SchemaVersion, "no schema bump: the members are optional" );
+		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( plainSave ) ).Contains( nameof( GuestSimulationSnapshot.ThemeParkIncNativeGuests ) ),
+			"a switch-off save writes neither member" );
 		var (alsoOff, _, _) = Rig( native: false );
-		alsoOff.RestoreSnapshot( plainSave with { SchemaVersion = 9 } );
-		Assert.AreEqual( plain.ComputeStateHash(), alsoOff.ComputeStateHash(), "with the switch off a schema 9 save restores as before" );
+		alsoOff.RestoreSnapshot( plainSave );
+		Assert.AreEqual( plain.ComputeStateHash(), alsoOff.ComputeStateHash(), "with the switch off a plain save restores as before" );
 	}
 
 	[TestMethod]
@@ -660,6 +662,19 @@ public sealed class ThemeParkIncNativeGuestTests
 			else
 				Assert.AreEqual( (1, fee, true), (payments.Admitted, tpi.FeesPaid, tpi.Paid) );
 		}
+	}
+
+	[TestMethod]
+	public void TheVerdictsProductsRoundOnceFromTheExactInteger()
+	{
+		// fildll loads 2^24 + 1 exactly; × 1.25f is 20971521.25, rounded once to 24 bits: 20971522. A float conversion first gives 2^24 and 20971520
+		Assert.AreEqual( 20971522d, GuestSimulation.X87SingleProduct( 1.25f, 16777217 ) );
+		Assert.AreEqual( 20971520f, (float)16777217 * 1.25f, "the double rounding the port avoids" );
+		// a tie rounds to even: (2^25 + 1) × 0.5 = 2^24 + 0.5, then 2^24
+		Assert.AreEqual( 16777216d, GuestSimulation.X87SingleProduct( 0.5f, (1u << 25) + 1 ) );
+		Assert.AreEqual( 30d, GuestSimulation.X87SingleProduct( 1.5f, 20 ) );
+		Assert.AreEqual( 0d, GuestSimulation.X87SingleProduct( 0.75f, 0 ) );
+		Assert.AreEqual( 4294967295d * 0.75, GuestSimulation.X87SingleProduct( 0.75f, uint.MaxValue ), 512d );
 	}
 
 	[TestMethod]
@@ -831,6 +846,7 @@ public sealed class ThemeParkIncNativeGuestTests
 		var (plain, _, _) = Rig( native: false );
 		plain.SpawnInPark( 12, 17 );
 		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( plain.CaptureSnapshot() ) ).Contains( "\"Tpi\"" ), "a switch-off save holds no native block" );
-		Assert.ThrowsException<System.IO.InvalidDataException>( () => resumed.RestoreSnapshot( saved with { SchemaVersion = 9 } ), "a schema 9 save cannot hold the block" );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( saved with { ThemeParkIncNativeGuests = false } ),
+			"a native block in a save that says it ran without the native states" );
 	}
 }

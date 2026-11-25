@@ -53,6 +53,25 @@ def f32(value: float) -> float:
     return struct.unpack('<f', struct.pack('<f', value))[0]
 
 
+def x87_single_product(factor: float, integer: int) -> float:
+    """GuestSimulation.X87SingleProduct: the exact product rounded once to a 24-bit significand (nearest even)."""
+    from fractions import Fraction
+    exact = Fraction(factor) * integer
+    if exact == 0:
+        return 0.0
+    sign = -1 if exact < 0 else 1
+    exact = abs(exact)
+    exponent = exact.numerator.bit_length() - exact.denominator.bit_length()
+    if Fraction(2) ** exponent > exact:
+        exponent -= 1
+    unit = Fraction(2) ** (exponent - 23)
+    quotient, remainder = divmod(exact, unit)
+    half = unit / 2
+    if remainder > half or remainder == half and quotient % 2 == 1:
+        quotient += 1
+    return sign * float(quotient * unit)
+
+
 def add(meter: float, delta: float) -> float:
     """MeterMath.Add: the clamped single sum."""
     value = f32(meter + delta)
@@ -759,8 +778,8 @@ def main(cases: int) -> int:
         minimum = rng.choice([0, 20, rng.randrange(0, 60)])
         multipliers = [f32(rng.choice([0.75, 0.5, rng.uniform(0.1, 1.0)])), f32(rng.choice([1.25, rng.uniform(1.0, 2.0)])), f32(rng.choice([2.0, rng.uniform(1.5, 4.0)]))]
         opinion = [rng.randrange(0, 101) for _ in range(4)]
-        points = rng.choice([0, rng.randrange(0, 200), rng.randrange(0, 5000)])
-        fee = rng.choice([0, minimum, rng.randrange(0, 200), rng.randrange(0, 2000)])
+        points = rng.choice([0, rng.randrange(0, 200), rng.randrange(0, 5000), rng.randrange(1 << 26, 1 << 32)])
+        fee = rng.choice([0, minimum, rng.randrange(0, 200), rng.randrange(0, 2000), rng.randrange(1 << 24, 1 << 31)])
         seed = rng.randrange(0, 1 << 32)
         world = verdict.object(0x1EAC00, {SEED: ('I', seed)})
         verdict.write(WORLD_POINTER, 'I', world)
@@ -778,11 +797,11 @@ def main(cases: int) -> int:
         if value <= minimum and fee <= minimum:
             port = (3, [])
         else:
-            a, b = f32(float(value)), f32(float(fee))
-            if f32(multipliers[1] * a) <= b:
-                port = (0, [(opinion[0], 0)]) if b >= f32(multipliers[2] * a) else (1, [(opinion[1], 0)])
+            b = fee
+            if x87_single_product(multipliers[1], value) <= b:
+                port = (0, [(opinion[0], 0)]) if b >= x87_single_product(multipliers[2], value) else (1, [(opinion[1], 0)])
             else:
-                port = (2, [(opinion[2], 0)]) if b <= f32(multipliers[0] * a) else (3, [(opinion[3], 0)])
+                port = (2, [(opinion[2], 0)]) if b <= x87_single_product(multipliers[0], value) else (3, [(opinion[3], 0)])
         if native != (*port, replica_world.state):
             bad['verdict'] += 1
             if bad['verdict'] <= 5:

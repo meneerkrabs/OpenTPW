@@ -69,7 +69,7 @@ public sealed class GuestSettings
 	internal ThemeParkIncGuestStartSettings? TpiGuestStart { get; set; }
 	/// <summary>
 	/// Theme Park Inc only: the Standard words Theme Park Inc's own guest states read, by address (<see cref="ThemeParkIncGuestSettings"/>); null in Theme Park World and where the Standard object
-	/// could not be read. Only <see cref="GuestSimulation.ThemeParkIncNativeGuests"/> reads it.
+	/// could not be read, and unless the level runs the native guest states (<see cref="Load"/>). Only <see cref="GuestSimulation.ThemeParkIncNativeGuests"/> reads it.
 	/// </summary>
 	public ThemeParkIncGuestSettings? TpiNative { get; set; }
 
@@ -116,7 +116,8 @@ public sealed class GuestSettings
 	public DecisionVariables DecisionVariables => new( (uint)DecisionNewRideDays, (uint)DecisionNewRideMultiplier, (uint)DecisionIndoorRainMultiplier );
 
 	/// <summary>Loads the theme balance: <c>levels/Standard.sam</c> overridden by <c>levels/&lt;theme&gt;/Standard.sam</c>.</summary>
-	public static GuestSettings Load( string levelName )
+	/// <param name="themeParkIncNativeGuests">Whether the level runs Theme Park Inc's native guest states: only then is <see cref="TpiNative"/> read.</param>
+	public static GuestSettings Load( string levelName, bool themeParkIncNativeGuests = false )
 	{
 		var values = new Dictionary<string, string[]>( StringComparer.OrdinalIgnoreCase );
 		foreach ( var path in new[] { "/levels/Standard.sam", $"/levels/{levelName}/Standard.sam" } )
@@ -128,7 +129,8 @@ public sealed class GuestSettings
 		if ( GameEditions.IsThemeParkInc )
 		{
 			settings.TpiGuestStart = ThemeParkIncGuestStartSettings.Parse( values );
-			settings.TpiNative = ThemeParkIncGuestSettings.Load( ParkEconomy.GameCareerFiles.Instance.Read, levelName );
+			if ( themeParkIncNativeGuests )
+				settings.TpiNative = ThemeParkIncGuestSettings.Load( ParkEconomy.GameCareerFiles.Instance.Read, levelName );
 		}
 		return settings;
 	}

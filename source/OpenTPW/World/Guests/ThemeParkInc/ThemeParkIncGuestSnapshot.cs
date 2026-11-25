@@ -1,8 +1,8 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The saved form of a native Theme Park Inc guest's own fields (<see cref="ThemeParkIncGuestRecord"/>, guest snapshot schema 10): every word of the constructor the shared guest does not hold, so
-/// that the later phases of the port read their fields without a new schema. Absent on every other guest; a save without it holds no native guest.
+/// The saved form of a native Theme Park Inc guest's own fields (<see cref="ThemeParkIncGuestRecord"/>, the optional <see cref="GuestSnapshot.Tpi"/>): every word of the constructor the shared guest does not hold, so
+/// that the later phases of the port read their fields without a new member. Absent on every other guest; a save without it holds no native guest.
 /// </summary>
 public sealed record ThemeParkIncGuestSnapshot
 {

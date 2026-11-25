@@ -169,8 +169,8 @@ public sealed record GuestSnapshot
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? TpiPrankCode { get; init; }
 	/// <summary>
-	/// The fields of a guest running Theme Park Inc's own state machine (<see cref="Guest.Tpi"/>, schema 10); absent on every other guest and in older saves, whose guests run the Theme Park World
-	/// rules (<c>[EXT:tpi-twp-guest-rules]</c>).
+	/// The fields of a guest running Theme Park Inc's own state machine (<see cref="Guest.Tpi"/>); absent on every other guest and in saves made before it, whose guests run the Theme Park World
+	/// rules (<c>[EXT:tpi-twp-guest-rules]</c>). An optional member needs no schema bump: a build without it refuses a save that carries it (unmapped members are disallowed).
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public ThemeParkIncGuestSnapshot? Tpi { get; init; }
@@ -479,17 +479,14 @@ public sealed record GuestSimulationSnapshot
 	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped. Versions 1 to 3 (before
 	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters, versions 1 to 5 (before balloons and costumes)
 	/// without either, versions 1 to 6 (before thought bubbles) without a bubble, versions 1 to 7 (before the thing pool) with guest ids that are a simulation's own counter,
-	/// versions 1 to 8 (before the arrival walk on the cell map) with guests that walk an arrival lane off the grid, which the restore turns into guests on the map, versions 1 to 9
-	/// (before Theme Park Inc's native guest states) with no native Theme Park Inc guest (<see cref="GuestSnapshot.Tpi"/>).</summary>
-	public const int CurrentSchemaVersion = 10;
-	/// <summary>The first schema that may hold Theme Park Inc's native guest block (<see cref="GuestSnapshot.Tpi"/>).</summary>
-	public const int ThemeParkIncNativeSchemaVersion = 10;
+	/// versions 1 to 8 (before the arrival walk on the cell map) with guests that walk an arrival lane off the grid, which the restore turns into guests on the map.</summary>
+	public const int CurrentSchemaVersion = 9;
 	/// <summary>The first schema whose guest ids are slots of the park's thing pool (tp.exe 0x00516270): earlier saves count their guests, and keep those ids.</summary>
 	public const int ThingPoolSchemaVersion = 8;
 	/// <summary>The first schema whose guests all walk the cell map, the arrival walk's states 0 to 5 included (tp.exe 0x004FF520 and the states around it): earlier saves may hold guests on an arrival lane.</summary>
 	public const int ArrivalWalkSchemaVersion = 9;
-	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 10 as written now, 9 before Theme Park Inc's native guest states, 8 before the arrival walk on the cell map, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
-	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 9 as written now, 8 before the arrival walk on the cell map, 7 before the thing pool, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>
@@ -524,8 +521,8 @@ public sealed record GuestSimulationSnapshot
 	public required long Admissions { get; init; }
 	public required int Departed { get; init; }
 	/// <summary>
-	/// Whether the simulation ran Theme Park Inc's native guest states (<see cref="GuestSimulation.ThemeParkIncNativeGuests"/> with the park's settings, schema 10); absent (false) otherwise and in
-	/// older saves. A restore refuses a save whose value differs from the running simulation's: native guest blocks need the native machine, and a native park cannot continue guests of the
+	/// Whether the simulation ran Theme Park Inc's native guest states (<see cref="GuestSimulation.ThemeParkIncNativeGuests"/> with the park's settings); absent (false) otherwise and in
+	/// saves made before it (an optional member, no schema bump). A restore refuses a save whose value differs from the running simulation's: native guest blocks need the native machine, and a native park cannot continue guests of the
 	/// Theme Park World rules.
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]

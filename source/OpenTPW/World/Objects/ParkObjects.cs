@@ -855,14 +855,20 @@ public sealed class ParkObjects
 	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
 	// [BIN:TPW-EXE:0x0051A2F0 vehicle on demand] the bus, seaplane and Ferry are created by the vehicle dispatch the first time each is sent (0x004DB090 at 0x0051A57E), never at setup
 	// End is not a setup object either: ParkFinale creates it only on a new research completion that starts the finale (0x503D40 -> 0x516B00, after advice 0xA7: Instant Action, and the Full Simulation when the player's records show every park complete, 0x5B0C40), and its dismissal destroys it (0x48A970 -> 0x516C10); see docs/reverse/INSTANT-ACTION-FINALE.md.
+	/// <summary>
+	/// Whether the park's arrival vehicles come from Theme Park Inc's dispatch (<c>0x64FB90</c>) because the level runs Theme Park Inc's native guest states (the level's
+	/// <c>RunsThemeParkIncNativeGuests</c>): then no Bus is placed at setup (<c>[EXT:tpi-bus-from-setup]</c> holds only without them).
+	/// </summary>
+	public bool ThemeParkIncDispatchedVehicles { get; init; }
+
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>
 	internal IEnumerable<(int Placed, float Share)> AddDefaultFixedItemSteps()
 	{
 		// [EXT:tpi-bus-from-setup] a Theme Park Inc world without a prebuilt save gets its Bus at setup where the Theme Park World arrival vehicles are placed on first dispatch: no original reading of how Theme Park Inc places its arrival vehicle is available, and a bus standing from the start keeps the viewer's park alive
-		// [BIN:TPI-EXE:0x64FB90 vehicle dispatch] Theme Park Inc's native guests (GuestSimulation.ThemeParkIncNativeGuests) get their vehicle from the dispatch, which builds a new one each time: no Bus at setup
-		var setupBus = GameEditions.IsThemeParkInc && !GuestSimulation.ThemeParkIncNativeGuestsRequested;
+		// [BIN:TPI-EXE:0x64FB90 vehicle dispatch] Theme Park Inc's native guests (ThemeParkIncDispatchedVehicles) get their vehicle from the dispatch, which builds a new one each time: no Bus at setup
+		var setupBus = GameEditions.IsThemeParkInc && !ThemeParkIncDispatchedVehicles;
 		var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && (entry.SettingsName is "Gates" or "Lights" || setupBus && entry.SettingsName == "Bus") ).ToList();
 		var count = 0;
 		foreach ( var entry in entries )

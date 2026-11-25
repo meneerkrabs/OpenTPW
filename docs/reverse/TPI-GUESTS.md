@@ -19,7 +19,7 @@ The walk step, the route search, the wander and the speed stay Theme Park World'
 | `World/Guests/ThemeParkInc/ThemeParkIncGuestSettings.cs` | the Standard words the states read, by address |
 | `World/Guests/ThemeParkInc/GuestSimulation.ThemeParkInc.cs` | the setter, the dispatch, the pre-update, the weather rule, the thought pick, the constructor's tail, the P1 states |
 | `World/Guests/ThemeParkInc/GuestSimulation.ThemeParkIncArrivals.cs` | the arrival guest, the vehicle dispatch, the pick-up test |
-| `World/Guests/ThemeParkInc/ThemeParkIncGuestSnapshot.cs` | the save block (guest snapshot schema 10) |
+| `World/Guests/ThemeParkInc/ThemeParkIncGuestSnapshot.cs` | the save block (an optional member of guest snapshot schema 9) |
 
 ## The tick
 
@@ -116,7 +116,7 @@ The vehicles are the features `bus`, `heli` and `mono`. On the switch-on path th
 | 1 | `0x61A082` | once the crossing gate `0x6501D0` allows: a booth from a draw, a point in it from two more, state 2 (unreachable) |
 | 2 | `0x615A80` | the speed term (50 while the bus waits at status 3, else 25 for one id in four), the walk; arrived: 4 with the park open, 3 closed |
 | 3 | `0x615B40` | closed or the gate shut: the wait counts down, and at 0 the walk to the bus stop and state 22. Open and paid, as the head of its cell's list: an entrance from a draw, state 5. Open and unpaid: the booth scan `0x615BEB` (only `id % N` and its `^ 1` partner are compared, bug-compatible), state 2 |
-| 4 | `0x615E90` | the verdict `0x6157D0` (`BoothVerdict`'s formula over Theme Park Inc's words; 24-bit products, exact below 2^24); see the list below |
+| 4 | `0x615E90` | the verdict `0x6157D0` (`BoothVerdict`'s formula over Theme Park Inc's words; 24-bit products: the exact integer times the single-precision factor, rounded once to single precision as `fmuls` does at control word `0x7F`); see the list below |
 | 5 | `0x616790` | closed or the gate shut: the booth block `0x6168D6` (it compares the cell with booth k but routes to booth i, bug-compatible), state 3. Open: the walk; arrived: the visitor number, state 6 |
 | 8 | `0x61A382` | the saved state comes back once the turn is past the stamp plus 10 (unreachable in P1) |
 | 22 | `0x618620` | the recall "Make up your mind!" (exit counter above 0, happiness byte nonzero, park open, on a park cell) gives state 6 and walk mask 0. Otherwise the walk: arrived, heading 0x7FF (heli or mono) or 0x400 and state 30; stuck, the bus stop again |
@@ -150,14 +150,14 @@ phases port (7, 9..21, 24..26) are unreachable in P1, and the dispatch refuses t
 
 ## Save
 
-Guest snapshot schema 10 adds an optional block `GuestSnapshot.Tpi` (`ThemeParkIncGuestSnapshot`) with every field of the record. A guest without it
-writes nothing new, so a save made with the switch off differs from schema 9 only by its version number. The block joins the state hashes only on a
-native guest.
+The guest snapshot stays at schema 9. A native guest writes an optional block `GuestSnapshot.Tpi` (`ThemeParkIncGuestSnapshot`) with every field of
+the record. A guest without it writes nothing new, so a save made with the switch off is byte for byte the save of a build without this phase. The
+block joins the state hashes only on a native guest, so the hashes and the determinism pins of every switch-off park are unchanged.
 
-The snapshot also records whether the park ran the native machine (`GuestSimulationSnapshot.ThemeParkIncNativeGuests`). A restore refuses a save whose
-value differs from the running simulation's:
+The snapshot also records whether the park ran the native machine, in the optional member `GuestSimulationSnapshot.ThemeParkIncNativeGuests`
+(written only when true). A restore refuses a save whose value (absent counts as false) differs from the running simulation's:
 - a save with native blocks into a park running with the switch off (its guests would need the native machine);
-- a schema 9 save, or a schema 10 save made with the switch off, into a Theme Park Inc park running with it on (its guests run Theme Park World's rules).
+- a save without the member, or with it false, into a Theme Park Inc park running with the switch on (its guests run Theme Park World's rules).
 
 A restore also refuses a native guest in a state this build cannot run (7, 9..21 and 24..26, or a spot animation 8 that returns to one), so a save of a
 later phase or an edited save never stops a guest's update mid-tick.
@@ -172,6 +172,8 @@ later phase or an edited save never stops a guest's update mid-tick.
 
 A test checks every address against its key through the SAM binding.
 
+The level reads these settings (`GuestSettings.TpiNative`) only when the switch is on; a switch-off park never loads them.
+
 ## Verification
 
 - `tools/ppc-analysis/oracle_x86/tpi_guest_states_oracle.py` runs four routines natively at control word `0x7F` and compares them with the port: the catch test over -1..40, the setter's P1
@@ -182,6 +184,7 @@ A test checks every address against its key through the SAM binding.
 
 - P2: idle (state 6 in full), wander, spot animations, litter.
 - P3: rides and queues.
-- P4: pranks, then the switch-over.
+- P4: pranks, then the switch-over. Once the switch is on by default, a Science save made with it off (every save before then) is refused by the
+  mismatch rule above; P4 has to document that refusal in `docs/PARK-SAVES.md`.
 - P5: infodesk, whinging and rumours.
 - P6: the guard's chase, carry and first aid.

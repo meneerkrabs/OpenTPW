@@ -66,6 +66,11 @@ research lab a park file brings, the measurable challenges, the career and the m
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
+The hidden developer switch `--tpi-native-guests` (off by default) runs Theme Park Inc's own guest state machine for the parts ported so far
+(arrival, the ticket booth and leaving; [TPI-GUESTS.md](reverse/TPI-GUESTS.md)); without it the guests keep Theme Park World's rules
+(`[EXT:tpi-twp-guest-rules]`). Saves made with and without it cannot be continued with the other setting
+([PARK-SAVES.md](PARK-SAVES.md#experimental-science-continuation-on-desktop)).
+
 The browser setup also offers the same experimental route with an explicit Arabian,
 Science or Water choice and the player's own extracted `Data` folder (the Personnel File start screen is not offered in the browser yet: phase 1 keeps this up-front
 choice, because the browser copies a theme's files at setup and its on-demand copy for a zone chosen later is not built for Theme Park Inc). It imports the

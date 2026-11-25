@@ -7,7 +7,7 @@ public sealed partial class Level
 	/// <summary>Gives the native guests (switch on) this level's objects and entertainers and the removal message; nothing for the Theme Park World rules.</summary>
 	private void AttachThemeParkIncGuestWorld()
 	{
-		if ( Guests is not { ThemeParkIncNativeGuests: true } guests || !GameEditions.IsThemeParkInc )
+		if ( !RunsThemeParkIncNativeGuests || Guests is not { RunsThemeParkIncNativeGuests: true } guests )
 			return;
 		var world = new ThemeParkIncGuestWorld( this );
 		guests.ThemeParkIncWorld = world;

@@ -4341,8 +4341,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Error( snapshot.ThemeParkIncNativeGuests
 				? "The save was made with Theme Park Inc's native guest states on (--tpi-native-guests), which this park runs without."
 				: "The save was made without Theme Park Inc's native guest states, which this park runs (--tpi-native-guests)." );
-		if ( snapshot.ThemeParkIncNativeGuests && snapshot.SchemaVersion < GuestSimulationSnapshot.ThemeParkIncNativeSchemaVersion )
-			Error( $"A schema {snapshot.SchemaVersion} save cannot hold Theme Park Inc's native guest states." );
 		if ( snapshot.VisitorCount < 0 )
 			Error( $"VisitorCount {snapshot.VisitorCount} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
@@ -4521,8 +4519,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
 			if ( guest.Tpi is { } native )
 			{
-				if ( snapshot.SchemaVersion < GuestSimulationSnapshot.ThemeParkIncNativeSchemaVersion || !guest.TpiPrankCode.HasValue || NativeTpi == null || !snapshot.ThemeParkIncNativeGuests )
-					Error( $"Guest {guest.Id} holds a Theme Park Inc native block that a schema {snapshot.SchemaVersion} save of this park cannot hold." );
+				if ( !guest.TpiPrankCode.HasValue || NativeTpi == null || !snapshot.ThemeParkIncNativeGuests )
+					Error( $"Guest {guest.Id} holds a Theme Park Inc native block that a save of this park cannot hold (it runs without the native guest states, or the save says it did)." );
 				foreach ( var problem in native.Problems( guest.Id ) )
 					Error( problem );
 				// [EXT:tpi-twp-guest-rules] the bridged boarding keeps the state word 16 through Theme Park World's boarding, waiting, ride and exit states (BeginTpiBridgedBoarding)

@@ -33,7 +33,7 @@ Labels:
 
 No new approximation or label is added, and no new CRT `rand()` site was found.
 
-Saves: the native block gains one optional member, the wander flag `+0xE8`, which phase P1 did not hold; the guest snapshot stays schema 10. States 7 and 9 now restore.
+Saves: the native block gains one optional member, the wander flag `+0xE8`, which phase P1 did not hold; the guest snapshot schema does not change. States 7 and 9 now restore.
 
 Verified with these checks:
 

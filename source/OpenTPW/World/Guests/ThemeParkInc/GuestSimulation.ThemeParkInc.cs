@@ -20,6 +20,9 @@ public sealed partial class GuestSimulation
 	/// </summary>
 	public bool ThemeParkIncNativeGuests { get; set; }
 
+	/// <summary>Whether this simulation runs Theme Park Inc's native guest states: the switch is on and the park has Theme Park Inc's guest settings (<see cref="NativeTpi"/>).</summary>
+	public bool RunsThemeParkIncNativeGuests => NativeTpi != null;
+
 	/// <summary>The native settings while the switch is on and the park has them; null otherwise (no guest gets a Theme Park Inc record).</summary>
 	private ThemeParkIncGuestSettings? NativeTpi => ThemeParkIncNativeGuests && Settings.TpiGuestStart != null ? Settings.TpiNative : null;
 
@@ -761,16 +764,49 @@ public sealed partial class GuestSimulation
 		var minimum = settings.MinimumEntryFee;
 		if ( value <= minimum && fee <= minimum )
 			return BoothVerdictKind.Fair;
-		var a = (float)value;
-		var b = (float)fee;
+		// fildll loads both words exactly; each fmuls rounds once to the 24-bit significand; fcompp compares the exact fee with that product
+		double b = fee;
 		BoothVerdictKind verdict;
 		int opinion;
-		if ( settings.AveragePriceMultiplier * a <= b )
-			(verdict, opinion) = b >= settings.ExpensivePriceMultiplier * a ? (BoothVerdictKind.FarTooExpensive, settings.OpinionForMuchTooHigh) : (BoothVerdictKind.Expensive, settings.OpinionForTooHigh);
+		if ( X87SingleProduct( settings.AveragePriceMultiplier, value ) <= b )
+			(verdict, opinion) = b >= X87SingleProduct( settings.ExpensivePriceMultiplier, value ) ? (BoothVerdictKind.FarTooExpensive, settings.OpinionForMuchTooHigh) : (BoothVerdictKind.Expensive, settings.OpinionForTooHigh);
 		else
-			(verdict, opinion) = b <= settings.CheapPriceMultiplier * a ? (BoothVerdictKind.Cheap, settings.OpinionForTooLow) : (BoothVerdictKind.Fair, settings.OpinionForAboutRight);
+			(verdict, opinion) = b <= X87SingleProduct( settings.CheapPriceMultiplier, value ) ? (BoothVerdictKind.Cheap, settings.OpinionForTooLow) : (BoothVerdictKind.Fair, settings.OpinionForAboutRight);
 		Payments?.PriceTested( BoothVerdict.OpinionCategory, opinion & 0xFF );
 		return verdict;
+	}
+
+	/// <summary>
+	/// <c>fmuls</c> of an integer the x87 loaded exactly (<c>fildll</c>) by a single at the game thread's control word <c>0x7F</c>: the exact product rounded once, to nearest even, to a 24-bit
+	/// significand, in the extended exponent range (so a double holds it exactly). Converting the integer to a single first, as a plain <c>float</c> product would, rounds twice.
+	/// </summary>
+	// a local, single-rounded product until the shared ThemeParkIncX87 helper (PR #993) is on main
+	internal static double X87SingleProduct( float factor, uint integer )
+	{
+		if ( integer == 0 || factor == 0 || !float.IsFinite( factor ) )
+			return (double)factor * integer;
+		var bits = BitConverter.SingleToInt32Bits( factor );
+		var exponent = (bits >> 23) & 0xFF;
+		long significand = bits & 0x7FFFFF;
+		if ( exponent == 0 )
+			exponent = 1;
+		else
+			significand |= 0x800000;
+		// factor = significand × 2^(exponent − 150); the product of a 24-bit and a 32-bit integer fits 56 bits, exactly
+		var product = significand * integer;
+		var scale = exponent - 150;
+		var excess = 64 - System.Numerics.BitOperations.LeadingZeroCount( (ulong)product ) - 24;
+		if ( excess > 0 )
+		{
+			var remainder = product & ((1L << excess) - 1);
+			var half = 1L << (excess - 1);
+			product >>= excess;
+			scale += excess;
+			if ( remainder > half || remainder == half && (product & 1) == 1 )
+				product++;
+		}
+		var magnitude = Math.ScaleB( product, scale );
+		return bits < 0 ? -magnitude : magnitude;
 	}
 
 	/// <summary>

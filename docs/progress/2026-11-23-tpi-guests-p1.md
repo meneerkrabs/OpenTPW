@@ -15,14 +15,14 @@ it on. It is off by default, so the default Theme Park Inc park and every Theme 
   - Theme Park Inc's own weather rule `0x611050`: the generation's row, the heat wave included, on every phase update of a qualifying day.
 - **Arrival and leaving.**
   - The guest is built at the vehicle's stop. Off the park it makes two draws that the original discards, then walks to a ticket booth.
-  - At the booth: Theme Park Inc's verdict, the wait for the gate (state 3), the walk to the entrance with the visitor number, idle.
+  - At the booth: Theme Park Inc's verdict (its products rounded once to single precision, as the x87 does), the wait for the gate (state 3), the walk to the entrance with the visitor number, idle.
   - Leaving: the walk to the bus stop (22), the wait for the pick-up (30), and the bus takes the guest.
   - The vehicle dispatch builds a new bus, heli or mono each time.
   - In this phase, idle (state 6) runs only its leave gate.
 - **Settings.** The guest states read Standard.sam's words by their addresses in the Standard object, and a test checks each address against its key.
-- **Saves.** The guest snapshot is now schema 10. A native guest saves an optional block with all of its fields. A save made with the switch off holds
-  no such block. The save records the switch, and a restore refuses a save made with the other setting, and a native guest in a state this phase does
-  not run.
+- **Saves.** The guest snapshot stays at schema 9. A native guest saves an optional block with all of its fields, and the save records the switch in
+  an optional member written only when it is on, so a save made with the switch off is unchanged, and so are the hashes and pins. A restore refuses a
+  save made with the other setting (in both directions), and a native guest in a state this phase does not run.
 
 Labels:
 - `[EXT:tpi-staff-crt-rand]` now also covers the guests' `rand()` sites. Its text was widened on 2026-11-22 (user decision). The weather delay

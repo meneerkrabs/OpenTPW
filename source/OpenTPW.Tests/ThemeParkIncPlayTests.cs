@@ -135,7 +135,7 @@ public class ThemeParkIncPlayTests
 		/// <summary>The Theme Park Inc money economy, when <c>withMoney</c> is set (the path builder then charges it).</summary>
 		public readonly ParkEconomyRuntime? Money;
 
-		public SlicePark( string world, int? arrivalTimeBetween = null, bool withMoney = false )
+		public SlicePark( string world, int? arrivalTimeBetween = null, bool withMoney = false, bool nativeGuests = false )
 		{
 			Park = OriginalPark.Load( world );
 			if ( withMoney )
@@ -143,7 +143,7 @@ public class ThemeParkIncPlayTests
 			Catalog = ObjectCatalog.Load( world );
 			BuildGrid = new OriginalParkGrid( Park );
 			Grid = GuestPathGrid.FromOriginal( Park.Map, Park.Save );
-			var settings = GuestSettings.Load( world );
+			var settings = GuestSettings.Load( world, nativeGuests );
 			if ( arrivalTimeBetween is int interval )
 				settings.ArrivalTimeBetween = interval;
 			Guests = new GuestSimulation( Grid, settings, Level.GuestSeed );
@@ -388,7 +388,7 @@ public class ThemeParkIncPlayTests
 	public void NativeGuestsChooseQueueAndBoardTheScienceRides()
 	{
 		UseTpiData();
-		var park = new SlicePark( "science" );
+		var park = new SlicePark( "science", nativeGuests: true );
 		park.Guests.ArrivalsEnabled = false;
 		park.Guests.ThemeParkIncNativeGuests = true;
 		var world = new SliceAttractions( park );

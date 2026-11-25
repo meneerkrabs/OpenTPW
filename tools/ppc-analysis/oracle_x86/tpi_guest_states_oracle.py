@@ -866,7 +866,8 @@ def queue_rounds(image: Image, rng: random.Random, cases: int) -> int:
         else:
             g = 1.0 if speed == 0 else f32(speed / init)
             value = f32(f32(qwtc * capacity) * g)
-            value = f32(value / duration) if duration else math.inf
+            # fidivl by a duration of 0: x87 gives infinity, or NaN for 0/0 (masked invalid); a NaN fails fcoms against 4.0 (C0 and C3 set) and becomes 4.0, as C#'s !(value > 4f) does
+            value = f32(value / duration) if duration else (math.nan if value == 0 else math.inf)
             limit = (int(value) & MASK) if value > 4.0 and value != math.inf else (4 if not value > 4.0 else 0)
         native_long = queue.call(0x5DFF10, this=ride).eax & 0xFF
         if bool(native_long) != ((position(0) & MASK) >= limit):

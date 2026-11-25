@@ -123,6 +123,8 @@ public sealed class ThemeParkIncNativeQueueTests
 		Assert.AreEqual( 216u, GuestSimulation.ThemeParkIncQueueLimit( new QueueParameters( true, false, false, 130, 60, 60, 5, 3 ) ), "130 × 5 × 1 / 3" );
 		Assert.AreEqual( 4u, GuestSimulation.ThemeParkIncQueueLimit( new QueueParameters( true, false, false, 1, 0, 60, 1, 30 ) ), "at least 4" );
 		Assert.AreEqual( 433u, GuestSimulation.ThemeParkIncQueueLimit( new QueueParameters( true, false, false, 130, 120, 60, 5, 3 ) ), "the speed over InitSpeed scales it" );
+		Assert.AreEqual( 0u, GuestSimulation.ThemeParkIncQueueLimit( new QueueParameters( true, false, false, 130, 60, 60, 5, 0 ) ), "a duration of 0: infinity, which _ftol makes 0" );
+		Assert.AreEqual( 4u, GuestSimulation.ThemeParkIncQueueLimit( new QueueParameters( true, false, false, 130, 60, 60, 0, 0 ) ), "0 / 0: NaN fails the test against 4.0 and becomes 4" );
 	}
 
 	[TestMethod]

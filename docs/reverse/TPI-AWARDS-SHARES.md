@@ -102,7 +102,7 @@ Gated (`[EXT:tpi-capability-gates]`):
 - the coaster awards: OpenTPW keeps neither the attraction window's byte `+0x3F` nor the month byte `+0x40`, and the coaster track record's `+0x110`/`+0x114` is not checked
   against Theme Park World's rating; a coaster award is never decided;
 - the annual report at the year change: its rings are not kept as Theme Park Inc's analyser; the saved report slots are carried through;
-- the award advice: the advisor's descriptor and response rows for these ids are not read (the advisor queue carries the forecasts only);
+- the award advice: the advisor's descriptor and response rows for these ids are not read (the advisor queue takes only the forecasts and the letters so far, [TPI-ADVISOR.md](TPI-ADVISOR.md));
 - "Win the game..."'s end-of-game letter.
 
 `[EXT:tpi-text-hud]`: the native share portfolio panel (`0x581A90`, refresh `0x582890`) and the Park Awards panel (`0x5625D0`..) are not ported; the challenge panel shows

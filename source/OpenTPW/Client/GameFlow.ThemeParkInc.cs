@@ -103,6 +103,9 @@ internal sealed partial class GameFlow
 		// [BIN:TPI-EXE:0x5D053C flight clock] a camera flight sets the park clock's rate to its mode's (1.0, 0.7 in mode 1) until its end restores the speed word's rate; 0x41C000 writes the rate (+0x20)
 		// only, and the pause is the clock's own flag (+0x30, 0x41BBF0), so a paused park stays paused under a flight until the pause key (reachable during the flight, ThemeParkIncHud.UpdateFlight) resumes it
 		level.SimulationTimeScale = ThemeParkIncTimeScale( level.Park?.Economy.TpiCutscene?.ClockRate, hud.Speed, hud.TimeScale );
+		// the advisor clock's rate is the player's speed while the park runs (a pause runs no world tick, so it keeps the last one)
+		if ( level.Park?.Economy is { } rated && hud.Speed != GameSpeed.Paused )
+			rated.TpiSpeedRate = GameSpeedScale.Of( hud.Speed );
 		level.Update();
 		GameAudio.Update( level.Guests?.GetStatistics().InPark ?? 0 );
 		if ( level.Park?.Economy.TpiWeather is { } weather )
@@ -118,34 +121,32 @@ internal sealed partial class GameFlow
 			if ( !hud.LetterOpen && tpiEconomy.TakeTpiMail() is { } mail )
 				PresentThemeParkIncMail( hud, tpiEconomy, mail );
 			// [BIN:TPI-EXE:0x54F1A0 unread advice] the tube's counter posts advisor message 0x198 (descriptor 0x9E3F80, group 0, response 739) or 0x15D (0x9E3FB8, group 0, two responses from 652)
-			// [EXT:tpi-capability-gates] Theme Park Inc's advisor plays only the weather forecasts (ThemeParkIncForecastQueue): these descriptors' score callbacks (0x405C68, 0x406F23), their
-			// response rows and the speech choice are not read, so the message is noted and not said
+			// [EXT:tpi-capability-gates] Theme Park Inc's advisor queue (ThemeParkIncAdvisor) takes the forecasts and the letters so far: these descriptors' score callbacks (0x405C68, 0x406F23)
+			// and their response rows are not ported, so the message is noted and not posted (P4)
 			foreach ( var advice in tpiEconomy.TakeThemeParkIncTubeAdvice() )
 				Log.Trace( $"Theme Park Inc unread mail advice {advice:X} is not said: the advisor's message path is not ported." );
 			// [BIN:TPI-EXE:0x628D93 wage demand advice] the daily routine posts advisor message 0x1C8 with each wage demand; [BIN:TPI-EXE:0x7176E0 strike messages] the HQ's and the strikers' type-0x17
-			// messages reach only the advisor's listener. [EXT:tpi-capability-gates] neither is said (the advisor plays only the forecasts): they are noted
+			// messages reach only the advisor's listener. [EXT:tpi-capability-gates] neither is posted (the staff senders come with P5): they are noted
 			foreach ( var advice in tpiEconomy.TakeThemeParkIncStaffAdvice() )
 				Log.Trace( $"Theme Park Inc staff advice {advice:X} is not said: the advisor's message path is not ported." );
 			foreach ( var message in tpiEconomy.TakeThemeParkIncStrikeMessages() )
 				Log.Trace( $"Theme Park Inc strike message (role {message.Role}, kind {message.Kind}, reason {message.Reason}) is not said: the advisor's message path is not ported." );
-			if ( tpiEconomy.TpiForecast is { } forecast )
-				PresentThemeParkIncForecast( level, hud, tpiEconomy, forecast );
+			foreach ( var advice in tpiEconomy.TakeThemeParkIncAdvice() )
+				PresentThemeParkIncAdvice( hud, advice );
 		}
 		ReverbSelector.Update( level.RideView?.Ride );
 	}
 
-	/// <summary>The voice the last forecast started; stopped when the park goes (a global speech one-shot outlives LeavePark).</summary>
-	private AudioVoice? themeParkIncForecastVoice;
+	/// <summary>The voice the last advice started; stopped when the park goes (a global speech one-shot outlives LeavePark).</summary>
+	private AudioVoice? themeParkIncAdviceVoice;
 
 	/// <summary>
 	/// [BIN:TPI-EXE:0x635D80 notification letter] A notification letter (the bank's six-months-in-the-red letter or the challenge system's
-	/// firing letter): the tag system queues its advice, whose response plays the speech event from the global catalogue, and opens the letter
-	/// window on the record (0x636217). Closing the letter is what loses the park (<see cref="DismissThemeParkIncLetter"/>).
+	/// firing letter): the tag system queues its advice, which the advisor's playback speaks (<see cref="PresentThemeParkIncAdvice"/>), and opens the
+	/// letter window on the record (0x636217). Closing the letter is what loses the park (<see cref="DismissThemeParkIncLetter"/>).
 	/// </summary>
 	private void PresentThemeParkIncMail( ThemeParkIncHud hud, ParkEconomy economy, ThemeParkIncAdviceMail mail )
 	{
-		themeParkIncForecastVoice?.Stop();
-		themeParkIncForecastVoice = GameAudio.PlaySpeechEffect( mail.SpeechEvent );
 		Log.Trace( $"Theme Park Inc letter: message {mail.Message}, response {mail.Response}, speech event {mail.SpeechEvent}, body {mail.TextEntry}." );
 		StringFile tags;
 		try
@@ -198,25 +199,20 @@ internal sealed partial class GameFlow
 	}
 
 	/// <summary>
-	/// [BIN:TPI-EXE:0x718190 forecast playback] The advisor's update on the scaled clock (<see cref="SceneClock"/>): the queue
-	/// picks a due forecast, the original speech event plays from the global catalogue, and the tag's <c>TAG_SYSTEM.str</c>
-	/// entry becomes the caption. The voice's own length is the window the original waits before the next advice.
+	/// [BIN:TPI-EXE:0x718190 advice playback] The simulation's advisor played an advice (<see cref="ThemeParkIncAdvisor"/>, on the world ticks): the response's speech event plays from the
+	/// global catalogue and a forecast's tag puts its <c>TAG_SYSTEM.str</c> entry on the advice line, OpenTPW's stand-in for the tag broadcast (kind 0x18) the presentation ports (P2).
 	/// </summary>
-	private void PresentThemeParkIncForecast( Level level, ThemeParkIncHud hud, ParkEconomy economy, ThemeParkIncForecastQueue forecast )
+	private void PresentThemeParkIncAdvice( ThemeParkIncHud hud, ThemeParkIncAdvicePlay advice )
 	{
-		if ( level.SceneClock.Milliseconds is var now && forecast.Tick( now, economy.TpiForecastWorldTime, economy.TpiForecastEligible, Present ) is not { } )
-			return;
-
-		uint Present( ThemeParkIncForecastLine line )
+		if ( ThemeParkIncAdviceResponse.For( advice.Response ) is not { } response )
 		{
-			themeParkIncForecastVoice?.Stop();
-			themeParkIncForecastVoice = GameAudio.PlaySpeechEffect( line.SpeechEvent );
-			var voice = themeParkIncForecastVoice;
-			// [BIN:TPI-EXE:0x7167CE speech duration] the original returns the sound's length plus 1000 ms; the queue adds the 1000.
-			var duration = (uint)(voice is { SampleRate: > 0 } ? voice.Frames * 1000L / voice.SampleRate : 0);
-			Log.Trace( $"Theme Park Inc forecast: response {line.Response}, speech event {line.SpeechEvent}{(voice == null ? " (no voice)" : "")}, caption {line.TextEntry}, window {duration} + 1000 ms." );
-			ShowThemeParkIncAdviceCaption( hud, line.TextEntry, "forecast" );
-			return duration;
+			Log.Trace( $"Theme Park Inc advice {advice.Message:X}: response {advice.Response} has no speech OpenTPW can play yet." );
+			return;
 		}
+		themeParkIncAdviceVoice?.Stop();
+		themeParkIncAdviceVoice = GameAudio.PlaySpeechEffect( response.SpeechEvent );
+		Log.Trace( $"Theme Park Inc advice {advice.Message:X}: response {response.Response}, speech event {response.SpeechEvent}{(themeParkIncAdviceVoice == null ? " (no voice)" : "")}, tag {response.Tag}." );
+		if ( response.Forecast )
+			ShowThemeParkIncAdviceCaption( hud, response.TextEntry, "forecast" );
 	}
 }

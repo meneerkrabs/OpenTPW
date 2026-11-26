@@ -207,13 +207,13 @@ public class ThemeParkIncWeatherTests
 		rainyPark.AdvanceMonths( 2 );
 		Assert.AreEqual( 2, rainyPark.TpiWeatherState );
 		// [BIN:TPI-EXE:0x64209B forecast trigger] the month that rolls the spell posts its advice; starting it posts nothing more.
-		if ( rainyPark.TpiForecast is { } forecastInfo )
-		{
-			Assert.AreEqual( 1, forecastInfo.Count, "the roll of the second month posts one forecast" );
-			var forecastSave = ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( rainyPark ) ) );
-			var forecastResume = ParkSaveFile.Restore( forecastSave, rainSettings, economy.Catalog );
-			Assert.AreEqual( 1, forecastResume.TpiForecast!.Count, "the pending forecast survives a save" );
-		}
+		// without Advisor.sam the minimum score is 0, so the advisor's next tick plays it at once: posted once means pending or played once
+		Assert.AreEqual( 1, rainyPark.TpiAdvisor!.Queue.Count( slot => slot.Valid && slot.Message == 0x157 ) + rainyPark.TpiCareer!.AdviceHistory( 0x157 ).Plays,
+			"the roll of the second month posts one rain forecast" );
+		var forecastSave = ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( rainyPark ) ) );
+		var forecastResume = ParkSaveFile.Restore( forecastSave, rainSettings, economy.Catalog );
+		CollectionAssert.AreEqual( rainyPark.TpiAdvisor.Queue.ToArray(), forecastResume.TpiAdvisor!.Queue.ToArray(), "the advisor's queue survives a save" );
+		Assert.AreEqual( rainyPark.TpiCareer.AdviceHistory( 0x157 ), forecastResume.TpiCareer!.AdviceHistory( 0x157 ), "and the career's history" );
 		Assert.AreEqual( 0, rainyPark.TpiWeather!.CurrentDrops, "a spell starts after that turn's precipitation step" );
 		rainyPark.Advance( ParkCalendar.TickOfTurn( rainyPark.Turn + 1 ) - rainyPark.Tick );
 		Assert.AreEqual( 20, rainyPark.TpiWeather.CurrentDrops );

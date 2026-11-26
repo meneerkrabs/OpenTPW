@@ -167,7 +167,7 @@ for the separate `.tpilayout` format, exact state boundaries and verification li
 
 **What it leaves out.** No guard chase or first aid and no guest who watches a performing entertainer (research and training run in play once the career reaches the missions that list the research room, 1, and the
 training room, 2 or 1 after the obstacle research), no challenge whose value OpenTPW cannot measure, and no obstacle mission that can be completed (the
-money, the career and the mission controller run, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
+money, the career and the mission controller run, see above); no native park saving/loading, no online world, and no advice beyond the four weather forecasts and the notification letters, which go through the advisor's queue ([TPI-ADVISOR.md](reverse/TPI-ADVISOR.md)). The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use

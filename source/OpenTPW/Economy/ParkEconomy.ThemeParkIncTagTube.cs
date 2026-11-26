@@ -23,8 +23,11 @@ public sealed partial class ParkEconomy
 	/// (<see cref="TpiPendingMail"/>).
 	/// </summary>
 	// [BIN:TPI-EXE:0x636209 notification letter] the kinds 6 to 8 that 0x5CD060 accepts build the letter window (0x526CD0) and set +0xE0C before the row is inserted (0x636142 -> 0x636880)
+	// [BIN:TPI-EXE:0x6362AA letter advice] first the row builder posts the letter's advice (0x1A1, 0x1A2 or 0x1A3) to the advisor's queue with its descriptor's score (0x71A930 -> 0x718820): it is
+	// spoken by the advisor's playback, which takes a mail record (group 8) before any other
 	private void PostThemeParkIncMail( ThemeParkIncAdviceMail mail )
 	{
+		PostThemeParkIncAdvice( mail.Message );
 		TpiPendingMail = mail;
 		FileThemeParkIncLetter( ThemeParkIncTagLetter.Notification( mail, Turn ) );
 	}

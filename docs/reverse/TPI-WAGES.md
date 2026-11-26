@@ -80,5 +80,5 @@ grievance and the month's escalation) is in [TPI-STAFF.md](TPI-STAFF.md) §4 and
 
 - The Science continuation save writes `TpiWages` (rules 1); a Science save without it is refused before its assets are checked (refuse and document); a Theme Park World save carrying it
   is refused. Members in states 4 and 5, the strike records and the demand and training rows round-trip.
-- `[EXT:tpi-capability-gates]`: the advisor message 0x1C8 and the strike messages are noted, not said (Theme Park Inc's advisor plays only the forecasts). `[EXT:tpi-text-hud]`: the
+- `[EXT:tpi-capability-gates]`: the advisor message 0x1C8 and the strike messages are noted, not said (Theme Park Inc's advisor queue takes only the forecasts and the letters so far). `[EXT:tpi-text-hud]`: the
   training letter's go-to opens the text HUD's staff panel. `[EXT:tpi-staff-crt-rand]` covers the demand day. No other CRT `rand()` is on these paths.

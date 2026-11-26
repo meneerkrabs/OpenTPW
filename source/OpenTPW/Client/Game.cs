@@ -1119,7 +1119,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-tpi-forecast] smoke-only (Debug builds): posts one of the four traced Theme Park Inc weather
-		// forecasts through the park's own queue once the Science park runs, so a capture or smoke can observe the
+		// forecasts through the park's own advisor queue once the Science park runs, so a capture or smoke can observe the
 		// advisor's caption, speech and playback window. The queue, selection and timing are the park's.
 		var debugTpiForecast = GetOption( args, "--debug-tpi-forecast", "a Theme Park Inc forecast kind 1..4 (1 heatwave, 2 rain, 3 storm, 4 snow)" );
 		if ( debugTpiForecast != null )
@@ -1129,11 +1129,11 @@ internal static class Game
 			Render.PostUpdate += PostDebugTpiForecast;
 			void PostDebugTpiForecast()
 			{
-				if ( flow.Level?.Park?.Economy is not { TpiForecast: { } queue } economy )
+				if ( flow.Level?.Park?.Economy is not { TpiAdvisor: { } advisor } economy )
 					return;
 				Render.PostUpdate -= PostDebugTpiForecast;
-				var posted = queue.Post( forecastKind, economy.TpiForecastWorldTime, economy.TpiForecastEligible );
-				Log.Trace( $"--debug-tpi-forecast: kind {forecastKind} {(posted ? "posted" : "refused by the repeat check")} ({queue.Count} queued)." );
+				var posted = economy.PostThemeParkIncAdvice( ThemeParkIncAdviceResponse.ForecastMessage( forecastKind ) );
+				Log.Trace( $"--debug-tpi-forecast: kind {forecastKind} {(posted ? "posted" : "refused by the acceptance")} ({advisor.Queue.Count( slot => slot.Valid )} queued)." );
 			}
 		}
 		// [EXT:debug-tpi-storm] smoke-only (Debug builds): puts the Science park's weather into a storm with a due

@@ -84,7 +84,7 @@ public partial class Level
 		// A path cell without NoModify gives way to an object (the validator's 0x535D21 rule, the commit clearing the path), and the entrance's and exit's outside cells are
 		// validated as well (ParkObjects.CheckAccessCells): the outside cell by the path rule takes empty ground and path cells only.
 		// [BIN:TPW-EXE:0x00535D21 object over path] an object (type 4) over a type-1 cell is allowed (0x535D21 returns 0) unless the cell carries NoModify, which the validator refuses first for every object type (0x5356A6..0x5356B3); the commit clears the path (0x5290F6..0x52910C: 0x87, then 0x5367A0(0, 0))
-		Objects = new ParkObjects( catalog!, grid, Seed );
+		Objects = new ParkObjects( catalog!, grid, Seed ) { ThemeParkIncDispatchedVehicles = RunsThemeParkIncNativeGuests };
 		ConfigureObjectHooks();
 		PrepareThings();
 		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
@@ -287,6 +287,11 @@ public partial class Level
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
 			Guests.ArrivalVehicles = new ArrivalVehicles( Objects, BindFixedItemMadeInPlay );
+		}
+		// [BIN:TPI-EXE:0x5BCB10 arrival update] Theme Park Inc's native guests arrive and leave by the bus, the heli and the mono (the features bus, heli and mono, guest-states-p0.md §3)
+		else if ( Guests.RunsThemeParkIncNativeGuests && ArrivalVehicles.Available( Objects.Catalog, GuestSimulation.ThemeParkIncVehicleNames ) )
+		{
+			Guests.ArrivalVehicles = new ArrivalVehicles( Objects, BindFixedItemMadeInPlay, GuestSimulation.ThemeParkIncVehicleNames );
 		}
 	}
 

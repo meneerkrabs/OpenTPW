@@ -517,7 +517,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [BIN:TPI-EXE:0x649868 staff pool update] after the thing loop the world update's tail updates the hiring pool (0x5D65E0 -> 0x631B40: expiry, refill and top-up, drawing
 		// from the world generator) in every world state, and only then the calendar (0x5D65FB -> 0x6083D0), whose day and month messages follow below
 		// [BIN:TPI-EXE:0x630CB0 pool rank] the pool reads the career's rank (+0x1060), which promotions raise (ThemeParkIncCareer.Promote)
-		// Before the pool, 0x5D65E9 first runs the staff sub-object update [esi+0x44c] -> 0x5BCB10 (a timer against [0xA02234] that posts message 0x17); it draws nothing from the world generator, so the draw order is unaffected; not ported.
+		// Before the pool, 0x5D65E9 first runs the arrival update [esi+0x44c] -> 0x5BCB10 (the timer against TimeBetweenArrivals [0xA02234], message 0x17 is the log channel of "Bus about to arrive"):
+		// the guest simulation runs it at the turn's end before this (GuestSimulation.UpdateTurnEndArrivals; Theme Park Inc's own dispatch and arrival for its native guests, docs/reverse/TPI-GUESTS.md)
 		TpiStaff?.UpdatePool( World, turn, TpiCareer!.Rank );
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
@@ -2889,11 +2890,23 @@ public sealed partial class ParkEconomy : IParkEconomy
 		feePaid = 0;
 		if ( IsBankrupt )
 			return false;
-		feePaid = EntranceFee;
-		Post( LedgerCategory.GateTakings, feePaid );
-		Counters.Add( ParkCounters.Admissions, 1 );
-		Raise( ParkEventKind.GuestPaid, feePaid, 0, 0, nameof( LedgerCategory.GateTakings ) );
+		feePaid = BookAdmission();
 		return true;
+	}
+
+	/// <summary>
+	/// Books the entrance fee with no refusal and returns it: Theme Park Inc's booth (<c>0x5C0E10</c>) has no bankruptcy test, so its native guests' paying verdict always books the fee.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5C0E10 admission fee] the park's +0x14 and +0x12C take the fee (+0x120), the analyser's +0x1FEF8 and +0x20148 too, then 0x5AEF40; nothing tests the bank's state
+	public int AdmitThemeParkIncVisitor() => BookAdmission();
+
+	private int BookAdmission()
+	{
+		var fee = EntranceFee;
+		Post( LedgerCategory.GateTakings, fee );
+		Counters.Add( ParkCounters.Admissions, 1 );
+		Raise( ParkEventKind.GuestPaid, fee, 0, 0, nameof( LedgerCategory.GateTakings ) );
+		return fee;
 	}
 
 	public bool TryBuy( int instanceId, long visitorCash, out int pricePaid )

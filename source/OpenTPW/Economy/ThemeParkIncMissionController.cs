@@ -35,6 +35,8 @@ public interface IThemeParkIncMissionHost
 	int OutstandingLoans { get; }
 	/// <summary>The guests in the park, every zone (<c>0x5B2060(4)</c>).</summary>
 	int GuestsInPark { get; }
+	/// <summary><c>ShareInfo.CompanySharesIssued</c> (<c>0xA02168</c>), which the shares statistic divides by.</summary>
+	int CompanySharesIssued { get; }
 	/// <summary>The current obstacle thing (<c>park+0x1EAB6E</c>), 0 for none.</summary>
 	ushort CurrentObstacle { get; }
 	/// <summary>Finds the current obstacle of <paramref name="type"/> (<c>0x6476F0</c>).</summary>
@@ -131,8 +133,8 @@ public sealed class ThemeParkIncMissionController
 	}
 
 	/// <summary>
-	/// The value of exit statistic <paramref name="index"/> as the daily evaluation measures it (<c>0x5EFF00</c>), or null for a type OpenTPW cannot measure (4 last month's takings, 6 park awards,
-	/// 7 shares). Any other type (0 or above 8) measures 0.
+	/// The value of exit statistic <paramref name="index"/> as the daily evaluation measures it (<c>0x5EFF00</c>), or null for a type OpenTPW cannot measure (4, last month's takings). Any other
+	/// type (0 or above 8) measures 0.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5EFF00 statistic value] type - 1 through the jump table 0x5F000C: 1 (cash - loans > 0) as 0/1 (setg), 2 cash - loans (0x5C0740 - 0x5C1300, 32 bits), 3 the sum over zones 0..2
 	// of the zone record's +0xF0 (0x74F4B0, ChallengesDone), 4 the analyser's 0x5B9880, 5 and 8 the guests 0x5B2060(4), 6 the career's awards held 0x74C860, 7 the shares owned 0x6220B0 × 100 /
@@ -140,8 +142,10 @@ public sealed class ThemeParkIncMissionController
 	// [BIN:TPI-EXE:0x5B9880 analyser takings] the sum of the newest closed-month entry (head +0x244, or count + head once wrapped) of the analyser's rings at +0x20148 (admission, 0x5C0E10), +0x20398 (shops),
 	// +0x205E8 (sideshows), +0x20838 (rides) and +0x20A88 (facilities; 0x5E5DE0 by the type's +0x600): last month's takings, revenue, not profit; the first three are Theme Park World's gate, shop and
 	// sideshow rows moved by +0x268; a ring with no entry adds 0x10(%esp), the pushed ecx, which is the analyser's own address
-	// [EXT:tpi-capability-gates] types 4 (OpenTPW's ledger books ride and facility takings among the other income, without rows of their own, and an empty ring adds a heap address), 6 (the park awards, whose writers OpenTPW does not port) and 7 (Theme Park Inc's share system, not ported) are not
-	// measurable: they are never stored or evaluated, so a mission that needs one (miss17's awards and shares) cannot be completed in OpenTPW
+	// [EXT:tpi-capability-gates] type 4 (OpenTPW's ledger books ride and facility takings among the other income, without rows of their own, and an empty ring adds a heap address) is not
+	// measurable: it is never stored or evaluated; no shipped mission uses it
+	// [BIN:TPI-EXE:0x5EFFC3 awards statistic] type 6: 0x42A3B0 (the career) -> 0x74C860, the awards held (ThemeParkIncCareer.AwardsHeld, written by the award checker ThemeParkIncParkAwards)
+	// [BIN:TPI-EXE:0x5EFF9F shares statistic] type 7: [0xAA0128] -> 0x6220B0 (mNumberOwned); 0 answers 0 (je 0x5F0004), else owned × 100 (32 bits) / [0xA02168] (cltd, idivl)
 	public int? Measure( int index )
 	{
 		switch ( career.StatusWord( index, 1 ) )
@@ -159,8 +163,18 @@ public sealed class ThemeParkIncMissionController
 				}
 				return won;
 			}
-			case 4 or 6 or 7: return null;
+			case 4: return null;
 			case 5 or 8: return host.GuestsInPark;
+			case 6: return career.AwardsHeld;
+			case 7:
+			{
+				var owned = career.Shares.Owned;
+				if ( owned == 0 )
+					return 0;
+				if ( host.CompanySharesIssued == 0 )
+					throw new InvalidOperationException( "ShareInfo.CompanySharesIssued is 0: the original's shares statistic (0x5EFFBA) divides by it and faults." );
+				return unchecked( owned * 100 ) / host.CompanySharesIssued;
+			}
 			default: return 0;
 		}
 	}

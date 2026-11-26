@@ -33,6 +33,11 @@ public enum CheatKind
 	SkipMission = 7,
 	/// <summary>[BIN:TPI-EXE:0x532A9E] Theme Park Inc's debug dialog's "Get Promoted": a promotion to the rank above the career's (<c>0x74C450</c>). Theme Park Inc only; the argument is unused (0).</summary>
 	GetPromoted = 8,
+	/// <summary>
+	/// [BIN:TPI-EXE:0x53835D] Theme Park Inc's debug menu's "Win the game...": the shares owned rise by 51 % of <c>ShareInfo.CompanySharesIssued</c> (<c>0x621CE0</c>), miss17's share target; the
+	/// end-of-game letter it then posts is not. Theme Park Inc only; the argument is unused (0).
+	/// </summary>
+	WinTheGame = 9,
 }
 
 /// <summary>[EXT:cheats-weather] The weathers the cheats window offers in every theme (snow too: it is a cheat).</summary>
@@ -133,7 +138,7 @@ public sealed class ParkCheats
 	};
 
 	/// <summary>Whether <paramref name="kind"/> is one of Theme Park Inc's debug-dialog cheats, the only cheats a Theme Park Inc park takes.</summary>
-	public static bool IsThemeParkIncKind( CheatKind kind ) => kind is CheatKind.SkipMission or CheatKind.GetPromoted;
+	public static bool IsThemeParkIncKind( CheatKind kind ) => kind is CheatKind.SkipMission or CheatKind.GetPromoted or CheatKind.WinTheGame;
 
 	/// <summary>[EXT:cheats-arrival] Whether an arrival cheat is waiting: at most one may (a second request is refused until the first group has come).</summary>
 	public bool ArrivalPending => pending.Any( action => action.Kind == CheatKind.Arrival );
@@ -141,7 +146,7 @@ public sealed class ParkCheats
 	/// <summary>Whether <paramref name="action"/>'s argument is one its kind accepts.</summary>
 	public static bool IsValid( CheatAction action ) => action.Kind switch
 	{
-		CheatKind.Mode or CheatKind.Money or CheatKind.Research or CheatKind.SkipMission or CheatKind.GetPromoted => action.Argument == 0,
+		CheatKind.Mode or CheatKind.Money or CheatKind.Research or CheatKind.SkipMission or CheatKind.GetPromoted or CheatKind.WinTheGame => action.Argument == 0,
 		CheatKind.Ticket => action.Argument is >= (int)GoldenTicketKind.Visitors and <= (int)GoldenTicketKind.BigPark,
 		CheatKind.Weather => Enum.IsDefined( (CheatWeather)action.Argument ),
 		CheatKind.Arrival => action.Argument is ArrivalVehicleKind.Bus or ArrivalVehicleKind.Seaplane or ArrivalVehicleKind.Ferry,

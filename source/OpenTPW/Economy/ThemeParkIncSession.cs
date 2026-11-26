@@ -6,8 +6,8 @@ namespace OpenTPW;
 /// The global save's session sections for a player file written before any was loaded (docs/reverse/TPI-CAREER.md §3.3): the options, <c>mFirstHourTime</c>, the <c>0xA6C0A0</c> block, the
 /// shares, the <c>0xAA0180</c> flags and the ambient tags as a new Theme Park Inc session holds them.
 /// </summary>
-// [EXT:tpi-capability-gates] Theme Park Inc's options, shares, ambient-tag and 0xA6C0A0/0xAA0180 systems are not ported: OpenTPW carries their sections through from the last player file it
-// loaded and gives a new player file their start-up state; the start-up's hardware match of Config.sam (0x423120, CPU, video and main memory against Config[i]) is not made, so its
+// [EXT:tpi-capability-gates] Theme Park Inc's options, ambient-tag and 0xA6C0A0/0xAA0180 systems are not ported: OpenTPW carries their sections through from the last player file it
+// loaded and gives a new player file their start-up state (the shares game is ported and kept with the career, ThemeParkIncSharesGame, which writes its own section); the start-up's hardware match of Config.sam (0x423120, CPU, video and main memory against Config[i]) is not made, so its
 // DefaultConfig entry applies, as on a machine no entry matches
 public static class ThemeParkIncSession
 {

@@ -40,7 +40,7 @@ public static class Fixed16
 	/// <summary>
 	/// The walk's integer square root, tp.exe <c>0x4D49A0</c> and Theme Park Inc's <c>0x5D2060</c> (the same code): <c>fild</c> of the unsigned dword, <c>fsqrt</c>, <c>_ftol</c>. At 64 bits
 	/// (<paramref name="single"/> false, Theme Park World's walk as its oracle X25 runs it) the floor of the root. With <paramref name="single"/> the root is first rounded to a single, as the
-	/// x87 rounds it at Theme Park Inc's game-thread control word 0x7F (<see cref="ThemeParkIncX87"/>): the root of k² − j can then come out as k (oracle <c>tpi-exe-walk-root</c>). The double
+	/// x87 rounds it at Theme Park Inc's game-thread control word 0x7F (<see cref="ThemeParkIncX87"/>): the root of k² − j can then come out as k (oracle <c>tpi-exe-navigator-root</c>). The double
 	/// root of a 32-bit integer is never a single's midpoint, so rounding the correctly rounded double gives the x87's single.
 	/// </summary>
 	// [BIN:TPI-EXE:0x005D2060 integer square root] the dword with a zero high dword (fild qword), fsqrt, then _ftol 0x86FAB0 (truncation); the game thread's control word 0x7F rounds fsqrt to 24 bits ([EXT:hardware-d3d-path])

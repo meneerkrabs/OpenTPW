@@ -51,7 +51,11 @@ public sealed class ThemeParkIncGuestSettingsTests
 			"FirstHour.Minutes 77",
 			"PeepInfo.DecisionVariable1 81", "PeepInfo.DecisionVariable2 82", "PeepInfo.DecisionVariable3 83", "PeepInfo.DecisionVarDistWeight 84", "PeepInfo.DecisionVarQueueWeight 85",
 			"PeepInfo.DecisionVarExcitementWeight 86", "PeepInfo.DecisionVarThirstWeight 87", "PeepInfo.DecisionVarHungerWeight 88", "PeepInfo.DecisionVarToiletWeight 89",
-			"PeepInfo.DecisionVarIllnessWeight 90"
+			"PeepInfo.DecisionVarIllnessWeight 90",
+			"PeepInfo.RideVomitDivisor 91", "PeepInfo.SatisfactionWeightForPhoto 92", "PeepInfo.DistanceWeightForPhoto 93", "PeepInfo.PhotoThreshold 94",
+			"PeepInfo.HappyDiffForVGood 95", "PeepInfo.HappyDiffForGood 96", "PeepInfo.HappyDiffForPoor 97", "PeepInfo.HappyDiffForVPoor 98",
+			"PeepInfo.PerfectExcitementMatch 37", "PeepInfo.GoodExcitementMatch 38", "PeepInfo.OKExcitementMatch 39", "PeepInfo.PerfectRide 103", "PeepInfo.GoodRide 104",
+			"PeepInfo.OKRide 105", "PeepInfo.ComplainAboutThisQuality 106"
 		};
 		var columns = new[] { "Heatwave", "Rain", "Storm", "Snow" };
 		foreach ( var (array, offset) in new[] { ("PeepHappinessWeatherEffects", 100), ("PeepThirstWeatherEffects", 200), ("PeepHungerWeatherEffects", 300) } )
@@ -84,6 +88,10 @@ public sealed class ThemeParkIncGuestSettingsTests
 		Assert.AreEqual( 77, settings.FirstHourMinutes, "FirstHour.Minutes at 0xA034D4 (0x650890)" );
 		Assert.AreEqual( new DecisionVariables( 81, 82, 0 ), settings.DecisionVariables, "0xA01AA4, 0xA01AA8; DecisionVariable3 is unread" );
 		Assert.AreEqual( new DecisionWeights( 84, 85, 86, 87, 88, 89, 90 ), settings.DecisionWeights, "0xA01AC4..0xA01ADC" );
+		Assert.AreEqual( (91, 92, 93, 94), (settings.RideVomitDivisor, settings.SatisfactionWeightForPhoto, settings.DistanceWeightForPhoto, settings.PhotoThreshold), "0xA01A84, 0xA01AE0..0xA01AE8" );
+		Assert.AreEqual( (95, 96, 97, 98), (settings.HappyDiffForVGood, settings.HappyDiffForGood, settings.HappyDiffForPoor, settings.HappyDiffForVPoor), "0xA01B1C..0xA01B28" );
+		Assert.AreEqual( (37, 38, 39), (settings.PerfectExcitementMatch, settings.GoodExcitementMatch, settings.OkExcitementMatch), "0xA01B2C..0xA01B34" );
+		Assert.AreEqual( (103, 104, 105, 106), (settings.PerfectRide, settings.GoodRide, settings.OkRide, settings.ComplainAboutThisQuality), "0xA01B38..0xA01B44" );
 		Assert.AreEqual( ThemeParkIncGuestSettings.CellWord( 51, 52 ), settings.BoothCell( 0 ), "0x5D79B0: (PosY << 7) + PosX + 1" );
 		Assert.AreEqual( (61, 62), settings.StopCell( -1 ) );
 		Assert.AreEqual( (63, 64), settings.StopCell( 1 ) );
@@ -113,5 +121,9 @@ public sealed class ThemeParkIncGuestSettingsTests
 		Assert.AreEqual( ((50, 2), (41, 2), (61, 7)), (settings.BusStopA, settings.BusStopB, settings.BusStopC) );
 		Assert.AreEqual( ((47, 17), (48, 17)), (settings.EntranceA, settings.EntranceB) );
 		Assert.AreEqual( 120, settings.FirstHourMinutes );
+		Assert.AreEqual( (10, 2, 1, 115), (settings.RideVomitDivisor, settings.SatisfactionWeightForPhoto, settings.DistanceWeightForPhoto, settings.PhotoThreshold) );
+		Assert.AreEqual( (24, 14, 5, 1), (settings.HappyDiffForVGood, settings.HappyDiffForGood, settings.HappyDiffForPoor, settings.HappyDiffForVPoor) );
+		Assert.AreEqual( (5, 15, 40, 25, 15, 5, 20), (settings.PerfectExcitementMatch, settings.GoodExcitementMatch, settings.OkExcitementMatch, settings.PerfectRide, settings.GoodRide,
+			settings.OkRide, settings.ComplainAboutThisQuality) );
 	}
 }

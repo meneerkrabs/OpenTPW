@@ -68,12 +68,47 @@ internal static class ThemeParkIncX87
 		return Round( BigInteger.Abs( significand ), BigInteger.Abs( integer ), exponent, integer < 0 != significand < 0 );
 	}
 
+	/// <summary>The exact product of an integer and a double (<c>fild</c>, <c>fmull</c>), rounded once to a single (round to nearest even), where C#'s double arithmetic would round twice.</summary>
+	public static float ProductOfDouble( long integer, double value )
+	{
+		if ( integer == 0 || value == 0 || double.IsNaN( value ) || double.IsInfinity( value ) )
+			return (float)(integer * value);
+		var bits = BitConverter.DoubleToInt64Bits( value );
+		var exponent = (int)((bits >> 52) & 0x7FF);
+		var mantissa = bits & 0xFFFFFFFFFFFFFL;
+		if ( exponent == 0 )
+			exponent = 1;
+		else
+			mantissa |= 1L << 52;
+		var negative = (bits < 0) ^ (integer < 0);
+		var magnitude = (UInt128)(ulong)Math.Abs( integer ) * (ulong)mantissa;
+		// value = magnitude × 2^(exponent − 1075); round magnitude to 24 significant bits (nearest even)
+		var length = 128 - (int)UInt128.LeadingZeroCount( magnitude );
+		var shift = length - 24;
+		var scale = exponent - 1075;
+		if ( shift > 0 )
+		{
+			var half = (UInt128)1 << (shift - 1);
+			var remainder = magnitude & (((UInt128)1 << shift) - 1);
+			magnitude >>= shift;
+			if ( remainder > half || remainder == half && (magnitude & 1) != 0 )
+				magnitude++;
+			scale += shift;
+		}
+		var result = Math.ScaleB( (double)(ulong)magnitude, scale );
+		return (float)(negative ? -result : result);
+	}
+
 	/// <summary>
 	/// <c>_ftol</c> (<c>0x86FAB0</c>) as its callers read it: <c>fistp qword</c> with truncation and the low dword in eax; a value outside the 64-bit range, an infinity or a NaN is the
 	/// integer indefinite <c>0x8000000000000000</c>, whose low dword is 0.
 	/// </summary>
 	public static int Ftol( float value ) =>
 		float.IsFinite( value ) && Math.Abs( value ) < 9223372036854775808f ? unchecked( (int)(long)value ) : 0;
+
+	/// <summary><c>_ftol</c> of an extended value (<see cref="Ftol(float)"/>): truncation toward zero, the low dword of the 64-bit result; outside the 64-bit range, an infinity or a NaN gives 0.</summary>
+	public static int Ftol( double value ) =>
+		double.IsFinite( value ) && Math.Abs( value ) < 9.2233720368547758E18 ? unchecked( (int)(long)Math.Truncate( value ) ) : 0;
 
 	/// <summary><paramref name="numerator"/> / <paramref name="divisor"/> (a divisor below 2^32) rounded to a single, ties to even, in 128-bit integers.</summary>
 	private static float WideQuotient( ulong numerator, ulong divisor )

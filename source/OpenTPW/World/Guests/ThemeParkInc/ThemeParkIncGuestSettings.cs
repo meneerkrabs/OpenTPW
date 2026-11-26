@@ -25,9 +25,14 @@ public sealed record ThemeParkIncGuestSettings
 
 	// [BIN:TPI-EXE:0x418F60 SAM binding] the addresses below are the binding of the Standard schema 0x996684 from ExitLevel (0xA01A6C) on; ThemeParkIncGuestSettingsTests checks each against its key
 	public const uint SmallHappinessChangeAddress = 0xA01A78, MediumHappinessChangeAddress = 0xA01A7C, BigHappinessChangeAddress = 0xA01A80;
+	public const uint RideVomitDivisorAddress = 0xA01A84;
 	public const uint ExcitementToCostDivisorAddress = 0xA01A90, MinimumEntryFeeAddress = 0xA01A94;
 	public const uint CheapPriceMultiplierAddress = 0xA01A98, AveragePriceMultiplierAddress = 0xA01A9C, ExpensivePriceMultiplierAddress = 0xA01AA0;
 	public const uint DecisionVariable1Address = 0xA01AA4, DecisionVariable2Address = 0xA01AA8, DecisionVarDistWeightAddress = 0xA01AC4;
+	public const uint SatisfactionWeightForPhotoAddress = 0xA01AE0, DistanceWeightForPhotoAddress = 0xA01AE4, PhotoThresholdAddress = 0xA01AE8;
+	public const uint HappyDiffForVGoodAddress = 0xA01B1C, HappyDiffForGoodAddress = 0xA01B20, HappyDiffForPoorAddress = 0xA01B24, HappyDiffForVPoorAddress = 0xA01B28;
+	public const uint PerfectExcitementMatchAddress = 0xA01B2C, GoodExcitementMatchAddress = 0xA01B30, OkExcitementMatchAddress = 0xA01B34;
+	public const uint PerfectRideAddress = 0xA01B38, GoodRideAddress = 0xA01B3C, OkRideAddress = 0xA01B40, ComplainAboutThisQualityAddress = 0xA01B44;
 	public const uint OpinionForMuchTooHighAddress = 0xA01AEC, OpinionForTooHighAddress = 0xA01AF0, OpinionForTooLowAddress = 0xA01AF4, OpinionForAboutRightAddress = 0xA01AF8;
 	public const uint StinkbombLikelihoodAddress = 0xA01B00, PrankHappinessThresholdAddress = 0xA01B04, PrankLikelihoodAddress = 0xA01B08;
 	public const uint UmbrellaModifierAddress = 0xA01B5C, WeatherModifierFrequencyAddress = 0xA01B60, SlowestWeatherChangeResponseAddress = 0xA01B64, DiscardBalloonPctModifierAddress = 0xA01B68;
@@ -45,6 +50,26 @@ public sealed record ThemeParkIncGuestSettings
 	public int SmallHappinessChange { get; init; }
 	public int MediumHappinessChange { get; init; }
 	public int BigHappinessChange { get; init; }
+	/// <summary><c>PeepInfo.RideVomitDivisor</c> (signed), the divisor of the rating in the match step's illness rise (<c>0x611F37</c>).</summary>
+	public int RideVomitDivisor { get; init; }
+	/// <summary>
+	/// The use's words (phase P3b, <c>0x612740</c> and <c>0x611DA0</c>): the photo booth's <c>SatisfactionWeightForPhoto</c>, <c>DistanceWeightForPhoto</c> and <c>PhotoThreshold</c>; the mood bands
+	/// <c>HappyDiffForVGood/Good/Poor/VPoor</c>; the excitement match's bands <c>Perfect/Good/OKExcitementMatch</c> and their gains <c>PerfectRide/GoodRide/OKRide</c>; <c>ComplainAboutThisQuality</c>.
+	/// </summary>
+	public int SatisfactionWeightForPhoto { get; init; }
+	public int DistanceWeightForPhoto { get; init; }
+	public int PhotoThreshold { get; init; }
+	public int HappyDiffForVGood { get; init; }
+	public int HappyDiffForGood { get; init; }
+	public int HappyDiffForPoor { get; init; }
+	public int HappyDiffForVPoor { get; init; }
+	public int PerfectExcitementMatch { get; init; }
+	public int GoodExcitementMatch { get; init; }
+	public int OkExcitementMatch { get; init; }
+	public int PerfectRide { get; init; }
+	public int GoodRide { get; init; }
+	public int OkRide { get; init; }
+	public int ComplainAboutThisQuality { get; init; }
 	/// <summary><c>PeepInfo.ExcitementToCostDivisor</c> and <c>MinimumEntryFee</c>, read unsigned by the verdict <c>0x6157D0</c>.</summary>
 	public uint ExcitementToCostDivisor { get; init; }
 	public uint MinimumEntryFee { get; init; }
@@ -121,6 +146,12 @@ public sealed record ThemeParkIncGuestSettings
 		return new ThemeParkIncGuestSettings
 		{
 			SmallHappinessChange = W( SmallHappinessChangeAddress ), MediumHappinessChange = W( MediumHappinessChangeAddress ), BigHappinessChange = W( BigHappinessChangeAddress ),
+			RideVomitDivisor = W( RideVomitDivisorAddress ),
+			SatisfactionWeightForPhoto = W( SatisfactionWeightForPhotoAddress ), DistanceWeightForPhoto = W( DistanceWeightForPhotoAddress ), PhotoThreshold = W( PhotoThresholdAddress ),
+			HappyDiffForVGood = W( HappyDiffForVGoodAddress ), HappyDiffForGood = W( HappyDiffForGoodAddress ), HappyDiffForPoor = W( HappyDiffForPoorAddress ),
+			HappyDiffForVPoor = W( HappyDiffForVPoorAddress ),
+			PerfectExcitementMatch = W( PerfectExcitementMatchAddress ), GoodExcitementMatch = W( GoodExcitementMatchAddress ), OkExcitementMatch = W( OkExcitementMatchAddress ),
+			PerfectRide = W( PerfectRideAddress ), GoodRide = W( GoodRideAddress ), OkRide = W( OkRideAddress ), ComplainAboutThisQuality = W( ComplainAboutThisQualityAddress ),
 			ExcitementToCostDivisor = unchecked( (uint)W( ExcitementToCostDivisorAddress ) ), MinimumEntryFee = unchecked( (uint)W( MinimumEntryFeeAddress ) ),
 			CheapPriceMultiplier = F( CheapPriceMultiplierAddress ), AveragePriceMultiplier = F( AveragePriceMultiplierAddress ), ExpensivePriceMultiplier = F( ExpensivePriceMultiplierAddress ),
 			DecisionVariables = new( unchecked( (uint)W( DecisionVariable1Address ) ), unchecked( (uint)W( DecisionVariable2Address ) ), 0 ),

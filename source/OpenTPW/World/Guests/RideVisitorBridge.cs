@@ -1389,6 +1389,19 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	private bool Holds( int guestId ) => onRide.Contains( guestId );
 
+	/// <summary>Whether the ride holds <paramref name="guestId"/> (the script took it).</summary>
+	internal bool HoldsGuest( int guestId ) => Holds( guestId );
+
+	/// <summary>VAR_LETMEON (script variable 0), which Theme Park Inc's <c>0x5E4630</c> compares with the queue head.</summary>
+	internal int LetMeOn => Get( RideVariables.VAR_LETMEON );
+
+	/// <summary>VAR_PARAM (script variable 11): Theme Park Inc's state-17 roll <c>0x5E7A00</c> writes the result, the use routine <c>0x6118D0</c> reads it back for <c>Info.RideTypeStringIndex</c> 23.</summary>
+	internal int Param
+	{
+		get => Get( RideVariables.VAR_PARAM );
+		set => Set( RideVariables.VAR_PARAM, value );
+	}
+
 	/// <summary>Host side of the protocol; call once per tick before the script advances.</summary>
 	public void HostStep()
 	{
@@ -1540,6 +1553,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	{
 		if ( head == 0 )
 			return;
+		// [BIN:TPI-EXE:0x5E3CC0 head step] Theme Park Inc's head step first forces a head in state 17 whose admission the script has taken (VAR_LETMEON no longer the head) onto the ride (0x6182A0): a
+		// native guest is still in the list there (KeepsBoardedGuestQueued)
+		if ( Host?.ForcesAdmittedHead( this, head ) == true )
+			return;
 		var guest = head;
 		LeaveQueue( guest );
 		Dismissed++;
@@ -1598,7 +1615,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			called = 0;
 			letMeOnWritten = false;
 		}
-		Unlink( guest );
+		// [BIN:TPI-EXE:0x61A21D admitted guest's list place] a native Theme Park Inc guest leaves the list only by its own state 17 or the head step's force (0x5E0100 there)
+		if ( Host?.KeepsBoardedGuestQueued( guest ) != true )
+			Unlink( guest );
 		onRide.Add( guest );
 		BoardedTotal++;
 		Host?.OnVisitorBoarded( this, guest );

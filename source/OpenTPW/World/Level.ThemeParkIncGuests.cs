@@ -44,8 +44,18 @@ public sealed partial class Level
 	internal static ThemeParkIncAttractionView[] ThemeParkIncAttractionViews(
 		IEnumerable<(int ThingId, (int X, int Y) Cell, ObjectSettings Settings, RideVisitorBridge Visitors)> listed, GuestSimulation guests ) =>
 		listed.Where( item => item.ThingId is > 0 and <= ushort.MaxValue && item.Settings.GetInt( "Info.IsChoosable" ) != 0 && guests.Hosts( item.Visitors ) )
-			.Select( item => new ThemeParkIncAttractionView( (ushort)item.ThingId, item.Cell, item.Visitors, ThemeParkIncScoreTermsOf( item.Settings ) ) )
+			.Select( item => new ThemeParkIncAttractionView( (ushort)item.ThingId, item.Cell, item.Visitors, ThemeParkIncScoreTermsOf( item.Settings ) ) { Use = ThemeParkIncUseTermsOf( item.Settings ) } )
 			.ToArray();
+
+	/// <summary>The type words a native guest's visit reads (<see cref="ThemeParkIncUseTerms"/>); a key the .sam leaves out reads 0.</summary>
+	internal static ThemeParkIncUseTerms ThemeParkIncUseTermsOf( ObjectSettings settings )
+	{
+		int Key( string key ) => settings.Has( key ) ? settings.GetInt( key ) : 0;
+		return new ThemeParkIncUseTerms( Key( "Info.WhichUIType" ), Key( "Info.RideTypeStringIndex" ), Key( "UsageInfo.FatigueEffect" ), Key( "UsageInfo.RequiresTeleport" ) != 0,
+			Key( "UsageInfo.RideHandlesSprite" ) != 0, Key( "UsageInfo.ThirstEffect" ), Key( "UsageInfo.HungerEffect" ), Key( "UsageInfo.VomitEffect" ), Key( "UsageInfo.HappinessEffect" ),
+			Key( "UsageInfo.LitterEffect" ), Key( "UsageInfo.ToiletEffect" ), Key( "UsageInfo.SpecialIngredient" ), Key( "UsageInfo.SaltEffect" ), Key( "UsageInfo.FatEffect" ),
+			Key( "UsageInfo.IceEffect" ), Key( "UsageInfo.SugarEffect" ) );
+	}
 
 	/// <summary>The score words of an attraction's type (<see cref="ThemeParkIncScoreTerms"/>); a key the .sam leaves out reads 0.</summary>
 	internal static ThemeParkIncScoreTerms ThemeParkIncScoreTermsOf( ObjectSettings settings )

@@ -62,12 +62,12 @@ public static class ThemeParkIncGuestStates
 		state is not ((>= 0 and <= 5) or (>= 0xE and <= 0x15) or (>= 0x17 and <= 0x1E));
 
 	/// <summary>
-	/// Whether this build runs <paramref name="state"/>'s handler and setter entry (phases P1 to P3a): the arrival and leaving states, idle, the wander, the spot animation, the walk to a litter bin, the walk
-	/// to a ride, the queue and its step, frozen, first aid and the unreachable 28 and 29; and state 16, whose boarding runs Theme Park World's rules until phase P3b (the bridged boarding). The later
-	/// phases' states (10..12, 17..21, 24..26) are not ported; a restore refuses a guest in one.
+	/// Whether this build runs <paramref name="state"/>'s handler and setter entry (phases P1 to P3b): the arrival and leaving states, idle, the wander, the spot animation, the walk to a litter bin, the walk
+	/// to a ride, the queue and its step, the visit (16, 17, 19 and 20), frozen, first aid and the unreachable 28 and 29. The later phases' states (10..12, 18, 21, 24..26) are not ported; a restore refuses
+	/// a guest in one.
 	/// </summary>
-	public static bool RunsInThisBuild( int state ) => state is (>= WalkingToCrossing and <= WalkingToBin) or (>= WalkingToMajor and <= BeingLoaded) or LeavingPark or Frozen
-		or (>= WaitingForFirstAid and <= WaitingToBePickedUp);
+	public static bool RunsInThisBuild( int state ) => state is (>= WalkingToCrossing and <= WalkingToBin) or (>= WalkingToMajor and <= WaitingToBeAdmitted) or BeingUnloaded
+		or UnderObjectControl or LeavingPark or Frozen or (>= WaitingForFirstAid and <= WaitingToBePickedUp);
 
 	/// <summary>The queue and ride predicate (<c>0x61AC40</c>): the state, or the saved state while a spot animation (8) runs, is 14..17.</summary>
 	// [BIN:TPI-EXE:0x61AC40 queue predicate] eax = +0x2C0, +0x2C4 when it is 8; 1 for 0xE <= eax <= 0x11 (signed jl/jg), else 0

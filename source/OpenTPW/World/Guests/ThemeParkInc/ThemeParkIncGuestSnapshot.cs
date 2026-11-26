@@ -47,6 +47,13 @@ public sealed record ThemeParkIncGuestSnapshot
 	public required int Word0E0 { get; init; }
 	/// <summary>The wander flag <c>+0xE8</c> (<see cref="ThemeParkIncGuestRecord.Wandered"/>); absent in a save of phase P1, whose guests never wandered.</summary>
 	public bool Wandered { get; init; }
+	/// <summary>Phase P3b's fields (<see cref="ThemeParkIncGuestRecord.Fee"/>, <see cref="ThemeParkIncGuestRecord.UseSucceeded"/>, <see cref="ThemeParkIncGuestRecord.BalloonColour"/>, the costume's sprite
+	/// words); absent in a save of an earlier phase, whose guests never rode natively.</summary>
+	public int Fee { get; init; }
+	public bool UseSucceeded { get; init; }
+	public int BalloonColour { get; init; }
+	public int? SpriteCategory { get; init; }
+	public int? SpriteVariant { get; init; }
 
 	/// <summary>A copy of a guest's record.</summary>
 	public static ThemeParkIncGuestSnapshot Capture( ThemeParkIncGuestRecord tpi ) => new()
@@ -56,7 +63,8 @@ public sealed record ThemeParkIncGuestSnapshot
 		SpotTurn = tpi.SpotTurn, Word234 = tpi.Word234, SpriteIndex = tpi.SpriteIndex, Byte28C = tpi.Byte28C, Word290 = tpi.Word290, HoldsBalloon = tpi.HoldsBalloon,
 		BalloonCountdown = tpi.BalloonCountdown, Word29C = tpi.Word29C, Generation = tpi.Generation, PreferredExcitement = tpi.PreferredExcitement, BoredomThreshold = tpi.BoredomThreshold,
 		Byte2B1 = tpi.Byte2B1, FirstAidWait = tpi.FirstAidWait, Word2B8 = tpi.Word2B8, Word2BC = tpi.Word2BC, Word2C8 = tpi.Word2C8, QueueLink = tpi.QueueLink, QueueSlot = tpi.QueueSlot,
-		Words2D0 = tpi.Words2D0.ToArray(), WeatherDay = tpi.WeatherDay, Word1B8 = tpi.Word1B8, Word1DC = tpi.Word1DC, Words1EC = tpi.Words1EC.ToArray(), Word0E0 = tpi.Word0E0, Wandered = tpi.Wandered
+		Words2D0 = tpi.Words2D0.ToArray(), WeatherDay = tpi.WeatherDay, Word1B8 = tpi.Word1B8, Word1DC = tpi.Word1DC, Words1EC = tpi.Words1EC.ToArray(), Word0E0 = tpi.Word0E0, Wandered = tpi.Wandered,
+		Fee = tpi.Fee, UseSucceeded = tpi.UseSucceeded, BalloonColour = tpi.BalloonColour, SpriteCategory = tpi.SpriteCategory, SpriteVariant = tpi.SpriteVariant
 	};
 
 	/// <summary>A new record holding the saved fields.</summary>
@@ -68,7 +76,8 @@ public sealed record ThemeParkIncGuestSnapshot
 			Byte21B = Byte21B, Word21C = Word21C, Word220 = Word220, Word224 = Word224, Wait = Wait, Paid = Paid, SpotTurn = SpotTurn, Word234 = Word234, SpriteIndex = SpriteIndex,
 			Byte28C = Byte28C, Word290 = Word290, HoldsBalloon = HoldsBalloon, BalloonCountdown = BalloonCountdown, Word29C = Word29C, Generation = Generation,
 			PreferredExcitement = PreferredExcitement, BoredomThreshold = BoredomThreshold, Byte2B1 = Byte2B1, FirstAidWait = FirstAidWait, Word2B8 = Word2B8, Word2BC = Word2BC,
-			Word2C8 = Word2C8, QueueLink = QueueLink, QueueSlot = QueueSlot, WeatherDay = WeatherDay, Word1B8 = Word1B8, Word1DC = Word1DC, Word0E0 = Word0E0, Wandered = Wandered
+			Word2C8 = Word2C8, QueueLink = QueueLink, QueueSlot = QueueSlot, WeatherDay = WeatherDay, Word1B8 = Word1B8, Word1DC = Word1DC, Word0E0 = Word0E0, Wandered = Wandered,
+			Fee = Fee, UseSucceeded = UseSucceeded, BalloonColour = BalloonColour, SpriteCategory = SpriteCategory, SpriteVariant = SpriteVariant
 		};
 		Words2D0.CopyTo( tpi.Words2D0, 0 );
 		Words1EC.CopyTo( tpi.Words1EC, 0 );
@@ -87,10 +96,12 @@ public sealed record ThemeParkIncGuestSnapshot
 			yield return $"Guest {guestId} Theme Park Inc state {State} ({ThemeParkIncGuestStates.Names[State]}) is not ported in this build.";
 		if ( State == ThemeParkIncGuestStates.SpotAnimation && (uint)Saved < ThemeParkIncGuestStates.Count && !ThemeParkIncGuestStates.RunsInThisBuild( Saved ) )
 			yield return $"Guest {guestId} Theme Park Inc spot animation returns to state {Saved} ({ThemeParkIncGuestStates.Names[Saved]}), which is not ported in this build.";
-		// no native guest can hold Theme Park Inc's balloon before phase P3b (the bridged boarding's balloon shop gives Theme Park World's, Guest.BalloonLife); state 6's victim search (prank case 5)
-		// and the balloon's litter rely on that
-		if ( HoldsBalloon || BalloonCountdown != 0 )
-			yield return $"Guest {guestId} Theme Park Inc balloon (held {HoldsBalloon}, countdown {BalloonCountdown}) cannot be held in this build.";
+		if ( BalloonCountdown > 255 )
+			yield return $"Guest {guestId} Theme Park Inc balloon countdown {BalloonCountdown} is above the balloon's life (0x9D0610, 255).";
+		if ( (uint)BalloonColour >= 4 )
+			yield return $"Guest {guestId} Theme Park Inc balloon colour {BalloonColour} is not one of the litter table's four (0x9D0614).";
+		if ( SpriteCategory is { } category && category is not (0 or 1 or 2 or ThemeParkIncCostumeCategory) || SpriteCategory.HasValue != SpriteVariant.HasValue || SpriteVariant < 0 )
+			yield return $"Guest {guestId} Theme Park Inc sprite words ({SpriteCategory}, {SpriteVariant}) are not a generation's or the costumes'.";
 		if ( (uint)Generation > 2 )
 			yield return $"Guest {guestId} Theme Park Inc generation {Generation} is not 0, 1 or 2.";
 		if ( Words2D0 is not { Length: ThemeParkIncGuestRecord.Words2D0Count } || Words1EC is not { Length: ThemeParkIncGuestRecord.Words1ECCount } )
@@ -99,8 +110,11 @@ public sealed record ThemeParkIncGuestSnapshot
 			yield return $"Guest {guestId} Theme Park Inc turn stamps are negative.";
 	}
 
+	/// <summary>The sprite category of the costumes (<c>0x9D7000</c>'s entry 6, "costumes").</summary>
+	public const int ThemeParkIncCostumeCategory = 6;
+
 	/// <summary>The number of words <see cref="CopyHashWords"/> writes.</summary>
-	public const int HashWordCount = 1 + 38 + ThemeParkIncGuestRecord.Words2D0Count + ThemeParkIncGuestRecord.Words1ECCount;
+	public const int HashWordCount = 1 + 38 + ThemeParkIncGuestRecord.Words2D0Count + ThemeParkIncGuestRecord.Words1ECCount + 5;
 
 	/// <summary>The record's words in a fixed order, for the guest state hashes, into <paramref name="into"/> (at least <see cref="HashWordCount"/> long; nothing is allocated).</summary>
 	public static void CopyHashWords( ThemeParkIncGuestRecord tpi, Span<long> into )
@@ -148,5 +162,11 @@ public sealed record ThemeParkIncGuestSnapshot
 			into[39 + index] = tpi.Words2D0[index];
 		for ( var index = 0; index < ThemeParkIncGuestRecord.Words1ECCount; index++ )
 			into[39 + ThemeParkIncGuestRecord.Words2D0Count + index] = tpi.Words1EC[index];
+		var tail = 39 + ThemeParkIncGuestRecord.Words2D0Count + ThemeParkIncGuestRecord.Words1ECCount;
+		into[tail] = tpi.Fee;
+		into[tail + 1] = tpi.UseSucceeded ? 1 : 0;
+		into[tail + 2] = tpi.BalloonColour;
+		into[tail + 3] = tpi.SpriteCategory ?? -1;
+		into[tail + 4] = tpi.SpriteVariant ?? -1;
 	}
 }

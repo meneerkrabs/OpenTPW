@@ -14,7 +14,7 @@ namespace OpenTPW;
 // mESPSprite +0x34 (4), mLastRecordedMapId +0xE4 (2), the navigator 0x63AD30 at +0xEC (177; 0x6093F9), mPreviousSpeed +0xDC (4), mPreviousX/Y +0x1A8/+0x1AC (4 each), mStrandedTime +0x1B0 (4),
 // mPurposeSpeed +0xD6 (2), mSetDestSuccessfully +0xE8 (4), mSpriteAngle +0x2C (4), mSpriteID +0x30 (4: the load takes it modulo the sprite count of mESPSprite, 0x6902D0 at 0x609AB0), mSpriteUnderRideCtrl
 // +0x38, mOnRideSoNoFloatingThingsAllowed +0x3C, mWhingeTimeout +0xE0 (4 each), then the thought object 0x638490 at +0x44 (mActionHistIndex 2, 32 × 4 mEventHistory, mLastThought, mThoughtScript,
-// mTimeBubbleShown 4 each); then the re-route 0x609B55 (ThemeParkIncNativeWalk in OpenTPW). 396 bytes; tools/tpi-layouts/person.py runs both halves
+// mTimeBubbleShown 4 each); then the re-route 0x609B55 (ThemeParkIncNativeWalk in OpenTPW). 396 bytes; the x86 oracle target tpi-exe-person-record runs both halves
 public sealed record ThemeParkIncPersonRecord
 {
 	public const int Bytes = 396;

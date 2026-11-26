@@ -464,8 +464,10 @@ and `+0x5D4` = 0, the removal message 10 subscribed, then the search. The thing 
 
 Training: the gardener learns abilities 10 to 14 (`0x62B6C0`) through §12.2 and fills a staff HQ slot that asks for one (the rebuild's staff type 5, the finder `0x6348C0`).
 
-Not ported (inert, no stand-in): the facing `0x609E60` (the heading word `+0x2C` from the queue link of his cell, in the 2048 units of `0x91E074`: it only turns the sprite, and the word is
-neither saved nor hashed until the navigator plan's NV5 stores the person words; he keeps the heading his walk step wrote, D1); the destructor's claim release `0x5D2430` → `0x5E37B0` (Theme Park Inc staff cannot be fired yet); the advisor's notices
+The facing `0x609E60` is ported since navigator phase NV5 (`ThemeParkIncStaffWorld.Facing`): every watering update sets the heading word `+0x2C` from the queue link byte of his cell, in the 2048
+units of `0x91E074` (1 → 0x7D0, 4 → 0x5DC, 0x10 → 0x3E8, 0x40 → 0x1F4, else 0x7D0); the word is saved with the staff world's `SpriteAngle` ([TPI-NAVIGATOR.md](TPI-NAVIGATOR.md)).
+
+Not ported (inert, no stand-in): the destructor's claim release `0x5D2430` → `0x5E37B0` (Theme Park Inc staff cannot be fired yet); the advisor's notices
 (`[EXT:tpi-capability-gates]`, the advisor's other messages); the patrol area `0x6256A0` (WP15); the guests' fire prank on plants (`0x618F30`, `VAR_SETFIRE`, with the guests' Theme Park
 Inc pranks); the plant counts of the statistics (`0x5B4470`, `0x5B8960`); the handyman's bin finder's plant branch for ability 7 (`0x5D5FAC`, with the bins, whose fill is unported: `[EXT:tpi-no-maintenance-wear]`). No `rand()` call is reached:
 the gardener draws only the world generator, in the gate, the walking voice and the patrol.

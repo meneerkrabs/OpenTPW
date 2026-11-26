@@ -135,7 +135,7 @@ local_xaxis, local_yaxis, mass, max_force, max_speed, mCantReachDest, nav_mode, 
 path_stuck_buffer, path_subpath_dist, path_tail_dist, path_target_pos, path_timestamp, path_total_count, path_total_dist, pos, radius, five (subpath_buffer[p], subpath_dist[p])
 pairs, vel (mode 1, versions 0 and 1; a short transfer returns 1). The load half (mode 0) reads the same and zeroes `+0x30`. `SaveNavigation` reads it and `Write` writes it;
 `GuestNavigation.ToRecord` and `LoadRecord` map it onto the walk (a record whose waypoint slots are not cell centres after the first unwritten one, or whose flags are not 0 or 1,
-cannot be held and is refused, as is one with fewer written slots than its buffered count or an index past it). This is the record the native park writer will store; OpenTPW's own snapshots keep their format until NV5.
+cannot be held and is refused, as is one with fewer written slots than its buffered count or an index past it). This is the record the native park writer will store; since NV5 it is also the walk OpenTPW's own Theme Park Inc snapshots store (below).
 
 **Unwritten members.** The constructor leaves `+0x48` and the subpath_dist slots as the allocator's arena (`0x7CA070`, no fill) held them, so a person that has never set a walk up
 carries indeterminate bytes there; tp.exe's saves show its debug heap's `0xCDCDCDCD` in unused slots. Nothing observable reads them before a set-up writes them (follow_path's
@@ -280,13 +280,84 @@ from the start, reversed, one cell; the park open and closed): all agree with `w
 Game.exe's results on the navigator tests' map for 14 wanders (`GuestSimulation.Wander` and `ThemeParkIncPatrol.Destination`: the answer, the generator's state, the counter, the mark, the mask
 and the whole record) and for 7 sets of route requests (`RequestRoute`, `RouteToTpiPoint`, `ThemeParkIncPatrol.StaffRoute`), from `tools/ppc-analysis/oracle_x86/tpi_wander_golden.py`.
 
+## The native walk storage and the load semantics (NV5)
+
+**The person block.** The person serializer `0x609170` writes a guest's or a staff member's walk in one 396-byte block, before the guest's (`0x60D284`) or the staff base's (`0x6267E4`) own members:
+the thing base `0x637230` (mX, mY, the chain links), the sprite `0x5D0CD0`, mAccurateDestX/Y `+0x28`/`+0x2A`, mAdjustorSpeed, mBaseSpeed, mCount, mESPSprite, mLastRecordedMapId `+0xE4`, the
+navigator record (`0x63AD30`, 177 bytes at block offset 35), mPreviousSpeed, mPreviousX/Y `+0x1A8`/`+0x1AC`, mStrandedTime `+0x1B0`, mPurposeSpeed, mSetDestSuccessfully `+0xE8`, mSpriteAngle
+`+0x2C`, mSpriteID (the load takes it modulo the sprite count of mESPSprite, `0x6902D0`), mSpriteUnderRideCtrl, mOnRideSoNoFloatingThingsAllowed, mWhingeTimeout and the thought object `0x638490`
+(mode 1 `0x6091D1..0x609756`, mode 0 `0x60975B..0x609B30`, versions 0 and 1). `ThemeParkIncPersonRecord` (OpenTPW.Files) reads and writes it; `ThemeParkIncNativeWalk.Write` builds it from a live walker
+(`IThemeParkIncWalker`: a native guest or a Theme Park Inc staff member) and `Apply` puts its walk members back.
+
+**The re-route `0x609B55`.** Both halves end with the route request `0x60B8E0` (thunk `0x403DAF`) to the person's own accurate destination: the stamp counter raised (`0x5D81F0`); a counter below the
+mark `+0x1B0` clears the mark; a mark still set and held (`0x60BB50`) answers 0; else the destination words are written again, the mark cleared, and SetDest `0x63EE80` runs with the signed words << 8.
+Its answer is only logged (`0x4D15A0`, a `ret`). The load half's navigator transfer leaves `+0x30` zero (`0x63B9AB`). So a save changes the live session (the re-route resets the walk's index and
+progress and raises the counter: decision N-1, native, no label), and a load sets every walk up again with the counter of the process that loads, which a new process starts at 0 with every
+block stamp zeroed (§2.3 of the plan): a guest whose mark is above that counter is released at once, and the re-route counts from 0.
+
+**Every SetDest writes the accurate destination first.** Every Theme Park Inc SetDest (`0x60A5B3`, `0x60A756`, `0x60A891`, `0x60B884`, `0x60B950`) is preceded by the write of `+0x28`/`+0x2A`: the
+wander's final guest route (`0x60A597`), the off-path search (`0x60A73A`, `0x60A86F`), the route request to a cell (`0x60B85E`, `0x60B880`) and to a point (`0x60B92A`, `0x60B94C`). OpenTPW keeps the words
+on every walker (`Guest.AccurateDestX/Y`, `ThemeParkIncStaffMember.AccurateDestX/Y`) and writes them at those points. The person constructor `0x608F00` does not write them; a person that never routed
+re-routes on load to whatever the arena held. OpenTPW starts them at 0, as NV2 does for the navigator's unwritten members (a possible original outcome; the native writer emits 0 there).
+
+**The placement `0x60BD80`.** The handyman's arrival at his litter puts him at his accurate destination: position = the words << 8, velocity 0 (`0x63EE50`), mPrevious = the position (`0x63EF10`), and the
+chain update `0x637B70` (`ThemeParkIncStaffWorld.PlaceAtAccurateDestination`). Before NV5 OpenTPW kept his velocity there.
+
+**The wander flag and the facing.** The staff member's `+0xE8` is the guest's: the final route (`0x60A5D2`, through the staff route `0x62EB10` at `0x60A547`) and the off-path search (`0x60A8C1`) set it on
+success, the fallback `0x62C720` does not; only a guest's state 7 reads it (`0x61A9C7`), but the original saves it for every person, so `ThemeParkIncStaffMember.Wandered` is saved (and the mark
+`+0x1B0` as `StrandedTime`). The gardener's watering turns him with `0x609E60` (from `0x5D2AD7`; the twin `0x5D2D4A` is unreferenced): the queue link byte `+0xD` of his cell (`0x65CC40`) 1 → 0x7D0,
+4 → 0x5DC, 0x10 → 0x3E8, 0x40 → 0x1F4, anything else 0x7D0 (`ThemeParkIncStaffWorld.Facing`). The handyman's state 0x14 calls it too (`0x5D5802`); OpenTPW never enters that state.
+
+**OpenTPW's own snapshots.** A Theme Park Inc staff member's world snapshot and a native guest's snapshot (`--tpi-native-guests`) now store the walk as the original does: the member `Walk` /
+`PersonWalk` (`ThemeParkIncPersonWalkSnapshot`: the accurate destination words, mPreviousX/Y and the 177-byte `Navigator` record), with the speed words, the heading word, the wander flag and the mark in
+the members they already had (a native guest's `Tpi` block, the staff world's `BaseSpeed`, `SpeedBonus`, `Boost`, `SmoothedSpeed`, and the new `SpriteAngle`, `Wandered` and `StrandedTime`). The walk
+fields of OpenTPW's own kind are no longer written for them (`Navigation` with its route, cursor, crossings, extra open cells, previous remaining distance, kind, off-grid flag and reroutes; the heading
+floats, the step start, the caps, the cell and previous cell, the on-grid flag, the placement offset and the waypoint flag) and are derived on restore (`GuestSnapshot.ExpandNativeWalk`,
+`GuestNavigation.RestoreNativeRecord`):
+
+- the walk is the navigator record alone: no route, no crossings or extra open cells, no reroutes. A Theme Park Inc walk never had a route: since NV5 `Navigate` drops the route bookkeeping in a Theme Park
+  Inc map, and the walk step reads the subpath buffer, which the record holds;
+- the walk's kind: a record with buffered waypoints or a stuck flag is a route walk; a record that never set a walk up (count 0, not stuck) is a stood walk; the kind changes no step of a native walk
+  and leaves the digest;
+- the heading floats from the heading word (`ThemeParkIncWalkStep.Vector`), the step start from mPreviousX/Y, the caps from the record;
+- the cell is the navigator's (`+5`/`+7` are the position >> 8, which the chain update writes with every step); a native guest's own cell field now follows its navigator every update (the walk step
+  `0x60B4BB` writes the cell bytes), where it lagged a step before; the previous cell is never read for a native guest, the on-grid flag is always set, the placement offset is the id's jitter (presentation);
+- the bridged boarding of a native guest (state 16, Theme Park World's boarding under `[EXT:tpi-twp-guest-rules]`) is not the original's walk: there the guest keeps its cell, previous cell and waypoint
+  flag in the member `BridgedWalk`.
+
+`CellSerial` stays in OpenTPW's snapshot until the native writer writes the chain links (the park writer's N6/N7). The original keeps each cell's things as a chain (mMapChild/mMapParent, newest at the
+head), and OpenTPW orders each cell's list by the serial its walkers took on entering it: the order of one cell's list is the serials' order, so either can be rebuilt from the other exactly, and the order
+of serials across cells is never read. Deriving the serials now would need the links, which no OpenTPW save holds yet; the writer will write the links from the serials' order and the native loader
+will number the chains it reads.
+
+The digest of a native guest no longer hashes its heading floats, its moving flag, its previous cell or its waypoint flag (presentation or derived), except in the bridged boarding, and hashes its accurate
+destination words; a staff member's digest is his park save, which now holds the new members. No pin moves: no pin runs a Theme Park Inc park.
+
+**The load semantics for the park writer.** `ThemeParkIncNativeWalk.Load` is the load half on one walker (the members verbatim, then the re-route with the park's counter and block stamps as they stand),
+`LoadAll` the loader's pass (a fresh process: the counter and the block stamps zeroed, then each person in load order), and `SaveAndReRoute` / `ReRouteAfterSave` the save half with N-1's re-route of the
+live walker. OpenTPW's own resume file is not the original's save: it restores a walker verbatim and does not re-route (a continuation), and saving it leaves the live session as it was. A block whose
+navigator OpenTPW's walk cannot hold, whose cell bytes are not the navigator's position >> 8, or whose wander flag is above 1 (the game stores 0 or 1), is refused.
+
+**Not stored.** mLastRecordedMapId `+0xE4` (written by the constructor with the cell word and by the walk step's effect cell; read only by the effect-cell test, which OpenTPW derives from the current cell)
+and the sprite and thought members belong to the park writer's later phases, which carry them through the block.
+
+**Verified.** The oracle targets `tpi-exe-person-record` (both halves of `0x609170` with the re-route stubbed: 500 blocks byte-equal, `walk_reading.person_load`) and `tpi-exe-person-reroute` (the load
+half with the real re-route and then the save half: 200 persons, the counter fresh and running, marks held, released and above the counter, routes found and not) agree with `walk_reading.py`
+(ORACLE.md section 7.19). The stranded test reads the nine offset pairs at `0xAA0060`, which the static initialiser `0x60BA80` fills; every target on the person world now runs that initialiser (the NV3 and NV4 targets ran on a
+zeroed table, which tests the one cell nine times: they still agree with it filled). `ThemeParkIncNativeWalkTests` holds Game.exe's results for 10 blocks on the navigator tests' map (the load's counter,
+mark and record, the bytes the save wrote, and the save's re-route), from `tools/ppc-analysis/oracle_x86/tpi_person_golden.py`; checks that a fresh-process load starts the counter at 0; reads and writes
+every block unchanged (T4); continues native guests through five saves of OpenTPW's resume, each restoring the same bytes and the same digest and going on alike (T3);
+and loads a played park's person blocks onto blanked walkers with the original's semantics and gets the park the blocks give on the restored ones, turn by turn (T2). `ThemeParkIncHandymanTests` does the same
+for a native handyman. T1 (the prebuilt's persons byte-equal after import and export) is vacuous on the Science prebuilt: no prebuilt holds a person; the test checks that and round-trips a person appended
+to the prebuilt through the thing-body reader.
+
 ## Random numbers
 
 No world draw and no C runtime `rand()` (`0x870D38`) is reached from the edge test, the commit, the search or the neighbour query [R], nor from the constructor, the set-up, the
-steering step, the speed setter or the serializer [R, O: the oracle allows none of them], nor from the walk step, the speed step, the route requests, the stranded test or the staff
+steering step, the speed setter, the navigator serializer or the person serializer with its re-route [R, O: the oracle allows none of them], nor from the walk step, the speed step, the route requests, the stranded test or the staff
 route [R, O: the NV3 targets allow neither routine]. The wander and the fallback draw the world generator `0x6493E0` only (the draws above) and never `rand()` [R, O: `tpi-exe-wander` runs
 the generator and allows no `rand()`].
 
 ## Later phases
 
-- NV5: the native walk storage and load semantics.
+- The park writer (its plan's N2 onwards) calls `ThemeParkIncNativeWalk.LoadAll` and `SaveAndReRoute` and writes the chain links (N6/N7), after which `CellSerial` can be derived.

@@ -2482,6 +2482,15 @@ agree 200/200 with `walk_reading.py`'s `Wanderer`; tp.exe's rules on the same pe
 cell and thought 0x16) differ on 86. Corners one cell apart and reversed divide by zero in `0x62c720` (a CPU exception in the sandbox, as in the game); the inputs avoid them.
 `ThemeParkIncWanderTests` holds Game.exe's results for 14 wanders and 7 sets of route requests on the navigator tests' map (`tpi_wander_golden.py`).
 
+**The person serializer and the load semantics (NV5).** `tpi-exe-person-record` runs Game.exe's person serializer `0x609170` (thiscall: stream, mode) both ways on a 396-byte person block of random
+members and a navigator of `walk_reading.py`'s walks, with the re-route `0x403daf` stubbed and logged, the sprite count `0x6902d0` stubbed (mSpriteID below it), the thought object `0x638490` and the
+sprite `0x5d0cd0` run: the save half's bytes, the load half's members and the record agree 500/500 with `walk_reading.person_block` and `person_load`. `tpi-exe-person-reroute` runs the load half with the
+real re-route `0x60b8e0` and then the save half of the loaded person (the counter fresh at 0 with no block stamps, or running with stamps; marks none, held, released by the block stamps and above the
+counter; destinations reachable and not; a wander flag of 0 or 1): the answers, the counter, the mark, the target words, the navigator's record after each half and the bytes the save wrote agree 200/200
+with `walk_reading.py` (90 fresh, 23 held, 73 cleared, 91 routes failed, 109 found). Both run at the game thread's control word 0x7f. The stranded test reads nine offset pairs from BSS at `0xaa0060`,
+which the static initialiser `0x60ba80` fills before the game runs (its tail registers an `atexit` at `0x86fa6d`, stubbed); every target on the person world (the NV3 and NV4 targets too) now runs it first. Before NV5 those targets ran on a zeroed
+table (nine reads of the person's own cell); with the table filled they still agree, and tp.exe's rules differ on the same counts (14 and 86). `ThemeParkIncNativeWalkTests` holds Game.exe's results for 10 blocks (`tpi_person_golden.py`).
+
 **Fixed in C#.** Guests walking the park's cells use this walk (WALK-002 and WALK-009 retired; WALK-004 .. WALK-008 narrowed, WALK-006 later retired). Its
 limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and a park resumed from an old save has the link byte of its entrance and exit cells laid at load (`[EXT:legacy-save-access-links]`; WALK-006 retired), so a refused stand-point search is the original's dismissal; walks restored from older saves keep the route walk (`[EXT:legacy-save-route-walk]`).
 

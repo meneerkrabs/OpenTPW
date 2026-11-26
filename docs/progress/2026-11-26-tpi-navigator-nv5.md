@@ -1,0 +1,15 @@
+## Theme Park Inc: the native walk storage and the load semantics (November 26, 2026)
+
+The fifth and last phase of the Theme Park Inc navigator port (NV5). A Theme Park Inc staff member and a native guest now keep their walk as the original's person block holds it, and the original's save and load semantics are ready for the native park writer.
+
+- **The person block.** The original's person serializer is ported both ways: the 396-byte block with the thing words, the sprite, the accurate destination, the speed words, the 177-byte navigator, the turn's start point, the stranded mark, the wander flag, the heading word and the thought object, in the original's order.
+- **The walk storage.** OpenTPW's own saves store a staff member's and a native guest's walk as the original's members: the accurate destination, the turn's start point, the navigator record, the heading word, the wander flag and the stranded mark. The walk fields OpenTPW kept of its own (the route bookkeeping, the heading floats, the cells, the offsets) are no longer saved and are rebuilt from those members on load. Every route request now writes the accurate destination first, as every one of the original's does. The walkers' cell entry numbers stay until the park writer writes the original's cell chains, since each can be rebuilt from the other.
+- **Load and save as the original.** The original sets every walk up again when it loads a park, with a counter that starts at 0 in a new process, and also after each save of a person. Both are ported as calls the native park writer will make. OpenTPW's own resume stays a continuation: it restores every walk exactly and the session goes on as if unsaved.
+- **Two staff details.** A gardener watering now turns to face the path beside his plant as in the original, and a staff member's wander flag and stranded mark are saved, as the original saves them. A handyman put down at his litter stands still, as in the original.
+- **Saves.** Science saves made before this phase are refused with the same message as those from before the previous phase, so a player sees one refusal. Theme Park World saves are unchanged.
+
+No new approximation or label is added, and no C runtime `rand()` is reached from the person serializer or its re-route.
+
+Verified with two new x86 oracle targets that run the original person serializer (500 blocks) and its load and save with the real re-route (200 persons, fresh and running counters, held, released and stale marks), all agreeing with the port; a fix to the oracle's person world, which now fills the stranded test's offset table as the game's static initialiser does (the earlier targets still agree); unit tests that hold the original's results for ten blocks, round-trip every block, continue native guests through five saves, and load a played park's blocks with the original's semantics onto blanked walkers with the same result turn by turn; the full test suites with the Theme Park Inc and Theme Park World data; and the silent, offscreen Science smoke with and without the native guests.
+
+The original game was not launched, and no binary or data is included.

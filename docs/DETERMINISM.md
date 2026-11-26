@@ -1492,3 +1492,13 @@ Theme Park World is unchanged: every `DeterminismTests` pin, the `BuildStepsTest
 the stamp-counter comparisons are unsigned (`ParkCellMap.StampBelow`; no Theme Park World value reaches 2^31), the two Theme Park World route requests that lacked the counter call
 (`RouteToPoint`, `RouteToStopPoint`, tp.exe's `0x4FA5F0`) now ask for the next value, which raises nothing in a park that counts the edits only, and the wander's step count may be drawn by the
 caller first (`GuestWander.PickAfterCount`), which Theme Park World's callers do not do. No draw is added to or removed from a Theme Park World run.
+
+## Theme Park Inc navigator, NV5 (November 26, 2026)
+
+A Theme Park Inc staff member and a native guest store their walk as Theme Park Inc's person block ([TPI-NAVIGATOR.md](reverse/TPI-NAVIGATOR.md), "The native walk storage"). A Theme Park Inc run moves
+in a few places, all ports: every route request and wander writes the accurate destination words, which a native guest's digest now hashes; the handyman's placement at his litter zeroes his velocity
+(`0x60BD80`); a native guest's cell follows its navigator every update (the walk step `0x60B4BB`); the gardener's watering sets his heading word (`0x609E60`); a staff member keeps his wander flag and
+stranded mark, which his park save (and so the digest) holds; a Theme Park Inc walk keeps no route bookkeeping, and a staff member's fresh walk starts with the navigator's constructor state instead of a walk
+to his own point. A native guest's digest no longer hashes its heading floats, moving flag, previous cell and waypoint flag outside the bridged boarding (derived or presentation). No draw is added or
+removed. No checked-in pin holds a Theme Park Inc run, so no pinned value changes; Theme Park World is unchanged (every `DeterminismTests` pin, the `BuildStepsTests` digests and the save-digest pins
+hold), and a Theme Park World save writes none of the new members.

@@ -328,22 +328,20 @@ def ftol(value: float) -> int:
 
 
 def play_gain(prize: int, price: int, medium: int) -> int:
+    """GuestSimulation.ThemeParkIncPlayGain: the quotient (fidiv) and the product (fmulp) rounded to singles; the ratio of fyl2x's full-precision logarithms rounded once to a single."""
     if price == 0:
         quotient = math.inf if prize > 0 else -math.inf if prize < 0 else math.nan
     else:
         quotient = f32(prize / price)
     if math.isnan(quotient) or quotient < 0:
-        logarithm = math.nan
+        ratio = math.nan
     elif quotient == 0:
-        logarithm = -math.inf
+        ratio = -math.inf
     elif math.isinf(quotient):
-        logarithm = math.inf
+        ratio = math.inf
     else:
-        logarithm = f32(math.log(quotient))
-    ln2 = f32(math.log(2.0))
-    ratio = logarithm / ln2 if not math.isnan(logarithm) else math.nan
-    ratio = f32(ratio) if not (math.isnan(ratio) or math.isinf(ratio)) else ratio
-    product = ratio * medium if not math.isnan(ratio) else math.nan
+        ratio = f32(math.log2(quotient))
+    product = ratio * medium if not math.isnan(ratio) and not (math.isinf(ratio) and medium == 0) else math.nan
     if not (math.isnan(product) or math.isinf(product)):
         product = f32(product)
     return ftol(product)
@@ -563,7 +561,8 @@ def use_rounds(image: Image, rng: random.Random, cases: int) -> int:
              'vomit': rng.choice([0, 5]), 'happiness': rng.choice([0, 10, -5]), 'litter': rng.choice([0, 10]), 'toilet': rng.choice([0, 15]), 'ingredient': rng.choice([0, 0, 1, 2, 3, 4]),
              'appearance': rng.choice([0, 0, 1, 2, 3]), 'salt': rng.choice([0, 20]), 'fat': rng.choice([0, 30]), 'ice': rng.choice([0, 10]), 'sugar': rng.choice([0, 99]),
              'relief': rng.random() < 0.25}
-        w = {'cost': rng.choice([0, 10, 40]), 'quality': rng.choice([0, 20, 50, 100]), 'price': rng.choice([0, 5, 20]), 'amount': rng.choice([0, 30, 50, 100])}
+        w = {'cost': rng.choice([0, 10, 40, rng.randrange(0, 100000)]), 'quality': rng.choice([0, 20, 50, 100]), 'price': rng.choice([0, 5, 20, rng.randrange(1, 100000)]),
+             'amount': rng.choice([0, 30, 50, 100])}
         g = {'id': rng.randrange(1, 0x4000), 'fee': rng.choice([0, 0, 15]), 'purse': rng.randrange(0, 500), 'spent': rng.randrange(0, 100),
              'happiness': f32(rng.choice([10.0, 50.0, 80.5, 99.0])), 'thirst': f32(rng.choice([0.0, 50.0, 95.0])), 'hunger': f32(rng.choice([0.0, 60.0, 100.0])),
              'toilet': f32(rng.choice([0.0, 70.0, 99.5])), 'illness': f32(rng.choice([0.0, 40.0, 91.0, 99.0])), 'litter': f32(rng.choice([0.0, 60.0])), 'fatigue': f32(rng.choice([0.0, 50.0])),

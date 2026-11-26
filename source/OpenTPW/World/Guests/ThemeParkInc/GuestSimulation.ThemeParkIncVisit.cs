@@ -6,9 +6,17 @@ namespace OpenTPW;
 // dismiss of VAR_LETMEOFF calls the exit through IRideVisitorHost.OnVisitorExitRide).
 public sealed partial class GuestSimulation
 {
-	/// <summary>The balloon sprite's colours (the slot count <c>+0x21E</c> of the bank <c>0x690370(0xE)</c> draws from).</summary>
-	// [DATA:esprites.wad/Generic/Balloons/Spr_bl.esp] the four colour slots, as Theme Park World's SPR_BL (GuestSpriteAtlas.LoadBalloons); the litter table 0x9D0614 holds one type per colour (9, 0xC, 0xB, 0xA)
+	/// <summary>The balloon colours of the shipped balloon bank, the modulus of the colour draw where no bank is loaded (a rig).</summary>
+	// [DATA:esprites.wad/Generic/Balloons/Spr_bl.esp] four slots with frames (0..3), as Theme Park World's SPR_BL; the litter table 0x9D0614 holds one type per colour (9, 0xC, 0xB, 0xA)
 	public const int ThemeParkIncBalloonColours = 4;
+
+	/// <summary>
+	/// The balloon colours the colour draw takes modulo: the slot count of the loaded balloon bank (sprite category 0xE), which the level reads from its ESP
+	/// (<see cref="SpriteAnimationFile.Animations"/> with frames); <see cref="ThemeParkIncBalloonColours"/> without a loaded bank.
+	/// </summary>
+	// [BIN:TPI-EXE:0x690394 sprite variant draw] (world draw >> 2) modulo the bank record's word +0x21E, which the ESP loader counts as the slots whose frames-per-direction byte is nonzero (0x68EBAC
+	// zeroes it, 0x68EBEF raises it for each of the 16 slots read from the file)
+	internal int TpiBalloonColours { get; set; } = ThemeParkIncBalloonColours;
 
 	/// <summary>The info type word (<c>Info.RideTypeStringIndex</c>, type <c>+0xC0</c>) whose use reads its result back from the script's VAR_PARAM (<c>0x61196C</c>).</summary>
 	public const int ThemeParkIncScriptedResultType = 0x17;
@@ -458,7 +466,7 @@ public sealed partial class GuestSimulation
 		{
 			case 1:
 			{
-				tpi.BalloonColour = (int)((random.NextWord() >> 2) % ThemeParkIncBalloonColours);
+				tpi.BalloonColour = (int)((random.NextWord() >> 2) % (uint)TpiBalloonColours);
 				tpi.HoldsBalloon = true;
 				var countdown = (uint)quality * ThemeParkIncBalloonLife / 100;
 				tpi.BalloonCountdown = countdown < ThemeParkIncBalloonFloor ? ThemeParkIncBalloonFloor : countdown > ThemeParkIncBalloonLife ? ThemeParkIncBalloonLife : countdown;
@@ -550,19 +558,19 @@ public sealed partial class GuestSimulation
 		return mood;
 	}
 
-	/// <summary>A won play's gain: <c>_ftol(ln(prize / price) / ln 2 × medium)</c> with each x87 step rounded to a single; a result that is not finite gives 0, the low dword of the integer indefinite.</summary>
-	// [BIN:TPI-EXE:0x6133B7 won play gain] fild +0x88, fidiv +0x94, fldln2/fyl2x (ln), fldln2 with the double 2.0 (0x93B310)/fyl2x (ln 2), fdivp, fild the byte, fmulp, _ftol: the control word 0x7F
-	// rounds the divisions and the product to 24 bits, while fyl2x itself runs at full precision; a price of 0 gives an infinity (or a NaN), whose _ftol is the low dword 0 of the integer indefinite
-	private const double Ln2 = 0.69314718055994530942;
-
+	/// <summary>
+	/// A won play's gain: <c>_ftol(ln(prize / price) / ln 2 × medium)</c>. The quotient and the product round once to a single at the control word <c>0x7F</c>; the logarithms run at the
+	/// x87's full precision, so their ratio is log₂ of the quotient, rounded once to a single by <c>fdivp</c>. A result that is not finite gives 0, the low dword of the integer indefinite.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6133B7 won play gain] fild +0x88, fidiv +0x94 (rounded to 24 bits), fldln2/fyl2x (ln, extended), fldln2 with the double 2.0 (0x93B310)/fyl2x (ln 2, extended), fdivp (rounded to
+	// 24 bits), fild the byte, fmulp (rounded to 24 bits), _ftol; the precision control does not reduce fyl2x. A price of 0 gives an infinity (or a NaN), whose _ftol is 0. The ratio is the
+	// deterministic DetMath.Log2 rounded to a single: over every positive single from 2^-32 to 2^32 (every quotient of two 32-bit words) its double lies at least 3 double ulps from a midpoint
+	// between two singles, far beyond the extended ratio's error, so both round to the same single (ThemeParkIncNativeVisitTests)
 	internal static int ThemeParkIncPlayGain( int prize, int price, int medium )
 	{
-		var quotient = (float)((double)prize / price);
-		// ln x as log₂ x × ln 2 through the deterministic DetMath.Log2 (docs/DETERMINISM.md); the logarithms are kept as singles here, where the original keeps fyl2x's full result: an
-		// exhaustive comparison over prizes 1..60, prices 1..40 and medium 1..60, 100, 128, 200 and 255 found no case where the ratio's single or the gain differs
-		var logarithm = (float)(DetMath.Log2( quotient ) * Ln2);
-		var ln2 = (float)Ln2;
-		var product = (float)((float)(logarithm / ln2) * (float)medium);
+		var quotient = ThemeParkIncX87.Quotient( prize, price );
+		var ratio = (float)DetMath.Log2( quotient );
+		var product = ThemeParkIncX87.Product( medium, ratio );
 		return ThemeParkIncX87.Ftol( product );
 	}
 
@@ -624,9 +632,11 @@ public sealed partial class GuestSimulation
 			tpi.Mode = 1;
 		if ( view.Use.RequiresTeleport )
 		{
-			// [BIN:TPI-EXE:0x61A70B placement] 0x60AE00(0) comes first: besides the drawing it raises the stamp counter (0x5D81F0 at 0x60AFFD) and clears the stranded mark +0x1B0 when the
-			// raised value is below it (0x60B002). The counter here counts the edits only (ParkCellMap.StampCounter), and a mark set under it is never above the next value, so the test
-			// cannot clear it; the raise and the test join here with Theme Park Inc's navigator and its counter of the simulation's calls (NV3, TPI-NAVIGATOR.md)
+			// [BIN:TPI-EXE:0x61A70B placement] 0x60AE00(0) comes before the beam (0x61A716): besides the drawing it raises the stamp counter (0x5D81F0 at 0x60AFFD) and clears the stranded mark +0x1B0
+			// when the raised value is below it (0x60B002). With Theme Park Inc's navigator the counter counts the simulation's calls (ParkCellMap.CountsSimulationCalls); Theme Park World's walk counts
+			// the edits only, as at the constructor's placement (0x60CAC9)
+			if ( WalksThemeParkInc )
+				ThemeParkIncPlacementStamp( guest );
 			Beamed?.Invoke( guest );
 		}
 		if ( (tpi.HoldsBalloon || tpi.BalloonCountdown > 0) && view.Terms.AppearanceEffect != 1 )
@@ -699,15 +709,8 @@ public sealed partial class GuestSimulation
 	// ---- Restore of a phase P3a save ---------------------------------------------------------------------------------------------
 
 	/// <summary>
-	/// A phase P3a save's guest of the bridged boarding (state word 16 with one of Theme Park World's four boarding states): the native state its boarding stands for, or null when the save holds none.
-	/// Boarding (the walk to the stand point) stays 16; WaitingToBoard becomes 17 without its entry roll; Using becomes 20; ExitingRide becomes 19. Nothing is drawn.
+	/// A phase P3a save's rider of the bridged boarding: the state word 16 with Theme Park World's WaitingToBoard, Using or ExitingRide. Such a rider stands for state 17, 20 or 19, whose chance roll
+	/// (<c>+0x21B</c>), fee (<c>+0x1B4</c>) and mode the bridged boarding never kept, so the restore refuses it; the walk to the stand point (Boarding) is state 16 itself and restores.
 	/// </summary>
-	internal static int? ThemeParkIncStateOfBridgedBoarding( GuestState state ) => state switch
-	{
-		GuestState.Boarding => ThemeParkIncGuestStates.BeingLoaded,
-		GuestState.WaitingToBoard => ThemeParkIncGuestStates.WaitingToBeAdmitted,
-		GuestState.Using => ThemeParkIncGuestStates.UnderObjectControl,
-		GuestState.ExitingRide => ThemeParkIncGuestStates.BeingUnloaded,
-		_ => null
-	};
+	internal static bool IsThemeParkIncBridgedRider( GuestState state ) => state is GuestState.WaitingToBoard or GuestState.Using or GuestState.ExitingRide;
 }

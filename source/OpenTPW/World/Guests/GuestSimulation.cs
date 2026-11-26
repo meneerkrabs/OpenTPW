@@ -3588,10 +3588,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		EnterGuestState( guest, GuestState.CrossingRoadHome );
 	}
 
-	/// <summary>The native state a snapshot's guest runs after the restore: its state word, or for a phase P3a save's bridged boarding the state its Theme Park World boarding state stands for.</summary>
-	private static int NativeStateOf( ThemeParkIncGuestSnapshot native, GuestState projected ) =>
-		native.State == ThemeParkIncGuestStates.BeingLoaded && ThemeParkIncStateOfBridgedBoarding( projected ) is { } mapped ? mapped : native.State;
-
 	private void ReturnToPath( Guest guest, (int X, int Y) cell )
 	{
 		guest.AttractionId = 0;
@@ -4563,9 +4559,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					Error( $"Guest {guest.Id} holds a Theme Park Inc native block that a save of this park cannot hold (it runs without the native guest states, or the save says it did)." );
 				foreach ( var problem in native.Problems( guest.Id ) )
 					Error( problem );
-				// a phase P3a save's bridged boarding kept the state word 16 through Theme Park World's boarding, waiting, ride and exit states; the restore maps it (ThemeParkIncStateOfBridgedBoarding)
-				var nativeState = NativeStateOf( native, guest.State );
-				if ( nativeState < ThemeParkIncGuestStates.Count && ThemeParkIncGuestStates.Projection( nativeState ) != guest.State )
+				// a phase P3a save's bridged boarding kept the state word 16 through Theme Park World's waiting, ride and exit states, which lost the native visit's roll, fee and mode: refused
+				if ( native.State == ThemeParkIncGuestStates.BeingLoaded && IsThemeParkIncBridgedRider( guest.State ) )
+					Error( $"Guest {guest.Id} is a rider of phase 3a's bridged boarding (Theme Park Inc state 16 with {guest.State}): its chance roll, fee and mode were never saved, so it cannot become a native rider." );
+				else if ( native.State < ThemeParkIncGuestStates.Count && ThemeParkIncGuestStates.Projection( native.State ) != guest.State )
 					Error( $"Guest {guest.Id} state {guest.State} is not the projection of its Theme Park Inc state {native.State}." );
 			}
 			if ( guest.KidSetDraw is < 0 or > uint.MaxValue )
@@ -4723,7 +4720,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// the script has taken it (the guest leaves the list itself, 0x61A21D); a guest in 17 is named by the ride's written loading slot or held by it
 			if ( guest.Tpi is { } native )
 			{
-				var nativeState = NativeStateOf( native, guest.State );
+				var nativeState = native.State;
 				var nativeInQueue = ThemeParkIncGuestStates.InQueueOrLoading( nativeState, native.Saved );
 				if ( nativeInQueue != queuedIn.TryGetValue( guest.Id, out var nativeQueue ) )
 					Error( $"Guest {guest.Id} is in Theme Park Inc state {nativeState} but {(nativeInQueue ? "no attraction's queue holds it" : $"attraction {nativeQueue}'s queue holds it")}." );
@@ -5045,10 +5042,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.PrankFlag = snapshot.PrankFlag;
 		guest.TpiPrankCode = snapshot.TpiPrankCode;
 		guest.Tpi = snapshot.Tpi?.Restore();
-		// a phase P3a save's bridged boarding becomes the native state it stands for, drawing nothing: 17 without its entry roll (+0x21B keeps the queue place the save holds), 20, or 19 after Theme Park
-		// World's use routine; the save holds no fee word (the bridged boarding's pending fee is not saved), so the fee is 0
-		if ( guest.Tpi is { State: ThemeParkIncGuestStates.BeingLoaded } bridged && ThemeParkIncStateOfBridgedBoarding( guest.State ) is { } mapped )
-			bridged.State = mapped;
 		guest.ExitSide = snapshot.ExitSide;
 		guest.BalloonLife = snapshot.BalloonLife;
 		guest.HasBalloon = snapshot.HasBalloon;

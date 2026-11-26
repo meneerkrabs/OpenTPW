@@ -47,13 +47,16 @@ public sealed class ThemeParkIncNativeVisitTests
 		public IReadOnlyList<ThemeParkIncAttractionView> Attractions() => [new ThemeParkIncAttractionView( ThemeParkIncNativeVisitTests.Thing, (2, 6), ride, Terms ) { Use = Use }];
 	}
 
-	private static (QueueTests.Rig Rig, World World, Payments Payments) Rig( bool takesGuests = true )
+	/// <summary>The queue rig with a native guest world; <paramref name="walk"/> (default <see cref="ThemeParkIncNativeGuestTests.NativeWalkByDefault"/>) walks with Theme Park Inc's navigator.</summary>
+	private static (QueueTests.Rig Rig, World World, Payments Payments) Rig( bool takesGuests = true, bool? walk = null, GuestNeeds satisfies = GuestNeeds.None )
 	{
-		var rig = new QueueTests.Rig( takesGuests: takesGuests, configure: settings =>
+		var rig = new QueueTests.Rig( takesGuests: takesGuests, satisfies: satisfies, kind: RideVisitorKind.Ride, configure: settings =>
 		{
 			settings.TpiGuestStart = new( Enumerable.Range( 0, 24 ).Select( i => new ThemeParkIncGuestType( 55, 300 + 20 * i, 40 + i, i / 8 ) ).ToArray(), 400, 30, 15, 70, 20, 10, 10 );
 			settings.TpiNative = ThemeParkIncNativeGuestTests.NativeSettings() with { DecisionVariables = new( 30, 5, 0 ), DecisionWeights = DecisionWeights.Shipped };
 		} );
+		if ( walk ?? ThemeParkIncNativeGuestTests.NativeWalkByDefault )
+			rig.Grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
 		var world = new World( rig.Ride );
 		var payments = new Payments();
 		rig.Simulation.ThemeParkIncNativeGuests = true;
@@ -115,6 +118,36 @@ public sealed class ThemeParkIncNativeVisitTests
 		CollectionAssert.AreEqual( new[] { (int)Thing, 0, 0, 0 }, guest.UsedHistory );
 	}
 
+	/// <summary>
+	/// State 19's entry for a teleporting ride (<c>0x61A69D</c>): the sprite placement <c>0x60AE00(0)</c> at <c>0x61A70B</c>, before the beam, raises the stamp counter and clears a stranded mark above
+	/// the raised value (<c>0x60AFFD</c>, <c>0x60B002</c>) with Theme Park Inc's navigator; Theme Park World's walk counts the edits only.
+	/// </summary>
+	[TestMethod]
+	public void ATeleportingRidesUnloadingRaisesTheStampCounterWithTheNativeWalk()
+	{
+		foreach ( var walk in new[] { true, false } )
+		{
+			var (rig, world, _) = Rig( walk: walk );
+			world.Use = new ThemeParkIncUseTerms( 0, 0, 0, true, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
+			var (guest, tpi) = Native( rig );
+			SendToRide( rig, guest, tpi );
+			Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.UnderObjectControl ) );
+			var cells = rig.Grid.Cells;
+			var beams = new List<int>();
+			rig.Simulation.Beamed += _ => beams.Add( cells.StampCounter );
+			var counter = cells.StampCounter;
+			guest.StrandedMark = counter + 3;
+			rig.Simulation.SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.BeingUnloaded );
+			if ( walk )
+			{
+				Assert.AreEqual( (counter + 1, 0), (cells.StampCounter, guest.StrandedMark), "0x5D81F0 raised once; the raised value below the mark clears it" );
+				CollectionAssert.AreEqual( new[] { counter + 1 }, beams, "the placement comes before the beam (0x61A716)" );
+			}
+			else
+				Assert.AreEqual( (counter, counter + 3), (cells.StampCounter, guest.StrandedMark), "Theme Park World's walk counts the edits only" );
+		}
+	}
+
 	[TestMethod]
 	public void TheChanceRollWritesTheScriptsParamAndThePlaceByte()
 	{
@@ -159,6 +192,116 @@ public sealed class ThemeParkIncNativeVisitTests
 		Assert.AreEqual( 2053832126u, rig.Simulation.World.State, "two small-portion draws, the colour and the quality draw" );
 	}
 
+	/// <summary>
+	/// The use routine's golden cases from the oracle's reading (<c>port_use</c>, which agrees with the executable over the oracle's rounds) for the rig's inputs: the rating 55, the thing words
+	/// (price 12, prize 4, quality 50, win 100, amount 50), the goods cost 7, the shipped PeepInfo words, a fee of 12, a generation-1 male guest whose preference is 55, happiness 10, thirst 60, hunger 50,
+	/// toilet 20 and illness 10, the world generator reseeded with 12345.
+	/// </summary>
+	private static (QueueTests.Rig Rig, World World, Payments Payments, Guest Guest, ThemeParkIncGuestRecord Tpi) UseCase( ThemeParkIncUseTerms use, int appearance = 0,
+		GuestNeeds satisfies = GuestNeeds.None, Action<Guest, ThemeParkIncGuestRecord>? setup = null, ThemeParkIncThingWords? words = null, double wear = 100 )
+	{
+		var (rig, world, payments) = Rig( satisfies: satisfies );
+		payments.Words = words ?? payments.Words;
+		rig.Ride.WearGauge = wear;
+		world.Terms = world.Terms with { AppearanceEffect = appearance };
+		world.Use = use;
+		rig.Simulation.TpiCostumeBankFemale = [false, true, false];
+		rig.Simulation.TpiSpriteBankCounts = [4, 4, 4];
+		var (guest, tpi) = Native( rig );
+		Assert.AreEqual( 55, rig.Ride.LiveExcitement & 0xFF, "the rating the oracle's cases read" );
+		(guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea, guest.Litter, guest.Money) = (10, 60, 50, 20, 10, 0, 100);
+		(tpi.Fee, tpi.Byte21B, tpi.PreferredExcitement, tpi.Generation) = (12, 1, 55, 1);
+		tpi.Word234 = BitConverter.SingleToInt32Bits( 50f );
+		setup?.Invoke( guest, tpi );
+		rig.Simulation.World.Reseed( 12345 );
+		rig.Simulation.ThemeParkIncUseRoutine( guest, tpi, world.Attractions()[0] );
+		return (rig, world, payments, guest, tpi);
+	}
+
+	private static float[] Words2D0( ThemeParkIncGuestRecord tpi ) => tpi.Words2D0.Select( BitConverter.Int32BitsToSingle ).ToArray();
+
+	/// <summary>A sideshow (WhichUIType 2) won: the prize booked and handed over, the gain ln(40 / 12) / ln 2 × 15 = 26, the record 0x14 and thought 5.</summary>
+	[TestMethod]
+	public void AWonSideshowMatchesTheOraclesReading()
+	{
+		var (rig, _, log, guest, tpi) = UseCase( new ThemeParkIncUseTerms( 2, 0, 2, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ), words: new( 12, 40, 50, 100, 50 ) );
+		Assert.AreEqual( (61f, 20f, 128, 12), (guest.Happiness, guest.Nausea, guest.Money, tpi.FeesPaid), "10 + 25 (a perfect match) + 26 (the play's gain); the prize 40 in the purse" );
+		CollectionAssert.AreEqual( new[] { 0f, 0f, 0f, 50f, 15f }, Words2D0( tpi ) );
+		CollectionAssert.AreEqual( new[] { 0, 0, 1, 1 }, tpi.Words1EC );
+		CollectionAssert.AreEqual( new[] { (0x14, 83) }, log.Records );
+		Assert.AreEqual( 12345u, rig.Simulation.World.State, "no draw" );
+	}
+
+	/// <summary>A sideshow lost: the medium step, the use flag cleared, <c>+0x2DC</c> − 35 (from 0, clamped) and thought 6; no record, no draw.</summary>
+	[TestMethod]
+	public void ALostSideshowMatchesTheOraclesReading()
+	{
+		var (rig, _, log, guest, tpi) = UseCase( new ThemeParkIncUseTerms( 2, 0, 2, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ), setup: ( _, tpi ) => tpi.Byte21B = 0 );
+		Assert.AreEqual( (0f, 10f, 88, false), (guest.Happiness, guest.Nausea, guest.Money, tpi.UseSucceeded) );
+		CollectionAssert.AreEqual( new[] { 0f, 0f, 0f, 0f, 0f }, Words2D0( tpi ) );
+		CollectionAssert.AreEqual( new[] { 0, 0, 1, 0 }, tpi.Words1EC );
+		Assert.AreEqual( 0, log.Records.Count );
+		Assert.AreEqual( 12345u, rig.Simulation.World.State );
+	}
+
+	/// <summary>A costume shop (AppearanceEffect 2) puts a costume on: category 6, the variant drawn over the three costume banks, a draw nothing reads, the judgement, <c>+0x2D8</c> = 33.</summary>
+	[TestMethod]
+	public void ACostumeShopPutsACostumeOnAsTheOracleReadsIt()
+	{
+		var (rig, _, log, guest, tpi) = UseCase( new ThemeParkIncUseTerms( 1, 0, 2, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ), appearance: 2 );
+		Assert.AreEqual( (6, 0, true), (tpi.SpriteCategory, tpi.SpriteVariant, guest.InCostume) );
+		Assert.AreEqual( (85f, 70f, 50f, 88), (guest.Happiness, guest.Nausea, guest.Litter, guest.Money) );
+		CollectionAssert.AreEqual( new[] { 0f, 0f, 33f, 0f, 15f }, Words2D0( tpi ) );
+		CollectionAssert.AreEqual( new[] { (0x11, 155) }, log.Records );
+		Assert.AreEqual( 0, log.Declined );
+		Assert.AreEqual( (ThemeParkIncGuestStates.SpotAnimation, 7), (tpi.State, tpi.Mode), "costume bank 0 is a male's: animation 7" );
+		Assert.AreEqual( 3337293350u, rig.Simulation.World.State );
+	}
+
+	/// <summary>A costume shop takes a costume off: category 0 and the variant drawn after a reseed with the guest's id (a kid's bank, bug-compatible).</summary>
+	[TestMethod]
+	public void ACostumeShopTakesACostumeOffAsTheOracleReadsIt()
+	{
+		var (rig, _, log, guest, tpi) = UseCase( new ThemeParkIncUseTerms( 1, 0, 2, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ), appearance: 2,
+			setup: ( _, tpi ) => (tpi.SpriteCategory, tpi.SpriteVariant) = (6, 2) );
+		Assert.AreEqual( 1, guest.Id, "the oracle's case reseeds with the id 1" );
+		Assert.AreEqual( (0, 3, false), (tpi.SpriteCategory, tpi.SpriteVariant, guest.InCostume) );
+		Assert.AreEqual( (85f, 88), (guest.Happiness, guest.Money) );
+		CollectionAssert.AreEqual( new[] { 0f, 0f, 0f, 0f, 15f }, Words2D0( tpi ) );
+		CollectionAssert.AreEqual( new[] { (0x11, 155) }, log.Records );
+		Assert.AreEqual( 3412190274u, rig.Simulation.World.State );
+	}
+
+	/// <summary>An umbrella shop (AppearanceEffect 3) opens an umbrella: the colour draw, the umbrella up (state 4) with its speed term 0, the judgement (quality 10 below 20 + R % 10: declined), 33.</summary>
+	[TestMethod]
+	public void AnUmbrellaShopMatchesTheOraclesReading()
+	{
+		var (rig, _, log, guest, tpi) = UseCase( new ThemeParkIncUseTerms( 1, 0, 2, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ), appearance: 3, words: new( 12, 4, 10, 100, 50 ) );
+		Assert.AreEqual( (UmbrellaRules.StateOpen, 0, 0), (guest.UmbrellaState, guest.UmbrellaType, guest.ToiletBonus) );
+		Assert.AreEqual( (85f, 70f, 50f, 88), (guest.Happiness, guest.Nausea, guest.Litter, guest.Money) );
+		CollectionAssert.AreEqual( new[] { 0f, 0f, 33f, 0f, 15f }, Words2D0( tpi ) );
+		CollectionAssert.AreEqual( new[] { (0x12, 155) }, log.Records );
+		Assert.AreEqual( 1, log.Declined );
+		Assert.AreEqual( ThemeParkIncGuestStates.Idle, tpi.State, "the umbrella up: no mood animation" );
+		Assert.AreEqual( 339536374u, rig.Simulation.World.State );
+	}
+
+	/// <summary>A relief object's visit (the thing flag <c>+0x42</c> bit 1): half the toilet byte gained, a worn one −20, an illness byte above 90 cured for −50; the toilet 0 and the speed term 25.</summary>
+	[TestMethod]
+	public void AReliefVisitMatchesTheOraclesReading()
+	{
+		var plain = new ThemeParkIncUseTerms( 0, 0, 2, false, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 );
+		foreach ( var (name, wear, illness, happiness, nausea, words4) in new[] { ("fresh", 100.0, 10f, 70f, 20f, 15f), ("worn", 10.0, 10f, 15f, 20f, 15f), ("ill", 100.0, 95f, 0f, 0f, 20f) } )
+		{
+			var (rig, _, _, guest, tpi) = UseCase( plain, satisfies: GuestNeeds.Toilet, wear: wear, setup: ( guest, _ ) => (guest.Toilet, guest.Nausea) = (70, illness) );
+			Assert.IsTrue( rig.Ride.ProvidesRelief );
+			Assert.AreEqual( (happiness, nausea, 0f, 88), (guest.Happiness, guest.Nausea, guest.Toilet, guest.Money), name );
+			Assert.AreEqual( GuestSpeed.ToiletBonus, guest.ToiletBonus, name );
+			Assert.AreEqual( words4, Words2D0( tpi )[4], name );
+			Assert.AreEqual( 12345u, rig.Simulation.World.State, name );
+		}
+	}
+
 	[TestMethod]
 	public void ALostUseCostsTheMediumStepAndNoOutcome()
 	{
@@ -181,6 +324,39 @@ public sealed class ThemeParkIncNativeVisitTests
 		Assert.AreEqual( 0, GuestSimulation.ThemeParkIncPlayGain( 40, 0, 15 ), "a free play: an infinity, whose _ftol is 0" );
 		Assert.AreEqual( 0, GuestSimulation.ThemeParkIncPlayGain( 0, 20, 15 ), "no prize: −infinity, 0" );
 		Assert.AreEqual( -15, GuestSimulation.ThemeParkIncPlayGain( 10, 20, 15 ) );
+	}
+
+	/// <summary>
+	/// The won play's ratio is <c>fyl2x</c>'s full-precision ln of the quotient over ln 2, rounded once to a single (<c>fdivp</c> at the control word <c>0x7F</c>); the port rounds DetMath.Log2's double.
+	/// Every positive single from 2^-32 to 2^32 (every quotient a fidiv of two 32-bit words can give) has its double at least 3 double ulps from a midpoint between two singles, so the two
+	/// roundings agree; the two closest quotients round to the singles an 80-digit reference gives.
+	/// </summary>
+	[TestMethod]
+	public void TheWonPlaysRatioRoundsAsTheExtendedQuotientForEveryQuotient()
+	{
+		var low = BitConverter.SingleToInt32Bits( MathF.ScaleB( 1f, -32 ) );
+		var high = BitConverter.SingleToInt32Bits( MathF.ScaleB( 1f, 32 ) );
+		const int Parts = 64;
+		var closest = new long[Parts];
+		System.Threading.Tasks.Parallel.For( 0, Parts, part =>
+		{
+			var nearest = long.MaxValue;
+			var size = (high - low + Parts - 1) / Parts;
+			for ( var bits = low + part * size; bits < Math.Min( high, low + (part + 1) * size ); bits++ )
+			{
+				var ratio = DetMath.Log2( BitConverter.Int32BitsToSingle( bits ) );
+				if ( ratio == 0 )
+					continue;
+				var single = (float)ratio;
+				foreach ( var neighbour in new[] { MathF.BitIncrement( single ), MathF.BitDecrement( single ) } )
+					nearest = Math.Min( nearest, Math.Abs( BitConverter.DoubleToInt64Bits( ratio ) - BitConverter.DoubleToInt64Bits( ((double)single + neighbour) / 2 ) ) );
+			}
+			closest[part] = nearest;
+		} );
+		Assert.AreEqual( 3, closest.Min(), "no quotient's logarithm lies within 3 double ulps of a single's rounding boundary" );
+		// the two quotients at 3 ulps (0x40207AB9, 0x3EA07AB9): log2 = 1.32624417543411195085... and -1.67375582456588804914... (80 digits)
+		Assert.AreEqual( 1.3262441158294678f, (float)DetMath.Log2( BitConverter.Int32BitsToSingle( 0x40207AB9 ) ) );
+		Assert.AreEqual( -1.6737558841705322f, (float)DetMath.Log2( BitConverter.Int32BitsToSingle( 0x3EA07AB9 ) ) );
 	}
 
 	[TestMethod]
@@ -233,5 +409,51 @@ public sealed class ThemeParkIncNativeVisitTests
 		Assert.AreEqual( MeterMath.Add( victimHappiness, -15 ), victim.Happiness, "the victim loses MediumHappinessChange" );
 		CollectionAssert.AreEqual( new[] { 6 }, posted, "the tail with kind 6" );
 		Assert.AreEqual( 11f, prankster.Happiness, "the tail adds 1.0" );
+	}
+
+	/// <summary>
+	/// The burst balloon's litter (<c>0x613D00(1)</c> through <c>0x5D8C80</c>): the type by the colour (<c>0x9D0614</c>) on the victim's cell, the world generator reseeded with the cell word and drawn
+	/// twice; a cell that holds litter takes none and the generator is not touched.
+	/// </summary>
+	[TestMethod]
+	public void ABalloonPranksLitterReseedsTheWorldGeneratorWithTheVictimsCell()
+	{
+		foreach ( var littered in new[] { false, true } )
+		{
+			var (rig, _, _) = Rig( takesGuests: false );
+			var simulation = rig.Simulation;
+			var litter = new ParkLitter { ThemeParkInc = true, World = () => simulation.World };
+			simulation.Litter = litter;
+			var (prankster, ptpi) = Native( rig, 5, 0 );
+			var (victim, vtpi) = Native( rig, 5, 0 );
+			(vtpi.HoldsBalloon, vtpi.BalloonCountdown, vtpi.BalloonColour) = (true, 100, 1);
+			if ( littered )
+				Assert.IsTrue( litter.Drop( 5, 0, (LitterType)2 ) );
+			prankster.Happiness = 10;
+			prankster.TpiPrankCode = 6;
+			ptpi.Word224 = (int)simulation.ParkTurn;
+			uint seed = 1;
+			while ( !(new WorldRng( seed ).NextWord() is var a && a % 100 < 10 && (a & 3) == 1) )
+				seed++;
+			simulation.World.Reseed( seed );
+			var afterTheDraw = new WorldRng( seed );
+			afterTheDraw.NextWord();
+			uint? atThePrank = null;
+			simulation.ThemeParkIncPrankPosted += ( _, _ ) => atThePrank = simulation.World.State;
+			simulation.UpdateTpiIdle( prankster, ptpi );
+			Assert.IsFalse( vtpi.HoldsBalloon );
+			if ( littered )
+			{
+				Assert.AreEqual( (LitterType)2, litter.TypeAt( 5, 0 ), "+0x30 nonzero (0x5D8CC7): the cell keeps its litter" );
+				Assert.AreEqual( afterTheDraw.State, atThePrank, "nothing reseeded, nothing drawn" );
+			}
+			else
+			{
+				Assert.AreEqual( LitterType.BurstBalloon4, litter.TypeAt( 5, 0 ), "colour 1: the type 0xC (0x9D0614)" );
+				var mirror = new WorldRng( 0 );
+				ParkLitter.ThemeParkIncSpriteOffset( mirror, 5, 0 );
+				Assert.AreEqual( mirror.State, atThePrank, "the reseed 0x649430(cell word) and the draws 0x5D8E14, 0x5D8E42" );
+			}
+		}
 	}
 }

@@ -744,6 +744,37 @@ public sealed class ThemeParkIncNativeGuestTests
 		}
 	}
 
+	/// <summary>
+	/// The rain's balloon (<c>0x614010</c>, the drop at <c>0x61413A</c>): a due open loses a held balloon with its litter on the guest's cell, the type by the colour (<c>0x9D0614</c>), the world
+	/// generator reseeded with the cell word and drawn twice (<c>0x5D8C80</c>).
+	/// </summary>
+	[TestMethod]
+	public void ADueOpenInTheRainDropsTheBalloonsLitterAndReseedsTheWorldGenerator()
+	{
+		var (simulation, _, _) = Rig();
+		var litter = new ParkLitter { ThemeParkInc = true, World = () => simulation.World };
+		simulation.Litter = litter;
+		var guest = simulation.SpawnInPark( 12, 17 );
+		guest.ExitLevel = 100000;
+		var tpi = guest.Tpi!;
+		simulation.ArrivalWeatherState = () => UmbrellaRules.WeatherStorm;
+		simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateOpening );
+		guest.UmbrellaDueTurn = 0;
+		(tpi.HoldsBalloon, tpi.BalloonCountdown, tpi.BalloonColour) = (true, 200, 2);
+		uint? atTheDrop = null;
+		(int X, int Y)? cell = null;
+		litter.Changed += ( x, y, _ ) => (atTheDrop, cell) = (simulation.World.State, (x, y));
+		BeforePhase( simulation, guest.Id & 3 );
+		simulation.Tick( Tick );
+		Assert.AreEqual( UmbrellaRules.StateOpen, guest.UmbrellaState );
+		Assert.IsFalse( tpi.HoldsBalloon );
+		Assert.IsNotNull( cell, "the balloon's litter dropped" );
+		Assert.AreEqual( LitterType.BurstBalloon3, litter.TypeAt( cell!.Value.X, cell.Value.Y ), "colour 2: the type 0xB (0x9D0614)" );
+		var mirror = new WorldRng( 0 );
+		ParkLitter.ThemeParkIncSpriteOffset( mirror, cell.Value.X, cell.Value.Y );
+		Assert.AreEqual( mirror.State, atTheDrop, "the reseed 0x649430(cell word) and the draws 0x5D8E14, 0x5D8E42" );
+	}
+
 	[TestMethod]
 	public void BadWeatherCancelsACloseAndADueOpenReleasesTheBalloon()
 	{

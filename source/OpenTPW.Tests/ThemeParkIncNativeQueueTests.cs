@@ -30,7 +30,8 @@ public sealed class ThemeParkIncNativeQueueTests
 	/// <summary>Score words that keep every generation's score (100 percent) and no weather change.</summary>
 	private static readonly ThemeParkIncScoreTerms Plain = new( 0, 0, false, 0, 0, 0, 0, 100, 100, 100 );
 
-	private static (QueueTests.Rig Rig, World World) Rig( ThemeParkIncScoreTerms? terms = null, int queueCells = 5, bool takesGuests = false, QueueParameters? parameters = null )
+	/// <summary>The queue rig with a native guest world; <paramref name="walk"/> (default <see cref="ThemeParkIncNativeGuestTests.NativeWalkByDefault"/>) walks with Theme Park Inc's navigator.</summary>
+	private static (QueueTests.Rig Rig, World World) Rig( ThemeParkIncScoreTerms? terms = null, int queueCells = 5, bool takesGuests = false, QueueParameters? parameters = null, bool? walk = null )
 	{
 		var rig = new QueueTests.Rig( queueCells: queueCells, takesGuests: takesGuests, parameters: parameters, configure: settings =>
 		{
@@ -40,6 +41,8 @@ public sealed class ThemeParkIncNativeQueueTests
 				DecisionVariables = new( 30, 5, 0 ), DecisionWeights = DecisionWeights.Shipped
 			};
 		} );
+		if ( walk ?? ThemeParkIncNativeGuestTests.NativeWalkByDefault )
+			rig.Grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
 		var world = new World( rig.Ride, terms ?? Plain );
 		rig.Simulation.ThemeParkIncNativeGuests = true;
 		rig.Simulation.ThemeParkIncWorld = world;
@@ -427,30 +430,26 @@ public sealed class ThemeParkIncNativeQueueTests
 	}
 
 	/// <summary>
-	/// A phase P3a save's guest of the bridged boarding (state word 16 with Theme Park World's Using) restores as a rider in state 20, with no fee (the save holds none), and finishes the ride natively
-	/// (TPI-GUESTS.md, "Save").
+	/// A phase P3a save's rider of the bridged boarding (state word 16 with Theme Park World's WaitingToBoard, Using or ExitingRide) is refused: the native visit's roll, fee and mode were never saved
+	/// (TPI-GUESTS.md, "Save"; PARK-SAVES.md).
 	/// </summary>
 	[TestMethod]
-	public void APhaseP3aBridgedRiderRestoresAsStateTwenty()
+	public void APhaseP3aBridgedRiderIsRefused()
 	{
 		var (rig, _) = Rig( takesGuests: true );
 		var (guest, tpi) = Native( rig );
 		SendToRide( rig, guest, tpi );
 		Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.UnderObjectControl, 2000 ), "the guest rides" );
 		var snapshot = rig.Simulation.CaptureSnapshot();
-		// the bridged boarding of phase P3a saved such a rider with the state word 16 and no fee word
-		var guests = snapshot.Guests.Select( item => item.Id == guest.Id ? item with { Tpi = item.Tpi! with { State = ThemeParkIncGuestStates.BeingLoaded, Fee = 0 } } : item ).ToArray();
-		var legacy = snapshot with { Guests = guests };
-		Assert.AreEqual( "", string.Join( "; ", rig.Simulation.ValidateSnapshot( legacy ).Errors ), "the bridged rider is restorable" );
-		var script = rig.Script.CaptureSnapshot();
-		var (copy, _) = Rig( takesGuests: true );
-		copy.Simulation.RestoreSnapshot( legacy );
-		copy.Script.RestoreSnapshot( script );
-		var restored = copy.Simulation.Guests.Single( item => item.Id == guest.Id );
-		Assert.AreEqual( (ThemeParkIncGuestStates.UnderObjectControl, 0), (restored.Tpi!.State, restored.Tpi.Fee), "state 20, no fee" );
-		Assert.IsTrue( RunUntil( copy, () => restored.Tpi.State is ThemeParkIncGuestStates.Idle or ThemeParkIncGuestStates.SpotAnimation && !copy.Ride.HoldsGuest( guest.Id ), 2000 ),
-			"the restored rider is let off natively" );
-		// a P3a guest in 16 with a projection its boarding never had is refused
+		// the bridged boarding of phase P3a saved its waiting guest, its rider and its leaving guest with the state word 16 and Theme Park World's state, and no roll, fee or mode of the visit
+		foreach ( var bridged in new[] { GuestState.WaitingToBoard, GuestState.Using, GuestState.ExitingRide } )
+		{
+			var legacy = snapshot with { Guests = snapshot.Guests.Select( item => item.Id == guest.Id ? item with { Tpi = item.Tpi! with { State = ThemeParkIncGuestStates.BeingLoaded, Fee = 0 }, State = bridged } : item ).ToArray() };
+			StringAssert.Contains( string.Join( "; ", rig.Simulation.ValidateSnapshot( legacy ).Errors ), "bridged boarding", $"{bridged}: refused, not migrated" );
+			var (copy, _) = Rig( takesGuests: true );
+			Assert.ThrowsException<System.IO.InvalidDataException>( () => copy.Simulation.RestoreSnapshot( legacy ) );
+		}
+		// a P3a guest in 16 with a projection its boarding never had is refused too
 		var wrong = snapshot with { Guests = snapshot.Guests.Select( item => item.Id == guest.Id ? item with { Tpi = item.Tpi! with { State = ThemeParkIncGuestStates.BeingLoaded }, State = GuestState.Queueing } : item ).ToArray() };
 		Assert.AreNotEqual( "", string.Join( "; ", rig.Simulation.ValidateSnapshot( wrong ).Errors ) );
 	}

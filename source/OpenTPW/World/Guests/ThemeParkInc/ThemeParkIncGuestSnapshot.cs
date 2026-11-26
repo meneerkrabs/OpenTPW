@@ -98,6 +98,8 @@ public sealed record ThemeParkIncGuestSnapshot
 			yield return $"Guest {guestId} Theme Park Inc spot animation returns to state {Saved} ({ThemeParkIncGuestStates.Names[Saved]}), which is not ported in this build.";
 		if ( BalloonCountdown > 255 )
 			yield return $"Guest {guestId} Theme Park Inc balloon countdown {BalloonCountdown} is above the balloon's life (0x9D0610, 255).";
+		if ( (uint)BalloonColour >= 4 )
+			yield return $"Guest {guestId} Theme Park Inc balloon colour {BalloonColour} is not one of the litter table's four (0x9D0614).";
 		if ( SpriteCategory is { } category && category is not (0 or 1 or 2 or ThemeParkIncCostumeCategory) || SpriteCategory.HasValue != SpriteVariant.HasValue || SpriteVariant < 0 )
 			yield return $"Guest {guestId} Theme Park Inc sprite words ({SpriteCategory}, {SpriteVariant}) are not a generation's or the costumes'.";
 		if ( (uint)Generation > 2 )

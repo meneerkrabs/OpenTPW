@@ -324,17 +324,23 @@ public sealed partial class GuestSimulation
 	/// <summary>
 	/// The balloon goes (<c>0x613D00</c> with 0): a held balloon object is released, the guest loses <c>MediumHappinessChange</c> (a byte) and the countdown is cleared, held or not.
 	/// </summary>
-	// [BIN:TPI-EXE:0x613D00 balloon release] +0x294 nonzero: 0x4E49A0 (the float-away) and +0x294 = 0, and with the argument nonzero the litter 0x5D8C80 of [0x9D0614 + 4 × +0x2A0] drops;
-	// then happiness += -byte [0xA01A7C] (clamped) and +0x298 = 0, whatever was held
-	private static void ReleaseThemeParkIncBalloon( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncGuestSettings settings, bool litter = false )
+	// [BIN:TPI-EXE:0x613D00 balloon release] +0x294 nonzero: 0x4E49A0 (the float-away) and +0x294 = 0, and with the argument nonzero the litter 0x5D8C80 of [0x9D0614 + 4 × +0x2A0] drops on the
+	// guest's cell record (the bytes +5 and +7, 0x613D2C..0x613D60); then happiness += -byte [0xA01A7C] (clamped) and +0x298 = 0, whatever was held. The umbrella's carrying out (0x6140F2..0x61419A)
+	// repeats this body inline, with the drop at 0x61413A
+	internal void ReleaseThemeParkIncBalloon( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncGuestSettings settings, bool litter = false )
 	{
-		// [EXT:tpi-capability-gates] with the argument nonzero a held balloon's litter (0x5D8C80 of [0x9D0614 + 4 × +0x2A0]: the types 9, 0xC, 0xB and 0xA by its colour) is not dropped: ParkLitter holds
-		// the types 1..8 (the litter is phase P4's); the drop draws nothing
-		_ = litter;
+		// [BIN:TPI-EXE:0x613D37 balloon litter] the type by the colour +0x2A0 (0x9D0614: 9, 0xC, 0xB, 0xA); the drop (0x5D8C80) on a cell that holds no litter reseeds the world generator with the
+		// cell word and draws twice (0x5D8DCF, 0x5D8E14, 0x5D8E42), on one that holds some it does nothing (+0x30 nonzero, 0x5D8CC7)
+		if ( litter && tpi.HoldsBalloon )
+			DropThemeParkIncLitter( guest, ThemeParkIncBalloonLitter[tpi.BalloonColour] );
 		tpi.HoldsBalloon = false;
 		guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(settings.MediumHappinessChange & 0xFF) );
 		tpi.BalloonCountdown = 0;
 	}
+
+	/// <summary>The litter of a lost balloon by its colour (the table <c>0x9D0614</c>).</summary>
+	// [BIN:TPI-EXE:0x9D0614 balloon litter types] the dwords 9, 0xC, 0xB, 0xA for the colours 0..3
+	internal static readonly LitterType[] ThemeParkIncBalloonLitter = { LitterType.BurstBalloon1, LitterType.BurstBalloon4, LitterType.BurstBalloon3, LitterType.BurstBalloon2 };
 
 	// ---- The weather rule ------------------------------------------------------------------------------------------------------------
 

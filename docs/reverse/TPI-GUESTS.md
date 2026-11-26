@@ -157,8 +157,12 @@ The verdict cases of state 4:
 **Not ported, gated under `[EXT:tpi-capability-gates]`:**
 - the tutorial tips of state 5 (advice 0x207 and 0x208 in the first `FirstHour.Minutes`, `0x650890`);
 - state 30's mark of a prankster in the tag system (`0x636B10`, phase P4);
-- the balloon's litter when an umbrella opens (the types 9, 0xC, 0xB and 0xA of `0x9D0614`, by the balloon's colour `+0x2A0`): `ParkLitter` holds the types 1..8, so the drop waits for the
-  litter of phase P4. The balloon still goes and costs its happiness step. The same holds for every `0x613D00(1)` (state 20's entry at an umbrella shop, the balloon prank).
+
+**The balloon's litter** (phase P3b) drops wherever a held balloon (`+0x294`) goes with litter: the umbrella's carrying out (`0x61413A`, inline), state 20's entry at an umbrella shop
+(`0x61A7D4`) and the balloon prank (`0x61507C`), the last two through `0x613D00(1)`. The type is the colour's (`+0x2A0`) entry of `0x9D0614`: 9, 0xC, 0xB and 0xA, Theme Park Inc's burst
+balloons (`LitterType.BurstBalloon1..4`; the drop's table `0x5D8EFC` gives them the descriptors `0x9B0AD8..0x9B0B44`, its `SPR_LI` slots 8..11). It lies on the guest's own cell (the bytes
+`+5`, `+7`) through the common drop `0x5D8C80` (`ParkLitter.Drop`): a cell that holds litter (`+0x30` nonzero) takes none and nothing is drawn; otherwise the world generator is reseeded with
+the cell word (`0x5D8DCF`) and drawn twice (`0x5D8E14`, `0x5D8E42`). The countdown's release (`0x619EB6`) passes 0 and leaves no litter. A Theme Park Inc park's save holds the types 1..0xC.
 
 ## Phase P2: idle, wander, spot animations, litter
 
@@ -221,7 +225,7 @@ is 23), state 23 and the heading 0. It is UI only and is not ported in P2; state
 - case 3, the plant search `0x618EF0` (with the fire test `0x618F30`, phase P4), is read as finding no plant: a prankster of code 4 within six cells of a plant goes on to the decision
   where the original's update ends (state 11), so the draws differ there;
 - case 5 (the balloon prank) is ported in phase P3b, when the visit's balloon shop gives native guests balloons: the guest's cell's thing chain, head first, is searched for another guest
-  holding a balloon (`+0x294` or `+0x298`); that guest loses it (`0x613D00(1)`, its litter gated as above) and the tail runs with kind 6;
+  holding a balloon (`+0x294` or `+0x298`); that guest loses it (`0x613D00(1)`, with its litter, above) and the tail runs with kind 6;
 - the walk to another guest (`0x619240`) and the infodesk (`0x618B60`, state 12), phase P5;
 - the prank thought 0x15 ("I pranked", held 120 turns): the bubbles are Theme Park World's, which has no such thought;
 - the removal message's ride and queue branches. Phase P3a ports the queue branch and the major decision's ride scan (below); phase P3b ports the ride branch (state 0x14): the rider's
@@ -373,7 +377,8 @@ appear point and asked to walk to the cell beyond the exit (Theme Park World's E
 6. happiness and the mood += `HappinessEffect × amount / 100`;
 7. the special ingredient: Fat toilet += `(FatEffect + 1) × amount / 100`, Salt thirst += `(SaltEffect + 1) × amount / 100`, Ice thirst += `(IceEffect + ThirstEffect) × amount / 100`, Sugar the
    speed boost word `+0xD8` += `(SugarEffect + 1) × amount / 100`;
-8. the appearance (`AppearanceEffect`): a balloon shop gives a balloon (the colour draw `0x690370(0xE)`, the countdown `clamp(quality × 255 / 100, 25, 255)` from the quality byte `+0x8C`) and
+8. the appearance (`AppearanceEffect`): a balloon shop gives a balloon (the colour draw `0x690370(0xE)`: the draw `>> 2` modulo the balloon bank's slot count `+0x21E`, which the ESP
+   loader counts as the slots with frames (`0x68EBEF`; four in the shipped `Spr_bl`, read at the level's load), the countdown `clamp(quality × 255 / 100, 25, 255)` from the quality byte `+0x8C`) and
    judges the quality (a draw: below `ComplainAboutThisQuality + R % 10` raises the declined ring and `+0x2D8` by 33, else lowers it by 33); a costume shop puts a costume on (category 6,
    the variant draw `0x6902F0(6)`, a draw nothing reads, the judgement and `+0x2D8` = 33) or takes it off (category 0 and the variant drawn after a reseed with the guest's id, bug-compatible:
    the guest becomes a kid's bank); an umbrella shop opens an umbrella (the colour draw `0x690370(0x13)`, the speed term 0, the judgement and `+0x2D8` = 33);
@@ -385,10 +390,9 @@ appear point and asked to walk to the cell beyond the exit (Theme Park World's E
     `HappyDiffForPoor` thought 6 and animation 10. The animation saves the state 20 and the exit's state 19 follows at once.
 
 **State 19 `0x618380`, being unloaded.** The entry `0x61A69D` gives the body back (mode 1 when a ride that draws it kept it), plays a teleporting ride's beam and gives a balloon kept through the
-ride back, unless a balloon shop has just given one. Before a teleporting ride's beam the entry calls the sprite placement `0x60AE00(0)` (`0x61A70B`), which also raises the stamp
-counter `0x5D81F0` and clears the stranded mark `+0x1B0` when the raised value is below it. On main the cell map counts the edits only (`ParkCellMap.StampCounter`), so that test cannot fire and
-nothing is counted at this place; the raise and the test join here when Theme Park Inc's navigator and its counter of the simulation's calls land (NV3, PR #1004:
-`ParkCellMap.NextStamp` under `--tpi-native-walk`). The handler walks; stuck, the target is cleared and the guest is idle. Arrived:
+ride back, unless a balloon shop has just given one. Before a teleporting ride's beam (`0x61A716`) the entry calls the sprite placement `0x60AE00(0)` (`0x61A70B`), which also raises the stamp
+counter `0x5D81F0` (`0x60AFFD`) and clears the stranded mark `+0x1B0` when the raised value is below it (`0x60B002`): with Theme Park Inc's navigator (`--tpi-native-walk`) that is
+`ThemeParkIncPlacementStamp`, as at the constructor's placement (TPI-NAVIGATOR.md); Theme Park World's walk counts the edits only and takes nothing here. The handler walks; stuck, the target is cleared and the guest is idle. Arrived:
 - a photo booth word `+0x208`: the booth becomes the target (`+0x208` is kept, bug-compatible); a route to its back cell sends the guest there (13); a target that is not an attraction is cleared;
 - the old major destination `+0x206`: it becomes the target and `+0x206` is cleared; an umbrella shop for a guest with an umbrella or a balloon shop for one with a balloon is dropped ("trapped"); a
   route to its back cell sends the guest there (13), else the target is cleared;
@@ -401,8 +405,7 @@ No world draw is taken in 16, 19 or 20's entry; 17's entry takes one; the outcom
   primed and the victim's branch (`0x5E78E0(2000)`, the prank message with kind 2, the big happiness step, illness 95) is not reached; `+0x29C` stays set;
 - the history object's rings the visit raises besides the declined ring `+0x4C8`: `+0x550` (a small portion), `+0x220` (`0x5E61D0`) and the four mood rings `+0x2A8`, `+0x440`, `+0x330`,
   `+0x3B8` (SAVE-940: OpenTPW keeps only the three price rings and the walk-away count);
-- the analyser's balloon, costume and umbrella counters (`+0x18`, `+0x1C`, `+0x20` of `0x64EAC0`): no ported reader;
-- the balloon's litter of every `0x613D00(1)` (above).
+- the analyser's balloon, costume and umbrella counters (`+0x18`, `+0x1C`, `+0x20` of `0x64EAC0`): no ported reader.
 
 `[EXT:tpi-no-maintenance-wear]` keeps the toilet's wear: a relief visit's `0x5E78E0` (the repair word `+0x54` by the toilet byte and its RegionFX rows 1 and 6) is not made.
 
@@ -435,10 +438,9 @@ optional member to the block, the wander flag `+0xE8` (`Wandered`; absent in a p
 `+0x2E4` (`UseSucceeded`), the balloon colour `+0x2A0` (`BalloonColour`) and the costume's sprite words `+0x34`/`+0x30` (`SpriteCategory`, `SpriteVariant`; absent while the guest keeps the
 constructor's), all absent in an earlier phase's save, without a new schema. The block's balloon is no longer refused: a countdown above the balloon's life 255 is.
 
-A phase P3a save can hold a guest of the bridged boarding: the state word 16 with Theme Park World's Boarding, WaitingToBoard, Using or ExitingRide. The restore maps it, drawing nothing:
-Boarding stays 16; WaitingToBoard becomes 17 without its entry roll (`+0x21B` keeps the queue place the save holds, so the use counts as lost); Using becomes 20; ExitingRide becomes 19. The save
-holds no fee word (the bridged boarding's pending fee is not saved), so the mapped guest pays nothing. A guest in 16 with any other projection, or a mapping the ride's saved state does not support
-(a 17 that neither the loading slot nor the riders name, a 20 that no ride holds), is refused with the guest and its states named.
+A phase P3a save can hold a guest of the bridged boarding: the state word 16 with Theme Park World's Boarding, WaitingToBoard, Using or ExitingRide. Boarding (the walk to the stand point) is
+state 16 itself and restores. A rider of the bridged boarding (WaitingToBoard, Using or ExitingRide) stands for 17, 20 or 19, whose chance roll `+0x21B`, fee `+0x1B4` and mode the bridged
+boarding never kept: the restore refuses it, with the guest and its states named, rather than inventing them. A guest in 16 with any other projection is refused too.
 
 ## Settings
 
@@ -461,8 +463,10 @@ The level reads these settings (`GuestSettings.TpiNative`) only when the switch 
   No mismatch (see the oracle README). Phase P3b's `tools/ppc-analysis/oracle_x86/tpi_guest_visit_oracle.py` adds states 16 (`0x617F80`), 17 (the entry roll through the setter and the
   handler `0x61A21D`), 20's entry (`0x61A77E`), 19 (`0x618380`) and the use routine `0x6118D0` with its payment step, its outcome `0x612740` and the match step `0x611DA0` (the meters, the words,
   the bookings, the records and the draws; the gated rings and counters recorded but not compared): no mismatch over 40 rounds (1,000 cases each).
-- `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`, `ThemeParkIncNativeQueueTests`, `ThemeParkIncNativeVisitTests` and `ThemeParkIncGuestSettingsTests` cover the rig behaviour,
-  the draws, the saves (a guest saved mid-ride, a phase P3a rider) and the shipped values; `ThemeParkIncPlayTests.NativeGuestsChooseQueueAndBoardTheScienceRides` runs native guests in the
+- `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`, `ThemeParkIncNativeQueueTests`, `ThemeParkIncNativeVisitTests` and `ThemeParkIncGuestSettingsTests` cover the rig behaviour
+  (with `OPENTPW_TEST_TPI_NATIVE_WALK=1` all four native rigs walk with Theme Park Inc's navigator),
+  the draws, the saves (a guest saved mid-ride, a phase P3a rider refused) and the shipped values; the visit tests hold the oracle's reading of the use routine for a balloon shop, a sideshow won
+  and lost, a costume put on and taken off, an umbrella shop and a relief visit (fresh, worn and ill); `ThemeParkIncPlayTests.NativeGuestsChooseQueueAndBoardTheScienceRides` runs native guests in the
   prebuilt Science park until one has boarded, ridden and been let off;
   `ThemeParkIncPerformerTests` runs the entertainer reaction against a hired, placed and performing entertainer of the retail Science economy.
 

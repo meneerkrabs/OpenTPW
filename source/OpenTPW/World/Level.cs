@@ -894,7 +894,13 @@ public partial class Level : IDisposable
 			AddCoasterHeads( CostumeHeadRenderer );
 		}
 		yield return true;
-		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadBalloons() );
+		var balloonSets = GuestSpriteAtlas.LoadBalloons();
+		// [BIN:TPI-EXE:0x68EBEF balloon bank slots] a Theme Park Inc balloon's colour draw takes the loaded bank's slot count (the ESP's slots with frames, 0x690394); the shipped bank has four, one per
+		// type of the litter table 0x9D0614, and a bank with more than the table's four (no shipped data) keeps the shipped count
+		if ( GameEditions.IsThemeParkInc && Guests is { } balloonGuests && balloonSets.FirstOrDefault() is { } balloonSet
+			&& balloonSet.Animations.Animations.Count( slot => !slot.IsEmpty ) is > 0 and <= GuestSimulation.ThemeParkIncBalloonColours and var colours )
+			balloonGuests.TpiBalloonColours = colours;
+		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, balloonSets );
 		yield return true;
 		// [EXT:umbrellas-draw] the open umbrellas, drawn with the umbrellas extension's own sprites at the guests' hands (the kids' renderer, then the costumes'); parks without the extension or its content have none
 		UmbrellaRenderer = null;

@@ -23,6 +23,7 @@ internal static class ThemeParkIncTagTubeLetters
 			ThemeParkIncLetterSource.Introduction => Introduction( texts, addressee, date, row.Picture ),
 			ThemeParkIncLetterSource.Notification => Notification( ThemeParkIncTagLetter.NotificationMail( row.Argument ), texts, addressee, date ),
 			ThemeParkIncLetterSource.WageDemand => WageDemand( row, texts, addressee, date, memberName?.Invoke( row ) ?? "" ),
+			ThemeParkIncLetterSource.Advice => Advice( row, texts, addressee, date ),
 			ThemeParkIncLetterSource.Training => Training( row, texts, addressee, date, memberName?.Invoke( row ) ?? "", strings.Ability( row.Ability ) ),
 			_ => throw new InvalidOperationException( $"A tag tube row has the unknown letter source {row.Source}." )
 		};
@@ -36,6 +37,16 @@ internal static class ThemeParkIncTagTubeLetters
 		string Tag( int entry ) => texts.Format( ThemeParkIncTable.TagSystem, entry );
 		var body = Tag( IntroductionBody ) + "\n" + Tag( ThemeParkIncMissionWindow.SenderName ) + "\n" + Tag( ThemeParkIncMissionWindow.SenderTitle );
 		return new ThemeParkIncLetterWindow.Letter( Tag( IntroductionSubject ), Tag( IntroductionSender ), addressee, date, body, picture - 1 );
+	}
+
+	/// <summary>An advice's caption (<c>0x635D80</c>, branch 0x18): the tag record's subject and sender, the player, and the body without a signature.</summary>
+	// [BIN:TPI-EXE:0x63632C advice row texts] sender TAG_SYSTEM[record +0x1C], addressee the player (0x622130), subject TAG_SYSTEM[record +0x20], body 0x6365A0 (record +0x18 = 0: the plain
+	// TAG_SYSTEM[record +8], 0x6365A0 case 0)
+	private static ThemeParkIncLetterWindow.Letter Advice( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, string addressee, string date )
+	{
+		string Tag( int entry ) => texts.Format( ThemeParkIncTable.TagSystem, entry );
+		var tag = ThemeParkIncAdviceTag.For( row.Argument ) ?? throw new InvalidOperationException( $"A tag tube advice row has the unknown tag {row.Argument}." );
+		return new ThemeParkIncLetterWindow.Letter( Tag( tag.Subject ), Tag( tag.Sender ), addressee, date, Tag( tag.Body ), row.Picture - 1, row.GotoKind, row.GotoArgument );
 	}
 
 	/// <summary>A notification letter (<c>0x5CEE50</c>, vtable <c>0x93DFA8</c>), as <see cref="ThemeParkIncLetterWindow.Compose"/> composes it for the letter window.</summary>

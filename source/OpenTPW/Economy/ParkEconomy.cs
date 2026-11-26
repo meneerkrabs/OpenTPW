@@ -67,7 +67,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( Rules.ThemeParkInc && settings.Weather is { } weather )
 			TpiWeather = new ThemeParkIncWeatherSpells( weather );
 		CreateThemeParkIncCareer();
-		CreateThemeParkIncAdvisor();
+		CreateThemeParkIncAdvisor( seed );
 		if ( Rules.ThemeParkInc && settings.ThemeParkIncStaff is { } staffSettings )
 		{
 			TpiStaff = new ThemeParkIncStaff( staffSettings, TpiStaffNameText );
@@ -352,7 +352,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 			Tick++;
 			var turn = ParkCalendar.Turn( Tick );
 			if ( turn != previousTurn )
+			{
 				AdvanceTurn( previousTurn, turn );
+				// [EXT:tpi-advisor-tick-clock] the per-frame advisor of the tick's last substep runs after the world tick (0x6A5C49)
+				TpiAdvisor?.EndTick();
+			}
 		}
 	}
 

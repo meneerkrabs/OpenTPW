@@ -72,6 +72,14 @@ From the repository root, with Unicorn installed in the selected Python environm
 python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/oracle_x86"); runpy.run_module("tpi_advisor_forecast_oracle", run_name="__main__")'
 ```
 
+## Theme Park Inc advisor presentation
+
+`tpi_advisor_presentation_oracle.py` runs the advisor's presentation in the identified TPI executable (`OPENTPW_TPI_EXE`): GenerateAnimSequence `0x715AB0`, SetCannedSequence `0x715BC0` (all 20 canned rows), the speech `0x716230` (the refusals: an active speech, AdvisorOn off, the help response, the hidden head; a LIP that opens, with the delayed base of its first mark; the canned timer rows; the clip list), the stop `0x716950` and the per-frame advisor `0x716ED0` (the LIP walk and the mouth; a voice that still plays, the speech's end, the delayed voice and the canned timer). The C runtime's `rand()` (`0x870D38`) is replaced by the runtime's generator from each case's seed and counted, a synthetic clip table is written to `0xBEF0D0`, and the presentation clock, the sound engine (play, length, the still-playing query, stop), the LIP file (open, its word count and its decode) and the model are stubbed. Three synthetic response rows reach paths no ported response takes (a generated sequence behind a shown head, the canned timer rows 17 and 18). It reads every case and its expected outcome from the DataRows of `source/OpenTPW.Tests/ThemeParkIncAdvisorPresentationTests.cs`; `--golden` prints the native outcome of its built-in inputs. See [the advisor trace](../../../docs/reverse/TPI-ADVISOR.md) §4.
+
+```bash
+python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/oracle_x86"); runpy.run_module("tpi_advisor_presentation_oracle", run_name="__main__")'
+```
+
 ## Theme Park Inc advisor queue
 
 `tpi_advisor_queue_oracle.py` runs the descriptor initializer at `0x729530` and compares all 664 rows with `content/data/tpi-advisor-descriptors.toml`; it also calls every constant score callback. It replays the acceptance `0x718B40` for each DataRow of `source/OpenTPW.Tests/ThemeParkIncAdvisorTests.cs` on synthetic scorer words, history entries and queues. It also checks enqueue and replacement (`0x718820`, `0x718E90`), selection (`0x718F80`, with and without the advisor panel) and cancel (`0x718990`, whose speech stop is captured). The managed tests repeat these scenarios. `--write-table PATH` writes the table file. See [the advisor trace](../../../docs/reverse/TPI-ADVISOR.md).

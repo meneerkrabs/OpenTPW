@@ -520,8 +520,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return guest;
 	}
 
-	// [EXT:tpi-twp-guest-rules] the constructor's profile, meters, base speed and appearance are Theme Park Inc's; the guest then walks, decides and animates by the shared
-	// Theme Park World update wherever Theme Park Inc's has not been ported
+	// [EXT:tpi-twp-guest-rules] the constructor's profile, meters, base speed and appearance are Theme Park Inc's; the guest then walks with Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md) and
+	// decides and animates by the shared Theme Park World update wherever Theme Park Inc's has not been ported
 	private Guest CreateThemeParkIncGuest( int id, ThemeParkIncGuestStartSettings settings )
 	{
 		// [BIN:TPI-EXE:0x60C58F guest profile] The unforced constructor uses four profile draws,

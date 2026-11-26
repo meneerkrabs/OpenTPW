@@ -139,7 +139,8 @@ internal sealed partial class GameFlow
 	/// One frame of the slice: the experimental HUD takes input, the level runs at its selected speed,
 	/// and crowd and precipitation audio follow the current park, as does the weather forecast's speech. Staff voices remain unavailable.
 	/// </summary>
-	// [EXT:tpi-twp-guest-rules] guests start with Theme Park Inc profiles, meters and generation-specific art, but still use shared movement, sprite animation and guest-update systems where TPI behavior has not been ported
+	// [EXT:tpi-twp-guest-rules] guests start with Theme Park Inc profiles, meters and generation-specific art and walk with Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md), but still use the shared
+	// sprite animation and guest-update systems where TPI behavior has not been ported
 	private void UpdateThemeParkIncSlice( Level level, ThemeParkIncHud hud, UiInput input )
 	{
 		var captured = hud.Update( Context, input );

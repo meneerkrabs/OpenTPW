@@ -130,6 +130,25 @@ public sealed class ThemeParkIncAdvisor
 	/// <summary>The advisor clock in milliseconds, as the original's 32-bit clock reads.</summary>
 	public uint Now => unchecked( (uint)(ClockMicroseconds / 1000) );
 
+	/// <summary>
+	/// The advisor clock before the last world tick moved it (<see cref="AdvanceClock"/>): the tick ran the presentation's frames from here to <see cref="ClockMicroseconds"/>. Not saved;
+	/// a load or a new park starts it at the clock. Only the client reads it (<see cref="DisplayMilliseconds"/>).
+	/// </summary>
+	public long PreviousClockMicroseconds { get; private set; }
+
+	/// <summary>
+	/// The advisor clock a drawn frame shows, <paramref name="turnFraction"/> (0 to 1) of the way through the world tick that runs now: the tick moved the clock and ran the presentation's frames
+	/// for its whole span at its start, so the client draws the advisor at the point of that span the park's fixed ticks have reached. Read-only: it changes nothing of the simulation.
+	/// </summary>
+	// [EXT:tpi-advisor-tick-clock] the original draws the frame its per-frame advisor (0x716ED0) has just run; OpenTPW runs the eight frames of a tick when the tick starts (AdvanceClock), so a
+	// drawn frame shows the clips and the mouth at its own point of the tick's span, never ahead of the fixed clock
+	public uint DisplayMilliseconds( double turnFraction )
+	{
+		var fraction = double.IsFinite( turnFraction ) ? Math.Clamp( turnFraction, 0, 1 ) : 0;
+		var span = unchecked( ClockMicroseconds - PreviousClockMicroseconds );
+		return Milliseconds( unchecked( PreviousClockMicroseconds + (long)(span * fraction) ) );
+	}
+
 	/// <summary>The real time one world tick takes at the park clock's <paramref name="rate"/>, in microseconds.</summary>
 	public static long TickMicroseconds( double rate ) => (long)Math.Round( ParkCalendar.TurnMilliseconds * 1000.0 / rate, MidpointRounding.ToEven );
 
@@ -143,7 +162,7 @@ public sealed class ThemeParkIncAdvisor
 	{
 		// the frame of the last substep of the previous tick, when no update ran it (EndTick)
 		EndTick();
-		var start = ClockMicroseconds;
+		var start = PreviousClockMicroseconds = ClockMicroseconds;
 		var tick = TickMicroseconds( rate );
 		// [EXT:tpi-advisor-tick-clock] the per-frame advisor (0x716ED0) runs once per 31 ms substep of the tick (0x6A5B92: one substep per frame at an ideal pacing), the eighth after the tick
 		for ( var substep = 1; substep < Substeps; substep++ )
@@ -584,6 +603,7 @@ public sealed class ThemeParkIncAdvisor
 			(state.StoredTutorial, state.LastStart, state.LastWindow, state.Playing, state.SkipPlayback, state.FromHelpButton);
 		(DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp, ClockMicroseconds) =
 			(state.DelayedFromPanel, state.DelayStart, state.DelayedMessage, state.TutorialOn, state.AdvisorPanelUp, state.ClockMicroseconds);
+		PreviousClockMicroseconds = ClockMicroseconds;
 		AdvisorOn = state.AdvisorOn;
 		// [BIN:TPI-EXE:0x6A36DE load init] a load runs the advisor init 0x715850 before the park file: the speech starts silent. The presentation stream continues from its saved state; a save from
 		// before the presentation (P1, which drew nothing) has none and starts it fresh from the session seed

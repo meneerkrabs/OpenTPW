@@ -1121,8 +1121,9 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-tpi-forecast] smoke-only (Debug builds): posts one of the four traced Theme Park Inc weather
-		// forecasts through the park's own advisor queue once the Science park runs, so a capture or smoke can observe the
-		// advisor's caption, speech and playback window. The queue, selection and timing are the park's.
+		// forecasts through the park's own advisor queue once the Science park runs and no camera flight plays (a flight's animation
+		// word hides the advisor's head, 0x7163C3), so a capture or smoke can observe the advisor's model, caption, speech and playback
+		// window. The queue, selection and timing are the park's.
 		var debugTpiForecast = GetOption( args, "--debug-tpi-forecast", "a Theme Park Inc forecast kind 1..4 (1 heatwave, 2 rain, 3 storm, 4 snow)" );
 		if ( debugTpiForecast != null )
 		{
@@ -1131,7 +1132,7 @@ internal static class Game
 			Render.PostUpdate += PostDebugTpiForecast;
 			void PostDebugTpiForecast()
 			{
-				if ( flow.Level?.Park?.Economy is not { TpiAdvisor: { } advisor } economy )
+				if ( flow.Level?.Park?.Economy is not { TpiAdvisor: { } advisor } economy || economy.TpiCutscene is { Flying: true } )
 					return;
 				Render.PostUpdate -= PostDebugTpiForecast;
 				var posted = economy.PostThemeParkIncAdvice( ThemeParkIncAdviceResponse.ForecastMessage( forecastKind ) );

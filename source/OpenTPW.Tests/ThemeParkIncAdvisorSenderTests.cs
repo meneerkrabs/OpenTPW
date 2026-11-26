@@ -42,7 +42,7 @@ public sealed class ThemeParkIncAdvisorSenderTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( new ThemeParkIncAdviceResponse( 763, 883, 883, -1, 0, false, 0, ThemeParkIncAdviceResponse.NoTag ), table.Find( 763 ) );
 		Assert.AreEqual( new ThemeParkIncAdviceResponse( 823, 943, 943, 25, 1, false, -1, 0x60 ), table.Find( 823 ) );
 		Assert.IsTrue( table.Find( 1 )!.Value.LevelBank, "the welcome (message 0, response 1) speaks from the level's bank" );
-		Assert.AreEqual( table.Responses.Count, table.SecondAccessories.Count );
+		Assert.AreEqual( 55, table.Responses.Count( row => row.SecondAccessory != 0 ), "the word +0x18 (0x715F9C) is read into SecondAccessory" );
 		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncAdviceResponseTable.Parse( "responses = [\n]\n" ) );
 		// every caption the posted advice can broadcast has a tag record
 		foreach ( var response in new[] { 823, 824, 825, 826 } )

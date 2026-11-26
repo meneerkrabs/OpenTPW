@@ -18,19 +18,15 @@ public sealed class ThemeParkIncAdviceResponseTable
 	private static ThemeParkIncAdviceResponseTable? shipped;
 	private readonly Dictionary<int, ThemeParkIncAdviceResponse> first = new();
 
-	private ThemeParkIncAdviceResponseTable( IReadOnlyList<ThemeParkIncAdviceResponse> rows, IReadOnlyList<int> secondAccessories )
+	private ThemeParkIncAdviceResponseTable( IReadOnlyList<ThemeParkIncAdviceResponse> rows )
 	{
 		Responses = rows;
-		SecondAccessories = secondAccessories;
 		foreach ( var row in rows )
 			first.TryAdd( row.Response, row );
 	}
 
 	/// <summary>The rows in table order.</summary>
 	public IReadOnlyList<ThemeParkIncAdviceResponse> Responses { get; }
-
-	/// <summary>Each row's word <c>+0x18</c>, the second accessory, in table order.</summary>
-	public IReadOnlyList<int> SecondAccessories { get; }
 
 	/// <summary>The first row of <paramref name="response"/>, or null.</summary>
 	public ThemeParkIncAdviceResponse? Find( int response ) => first.TryGetValue( response, out var row ) ? row : null;
@@ -48,7 +44,7 @@ public sealed class ThemeParkIncAdviceResponseTable
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 		{
 			Log.Warning( $"Theme Park Inc advisor responses unavailable ({path}): {exception.Message}" );
-			return new ThemeParkIncAdviceResponseTable( Array.Empty<ThemeParkIncAdviceResponse>(), Array.Empty<int>() );
+			return new ThemeParkIncAdviceResponseTable( Array.Empty<ThemeParkIncAdviceResponse>() );
 		}
 	}
 
@@ -56,7 +52,6 @@ public sealed class ThemeParkIncAdviceResponseTable
 	{
 		ArgumentNullException.ThrowIfNull( text );
 		var rows = new List<ThemeParkIncAdviceResponse>();
-		var seconds = new List<int>();
 		var state = 0;
 		var lineNumber = 0;
 		foreach ( var raw in text.Split( '\n' ) )
@@ -80,11 +75,10 @@ public sealed class ThemeParkIncAdviceResponseTable
 			int Value( int group ) => int.Parse( match.Groups[group].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture );
 			var model = uint.Parse( match.Groups[5].Value, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture );
 			// the word +0x10: its low word is the model that shows the clips, its high word the level's speech bank (0x716284)
-			rows.Add( new ThemeParkIncAdviceResponse( Value( 1 ), (uint)Value( 2 ), Value( 3 ), Value( 4 ), (int)(model & 0xFFFF), (model >> 16) != 0, Value( 6 ), Value( 8 ) ) );
-			seconds.Add( Value( 7 ) );
+			rows.Add( new ThemeParkIncAdviceResponse( Value( 1 ), (uint)Value( 2 ), Value( 3 ), Value( 4 ), (int)(model & 0xFFFF), (model >> 16) != 0, Value( 6 ), Value( 8 ), Value( 7 ) ) );
 		}
 		if ( state != 2 || rows.Count != Rows )
 			throw new InvalidDataException( $"Theme Park Inc advisor responses hold {rows.Count} rows in {(state == 2 ? "a closed" : "no closed")} 'responses' array; the executable's table has {Rows}." );
-		return new ThemeParkIncAdviceResponseTable( rows, seconds );
+		return new ThemeParkIncAdviceResponseTable( rows );
 	}
 }

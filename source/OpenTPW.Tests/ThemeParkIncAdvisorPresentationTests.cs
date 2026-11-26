@@ -315,12 +315,13 @@ public sealed class ThemeParkIncAdvisorPresentationTests : ThemeParkIncScienceTe
 		advisor.Restore( older );
 		Assert.AreEqual( (false, 77u, true), (advisor.Presentation.Speaking, advisor.Presentation.RandomState, advisor.AdvisorOn) );
 		Assert.AreEqual( older.LastWindow, advisor.LastWindow, "the window the older model set stays" );
-		var json = System.Text.Json.JsonSerializer.Serialize( advisor.Capture() );
+		// the save's own options (an unknown member is refused, enums are strings), as a P1 save's TpiAdvisor is read
+		var json = System.Text.Json.JsonSerializer.Serialize( advisor.Capture(), ParkSaveFile.Options );
 		StringAssert.Contains( json, "\"PresentationRandom\"" );
 		var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
 		node.Remove( "PresentationRandom" );
 		node.Remove( "AdvisorOn" );
-		var parsed = System.Text.Json.JsonSerializer.Deserialize<ThemeParkIncAdvisorSnapshot>( node.ToJsonString() )!;
+		var parsed = System.Text.Json.JsonSerializer.Deserialize<ThemeParkIncAdvisorSnapshot>( node.ToJsonString(), ParkSaveFile.Options )!;
 		Assert.AreEqual( (null, true), (parsed.PresentationRandom, parsed.AdvisorOn), "the members are optional" );
 	}
 

@@ -91,6 +91,39 @@ internal sealed partial class GameFlow
 	}, speed );
 	}
 
+	/// <summary>The advisor model of the running Theme Park Inc park (null outside the slice and before its first frame), made for its level.</summary>
+	internal ThemeParkIncAdvisorView? ThemeParkIncAdvisorView { get; private set; }
+	private Level? themeParkIncAdvisorViewLevel;
+
+	/// <summary>
+	/// World pass: draws the Theme Park Inc advisor's model (<see cref="OpenTPW.ThemeParkIncAdvisorView"/>) as the drawn frame's point of the running world tick shows it. It only reads the
+	/// park's advisor: the simulation and its hash are the same with or without it.
+	/// </summary>
+	private void RenderThemeParkIncAdvisor( Level level )
+	{
+		if ( IncHud == null || level.Park?.Economy is not { TpiAdvisor: { } advisor } economy )
+		{
+			EndThemeParkIncAdvisorView();
+			return;
+		}
+		// a replaced park (a layout or a Science save loaded) gets a view of its own; the old one's models are released
+		if ( !ReferenceEquals( themeParkIncAdvisorViewLevel, level ) )
+		{
+			EndThemeParkIncAdvisorView();
+			ThemeParkIncAdvisorView = new ThemeParkIncAdvisorView( level.LevelName );
+			themeParkIncAdvisorViewLevel = level;
+		}
+		ThemeParkIncAdvisorView!.Render( advisor, ParkCalendar.TurnFraction( economy.Tick ), Screen.PixelSize );
+	}
+
+	/// <summary>Releases the Theme Park Inc advisor's models and image (the park goes).</summary>
+	internal void EndThemeParkIncAdvisorView()
+	{
+		ThemeParkIncAdvisorView?.Dispose();
+		ThemeParkIncAdvisorView = null;
+		themeParkIncAdvisorViewLevel = null;
+	}
+
 	/// <summary>Stops the advice voice that is playing (a global speech one-shot outlives <see cref="GameAudio.LeavePark"/>).</summary>
 	internal void StopThemeParkIncAdviceVoice()
 	{

@@ -86,5 +86,5 @@ checked, because the arrival's briefing and every objective letter would have be
   mouth frame (`0x717175`). That port waits on the user's decision about those draws.
 - The native mail panel's picture by category (control 0x47) and its chime (sound 0x1E of the bank `0xAE0124`), and the help button's advisor help (`0x503A40(0x1AF)`).
 - The body's scroll text (message 0x800 with the slider 3017).
-- The tag-definition rows (branch 0x18) and branch 0x1B of the row builder, which no ported sender posts.
+- The tag-definition rows (branch 0x18) and branch 0x1B of the row builder. The tag system subscribes to kind 0x18 (`0x635A63`), and the advisor's playback broadcasts it for every captioned advice (`0x71AC35`), so each such advice files a row; OpenTPW shows a forecast's caption on the advice line instead until the advisor's presentation is ported ([TPI-ADVISOR.md](TPI-ADVISOR.md) §6).
 - Delete by key (`0x636B10`) from `0x618790` and `0x63A1E0` (message 0x21): the dismissal `0x629040` calls it (ported, [TPI-WAGES.md](TPI-WAGES.md)); the other removals of a keyed thing are not senders of a ported row.

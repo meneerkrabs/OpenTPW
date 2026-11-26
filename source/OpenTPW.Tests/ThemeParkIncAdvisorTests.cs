@@ -237,6 +237,42 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 			Assert.AreEqual( klass == 6, ThemeParkIncAdvisor.Admits( klass, flight ) );
 	}
 
+	[DataTestMethod]
+	[DataRow( 0, 0, 1 )]
+	[DataRow( 0, 2, 0 )]
+	[DataRow( 1, 1, 2 )]
+	[DataRow( 1, 2, 2 )]
+	[DataRow( 2, 2, 0 )]
+	[DataRow( 2, -1, 0 )]
+	[DataRow( 7, 0, 0 )]
+	public void TheVariantRuleTakesTheNextResponse( int rule, int last, int expected )
+	{
+		// three responses from 645: rule 0 goes to the message id after the last (343, out of range: 0), rule 1 stays at the last, rule 2 wraps, another rule takes the message id
+		var career = Career();
+		var advisor = new ThemeParkIncAdvisor( Settings(), Patched( rule: rule, count: 3 ) ) { FromHelpButton = true };
+		career.SetAdviceHistory( Rain, new ThemeParkIncAdviceHistory( 0, last, false, 0, 0 ) );
+		Assert.IsTrue( advisor.PostScored( Rain, 100, career, 0 ) );
+		advisor.Update( 1, career, default, _ => 0 );
+		Assert.AreEqual( 645 + expected, advisor.TakePlayed().Single().Response );
+		Assert.AreEqual( expected, career.AdviceHistory( Rain ).Variant );
+	}
+
+	[TestMethod]
+	public void ADelayedHelpMessageIsPostedOnceThePanelDelayHasPassed()
+	{
+		var career = Career();
+		var advisor = new ThemeParkIncAdvisor( Settings() with { PanelDelay = 3_000 }, ThemeParkIncAdvisorTable.Shipped );
+		advisor.PostDelayed( Rain, 0 );
+		advisor.Update( 12, career, default, _ => 0 );
+		Assert.IsTrue( advisor.DelayedFromPanel, "2976 ms of the 3000 have passed" );
+		advisor.Update( 13, career, default, _ => 0 );
+		Assert.IsFalse( advisor.DelayedFromPanel );
+		Assert.AreEqual( 0, advisor.TakePlayed().Count, "the posting tick plays nothing" );
+		Assert.AreEqual( Rain, advisor.Queue[0].Message );
+		advisor.Update( 14, career, default, _ => 0 );
+		Assert.AreEqual( Rain, advisor.TakePlayed().Single().Message );
+	}
+
 	[TestMethod]
 	public void TheMailIsPlayedBeforeAPendingForecast()
 	{

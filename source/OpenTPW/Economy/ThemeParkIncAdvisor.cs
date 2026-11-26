@@ -150,7 +150,7 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 
 	/// <summary>Whether a new record of <paramref name="message"/> is accepted (<c>0x718B40</c>).</summary>
 	// [BIN:TPI-EXE:0x718B40 advice acceptance] in order: TutorialOn off refuses a tutorial-group message (0x71C030); a history entry whose time >> 2 is not 0 refuses while the world ticks >> 2
-	// since it are fewer than the group's interval for its play count (0x71BAC0, unsigned); unless the bypass byte or +0x10C: SayOnlyOnce with the played byte (0x71BB90), then the slaps
+	// since then are below the group's interval for its play count (0x71BAC0, unsigned); unless the bypass byte or +0x10C: SayOnlyOnce with the played byte (0x71BB90), then the slaps
 	// (0x71BD20: not group 10, a limit of 0 never, else slaps >= limit); the pending records of the message reach the row's limit byte (0x71BA40); unless +0x10C: variant rule 0 whose last
 	// variant is the last response (0x71BC20, 0x71B9C0)
 	public bool Accepts( int message, bool bypass, ThemeParkIncCareer career, long turn )

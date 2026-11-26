@@ -111,31 +111,55 @@ public sealed class ThemeParkIncAdvisorPresentationTests : ThemeParkIncScienceTe
 		Assert.AreEqual( (int)(4 * Durations().Of( 25 )) + 25, sequence.SumMilliseconds );
 	}
 
-	[DataTestMethod]
-	[DataRow( 645, 5526, 1, 0, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 1, 0, 0 )]
-	[DataRow( 642, 5758, 1, 0, 0, 0, 2000, 1u, 4223, 1800u, 4357u, 0u, 1, 0, 0 )]
-	[DataRow( 748, 20433, 1, 0, 0, 0, 10000, 1u, 23732, 10800u, 32866u, 10800u, 0, 1, 17 )]
-	[DataRow( 748, 20433, 1, 0, 0, 0, 10000, 99u, 23832, 10800u, 32966u, 10800u, 0, 1, 16 )]
-	[DataRow( 748, -1, 1, 0, 0, 0, 10000, 1u, 3932, 10800u, 13066u, 10800u, 0, 1, 3 )]
-	[DataRow( 645, -1, 1, 0, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 0, 0, 0 )]
-	[DataRow( 749, 13978, 1, 0, 0, 1, 50, 1u, 4223, 4294967146u, 2407u, 0u, 1, 1, 0 )]
-	[DataRow( 645, 5526, 1, 0, 1, 0, 10000, 1u, 0, 0u, 0u, 0u, 0, 0, 0 )]
-	[DataRow( 645, 5526, 0, 0, 0, 0, 10000, 1u, 0, 0u, 0u, 0u, 0, 0, 0 )]
-	[DataRow( 645, 5526, 0, 1, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 1, 0, 0 )]
-	[DataRow( 748, 20433, 0, 1, 0, 0, 10000, 5u, 24432, 10800u, 33566u, 10800u, 0, 1, 17 )]
-	public void SpeechMatchesTheExecutable( int response, int voice, int advisorOn, int help, int speaking, int animationWord, int now, uint seed, int duration, uint baseTime, uint end,
-		uint voiceDue, int voiceLive, int headHidden, int draws )
+	/// <summary>The response rows of the speech cases: four the queue plays and three synthetic ones the oracle writes to 0xBEF1F0 too (a generated sequence behind a shown head, the canned
+	/// timer rows 18 and 17).</summary>
+	private static ThemeParkIncAdviceResponse Row( int response ) => response switch
 	{
-		var presentation = new ThemeParkIncAdvisorPresentation( new Speech( voice >= 0 ? new() { [response] = (uint)voice } : null ), seed );
+		900 => new( 900, 766, 766, -1, 0, false, -1, ThemeParkIncAdviceResponse.NoTag ),
+		901 => new( 901, 766, 766, 34, 1, false, -1, ThemeParkIncAdviceResponse.NoTag ),
+		902 => new( 902, 766, 766, 33, 1, false, -1, ThemeParkIncAdviceResponse.NoTag ),
+		_ => ThemeParkIncAdviceResponse.For( response )!.Value
+	};
+
+	private static uint[]? Marks( string marks ) => marks.Length == 0 ? null : marks.Split( ';' ).Select( uint.Parse ).ToArray();
+
+	[DataTestMethod]
+	[DataRow( 645, 5526, "", 1, 0, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 1, 0, 0, 0, 9799, 0, 0u, "25,25,25,25,26" )]
+	[DataRow( 642, 5758, "", 1, 0, 0, 0, 2000, 1u, 4223, 1800u, 4357u, 0u, 1, 0, 0, 0, 1799, 0, 0u, "25,25,25,25,26" )]
+	[DataRow( 748, 20433, "", 1, 0, 0, 0, 10000, 1u, 23732, 10800u, 32866u, 10800u, 0, 1, 17, 0, 10799, 0, 0u, "14,8,5,1,10,5,9,9,3,5,6,6,2,8,2,2,1,15" )]
+	[DataRow( 748, 20433, "", 1, 0, 0, 0, 10000, 99u, 23832, 10800u, 32966u, 10800u, 0, 1, 16, 0, 10799, 0, 0u, "14,6,10,10,1,8,7,10,8,8,9,2,4,6,6,1,15" )]
+	[DataRow( 748, -1, "", 1, 0, 0, 0, 10000, 1u, 3932, 10800u, 13066u, 10800u, 0, 1, 3, 0, 10799, 0, 0u, "14,8,1,15" )]
+	[DataRow( 645, -1, "", 1, 0, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 0, 0, 0, 0, 9799, 0, 0u, "25,25,25,25,26" )]
+	[DataRow( 749, 13978, "", 1, 0, 0, 1, 50, 1u, 4223, 4294967146u, 2407u, 0u, 1, 1, 0, 0, -151, 0, 0u, "25,25,25,25,26" )]
+	[DataRow( 645, 5526, "", 1, 0, 1, 0, 10000, 1u, 0, 0u, 0u, 0u, 0, 0, 0, 0, 0, 0, 0u, "" )]
+	[DataRow( 645, 5526, "", 0, 0, 0, 0, 10000, 1u, 0, 0u, 0u, 0u, 0, 0, 0, 0, 0, 0, 0u, "" )]
+	[DataRow( 645, 5526, "", 0, 1, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 1, 0, 0, 0, 9799, 0, 0u, "25,25,25,25,26" )]
+	[DataRow( 748, 20433, "", 0, 1, 0, 0, 10000, 5u, 24432, 10800u, 33566u, 10800u, 0, 1, 17, 0, 10799, 0, 0u, "14,4,6,10,1,1,8,10,3,1,5,2,4,7,7,8,1,15" )]
+	[DataRow( 645, 5526, "1141088;1539410;2441133", 1, 0, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 1, 0, 0, 1, 10941, 1, 0u, "25,25,25,25,26" )]
+	[DataRow( 645, 5526, "120000;400000", 1, 0, 0, 0, 10000, 1u, 4223, 9800u, 12357u, 0u, 1, 0, 0, 1, 9920, 1, 0u, "25,25,25,25,26" )]
+	[DataRow( 645, 5526, "1141088;1539410", 1, 0, 0, 1, 10000, 1u, 4223, 9800u, 12357u, 0u, 1, 1, 0, 0, 9799, 0, 0u, "25,25,25,25,26" )]
+	[DataRow( 748, 20433, "1330793;1549977", 1, 0, 0, 0, 10000, 1u, 23732, 10800u, 32866u, 10800u, 0, 1, 17, 0, 10799, 0, 0u, "14,8,5,1,10,5,9,9,3,5,6,6,2,8,2,2,1,15" )]
+	[DataRow( 900, 5526, "1141088;1539410;2441133", 1, 0, 0, 0, 10000, 1u, 8532, 10800u, 17666u, 10800u, 0, 0, 7, 1, 11941, 0, 0u, "14,8,5,1,10,5,4,15" )]
+	[DataRow( 900, -1, "1141088", 1, 0, 0, 0, 10000, 3u, 3532, 10800u, 12666u, 10800u, 0, 0, 2, 1, 11941, 0, 0u, "14,1,15" )]
+	[DataRow( 901, 5526, "1141088;1539410", 1, 0, 0, 0, 10000, 1u, 5430, 9800u, 13564u, 0u, 1, 0, 0, 1, 10941, 1, 13664u, "17,17,17,17,18,19,20" )]
+	[DataRow( 902, 5526, "", 1, 0, 0, 0, 10000, 1u, 8532, 10800u, 17666u, 10800u, 0, 0, 7, 0, 10799, 0, 27800u, "14,8,5,1,10,5,4,15" )]
+	[DataRow( 902, 2000, "", 1, 0, 0, 0, 3000, 4u, 5332, 3800u, 7466u, 3800u, 0, 0, 3, 0, 3799, 0, 20800u, "14,6,1,15" )]
+	public void SpeechMatchesTheExecutable( int response, int voice, string marks, int advisorOn, int help, int speaking, int animationWord, int now, uint seed, int duration, uint baseTime,
+		uint end, uint voiceDue, int voiceLive, int headHidden, int draws, int lipLoaded, int lipNext, int talking, uint timer, string clips )
+	{
+		var presentation = new ThemeParkIncAdvisorPresentation( new Speech( voice >= 0 ? new() { [response] = (uint)voice } : null,
+			Marks( marks ) is { } lips ? new() { [response] = lips } : null ), seed );
 		if ( speaking == 1 )
 			presentation.Restore( presentation.Capture() with { Speaking = true, Response = 645 } );
-		var said = presentation.Speak( response, (uint)now, animationWord == 1, advisorOn == 1, help == 1 );
+		var said = presentation.Speak( Row( response ), (uint)now, animationWord == 1, advisorOn == 1, help == 1 );
 		Assert.AreEqual( (uint)duration, said );
 		Assert.AreEqual( draws, DrawsSince( seed, presentation.RandomState ) );
 		if ( duration == 0 )
 			return;
 		Assert.AreEqual( (baseTime, end, voiceDue, voiceLive == 1, headHidden == 1, true),
 			(presentation.Base, presentation.SpeechEnd, presentation.VoiceDue, presentation.VoiceLive, presentation.HeadHidden, presentation.Speaking) );
+		Assert.AreEqual( (lipLoaded == 1, lipNext, talking == 1, timer, clips),
+			(presentation.LipLoaded, presentation.LipNext, presentation.Talking, presentation.Timer, Joined( presentation.Clips )) );
 	}
 
 	[DataTestMethod]
@@ -179,6 +203,40 @@ public sealed class ThemeParkIncAdvisorPresentationTests : ThemeParkIncScienceTe
 			shown.Add( presentation.Mouth );
 		}
 		Assert.AreEqual( (mouths, talking == 1, draws), (Joined( shown ), presentation.Talking, DrawsSince( seed, presentation.RandomState )) );
+	}
+
+	[DataTestMethod]
+	[DataRow( "", 1000, 1000, 31, 60, 1u, 0, 1, 1500, 500, 1300, 0, 0, "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1", "end@17", 0, 0, 0 )]
+	[DataRow( "", 1000, 1000, 31, 60, 1u, 0, 0, 0, 900, 1200, 1100, 1400, "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1", "voice@4;timer@13;end@34", 1, 0, 0 )]
+	[DataRow( "1141088;1539410;2441133", 800, 1000, 31, 120, 5u, 0, 0, 0, 3000, 2500, 1800, 0, "5,5,5,5,4,4,4,4,1,1,1,1,5,5,5,5,1,1,1,1,1,1,1,1,3,3,3,3,5,5,5,1,1,1,1,1,1,1,1,1,1,1,1,1,3,3,3,3,1,1,1,1,5,5,5,5,2,2,2,2,4,4,4,4,2,2,2,2,2,2,2,2,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1", "voice@26", 0, 1, 16 )]
+	[DataRow( "", 1000, 1000, 31, 20, 1u, 0, 0, 0, -1, 1100, 1050, 0, "1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1", "voice@2;end@4", 1, 0, 0 )]
+	[DataRow( "250000", 500, 400, 62, 30, 3u, 0, 1, 900, 0, 700, 0, 600, "4,4,2,2,5,5,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1", "timer@4;end@9", 0, 0, 3 )]
+	[DataRow( "400000;900000", 2000, 2000, 124, 40, 9u, 0, 1, 5000, 0, 2600, 0, 2300, "4,2,1,4,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1", "timer@3;end@25", 0, 0, 4 )]
+	public void FrameEventsMatchTheExecutable( string marks, int baseTime, int start, int step, int frames, uint seed, int mouthNext, int voiceLive, int voiceEnd, int voiceLength,
+		int end, int voiceDue, int timer, string mouths, string events, int talking, int speaking, int draws )
+	{
+		var lips = Marks( marks );
+		var presentation = new ThemeParkIncAdvisorPresentation( new Speech( voiceLength >= 0 ? new() { [645] = (uint)voiceLength } : null, lips != null ? new() { [645] = lips } : null ), seed );
+		presentation.Restore( presentation.Capture() with
+		{
+			Speaking = true, Response = 645, Base = (uint)baseTime, SpeechEnd = (uint)end, VoiceDue = (uint)voiceDue, VoiceLive = voiceLive == 1, VoiceEnd = (uint)voiceEnd,
+			Timer = (uint)timer, LipLoaded = lips != null, LipIndex = lips != null ? 1 : 0, LipNext = lips != null ? baseTime + (int)lips[0] / 1000 : 0, Talking = lips != null,
+			MouthNext = mouthNext
+		} );
+		var shown = new List<int>();
+		var seen = new List<string>();
+		for ( var frame = 0; frame < frames; frame++ )
+		{
+			var wasSpeaking = presentation.Speaking;
+			presentation.Frame( (uint)(start + frame * step) );
+			foreach ( var cue in presentation.TakeCues() )
+				seen.Add( $"{(cue.Kind == ThemeParkIncAdvisorCueKind.Voice ? "voice" : "timer")}@{frame}" );
+			if ( wasSpeaking && !presentation.Speaking )
+				seen.Add( $"end@{frame}" );
+			shown.Add( presentation.Mouth );
+		}
+		Assert.AreEqual( (mouths, events, talking == 1, speaking == 1, draws),
+			(Joined( shown ), string.Join( ";", seen ), presentation.Talking, presentation.Speaking, DrawsSince( seed, presentation.RandomState )) );
 	}
 
 	private const int Rain = 0x157, Heatwave = 0x154;
@@ -252,18 +310,18 @@ public sealed class ThemeParkIncAdvisorPresentationTests : ThemeParkIncScienceTe
 		Assert.IsTrue( advisor.Post( Rain, career, 0, default ) );
 		advisor.AdvanceClock( 1 );
 		advisor.Update( 1, career, default );
-		var older = advisor.Capture() with { Presentation = null, AdvisorOn = true };
+		var older = advisor.Capture() with { PresentationRandom = null, AdvisorOn = true };
 		advisor.AdvisorOn = false;
 		advisor.Restore( older );
 		Assert.AreEqual( (false, 77u, true), (advisor.Presentation.Speaking, advisor.Presentation.RandomState, advisor.AdvisorOn) );
 		Assert.AreEqual( older.LastWindow, advisor.LastWindow, "the window the older model set stays" );
 		var json = System.Text.Json.JsonSerializer.Serialize( advisor.Capture() );
-		StringAssert.Contains( json, "\"Presentation\"" );
+		StringAssert.Contains( json, "\"PresentationRandom\"" );
 		var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
-		node.Remove( "Presentation" );
+		node.Remove( "PresentationRandom" );
 		node.Remove( "AdvisorOn" );
 		var parsed = System.Text.Json.JsonSerializer.Deserialize<ThemeParkIncAdvisorSnapshot>( node.ToJsonString() )!;
-		Assert.AreEqual( (null, true), (parsed.Presentation, parsed.AdvisorOn), "the members are optional" );
+		Assert.AreEqual( (null, true), (parsed.PresentationRandom, parsed.AdvisorOn), "the members are optional" );
 	}
 
 	[TestMethod]
@@ -301,19 +359,22 @@ public sealed class ThemeParkIncAdvisorPresentationTests : ThemeParkIncScienceTe
 	}
 
 	[TestMethod]
-	public void ALoadDuringASpeechGoesOnAsTheUninterruptedRun()
+	public void ALoadDuringASpeechStartsSilentWithTheStreamGoingOn()
 	{
 		var economy = ScienceEconomy();
 		economy.Advance( ParkCalendar.TickOfTurn( 8 ) - economy.Tick );
 		Assert.IsTrue( economy.PostThemeParkIncAdvice( Rain ) );
 		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 6 ) - economy.Tick );
-		Assert.IsTrue( economy.TpiAdvisor!.Presentation is { Speaking: true, LipLoaded: true } );
-		var saved = ParkSaveFile.Serialize( economy );
-		var loaded = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( saved ) ), economy.Settings, economy.Catalog );
-		foreach ( var park in new[] { economy, loaded } )
-			park.Advance( ParkCalendar.TickOfTurn( park.Turn + 30 ) - park.Tick );
-		var advisor = System.Text.Json.JsonSerializer.Serialize( economy.TpiAdvisor.Capture() );
-		Assert.AreEqual( advisor, System.Text.Json.JsonSerializer.Serialize( loaded.TpiAdvisor!.Capture() ) );
-		Assert.AreNotEqual( 1u, economy.TpiAdvisor.Presentation.RandomState, "the talking mouth drew from the stream" );
+		var advisor = economy.TpiAdvisor!;
+		Assert.IsTrue( advisor.Presentation is { Speaking: true, LipLoaded: true } );
+		var stream = advisor.Presentation.RandomState;
+		Assert.AreNotEqual( 1u, stream, "the talking mouth drew from the stream" );
+		var loaded = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ), economy.Settings, economy.Catalog );
+		// 0x6A36DE: a load runs the advisor init 0x715850 before the park file, so the speech, the voice, the LIP and the mouth start as it leaves them
+		Assert.IsTrue( loaded.TpiAdvisor!.Presentation is { Speaking: false, VoiceLive: false, VoiceDue: 0, LipLoaded: false, Talking: false, Mouth: 0, MouthNext: 0, Timer: 0 } );
+		Assert.AreEqual( stream, loaded.TpiAdvisor.Presentation.RandomState, "the presentation stream goes on from its saved state" );
+		Assert.AreEqual( (advisor.LastStart, advisor.LastWindow), (loaded.TpiAdvisor.LastStart, loaded.TpiAdvisor.LastWindow), "the queue's window is the advisor thing's, which the save keeps" );
+		loaded.Advance( ParkCalendar.TickOfTurn( loaded.Turn + 30 ) - loaded.Tick );
+		Assert.AreEqual( stream, loaded.TpiAdvisor.Presentation.RandomState, "a silent advisor draws nothing" );
 	}
 }

@@ -29,7 +29,7 @@ public sealed partial class ParkEconomy
 	}
 
 	/// <summary>
-	/// The presentation stream's seed from the economy's stream seed (D-4: the session seed): its two halves XORed, so the default world seed gives 1, the C runtime's own first seed.
+	/// The presentation stream's seed from the economy's stream seed (D-4: the session seed): its two halves XORed (the default world seed gives 1). The original seeds the C runtime from the tick count at startup (srand(GetTickCount()), 0x6A1514), which no run can repeat.
 	/// </summary>
 	// [EXT:tpi-advisor-presentation-rand] (user-approved 2026-11-24; D-4, lead 2026-11-25) the stream is seeded from the session seed, saved and hashed
 	internal static uint PresentationSeed( ulong seed ) => unchecked( (uint)(seed ^ (seed >> 32)) );

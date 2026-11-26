@@ -40,6 +40,7 @@ MOUTH = 0xBEF1A4
 MOUTH_NEXT = 0xBEF1AC
 SHOWN_MOUTH = 0xBEF1A8
 MOUTHS = 0xBEF18C
+VOICE_ID = 0xBEF084
 STEPPED = 0xBEF098
 HANDLE_VALUE = 0x55
 
@@ -49,7 +50,14 @@ RESPONSE_ROWS = {
     645: (645, 766, 766, 25, 1, -1, 0, 65),
     748: (748, 868, 868, -1, 0, 666, 0, 0x97),
     749: (749, 869, 869, 25, 1, -1, 0, 0x5E),
+    # Synthetic rows for the paths no ported response takes: a generated sequence behind a shown head (the delayed base of the LIP), and the
+    # canned timer rows 18 (animation 34, clips then a timer) and 17 (animation 33, a timer only: the generator's fallback keeps it).
+    900: (900, 766, 766, -1, 0, -1, 0, 0x97),
+    901: (901, 766, 766, 34, 1, -1, 0, 0x97),
+    902: (902, 766, 766, 33, 1, -1, 0, 0x97),
 }
+VOICE = 766
+TIMER_SOUND = 0xC6
 
 TEST = Path('source/OpenTPW.Tests/ThemeParkIncAdvisorPresentationTests.cs')
 WORDS = re.compile(r'TrailerWords\s*=\s*\{([^}]*)\}')
@@ -60,16 +68,27 @@ METHOD = re.compile(r'public void (\w+)\(')
 GOLDEN = {
     'GeneratedSequenceMatchesTheExecutable': [(0, 1), (1, 1), (501, 1), (501, 7), (6000, 1), (6000, 12345), (14000, 3), (100000, 1), (-5, 1)],
     'CannedSequenceMatchesTheExecutable': [(row, 5000, 1) for row in range(20)] + [(9, 0, 1), (17, 0, 1), (17, 3000, 9)],
-    'SpeechMatchesTheExecutable': [
+    'SpeechMatchesTheExecutable': [(*case[:2], '', *case[2:]) for case in (
         (645, 5526, 1, 0, 0, 0, 10000, 1), (642, 5758, 1, 0, 0, 0, 2000, 1), (748, 20433, 1, 0, 0, 0, 10000, 1), (748, 20433, 1, 0, 0, 0, 10000, 99),
         (748, -1, 1, 0, 0, 0, 10000, 1), (645, -1, 1, 0, 0, 0, 10000, 1), (749, 13978, 1, 0, 0, 1, 50, 1), (645, 5526, 1, 0, 1, 0, 10000, 1),
-        (645, 5526, 0, 0, 0, 0, 10000, 1), (645, 5526, 0, 1, 0, 0, 10000, 1), (748, 20433, 0, 1, 0, 0, 10000, 5)],
+        (645, 5526, 0, 0, 0, 0, 10000, 1), (645, 5526, 0, 1, 0, 0, 10000, 1), (748, 20433, 0, 1, 0, 0, 10000, 5))] + [
+        (645, 5526, '1141088;1539410;2441133', 1, 0, 0, 0, 10000, 1), (645, 5526, '120000;400000', 1, 0, 0, 0, 10000, 1),
+        (645, 5526, '1141088;1539410', 1, 0, 0, 1, 10000, 1), (748, 20433, '1330793;1549977', 1, 0, 0, 0, 10000, 1),
+        (900, 5526, '1141088;1539410;2441133', 1, 0, 0, 0, 10000, 1), (900, -1, '1141088', 1, 0, 0, 0, 10000, 3),
+        (901, 5526, '1141088;1539410', 1, 0, 0, 0, 10000, 1), (902, 5526, '', 1, 0, 0, 0, 10000, 1), (902, 2000, '', 1, 0, 0, 0, 3000, 4)],
     'StopMatchesTheExecutable': [(1, 1, 0, 0, 1), (1, 1, 0, 0, 2), (1, 1, 0, 0, 3), (1, 0, 0, 0, 1), (1, 1, 1, 0, 1), (1, 1, 0, 1, 1), (0, 1, 0, 0, 1)],
     'FramesMatchTheExecutable': [
         ('1141088;1539410;2441133;2839455;5441950', 9800, 9800, 31, 200, 1, 0),
         ('1141088;1539410;2441133;2839455;5441950', 9800, 9800, 124, 60, 7, 0),
         ('0;400000;900000', 1000, 1000, 31, 40, 1, 2000),
         ('250000', 500, 400, 62, 12, 3, 0)],
+    'FrameEventsMatchTheExecutable': [
+        ('', 1000, 1000, 31, 60, 1, 0, 1, 1500, 500, 1300, 0, 0),
+        ('', 1000, 1000, 31, 60, 1, 0, 0, 0, 900, 1200, 1100, 1400),
+        ('1141088;1539410;2441133', 800, 1000, 31, 120, 5, 0, 0, 0, 3000, 2500, 1800, 0),
+        ('', 1000, 1000, 31, 20, 1, 0, 0, 0, -1, 1100, 1050, 0),
+        ('250000', 500, 400, 62, 30, 3, 0, 1, 900, 0, 700, 0, 600),
+        ('400000;900000', 2000, 2000, 124, 40, 9, 0, 1, 5000, 0, 2600, 0, 2300)],
 }
 
 
@@ -118,7 +137,7 @@ def cases_from(text):
     cases, pending = {}, []
     for line in text.splitlines():
         if (row := ROW.match(line)):
-            pending.append(tuple(value(part) for part in re.findall(r'\s*("[^"]*"|[^,]+)', row.group(1))))
+            pending.append(tuple(value(part) for part in re.findall(r'\s*("[^"]*"|[^,]+)', row.group(1).strip())))
         elif (method := METHOD.search(line)):
             if pending:
                 cases[method.group(1)] = pending
@@ -148,21 +167,34 @@ class Presentation:
             0x40C57C: lambda _: (0, 0),  # not paused
             0x40823D: lambda _: (0, 0), 0x404962: lambda _: (0, 0),  # head nodes
             0x86F844: lambda _: (0, 0),  # sprintf of the LIP name
-            0x40399F: lambda _: (0, 0),  # the LIP file does not open
+            0x40399F: lambda _: (1 if self.lips else 0, 0),  # the LIP file exists when the case has marks
+            0x4038A0: lambda _: (0x4C1F, 0),  # its open file
+            0x7CC5E0: lambda _: (len(self.lips) + 1, 0),  # the words it holds
+            0x7CC930: self.decode_lips,
+            0x7CC440: lambda _: (0, 0),
             0x40C99B: lambda _: (0, 0), 0x40B6CC: lambda _: (0, 0), 0x40B0CD: lambda _: (0, 0), 0x4010EB: lambda _: (0, 0),
             0x402DAB: self.play,
             0x40A45C: lambda arena: (self.lengths.get(arena.arg(0), 1), 0),  # the sample length (1 without a playing sound)
             0x40CF1D: lambda arena: (self.stops.append(arena.arg(0)), (0, 0))[1],
             0x403B2A: lambda _: (0, 0), 0x4057AE: lambda _: (0, 0), 0x4069E2: lambda _: (0, 0), 0x86FF86: lambda _: (0, 0),
-            0x40C63A: lambda arena: (arena.arg(0), 0),  # the voice still plays
+            0x40C63A: lambda arena: (arena.arg(0) if self.now < self.voice_end else 0, 0),  # the voice plays until its end
             0x40A8FD: lambda _: (0, 0), 0x401456: lambda _: (0, 0),
             0x40A597: lambda _: (self.model, 0),
         }, budget=400_000)
         self.arena.set_fpcw(0x7F)
 
     def play(self, arena):
-        self.plays.append((arena.arg(1), arena.arg(2)))
+        self.plays.append((arena.arg(1), arena.arg(2), self.now))
+        if arena.arg(2) == VOICE and self.voice_length is not None:
+            if self.voice_length < 0:
+                return 0, 0
+            self.voice_end = self.now + self.voice_length
         return self.handle, 0
+
+    def decode_lips(self, arena):
+        for index, mark in enumerate(self.lips + [-1]):
+            arena.write(arena.arg(2) + 4 * index, 'i', mark)
+        return 0, 0
 
     def reset(self, seed):
         arena = self.arena
@@ -171,7 +203,8 @@ class Presentation:
         for index, length in enumerate(self.table):
             arena.write(DURATIONS + 4 * index, 'I', length)
         self.rand = Crt(seed)
-        self.plays, self.stops = [], []
+        self.plays, self.stops, self.lips = [], [], []
+        self.voice_end, self.voice_length = 0, None
         self.handle = HANDLE_VALUE
         nodes = arena.object(0x400)
         inner = arena.object(0x80, {0x70: ('I', nodes)})
@@ -203,8 +236,9 @@ class Presentation:
         timer = self.arena.read(TIMER, 'I')
         return (total, ','.join(map(str, self.clips())), timer if timer else -1, int(self.arena.read(VOICE_DUE, 'I') == 0), self.rand.draws)
 
-    def speech(self, response, voice, advisor_on, help_flag, speaking, animation, now, seed):
+    def speech(self, response, voice, marks, advisor_on, help_flag, speaking, animation, now, seed):
         self.reset(seed)
+        self.lips = [int(mark) for mark in marks.split(';')] if marks else []
         arena = self.arena
         arena.uc.mem_write(RESPONSES, struct.pack('<8i', *RESPONSE_ROWS[response]))
         arena.write(RESPONSES + 0x20, 'I', 0x270F)
@@ -217,9 +251,10 @@ class Presentation:
         self.lengths = {HANDLE_VALUE: voice} if voice >= 0 else {}
         duration = arena.call(0x716230, (response,)).eax
         if duration == 0:
-            return (0, 0, 0, 0, 0, 0, self.rand.draws)
+            return (0, 0, 0, 0, 0, 0, self.rand.draws, 0, 0, 0, 0, '')
         live = int(arena.read(HANDLE, 'I') != 0)
-        return (duration, arena.read(BASE, 'I'), arena.read(END, 'I'), arena.read(VOICE_DUE, 'I'), live, arena.read(HEAD_HIDDEN, 'B'), self.rand.draws)
+        return (duration, arena.read(BASE, 'I'), arena.read(END, 'I'), arena.read(VOICE_DUE, 'I'), live, arena.read(HEAD_HIDDEN, 'B'), self.rand.draws,
+                arena.read(LIP_LOADED, 'I'), arena.read(LIP_NEXT, 'i'), arena.read(TALKING, 'I'), arena.read(TIMER, 'I'), ','.join(map(str, self.clips())))
 
     def stop(self, speaking, live, hidden, suppressed, seed):
         self.reset(seed)
@@ -229,7 +264,7 @@ class Presentation:
         arena.write(HEAD_HIDDEN, 'B', hidden)
         arena.write(HEAD_SUPPRESSED, 'B', suppressed)
         arena.call(0x716950)
-        sounds = [sound for bank, sound in self.plays]
+        sounds = [sound for _, sound, _ in self.plays]
         check(len(sounds) <= 1, True, 'one stop sound at most')
         return (sounds[0] if sounds else 0, self.rand.draws)
 
@@ -261,12 +296,52 @@ class Presentation:
         return (','.join(map(str, mouths)), arena.read(TALKING, 'I'), self.rand.draws)
 
 
+    def frame_events(self, marks, base, start, step, count, seed, mouth_next, live, voice_end, voice_length, end, due, timer):
+        self.reset(seed)
+        arena = self.arena
+        values = [int(mark) for mark in marks.split(';')] if marks else []
+        if values:
+            buffer = arena.object(4 * (len(values) + 1))
+            for index, mark in enumerate(values + [-1]):
+                arena.write(buffer + 4 * index, 'i', mark)
+            arena.write(LIP_LOADED, 'I', 1)
+            arena.write(LIP_BUFFER, 'I', buffer)
+            arena.write(LIP_INDEX, 'I', 1)
+            arena.write(LIP_NEXT, 'i', base + int(values[0] / 1000))
+            arena.write(TALKING, 'I', 1)
+        arena.write(SPEAKING, 'I', 1)
+        arena.write(HANDLE, 'I', HANDLE_VALUE if live else 0)
+        self.voice_end, self.voice_length = voice_end, voice_length
+        arena.write(END, 'I', end & 0xFFFFFFFF)
+        arena.write(VOICE_DUE, 'I', due)
+        arena.write(TIMER, 'I', timer)
+        arena.write(VOICE_ID, 'I', VOICE)
+        arena.write(STEPPED, 'I', 1)
+        arena.write(BASE, 'I', base)
+        arena.write(MOUTH_NEXT, 'i', mouth_next)
+        arena.write(SHOWN_MOUTH, 'i', -1)
+        mouths, events = [], []
+        for frame in range(count):
+            self.now = start + frame * step
+            plays = len(self.plays)
+            speaking = arena.read(SPEAKING, 'I')
+            arena.executed = 0
+            arena.call(0x716ED0)
+            for _, sound, _ in self.plays[plays:]:
+                events.append(f'{"voice" if sound == VOICE else "timer" if sound == TIMER_SOUND else sound}@{frame}')
+            if speaking and not arena.read(SPEAKING, 'I'):
+                events.append(f'end@{frame}')
+            mouths.append(arena.read(MOUTH, 'i'))
+        return (','.join(map(str, mouths)), ';'.join(events), arena.read(TALKING, 'I'), arena.read(SPEAKING, 'I'), self.rand.draws)
+
+
 RUNNERS = {
     'GeneratedSequenceMatchesTheExecutable': (2, 'generated'),
     'CannedSequenceMatchesTheExecutable': (3, 'canned'),
-    'SpeechMatchesTheExecutable': (8, 'speech'),
+    'SpeechMatchesTheExecutable': (9, 'speech'),
     'StopMatchesTheExecutable': (5, 'stop'),
     'FramesMatchTheExecutable': (7, 'frames'),
+    'FrameEventsMatchTheExecutable': (13, 'frame_events'),
 }
 
 

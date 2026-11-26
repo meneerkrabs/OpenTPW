@@ -583,6 +583,7 @@ internal sealed partial class GameFlow : IDisposable
 		IncFrontEnd = null;
 		Advisor?.DetachLevel();
 		EndLobbyAdvisor();
+		StopThemeParkIncAdviceVoice();
 		GameAudio.LeavePark();
 		GameAudio.LeaveLobby();
 		if ( Level != null )

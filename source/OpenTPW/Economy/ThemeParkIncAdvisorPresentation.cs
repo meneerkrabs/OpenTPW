@@ -1,10 +1,11 @@
 namespace OpenTPW;
 
 /// <summary>
-/// The saved state of the advisor's presentation (docs/reverse/TPI-ADVISOR.md §4): the presentation random stream, the speech's clock words, the voice, the LIP walk, the mouth and the clip
-/// sequence. A load restores it, so the next draws and the speaking test follow as in an uninterrupted run; the client's audio starts silent.
+/// The state of the advisor's presentation (docs/reverse/TPI-ADVISOR.md §4): the presentation random stream, the speech's clock words, the voice, the LIP walk, the mouth and the clip
+/// sequence. Only the stream is saved (<see cref="ThemeParkIncAdvisorSnapshot.PresentationRandom"/>): a load starts the speech as the advisor init leaves it, silent
+/// (<see cref="ThemeParkIncAdvisorPresentation.Reset"/>). Tests set states through it.
 /// </summary>
-public sealed record ThemeParkIncAdvisorPresentationSnapshot( uint Random, bool Speaking, int Response, uint Start, uint Base, uint SpeechEnd, uint VoiceDue, bool VoiceLive, uint VoiceEnd,
+internal sealed record ThemeParkIncAdvisorPresentationState( uint Random, bool Speaking, int Response, uint Start, uint Base, uint SpeechEnd, uint VoiceDue, bool VoiceLive, uint VoiceEnd,
 	bool HeadHidden, bool HeadSuppressed, bool LipLoaded, int LipIndex, int LipNext, bool Talking, int Mouth, int MouthNext, uint Timer, int[] Clips, int[] Bits, bool Immediate );
 
 /// <summary>What the presentation asks of the client: a speech started, its voice started, a stop sound, a canned timer fired.</summary>
@@ -24,6 +25,9 @@ internal interface IThemeParkIncAdvisorSpeechData
 
 	/// <summary>The 25 clip lengths of the advisor model, null when no model clip is found.</summary>
 	AdvisorClipDurations? ClipDurations { get; }
+
+	/// <summary>Reads the data ahead of the first speech (park start).</summary>
+	void Preload() { }
 }
 
 /// <summary>
@@ -49,8 +53,12 @@ internal sealed class ThemeParkIncAdvisorPresentation
 
 	private readonly IThemeParkIncAdvisorSpeechData data;
 	private readonly List<ThemeParkIncAdvisorCue> cues = new();
+
+	/// <summary>The cues kept for a client that has not taken them; older ones are dropped, so a park without a client (tests, tools) does not collect them.</summary>
+	public const int CueLimit = 64;
 	private AdvisorRandom random;
 	private IReadOnlyList<uint>? marks;
+	private ThemeParkIncAdviceResponse? current;
 	private AdvisorClipDurations? durations;
 
 	public ThemeParkIncAdvisorPresentation( IThemeParkIncAdvisorSpeechData data, uint seed )
@@ -121,16 +129,19 @@ internal sealed class ThemeParkIncAdvisorPresentation
 	// a shown head loads the LIP (talking from its start); the delayed voice is due at base + 1000; the voice plays (0x652860) and its length + 200 makes the sequence (GenerateAnimSequence or
 	// SetCannedSequence); a voice still delayed is stopped again, talking cleared and the base moved by 1000; the next LIP mark is base + mark / 1000; the end is base + the sequence; a set timer
 	// moves by the base
-	public uint Speak( int response, uint now, bool animationWord, bool advisorOn, bool help )
+	public uint Speak( int response, uint now, bool animationWord, bool advisorOn, bool help ) =>
+		ThemeParkIncAdviceResponse.For( response ) is { } row ? Speak( row, now, animationWord, advisorOn, help ) : 0;
+
+	/// <summary>The speech of a response row (the oracle's synthetic rows reach paths no ported response takes).</summary>
+	internal uint Speak( ThemeParkIncAdviceResponse row, uint now, bool animationWord, bool advisorOn, bool help )
 	{
-		if ( ThemeParkIncAdviceResponse.For( response ) is not { } row )
-			return 0;
+		var response = row.Response;
 		var forced = ThemeParkIncAdviceResponse.PresenterGroup( row.Voice ) >= 0;
 		if ( Speaking || !advisorOn && !forced && !help )
 			return 0;
 		if ( forced || row.LevelBank )
 			throw new NotSupportedException( $"Theme Park Inc advisor response {response}: the presenter's speeches and the level's speech bank are not ported." );
-		Response = response;
+		(Response, current) = (response, row);
 		Start = now;
 		Base = unchecked( now - 200 );
 		// [EXT:tpi-advisor-tick-clock] D-2: the "game" key group (0xA07A28 +6) is a client state the simulation reads as on, as a running park has it
@@ -155,12 +166,12 @@ internal sealed class ThemeParkIncAdvisorPresentation
 			Timer = unchecked( (uint)timer );
 		else if ( row.Animation != -1 )
 			Timer = 0;
-		cues.Add( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Speech, response, row.Voice, now ) );
+		Cue( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Speech, response, row.Voice, now ) );
 		if ( immediate )
 		{
 			VoiceDue = 0;
-			if ( VoiceLive )
-				cues.Add( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Voice, response, row.Voice, now ) );
+			// the voice is asked for whether its sample plays or not (a missing one gives handle 0)
+			Cue( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Voice, response, row.Voice, now ) );
 		}
 		else
 		{
@@ -201,17 +212,18 @@ internal sealed class ThemeParkIncAdvisorPresentation
 			Speaking = false;
 		if ( VoiceDue != 0 && unchecked( (int)(VoiceDue - now) ) <= 0 )
 		{
-			if ( ThemeParkIncAdviceResponse.For( Response ) is { } row && data.VoiceLength( row ) is { } length )
+			if ( current is { } row )
 			{
-				(VoiceLive, VoiceEnd) = (true, unchecked( now + length ));
-				cues.Add( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Voice, Response, row.Voice, now ) );
+				if ( data.VoiceLength( row ) is { } length )
+					(VoiceLive, VoiceEnd) = (true, unchecked( now + length ));
+				Cue( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Voice, Response, row.Voice, now ) );
 			}
 			VoiceDue = 0;
 			Talking = true;
 		}
 		if ( Timer != 0 && unchecked( (int)(Timer - now) ) <= 0 )
 		{
-			cues.Add( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Timer, Response, 0, now ) );
+			Cue( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Timer, Response, 0, now ) );
 			Timer = 0;
 		}
 		var lipLoaded = LipLoaded;
@@ -250,21 +262,28 @@ internal sealed class ThemeParkIncAdvisorPresentation
 		Speaking = false;
 		(LipLoaded, marks, VoiceLive) = (false, null, false);
 		if ( live && !HeadSuppressed && !HeadHidden )
-			cues.Add( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Stop, Response, FirstStopSound + (uint)(Draw() % 3), 0 ) );
+			Cue( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Stop, Response, FirstStopSound + (uint)(Draw() % 3), 0 ) );
 		else if ( live )
-			cues.Add( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Stop, Response, 0, 0 ) );
+			Cue( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Stop, Response, 0, 0 ) );
 	}
 
-	public ThemeParkIncAdvisorPresentationSnapshot Capture() => new( RandomState, Speaking, Response, Start, Base, SpeechEnd, VoiceDue, VoiceLive, VoiceEnd, HeadHidden, HeadSuppressed,
+	private void Cue( ThemeParkIncAdvisorCue cue )
+	{
+		if ( cues.Count == CueLimit )
+			cues.RemoveAt( 0 );
+		cues.Add( cue );
+	}
+
+	public ThemeParkIncAdvisorPresentationState Capture() => new( RandomState, Speaking, Response, Start, Base, SpeechEnd, VoiceDue, VoiceLive, VoiceEnd, HeadHidden, HeadSuppressed,
 		LipLoaded, LipIndex, LipNext, Talking, Mouth, MouthNext, Timer, Clips.ToArray(), Bits.ToArray(), Immediate );
 
-	/// <summary>Whether a saved presentation can be restored: a loaded LIP needs a response OpenTPW plays, and the clips and bits pair up.</summary>
-	public static bool IsValid( ThemeParkIncAdvisorPresentationSnapshot state ) =>
+	/// <summary>Whether a state can be set: a loaded LIP needs a response OpenTPW plays, and the clips and bits pair up.</summary>
+	public static bool IsValid( ThemeParkIncAdvisorPresentationState state ) =>
 		state is { Clips: not null, Bits: not null, LipIndex: >= 0 } && state.Clips.Length == state.Bits.Length && state.Mouth is >= 0 and <= Mouths
 		&& (!state.LipLoaded && !state.Speaking || ThemeParkIncAdviceResponse.For( state.Response ) != null);
 
-	/// <summary>Restores a saved presentation; a loaded LIP is read again from the speech data (its marks are data).</summary>
-	public void Restore( ThemeParkIncAdvisorPresentationSnapshot state )
+	/// <summary>Sets a state (tests); a loaded LIP is read again from the speech data (its marks are data).</summary>
+	public void Restore( ThemeParkIncAdvisorPresentationState state )
 	{
 		if ( !IsValid( state ) )
 			throw new InvalidDataException( "Invalid Theme Park Inc advisor presentation." );
@@ -274,20 +293,26 @@ internal sealed class ThemeParkIncAdvisorPresentation
 		(HeadHidden, HeadSuppressed, LipLoaded, LipIndex, LipNext, Talking, Mouth, MouthNext, Timer) =
 			(state.HeadHidden, state.HeadSuppressed, state.LipLoaded, state.LipIndex, state.LipNext, state.Talking, state.Mouth, state.MouthNext, state.Timer);
 		(Clips, Bits, Immediate) = (state.Clips.ToArray(), state.Bits.ToArray(), state.Immediate);
-		marks = LipLoaded && ThemeParkIncAdviceResponse.For( Response ) is { } row ? data.LipMarks( row ) : null;
+		current = ThemeParkIncAdviceResponse.For( Response );
+		marks = LipLoaded && current is { } row ? data.LipMarks( row ) : null;
 		if ( LipLoaded && (marks == null || LipIndex > marks.Count) )
 			throw new InvalidDataException( $"The saved advisor speech's LIP (response {Response}) does not match the speech data." );
 		cues.Clear();
 	}
 
-	/// <summary>Restarts the presentation silent with a fresh stream, as the init <c>0x715850</c> leaves it (a save from before the presentation).</summary>
-	// [BIN:TPI-EXE:0x715850 advisor init] the 0x5F words from 0xBEF068 are zeroed (no speech, mouth 0, no LIP, no timer), 0xBEF18C = 5
-	public void Reset( uint seed )
+	/// <summary>
+	/// Starts the presentation silent, as the advisor init <c>0x715850</c> leaves it, with the stream at <paramref name="randomState"/>: a load's (the saved state, or a fresh one from the
+	/// session seed for a save without it) and a new park's.
+	/// </summary>
+	// [BIN:TPI-EXE:0x715850 advisor init] the 0x5F words from 0xBEF068 are zeroed (no speech, no voice handle, no delayed voice, no timer, no LIP, mouth 0), 0xBEF18C = 5.
+	// [BIN:TPI-EXE:0x6A36DE load init] screen 9 (0x6A3150) runs the model loader 0x4B02E0, which calls the init at 0x4B0484, before it reads the park file (0x746660 at 0x6A3BC9): a loaded park
+	// is always silent. The C runtime's rand() state is not part of that (the process keeps it); [EXT:tpi-advisor-presentation-rand] the presentation stream is saved and continues
+	public void Reset( uint randomState )
 	{
-		random = new AdvisorRandom( seed );
+		random = new AdvisorRandom( randomState );
 		(Speaking, Response, Start, Base, SpeechEnd, VoiceDue, VoiceLive, VoiceEnd) = (false, ThemeParkIncAdvisor.NoResponse, 0, 0, 0, 0, false, 0);
 		(HeadHidden, HeadSuppressed, LipLoaded, LipIndex, LipNext, Talking, Mouth, MouthNext, Timer) = (false, false, false, 0, 0, false, 0, 0, 0);
-		(Clips, Bits, Immediate, marks) = (Array.Empty<int>(), Array.Empty<int>(), false, null);
+		(Clips, Bits, Immediate, marks, current) = (Array.Empty<int>(), Array.Empty<int>(), false, null, null);
 		cues.Clear();
 	}
 }
@@ -324,6 +349,20 @@ internal sealed class ThemeParkIncAdvisorSpeech : IThemeParkIncAdvisorSpeechData
 		}
 	}
 
+	/// <summary>
+	/// Reads at park start what the first speech would otherwise read (the clip models, the LIP archive's listing, the voices' lengths and the LIPs of the responses OpenTPW plays), so it
+	/// does not stall a frame. The values are the same either way.
+	/// </summary>
+	public void Preload()
+	{
+		_ = ClipDurations;
+		foreach ( var response in ThemeParkIncAdviceResponse.All )
+		{
+			VoiceLength( response );
+			LipMarks( response );
+		}
+	}
+
 	// [BIN:TPI-EXE:0x71663F advisor sample length] "Advisor sample is %d ms long": the sound engine's length of the playing sample (0x653060), read here from the sample's data as the client
 	// decodes it (its frames × 1000 / its rate)
 	public uint? VoiceLength( ThemeParkIncAdviceResponse response )
@@ -346,8 +385,12 @@ internal sealed class ThemeParkIncAdvisorSpeech : IThemeParkIncAdvisorSpeechData
 			return null;
 		try
 		{
-			if ( speech.GetBank( sample.BankNumber ) is not { } bank || bank.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes, out _, out var playbackBytes ) is not { } mpeg
-				|| Mp2Decoder.Decode( mpeg, playbackBytes ) is not { SampleRate: > 0 } audio )
+			if ( speech.GetBank( sample.BankNumber ) is not { } bank || bank.GetMpeg( sample.SampleNumber, Mp2Decoder.MaximumInputBytes, out _, out var playbackBytes ) is not { } mpeg )
+				return null;
+			// the frame headers give the length the decode would (Mp2Decoder.TryMeasure); a stream they do not measure is decoded
+			if ( Mp2Decoder.TryMeasure( mpeg, playbackBytes, out var rate, out var frames ) && rate > 0 )
+				return (uint)(frames * 1000L / rate);
+			if ( Mp2Decoder.Decode( mpeg, playbackBytes ) is not { SampleRate: > 0 } audio )
 				return null;
 			return (uint)(audio.SampleFrames * 1000L / audio.SampleRate);
 		}

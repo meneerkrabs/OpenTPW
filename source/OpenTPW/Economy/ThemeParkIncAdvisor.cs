@@ -21,11 +21,12 @@ public readonly record struct ThemeParkIncAdviceBroadcast( int Tag, ushort Locat
 
 /// <summary>
 /// The advisor's saved state (docs/reverse/TPI-ADVISOR.md §6): the eight slots in queue order, the stored tutorial record, the playback window, the inputs and the advisor clock; since the
-/// presentation (P2) also the AdvisorOn option and the presentation (<see cref="ThemeParkIncAdvisorPresentationSnapshot"/>), which a save from before it lacks.
+/// presentation (P2) also the AdvisorOn option and the presentation random stream's state, which a save from before it lacks. The speech itself is not saved: a load starts it silent
+/// (<see cref="ThemeParkIncAdvisorPresentation.Reset"/>).
 /// </summary>
 public sealed record ThemeParkIncAdvisorSnapshot( ThemeParkIncAdviceRecord[] Slots, ThemeParkIncAdviceRecord StoredTutorial, uint LastStart, uint LastWindow, int Playing, bool SkipPlayback,
 	bool FromHelpButton, bool DelayedFromPanel, uint DelayStart, int DelayedMessage, bool TutorialOn, bool AdvisorPanelUp, long ClockMicroseconds, bool AdvisorOn = true,
-	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] ThemeParkIncAdvisorPresentationSnapshot? Presentation = null );
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] uint? PresentationRandom = null );
 
 /// <summary>
 /// Theme Park Inc's advisor thing (model 11, built by the new-world init at <c>0x64836F</c>): the queue of eight advice records, the acceptance of a new record, the replacement on a full
@@ -39,7 +40,13 @@ public sealed class ThemeParkIncAdvisor
 	private readonly ThemeParkIncAdvisorPresentation presentation;
 	private readonly uint presentationSeed;
 	private readonly List<ThemeParkIncAdviceBroadcast> broadcasts = new();
+	private readonly Func<int, uint> speak;
+	private readonly IThemeParkIncAdvisorSpeechData speechData;
+	private ThemeParkIncAdviceContext speakContext;
 	private bool framePending;
+
+	/// <summary>The plays kept for a client that has not taken them (<see cref="TakePlayed"/>); older ones are dropped.</summary>
+	public const int PlayedLimit = 64;
 
 	/// <param name="speech">The speech data the presentation reads; none: no voice, no LIP and no clips.</param>
 	/// <param name="presentationSeed">The presentation stream's seed (D-4: from the session seed).</param>
@@ -48,7 +55,9 @@ public sealed class ThemeParkIncAdvisor
 		this.settings = settings;
 		this.table = table;
 		this.presentationSeed = presentationSeed;
-		presentation = new ThemeParkIncAdvisorPresentation( speech ?? NoSpeech.Instance, presentationSeed );
+		speechData = speech ?? NoSpeech.Instance;
+		presentation = new ThemeParkIncAdvisorPresentation( speechData, presentationSeed );
+		speak = response => Speak( response, speakContext );
 	}
 
 	private sealed class NoSpeech : IThemeParkIncAdvisorSpeechData
@@ -96,6 +105,9 @@ public sealed class ThemeParkIncAdvisor
 	public bool AdvisorOn { get; set; } = true;
 	/// <summary>The presentation: the speech, the per-frame advisor, the stop and their random stream.</summary>
 	internal ThemeParkIncAdvisorPresentation Presentation => presentation;
+
+	/// <summary>Reads the speech data ahead of the first speech (the client calls it when the park starts).</summary>
+	internal void PreloadSpeech() => speechData.Preload();
 	/// <summary>The advisor panel's window (<c>0xA568BC</c>), a player input: while it is up only tutorial and mail records are chosen.</summary>
 	public bool AdvisorPanelUp { get; set; }
 	/// <summary>
@@ -332,7 +344,11 @@ public sealed class ThemeParkIncAdvisor
 	/// <summary>
 	/// The advisor thing's update (<c>0x718190</c>) with the presentation's speech (<c>0x716230</c>): its return is the playback's duration.
 	/// </summary>
-	public void Update( long turn, ThemeParkIncCareer career, ThemeParkIncAdviceContext context ) => Update( turn, career, context, response => Speak( response, context ) );
+	public void Update( long turn, ThemeParkIncCareer career, ThemeParkIncAdviceContext context )
+	{
+		speakContext = context;
+		Update( turn, career, context, speak );
+	}
 
 	// [BIN:TPI-EXE:0x7162A3 help response] the speech lets the help button's response (0x9DDBE8 = the response, not 0x3F6) through with AdvisorOn off; a speech that is not refused sets it to 0x3F6
 	private uint Speak( int response, ThemeParkIncAdviceContext context )
@@ -435,7 +451,7 @@ public sealed class ThemeParkIncAdvisor
 			(HelpResponse, HelpMessage) = (response, ThemeParkIncAdvisorTable.NoMessage);
 		else
 			HelpResponse = NoResponse;
-		played.Add( new ThemeParkIncAdvicePlay( slot.Message, response, slot.Locate, slot.LocateData ) );
+		Played( new ThemeParkIncAdvicePlay( slot.Message, response, slot.Locate, slot.LocateData ) );
 		var duration = speech( response );
 		// [BIN:TPI-EXE:0x71ABC9 caption broadcast] after the speech and the gate timer, a tag (0x716D10: the response's +0x1C, 0x97 for none) that is not 0x97 goes out as kind 0x18 with the
 		// record's locate word and dword (0x435D30); the tag system receives it at once (0x436DD0 -> 0x637970 -> 0x635D80)
@@ -453,7 +469,7 @@ public sealed class ThemeParkIncAdvisor
 		var response = ResponseOf( slot.Message, variant );
 		if ( response == NoResponse )
 			return null;
-		played.Add( new ThemeParkIncAdvicePlay( slot.Message, response, slot.Locate, slot.LocateData ) );
+		Played( new ThemeParkIncAdvicePlay( slot.Message, response, slot.Locate, slot.LocateData ) );
 		var duration = speech( response );
 		// the explicit path broadcasts the tag without the 0x97 test; the tag system has no record of 0x97 (0x637000), so it files nothing for it
 		if ( ThemeParkIncAdviceResponse.For( response ) is { } row )
@@ -461,8 +477,15 @@ public sealed class ThemeParkIncAdvisor
 		return duration;
 	}
 
+	private void Played( ThemeParkIncAdvicePlay play )
+	{
+		if ( played.Count == PlayedLimit )
+			played.RemoveAt( 0 );
+		played.Add( play );
+	}
+
 	public ThemeParkIncAdvisorSnapshot Capture() => new( (ThemeParkIncAdviceRecord[])slots.Clone(), StoredTutorial, LastStart, LastWindow, Playing, SkipPlayback, FromHelpButton,
-		DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp, ClockMicroseconds, AdvisorOn, presentation.Capture() );
+		DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp, ClockMicroseconds, AdvisorOn, presentation.RandomState );
 
 	/// <summary>
 	/// Whether a snapshot can come from this model: eight slots whose valid records name a message of the table, and every record that takes its descriptor's score (and a delayed message,
@@ -472,8 +495,7 @@ public sealed class ThemeParkIncAdvisor
 		state is { Slots.Length: Slots, ClockMicroseconds: >= 0 }
 		&& state.Slots.Append( state.StoredTutorial ).All( slot => !slot.Valid || table.Find( slot.Message ) is { } row && (slot.ExplicitScore || row.ConstantScore != null) )
 		&& (state.Playing == ThemeParkIncAdvisorTable.NoMessage || table.Find( state.Playing ) != null)
-		&& (!state.DelayedFromPanel || table.Find( state.DelayedMessage )?.ConstantScore != null)
-		&& (state.Presentation == null || ThemeParkIncAdvisorPresentation.IsValid( state.Presentation ));
+		&& (!state.DelayedFromPanel || table.Find( state.DelayedMessage )?.ConstantScore != null);
 
 	public void Restore( ThemeParkIncAdvisorSnapshot state )
 	{
@@ -485,12 +507,9 @@ public sealed class ThemeParkIncAdvisor
 		(DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp, ClockMicroseconds) =
 			(state.DelayedFromPanel, state.DelayStart, state.DelayedMessage, state.TutorialOn, state.AdvisorPanelUp, state.ClockMicroseconds);
 		AdvisorOn = state.AdvisorOn;
-		// a save from before the presentation (P1) has none: the presentation starts as the advisor's init leaves it, silent, with the stream fresh from the session seed, as P1 ran it
-		// (its windows came from the voice alone and it drew nothing)
-		if ( state.Presentation is { } saved )
-			presentation.Restore( saved );
-		else
-			presentation.Reset( presentationSeed );
+		// [BIN:TPI-EXE:0x6A36DE load init] a load runs the advisor init 0x715850 before the park file: the speech starts silent. The presentation stream continues from its saved state; a save from
+		// before the presentation (P1, which drew nothing) has none and starts it fresh from the session seed
+		presentation.Reset( state.PresentationRandom ?? presentationSeed );
 		// the help button's words are statics of the executable, which a load in a new process starts from their initial values (D-5)
 		(HelpMessage, HelpResponse) = (ThemeParkIncAdvisorTable.NoMessage, NoResponse);
 		played.Clear();

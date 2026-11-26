@@ -75,7 +75,12 @@ internal sealed partial class GameFlow
 	}
 
 	/// <summary>Starts the experimental HUD over a Theme Park Inc level (called from StartLevel, after TearDown).</summary>
-	private ThemeParkIncHud CreateThemeParkIncHud( Level level, GameSpeed speed = GameSpeed.Normal ) => new( level, Strings, new ThemeParkIncHudHost
+	private ThemeParkIncHud CreateThemeParkIncHud( Level level, GameSpeed speed = GameSpeed.Normal )
+	{
+		// a new or loaded park starts its advisor silent (0x715850 before the park file); the speech data are read now, not at the first speech
+		StopThemeParkIncAdviceVoice();
+		level.Park?.Economy.TpiAdvisor?.PreloadSpeech();
+		return new ThemeParkIncHud( level, Strings, new ThemeParkIncHudHost
 	{
 		Quit = Quit,
 		SaveLayout = SaveThemeParkIncLayout,
@@ -84,6 +89,14 @@ internal sealed partial class GameFlow
 		LoadPark = level.LevelName == "science" && !OperatingSystem.IsBrowser() ? LoadThemeParkIncScience : null,
 		SelectNewPlayer = ShowThemeParkIncFrontEnd
 	}, speed );
+	}
+
+	/// <summary>Stops the advice voice that is playing (a global speech one-shot outlives <see cref="GameAudio.LeavePark"/>).</summary>
+	internal void StopThemeParkIncAdviceVoice()
+	{
+		themeParkIncAdviceVoice?.Stop();
+		themeParkIncAdviceVoice = null;
+	}
 
 	/// <summary>The slice's simulation time scale: a flight's clock rate while one is on (0 while the park is paused), else the HUD's speed.</summary>
 	internal static float ThemeParkIncTimeScale( double? flightRate, GameSpeed speed, float hudScale ) =>
@@ -145,7 +158,7 @@ internal sealed partial class GameFlow
 
 	/// <summary>
 	/// [BIN:TPI-EXE:0x635D80 notification letter] A notification letter (the bank's six-months-in-the-red letter or the challenge system's
-	/// firing letter): the tag system queues its advice, which the advisor's playback speaks (<see cref="PresentThemeParkIncAdvice"/>), and opens the
+	/// firing letter): the tag system queues its advice, which the advisor's playback speaks (<see cref="PresentThemeParkIncAdvisorCue"/>), and opens the
 	/// letter window on the record (0x636217). Closing the letter is what loses the park (<see cref="DismissThemeParkIncLetter"/>).
 	/// </summary>
 	private void PresentThemeParkIncMail( ThemeParkIncHud hud, ParkEconomy economy, ThemeParkIncAdviceMail mail )

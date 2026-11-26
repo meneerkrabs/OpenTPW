@@ -8,9 +8,9 @@ The second phase of Theme Park Inc's advisor port ([TPI-ADVISOR.md](../reverse/T
 - **No voice.** A missing voice takes the length the original reads for a voice that does not play (1 ms); nothing is invented. With AdvisorOn off, only the help button's advice is said.
 - **Captions are Message Centre letters.** Each forecast and letter advice files an unread row from its tag record (`0x635D80`, branch 0x18), with the advisor as sender. The forecast caption line is gone.
 - **Sound.** The voice plays when the presentation starts it. A cancelled advice ends with one of the three stop sounds.
-- **Saves.** The advisor's save gains the presentation and the AdvisorOn option. Saves from the first phase still load: they start the presentation silent, with a fresh stream.
-- **Oracle.** A new oracle runs the sequence builders, the speech, the stop and the per-frame advisor on the executable, with `rand()` replaced by a seeded generator. Its 54 cases are the tests' cases.
+- **Saves.** A load starts the advisor silent, as the original's does (its advisor init runs before the park file). The save gains the presentation's random stream and the AdvisorOn option; saves from the first phase still load, with a fresh stream.
+- **Oracle.** A new oracle runs the sequence builders, the speech, the stop and the per-frame advisor on the executable, with `rand()` replaced by a seeded generator. Its 69 cases are the tests' cases.
 
-Labels: `[EXT:tpi-advisor-presentation-rand]` is new (approved by the user on 2026-11-24). `[EXT:tpi-advisor-tick-clock]` now also covers the per-frame advisor's substep pacing and the voice's length on the advisor clock. No approximation is added, and no other CRT `rand()` is reached. The advisor model is not drawn on screen yet.
+Labels: `[EXT:tpi-advisor-presentation-rand]` is new (approved by the user on 2026-11-24). `[EXT:tpi-advisor-tick-clock]` now also covers the per-frame advisor's substep pacing and the voice's length on the advisor clock. No approximation is added, and no other CRT `rand()` is reached. The advisor model is not drawn on screen yet; that comes as a client change of its own (P2b).
 
 The original game was not launched, and no binary or data is included.

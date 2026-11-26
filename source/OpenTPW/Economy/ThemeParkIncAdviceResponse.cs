@@ -33,6 +33,9 @@ public readonly record struct ThemeParkIncAdviceResponse( int Response, uint Voi
 		new( 748, 868, 868, -1, 0, false, HiddenHead, NoTag ), new( 749, 869, 869, 25, 1, false, -1, 0x5E ), new( 750, 870, 870, 25, 1, false, -1, 0x5F ),
 	};
 
+	/// <summary>The rows OpenTPW plays.</summary>
+	public static IReadOnlyList<ThemeParkIncAdviceResponse> All => Known;
+
 	/// <summary>The row of <paramref name="response"/>, or null for a response OpenTPW cannot play yet.</summary>
 	public static ThemeParkIncAdviceResponse? For( int response ) => Array.FindIndex( Known, row => row.Response == response ) is var index and >= 0 ? Known[index] : null;
 

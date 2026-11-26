@@ -78,6 +78,8 @@ internal sealed class ThemeParkIncAdvisorView : IDisposable
 		var now = advisor.DisplayMilliseconds( turnFraction );
 		if ( Playing( presentation, lengths[model], now ) is not { } playing )
 			return;
+		// [EXT:tpi-capability-gates] a clip's bits 0x20000-0x200000 start screen effects at its start (0x715FEA: 0x7BA870, 0x7BA960, 0x7BAA30, Theme Park World's effect groups) and the
+		// award selectors swap textures (0x715CF0); no response OpenTPW plays has either, and neither is drawn
 		if ( !clipHidden.TryGetValue( playing.Index, out var hidden ) )
 			clipHidden[playing.Index] = hidden = ThemeParkIncAdvisorAccessories.ClipStartHidden( rig.Nodes, rig.Clip( playing.Clip ), response.Accessory, response.SecondAccessory,
 				theme ??= AdvisorThemeCostume.Load( FileSystem, level ), playing.Bits, presentation.HeadSuppressed );

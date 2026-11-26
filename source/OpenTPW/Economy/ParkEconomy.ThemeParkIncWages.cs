@@ -37,7 +37,7 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x628D4F demand filed] 0xAA07F4 = the day; 0x6375C0 (the handle), 0x64EA60 (the tag system) and 0x636C90(0x90, handle): the member's unflagged rows of tag 0x90 are flagged; the
 	// advisor message 0x1C8 (0x71A930, 0x64EA00 -> 0x718820); the grievance and the age give the kind; new(0x2C), 0x5CEFB0(kind, member, +0x270) and 0x435DC0 posts it as the type-0x19 letter,
 	// which the tag system files at once (0x436DD0 -> 0x637970 case 0xC -> 0x635D80); then +0x26C = +0x270 = 0 (ThemeParkIncStaff.EndDay)
-	// [EXT:tpi-capability-gates] the message 0x1C8 is noted, not said: Theme Park Inc's advisor plays only the forecasts (ThemeParkIncForecastQueue)
+	// [EXT:tpi-capability-gates] the message 0x1C8 is noted, not posted: the advisor's queue (ThemeParkIncAdvisor) takes the forecasts and the letters so far; the staff senders come with P5
 	internal void FileThemeParkIncWageDemands( IEnumerable<ThemeParkIncStaff.WageDemand> demands )
 	{
 		foreach ( var demand in demands )

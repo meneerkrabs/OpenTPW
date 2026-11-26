@@ -147,6 +147,8 @@ public class LobbyAdvisorTests
 		Assert.IsTrue( flow.Contains( "RenderLobbyLayers( entities, lobbyWeather, lobbyEffects.Flash && IncFrontEnd == null, drawLobbyFlash ??= DrawLobbyFlash );\n\t\t\tRenderLobbyAdvisor();", StringComparison.Ordinal ), "rendered after the lobby's layers" );
 		Assert.IsTrue( flow.Contains( "Menu?.Stack.Draw( Context );\n\t\tDrawLobbyAdvisor();", StringComparison.Ordinal ), "drawn over the lobby screens" );
 		var advisor = File.ReadAllText( Path.Combine( directory.FullName, "source", "OpenTPW", "World", "Advisor.cs" ) ).Replace( "\r\n", "\n" );
-		StringAssert.Contains( advisor, "_padding6 = Ambient.HasValue ? 1f : 0f," );
+		// the shared rig draw (Advisor.DrawRig) switches the lobby ambient on, and Theme Park World's advisor passes its Ambient to it
+		Assert.IsTrue( advisor.Contains( "_padding6 = ambient.HasValue ? 1f : 0f,", StringComparison.Ordinal ), "the ambient switch" );
+		Assert.IsTrue( advisor.Contains( "DrawRig( rig, model, worlds, hidden, clip, tick, MouthSuppressed ? null : shownMouth, Ambient );", StringComparison.Ordinal ), "the lobby's ambient reaches the draw" );
 	}
 }

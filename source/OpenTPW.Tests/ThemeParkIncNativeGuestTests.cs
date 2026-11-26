@@ -69,9 +69,18 @@ public sealed class ThemeParkIncNativeGuestTests
 		BusStopA = (10, 5), BusStopB = (16, 5), BusStopC = (18, 5), EntranceA = (10, 17), EntranceB = (11, 17), FirstHourMinutes = 120
 	};
 
-	private static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false, ThemeParkIncGuestSettings? nativeSettings = null )
+	/// <summary>
+	/// Whether the rigs walk with Theme Park Inc's navigator by default: set <c>OPENTPW_TEST_TPI_NATIVE_WALK=1</c> to run every test of this class with both switches on (the navigator plan's NV3 check);
+	/// the tests themselves pin the default walk.
+	/// </summary>
+	internal static bool NativeWalkByDefault => Environment.GetEnvironmentVariable( "OPENTPW_TEST_TPI_NATIVE_WALK" ) == "1";
+
+	private static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false, ThemeParkIncGuestSettings? nativeSettings = null,
+		bool? walk = null )
 	{
 		var grid = new GuestPathGrid( 30, 24 );
+		if ( walk ?? NativeWalkByDefault )
+			grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
 		for ( var x = 4; x <= 20; x++ )
 			grid.Cells.SetType( x, 5, ParkCellTypes.FixedWalkway );
 		foreach ( var x in new[] { 10, 11 } )
@@ -226,6 +235,33 @@ public sealed class ThemeParkIncNativeGuestTests
 		Assert.AreEqual( 1, guest.VisitorNumber, "the visitor number at the entrance (0x650560)" );
 		Assert.AreEqual( 1, simulation.VisitorCount );
 		Assert.IsTrue( simulation.IsOnParkCell( guest ) );
+	}
+
+	/// <summary>
+	/// With both switches on (NV3) the same guest walks the same way through Theme Park Inc's walk step: the states follow as before, the route requests and set-ups raise the stamp counter, and
+	/// the walk step writes the heading word +0x2C, which the booth's verdict then sets to the booth's angle.
+	/// </summary>
+	[TestMethod]
+	public void WithTheNativeWalkAGuestWalksThroughTheBoothAndTheCounterCountsItsRequests()
+	{
+		var (simulation, payments, _) = Rig( walk: true );
+		payments.Fee = 10;
+		var guest = simulation.SpawnArrival()!;
+		Assert.IsTrue( simulation.Grid.Cells.StampCounter >= 2, "the constructor's booth request and its set-up, and the sprite placement 0x60CAC9, raised the counter" );
+		var states = new List<int>();
+		var headings = new HashSet<int>();
+		for ( var turn = 0; turn < 600 && guest.Tpi!.State != ThemeParkIncGuestStates.Idle; turn++ )
+		{
+			Turns( simulation, 1 );
+			headings.Add( guest.Tpi.Heading );
+			Assert.AreEqual( 0, guest.StrandedMark, "the walk step clears the mark" );
+			if ( states.Count == 0 || states[^1] != guest.Tpi.State )
+				states.Add( guest.Tpi.State );
+		}
+		CollectionAssert.AreEqual( new[] { 2, 4, 3, 5, 6 }, states, $"the booth, the verdict, the wait for the gate, the entrance, idle: {string.Join( ", ", states )}" );
+		Assert.IsTrue( headings.Count > 2, "the walk step wrote headings" );
+		Assert.IsTrue( guest.Navigation.Native );
+		Assert.AreEqual( guest.Navigation.Stamp <= simulation.Grid.Cells.StampCounter, true );
 	}
 
 	// ---- The setter -----------------------------------------------------------------------------------------------------------

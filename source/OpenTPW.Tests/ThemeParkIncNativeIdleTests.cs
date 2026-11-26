@@ -33,6 +33,8 @@ public sealed class ThemeParkIncNativeIdleTests
 	private static (GuestSimulation Simulation, Guest Guest, ThemeParkIncGuestRecord Tpi, World World) Rig()
 	{
 		var grid = new GuestPathGrid( 30, 24 );
+		if ( ThemeParkIncNativeGuestTests.NativeWalkByDefault )
+			grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
 		foreach ( var x in new[] { 10, 11 } )
 			for ( var y = 5; y <= 16; y++ )
 				grid.Cells.SetType( x, y, ParkCellTypes.FixedWalkway );

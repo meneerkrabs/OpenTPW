@@ -85,6 +85,14 @@ public static class ParkCalendar
 	/// <summary>The first fixed tick at which <paramref name="turn"/> is reached.</summary>
 	public static long TickOfTurn( long turn ) => (turn * TickTurnDenominator + TickTurnNumerator - 1) / TickTurnNumerator;
 
+	/// <summary>How far through its park turn a fixed tick is: 0 at the turn's first tick, approaching 1 at its last.</summary>
+	public static double TurnFraction( long tick )
+	{
+		var turn = Turn( tick );
+		var first = TickOfTurn( turn );
+		return (double)(tick - first) / (TickOfTurn( turn + 1 ) - first);
+	}
+
 	/// <summary>Park-clock seconds since the 2000-01-01 epoch at a fixed tick.</summary>
 	public static long Seconds( long tick ) => Turn( tick ) * SecondsPerTurn;
 

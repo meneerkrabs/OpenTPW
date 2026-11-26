@@ -179,11 +179,14 @@ internal sealed class Advisor : IDisposable
 	/// Composed model space (Y up, facing −Z) to the clip space of the <see cref="BoxRectangle"/> viewport, for an output of
 	/// <paramref name="target"/> pixels: the original's root scale and translation, divided by the box size.
 	/// </summary>
-	internal static Matrix4x4 ModelTransform( Point2 target )
+	internal static Matrix4x4 ModelTransform( Point2 target ) => ModelTransform( target, Depth );
+
+	/// <summary><see cref="ModelTransform(Point2)"/> with the model matrix's depth <paramref name="depth"/> (Theme Park Inc places its advisor at 0.9, <see cref="ThemeParkIncAdvisorView"/>).</summary>
+	internal static Matrix4x4 ModelTransform( Point2 target, float depth )
 	{
 		// [EXT:advisor-aspect] outside 4:3 the width scale is 0.015 × height/width of the output instead of the original's fixed 0.75, so the advisor keeps its proportions (the original runs at 4:3 only)
 		var aspect = target.X > 0 && target.Y > 0 ? (float)target.Y / target.X : OriginalAspect;
-		return Matrix4x4.CreateScale( HeightScale * aspect / BoxHalfSide, HeightScale / BoxHalfSide, DepthScale ) * Matrix4x4.CreateTranslation( 0, 0, Depth );
+		return Matrix4x4.CreateScale( HeightScale * aspect / BoxHalfSide, HeightScale / BoxHalfSide, DepthScale ) * Matrix4x4.CreateTranslation( 0, 0, depth );
 	}
 
 	private static Point2 WorldTargetSize => new( (int)global::Global.Render.MultisampledFramebuffer.Width, (int)global::Global.Render.MultisampledFramebuffer.Height );
@@ -680,10 +683,8 @@ internal sealed class Advisor : IDisposable
 	}
 
 	/// <summary>The advisor drawn by the last <see cref="RenderImage"/>, owned by this advisor.</summary>
-	public Veldrid.Texture? Image { get; private set; }
-	private Framebuffer? imageTarget;
-	private Veldrid.Texture? imageColor;
-	private Veldrid.Texture? imageDepth;
+	public Veldrid.Texture? Image => imageTarget.Image;
+	private readonly AdvisorImageTarget imageTarget = new();
 
 	/// <summary>
 	/// Draws the advisor into an image the size of its <see cref="BoxRectangle"/> on an output of <paramref name="output"/>
@@ -694,55 +695,10 @@ internal sealed class Advisor : IDisposable
 	{
 		if ( disposed )
 			return null;
-		var world = global::Global.Render.MultisampledFramebuffer;
 		var (_, _, width, height) = BoxRectangle( output );
-		EnsureImageTarget( width, height, world );
-		var commandList = global::Global.Render.CommandList;
-		commandList.SetFramebuffer( imageTarget! );
-		commandList.SetFullViewports();
-		commandList.SetFullScissorRects();
-		commandList.ClearColorTarget( 0, RgbaFloat.Clear );
-		commandList.ClearDepthStencil( 1 );
+		imageTarget.Begin( width, height );
 		DrawParts( ModelTransform( output ) );
-		commandList.ResolveTexture( imageColor!, Image! );
-		commandList.SetFramebuffer( world );
-		commandList.SetFullViewports();
-		commandList.SetFullScissorRects();
-		return Image;
-	}
-
-	/// <summary>Same formats and multisampling as the world target, so the advisor's pipelines draw into it unchanged.</summary>
-	private void EnsureImageTarget( int width, int height, Framebuffer world )
-	{
-		if ( Image != null && Image.Width == (uint)width && Image.Height == (uint)height )
-			return;
-		DisposeImageTarget();
-		var color = world.ColorTargets[0].Target;
-		var depth = world.DepthTarget!.Value.Target;
-		var factory = global::Global.Device.ResourceFactory;
-		imageColor = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, color.Format, TextureUsage.RenderTarget, color.SampleCount ) );
-		imageDepth = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, depth.Format, TextureUsage.DepthStencil, depth.SampleCount ) );
-		Image = factory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, color.Format, TextureUsage.Sampled ) );
-		imageTarget = factory.CreateFramebuffer( new FramebufferDescription( imageDepth, imageColor ) );
-	}
-
-	private void DisposeImageTarget()
-	{
-		var target = imageTarget;
-		var color = imageColor;
-		var depth = imageDepth;
-		var image = Image;
-		imageTarget = null;
-		imageColor = imageDepth = Image = null;
-		if ( image == null )
-			return;
-		global::Global.Render.ScheduleDelete( () =>
-		{
-			target?.Dispose();
-			color?.Dispose();
-			depth?.Dispose();
-			image.Dispose();
-		} );
+		return imageTarget.End();
 	}
 
 	private void DrawParts( Matrix4x4 model )
@@ -754,9 +710,20 @@ internal sealed class Advisor : IDisposable
 		var lipPosition = LipPosition;
 		var shownMouth = mouth.Update( player is { IsStarted: true } && IsTalking( timeline, lipPosition ),(long)lipPosition.TotalMilliseconds );
 		var (worlds, hidden, clip, tick) = CurrentPose();
+		DrawRig( rig, model, worlds, hidden, clip, tick, MouthSuppressed ? null : shownMouth, Ambient );
+		LastRenderedMouth = shownMouth;
+	}
+
+	/// <summary>
+	/// Draws the meshes of <paramref name="rig"/> posed by <paramref name="worlds"/> (clip <paramref name="clip"/> at <paramref name="tick"/>, 0 for none) through the advisor's
+	/// <paramref name="model"/> transform: every mesh but the <paramref name="hidden"/> nodes and the mouths other than <paramref name="shownMouth"/> (no mouth when it is null).
+	/// <paramref name="ambient"/> is the lobby screen's ambient, null in a park. Shared by Theme Park World's advisor and Theme Park Inc's (<see cref="ThemeParkIncAdvisorView"/>).
+	/// </summary>
+	internal static void DrawRig( AdvisorRig rig, Matrix4x4 model, Matrix4x4[] worlds, ISet<int> hidden, int clip, float tick, string? shownMouth, System.Numerics.Vector3? ambient )
+	{
 		foreach ( var part in rig.Parts )
 		{
-			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && (part.Name != shownMouth || MouthSuppressed) )
+			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && part.Name != shownMouth )
 				continue;
 			rig.Write( part, worlds[part.NodeIndex], clip, tick );
 			part.Material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
@@ -772,12 +739,11 @@ internal sealed class Advisor : IDisposable
 				g_vCameraPos = System.Numerics.Vector3.Zero,
 				g_flTime = Time.Now,
 				// the advisor shader reads the lobby ambient from the block's last vec3 slot (the one other shaders take for fog), switched on by the word after it
-				g_vFogColor = Ambient ?? System.Numerics.Vector3.Zero,
-				_padding6 = Ambient.HasValue ? 1f : 0f,
+				g_vFogColor = ambient ?? System.Numerics.Vector3.Zero,
+				_padding6 = ambient.HasValue ? 1f : 0f,
 			} );
 			part.Model.Draw();
 		}
-		LastRenderedMouth = shownMouth;
 	}
 
 	/// <summary>
@@ -870,7 +836,7 @@ internal sealed class Advisor : IDisposable
 			return;
 		disposed = true;
 		player?.Dispose();
-		DisposeImageTarget();
+		imageTarget.Dispose();
 		globalRig?.Dispose();
 		levelRig?.Dispose();
 	}

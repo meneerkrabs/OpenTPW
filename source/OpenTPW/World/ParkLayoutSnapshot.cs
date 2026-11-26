@@ -79,6 +79,12 @@ public static class ParkLayoutSnapshot
 		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 		public int StampCounter { get; init; }
 		/// <summary>
+		/// Whether <see cref="StampCounter"/> counted every simulation call (<see cref="ParkCellMap.CountsSimulationCalls"/>: a park with Theme Park Inc's navigator), so it is written even while no
+		/// block is stamped; absent (false) for every other map, whose saves are unchanged.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+		public bool SimulationStampCounter { get; init; }
+		/// <summary>
 		/// The park's land (Buy Land): its fence and which cells it owns. Null in saves written before land existed and for
 		/// maps without land; the loader then sets the level's land up afresh. The cell records' flags omit the unowned bit,
 		/// which this record carries for the whole map.
@@ -238,7 +244,7 @@ public static class ParkLayoutSnapshot
 		var stamps = cells.CaptureBlockStamps();
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, QueuePassSchemaVersion = cells.HasQueuePassResidues ? 1 : 0, QueuePassResidues = cells.HasQueuePassResidues ? cells.CaptureQueuePassResidues().ToList() : null, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ), TpiUnowned = tpiLand ? Convert.ToBase64String( UnownedBits( cells ) ) : null, TpiObstacles = cells.HasObstacleFlags ? Convert.ToBase64String( ObstacleBits( cells ) ) : null },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, QueuePassSchemaVersion = cells.HasQueuePassResidues ? 1 : 0, QueuePassResidues = cells.HasQueuePassResidues ? cells.CaptureQueuePassResidues().ToList() : null, BlockStamps = stamps, StampCounter = stamps == null && !cells.CountsSimulationCalls ? 0 : cells.StampCounter, SimulationStampCounter = cells.CountsSimulationCalls, Land = CaptureLand( cells ), TpiUnowned = tpiLand ? Convert.ToBase64String( UnownedBits( cells ) ) : null, TpiObstacles = cells.HasObstacleFlags ? Convert.ToBase64String( ObstacleBits( cells ) ) : null },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
@@ -457,7 +463,7 @@ public static class ParkLayoutSnapshot
 			Require( Array.TrueForAll( stamps, stamp => stamp >= 0 && stamp <= cells.StampCounter ), "a block stamp is negative or above the stamp counter" );
 		}
 		else
-			Require( cells.StampCounter == 0, "the cell map has a stamp counter but no block stamps" );
+			Require( cells.StampCounter == 0 || cells.SimulationStampCounter, "the cell map has a stamp counter but no block stamps" );
 		if ( cells.Land is { } land )
 			ReadLand( land, cells.Width, cells.Height );
 		if ( cells.TpiUnowned is { } tpiUnowned )

@@ -1,0 +1,16 @@
+## Theme Park Inc: the walk step and the native stamp counter (November 26, 2026)
+
+The third phase of the Theme Park Inc navigator port (NV3), behind the hidden `--tpi-native-walk` switch: guests and staff now take Theme Park Inc's own walk step, and the stamps a walk and a stranded guest hold are the original's own counter values.
+
+- **The walk step.** One step routine for the guests and the staff, as in the original: the steering step, the cell chain, the stranded mark cleared, then the result. On arrival it now writes the heading as well (the original's angle word), and only kids and guards run; a grown-up guest walks with a speed bonus too. The sprite interval is computed at the game thread's 24-bit precision.
+- **The speed step.** Theme Park Inc's per-update speed is Theme Park World's value for value; it now carries its own address, and the drawn position's interpolation starts from the copy the speed step takes, as the original's does.
+- **The route requests and the staff route.** The requests to a cell or a point, the stranded test around the guest's cell or its queue's back, and the staff route with its closed-park refusal and walk mask are verified against the original.
+- **The native stamp counter.** With the switch, the cell map's counter counts every simulation call of the original's counter routine in its order: the route requests, the walk set-ups, the wander's gates and stranded mark, the guest constructor's sprite placement and the edits. The original also raises it once per person per rendered frame, which makes its stored stamps depend on the frame rate; OpenTPW counts the simulation's calls only, under the new user-approved label `[EXT:tpi-stamp-counter-sim-only]`. The advisor's stranded-person scan is not ported, so it raises nothing. Counting every call changes no comparison: a Theme Park World park keeps its edit-only counter, and a test replays a Theme Park World guest park under both modes, tick for tick alike.
+- **Saves.** Off, nothing changes. On, the layout writes the counter in an optional member even while no block is stamped.
+- **Review follow-ups from NV2.** The save documentation now describes the optional navigator record and why switch-on saves without it still load; the local axes are computed only for a native walk; and loading an economy refuses a staff navigator record without the switch, as the resume file already did.
+
+No new approximation is added, and no C runtime `rand()` or world draw is reached from the walk step, the speed step, the route requests or the staff route.
+
+Verified with new x86 oracle targets for the walk step (40 whole walks of every person kind), the speed step, both route requests with every kind of stranded mark, and the staff route, all agreeing with the port; unit tests that hold Game.exe's walk steps for a kid, a grown-up, a guard and a handyman, compare the navigator records including their stamps, replay a Theme Park World run under both counting modes and check the level's switch; the native-guest tests with both switches on; the Theme Park Inc and Theme Park World guest, walk and pin suites; and the silent, offscreen Science smoke with each switch combination.
+
+The original game was not launched, and no binary or data is included.

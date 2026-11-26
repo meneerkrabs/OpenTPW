@@ -257,6 +257,11 @@ public sealed class ParkEconomyRuntime
 		} );
 		if ( loaded.Mode != Economy.Mode )
 			throw new InvalidDataException( $"The park save is a {loaded.Mode} park, not the running {Economy.Mode} park." );
+		// a staff member's native navigator record belongs to a park with Theme Park Inc's navigator rules (--tpi-native-walk), as the resume file's validation requires
+		// (ParkResumeSaveFile.StaffNativeRecordsAllowed); a park running without them refuses it
+		var nativeWalk = Guests?.Guests.Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc;
+		if ( !nativeWalk && loaded.TpiStaff?.Members.Any( member => member.Navigation?.Native == true ) == true )
+			throw new InvalidDataException( "The park save's staff carry Theme Park Inc's native navigator records, but the running park walks without Theme Park Inc's navigator rules." );
 		Economy.EventRaised -= LogEvent;
 		Economy.EventRaised -= ForwardEvent;
 		Economy.Objectives.PresentationPosted -= ForwardChallengePresentation;

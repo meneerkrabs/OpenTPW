@@ -222,6 +222,16 @@ EXPECTED = {
     ('tpi-exe-navigator-record', 'plan'): AGREE,
     ('tpi-exe-navigator-root', 'plan'): AGREE,
     ('tpi-exe-navigator-root', 'root-64-bits'): (501, (67076098, (-5886, -4563))),
+    # NV3: Game.exe's person routines around the navigator, with the stamp counter 0x5d81f0 counted at every call. The walk step 0x60b460 (the
+    # heading on arrival, only kids run), the speed step 0x60bc90 with the sprite commit 0x5d1080, the route requests 0x60b7f0 / 0x60b8e0 with the
+    # stranded test 0x60bb50 and the staff route 0x62eb10 agree with walk_reading.py. tp.exe's walk step (no arrival heading, every guest with a
+    # bonus runs) differs on 14 of the 40 walks; the edit-only counter of a Theme Park World park on every request set (the raised stamps).
+    ('tpi-exe-walk-step', 'plan'): AGREE,
+    ('tpi-exe-walk-step', 'tpw-walk-step'): (14, (8, (87, 120, 41, 8))),
+    ('tpi-exe-speed-step', 'plan'): AGREE,
+    ('tpi-exe-route-request', 'plan'): AGREE,
+    ('tpi-exe-route-request', 'edit-only-counter'): (200, (245, (0, 113, 8, 15))),
+    ('tpi-exe-staff-route', 'plan'): AGREE,
 }
 
 BASE = 0x400000
@@ -435,6 +445,10 @@ def check_pinned(case, comparison, key):
         if isinstance(first_input, tuple):
             if key[0] in ('tpw-exe-skirt-flags', 'tpw-exe-ground-conform', 'tpw-exe-base-height'):
                 first = targets.skirt_summary(key[0], first)
+            elif key[0] == 'tpi-exe-walk-step':
+                first = (first['person']['kind'], tuple(first['window']))
+            elif key[0] in ('tpi-exe-route-request', 'tpi-exe-staff-route'):
+                first = (first['counter'], tuple(first['window']))
             elif key[0].startswith('tpi-exe-walk-'):
                 first = (first['mask'], tuple(first['window']))
             elif key[0] == 'tpi-exe-navigator-root':
@@ -1374,6 +1388,29 @@ class WalkReadingCoverage(unittest.TestCase):
         for record in records[:200]:
             self.assertEqual(layout.record_of_object(lambda o, n: layout.object_of_record(record, bytes(0xBC))[o:o + n]), record)
 
+    def test_tpi_person_inputs_reach_every_branch(self):
+        """NV3's walks arrive, walk and get stuck and queue the walk, run and carry templates; the route requests meet marks above the counter,
+        held and free marks, and persons on queue cells with links behind them."""
+        step = targets.TPI_STEP_TARGET
+        traces = [targets.tpi_step_plan(x) for x in step.inputs(__import__('x86_harness').seeded('oracle-v1:' + step.key), DEFAULT_COUNT)]
+        entries = [entry for trace in traces for entry in trace if entry[0] == 'step']
+        self.assertEqual({entry[1] for entry in entries}, {0, 1, 2})
+        self.assertEqual({entry[6] for entry in entries if entry[1] == 1} - {targets.STEP_SENTINEL}, {1, 2, 0x1F})
+        route = targets.TPI_ROUTE_TARGET
+        layout = __import__('walk_reading')
+        kinds = set()
+        for x in route.inputs(__import__('x86_harness').seeded('oracle-v1:' + route.key), DEFAULT_COUNT):
+            walk, mark = targets.tpi_person_walk(x), x['person']['mark']
+            cell = ((x['walk']['x'] >> 16) & 0xFF, (x['walk']['y'] >> 16) & 0xFF)
+            if mark > x['counter']:
+                kinds.add('future')
+            elif mark:
+                behind = {int(a): b for a, b in x['behind']}
+                kinds.add('held' if layout.stranded_holds(walk.m, walk.stamps, cell, mark, behind) else 'free')
+                if walk.m.t(*cell) in (3, 9) and behind:
+                    kinds.add('queue')
+        self.assertEqual(kinds, {'future', 'held', 'free', 'queue'})
+
     def test_tpi_inputs_reach_every_rule_and_both_search_outcomes(self):
         """The Theme Park Inc maps carry obstacle walkways, holes and unowned land, use masks 0 and 1 only, and their searches both
         succeed and fail."""
@@ -1623,6 +1660,13 @@ class OracleTpi(CoastTests, unittest.TestCase):
     def test_navigator_steering_avoid_walls_and_record_agree(self):
         for key in ('tpi-exe-walk-steering', 'tpi-exe-walk-avoid-walls', 'tpi-exe-navigator-record'):
             self.check((key, 'plan'))
+
+    # ------------------------------------------------------------------ NV3: the walk step, the speed step, the route requests
+    def test_walk_step_speed_step_and_route_requests_agree(self):
+        for key in ('tpi-exe-walk-step', 'tpi-exe-speed-step', 'tpi-exe-route-request', 'tpi-exe-staff-route'):
+            self.check((key, 'plan'))
+        self.check(('tpi-exe-walk-step', 'tpw-walk-step'))
+        self.check(('tpi-exe-route-request', 'edit-only-counter'))
 
     def test_navigator_root_rounds_to_a_single(self):
         self.check(('tpi-exe-navigator-root', 'plan'))

@@ -403,6 +403,8 @@ public class ThemeParkIncHandymanTests
 		CollectionAssert.AreEqual( member.Navigation.ToRecord().Raw, restoredMember.Navigation!.ToRecord().Raw, "every navigator member is back" );
 		var restoredGrid = Row( restored );
 		restoredGrid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
+		// the park's layout carries the cell map's stamp counter, which counts the route requests and set-ups with Theme Park Inc's navigator (NV3)
+		restoredGrid.Cells.RestoreBlockStamps( grid.Cells.StampCounter, grid.Cells.CaptureBlockStamps() );
 		var restoredWorld = new ThemeParkIncStaffWorld( restoredGrid );
 		for ( var step = 0; step < 60; step++ )
 		{

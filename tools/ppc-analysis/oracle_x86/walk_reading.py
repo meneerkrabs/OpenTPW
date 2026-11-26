@@ -13,6 +13,11 @@ flag, cell +0x24) is no walkway fast path, unowned land (flag 0x40) blocks after
 and 1 are read that way: no Theme Park Inc walk passes 2 or 3 (docs/reverse/TPI-NAVIGATOR.md). The commit and the search are the same.
 A `Map` with `tpi` also takes the walk's integer square root (0x5d2060) as Game.exe runs it at the game thread's control word 0x7f: fsqrt
 rounded to a single's 24-bit significand, then truncated (_ftol); tp.exe's 0x4d49a0 is the same code, read at 64 bits as X25 runs it.
+
+NV3 (ThemeParkIncWalkStep, GuestSimulation.StepThemeParkInc, RequestRoute / RouteToTpiPoint, ThemeParkIncStaffWorld.StaffRoute, GuestSpeed.Update):
+`walk_step` the rest of Theme Park Inc's walk step 0x60b460 around the steering step (the heading word, D1 and D2, the template and the
+interval), `speed_step` 0x60bc90, `route_point` / `route_cell` the route requests 0x60b8e0 / 0x60b7f0 with the stranded test 0x60bb50,
+and `staff_route` 0x62eb10, all with the stamp counter 0x5d81f0 counted at every call.
 """
 import math
 import struct
@@ -630,3 +635,178 @@ def object_of_record(record: bytes, old: bytes) -> bytes:
         at += size
     out[0x30:0x38] = bytes(8)
     return bytes(out)
+
+
+# ---- NV3: Theme Park Inc's walk step 0x60b460, speed step 0x60bc90, route requests 0x60b7f0 / 0x60b8e0 and staff route 0x62eb10
+
+ATAN = [math.floor(math.atan(i / 256) * 1024 / math.pi) for i in range(257)]   # 0x91e1b4 (tp.exe 0x6e71b4): the same 257 words
+
+
+def heading_angle(first, second):
+    """0x91e074 (tp.exe 0x6e7074, HeadingAngle.Of): 2048 units to the turn; the smaller magnitude over the larger indexes the table."""
+    if first == 0 and second == 0:
+        return 0
+    def entry(n, d):
+        return ATAN[((n << 8) & M32) // d]
+    if first >= 0:
+        if second >= 0:
+            a = 0x400 - entry(first, second) if first < second else 0x200 + entry(second, first)
+        else:
+            a = entry(first, -second) if first < -second else 0x200 - entry(-second, first)
+    elif second >= 0:
+        a = 0x400 + entry(-first, second) if -first < second else 0x600 - entry(second, -first)
+    else:
+        a = 0x800 - entry(-first, -second) if -first < -second else 0x600 + entry(-second, -first)
+    return a & 0x7FF
+
+
+def heading_word(x0, y0, x1, y1):
+    """+0x2c as the walk step writes it: the angle of (x0 - x1, y1 - y0), masked to a word."""
+    return heading_angle(s32(x0 - x1), s32(y1 - y0)) & 0xFFFF
+
+
+def ftol_low(value):
+    """_ftol 0x86fab0's low dword: truncation; an infinity or a NaN is the integer indefinite, whose low dword is 0."""
+    if math.isnan(value) or math.isinf(value) or abs(value) >= 2.0 ** 63:
+        return 0
+    return s32(int(value))
+
+
+SPEED_PER_UNIT = f32(3.829657e-05)   # 0x93e5b4
+
+
+def step_interval(x0, y0, x1, y1, run):
+    """0x60b5f8 and 0x5d10f0 at the control word 0x7f: the root of the 32-bit squared step length and its product with 0x93e5b4 rounded to
+    singles, doubled without the run; 62.0 over it rounded to a single, _ftol, negative 0, above 0xfa 0xfa."""
+    dx, dy = s32(x1 - x0), s32(y1 - y0)
+    squared = s32(dx * dx + dy * dy)
+    root = f32(math.sqrt(squared)) if squared >= 0 else math.nan
+    speed = f32(root * SPEED_PER_UNIT)
+    if not run:
+        speed = f32(speed + speed)
+    quotient = f32(62.0 / speed) if speed != 0 else (math.nan if math.isnan(speed) else math.inf)
+    interval = ftol_low(quotient)
+    return 0 if interval < 0 else min(interval, 0xFA)
+
+
+WALK_PROGRAM, RUN_PROGRAM, CARRY_PROGRAM = 0x9AFBA8, 0x9AFC04, 0x9B07D4   # the sprite programs of the templates 1, 2 and 0x1f
+
+
+def walk_step(walk, person, restarts):
+    """0x60b460 on a person whose navigator is `walk` (the steering step is Walk.step): person holds the kind byte +2, the generation +0x2a4,
+    the bonus word +0xd6 and the state +0x1b4; restarts(program) answers the restart test 0x4e4ab0. Returns (result, the chain's words, the
+    heading word or None (left), the template queued or None, the interval stored or None); the stranded mark is cleared by every call."""
+    x0, y0 = walk.x, walk.y
+    result = walk.step()
+    x1, y1 = walk.x, walk.y
+    chain = ((x1 >> 8) & 0xFFFF, (y1 >> 8) & 0xFFFF)
+    if result == 2:
+        return 2, chain, None, None, None
+    heading = heading_word(x0, y0, x1, y1)
+    if result == 0:
+        return 0, chain, heading, None, None
+    kind = person['kind']
+    run = (person['bonus'] & 0xFFFF) > 0 and (kind == 1 and person['generation'] == 0 or kind == 7)
+    walk_program, walk_template = (CARRY_PROGRAM, 0x1F) if kind == 7 and person['state'] == 0x1C else (WALK_PROGRAM, 1)
+    program, template = (RUN_PROGRAM, 2) if run else (walk_program, walk_template)
+    queued = None if restarts(program) else template
+    return 1, chain, heading, queued, step_interval(x0, y0, x1, y1, run)
+
+
+def x87_single(value):
+    """An exact rational rounded once to a 24-bit significand, nearest even (a product or a quotient at the control word 0x7f)."""
+    from fractions import Fraction
+    value = Fraction(value)
+    if value == 0:
+        return 0.0
+    sign = -1 if value < 0 else 1
+    value = abs(value)
+    exponent = value.numerator.bit_length() - value.denominator.bit_length()
+    scaled = value / Fraction(2) ** (exponent - 24)
+    while scaled >= 1 << 24:
+        exponent += 1
+        scaled /= 2
+    while scaled < 1 << 23:
+        exponent -= 1
+        scaled *= 2
+    whole = scaled.numerator // scaled.denominator
+    rest = scaled - whole
+    if rest > Fraction(1, 2) or rest == Fraction(1, 2) and whole & 1:
+        whole += 1
+    return sign * math.ldexp(whole, exponent - 24)
+
+
+def speed_caps(speed):
+    """The speed setter 0x63ef90 (tp.exe 0x510190): min(s, 2.0); +0x18 = _ftol(s x 26214.4), +0x1c = _ftol(s x 13107.2), the products rounded
+    to singles; each below 0x28f raised to 0x28f."""
+    from fractions import Fraction
+    s = 2.0 if speed > 2.0 else speed
+    force = ftol_low(x87_single(Fraction(s) * Fraction(26214.4)))
+    top = ftol_low(x87_single(Fraction(s) * Fraction(13107.2)))
+    return max(top, 0x28F), max(force, 0x28F)
+
+
+def speed_step(base, bonus, boost, previous):
+    """0x60bc90: +0xdc = ((+0xd4 + +0xd6 + +0xd8) / 100 + +0xdc x 3.0) x 0.25, each operation rounded to a single (fidiv, fmul, faddp, fmul);
+    the caps; +0xd8 = (u16)(boost x 99) / 100. Returns (speed, max speed, max force, boost)."""
+    quotient = f32((base + bonus + boost) / 100)
+    speed = f32(f32(quotient + f32(previous * 3.0)) * 0.25)
+    top, force = speed_caps(speed)
+    return speed, top, force, ((boost * 99) & 0xFFFF) // 100
+
+
+NINE = [(-1, 1), (0, 1), (1, 1), (-1, 0), (0, 0), (1, 0), (-1, -1), (0, -1), (1, -1)]   # 0xaa0060, set by 0x60ba80
+
+
+def stranded_holds(m, stamps, cell, mark, behind):
+    """0x60bb50: from the person's cell (a queue cell's back through the links `behind`, word -> word, 0x5e0a50), the largest block stamp
+    (0x5d8260) of the nine cells around, stopping once above the mark; 1 while it is below the mark."""
+    word = (cell[1] << 7) + cell[0] + 1
+    if m.t(*cell) in (3, 9):
+        while behind.get(word, 0):
+            word = behind[word]
+    largest = 0
+    for dx, dy in NINE:
+        if largest > mark:
+            break
+        w = ((dy << 7) + word + dx) & 0xFFFF
+        offset = (w - 1) & M32
+        largest = max(largest, stamps.get((((offset >> 4) & 7), (offset >> 11)), 0) & M32)
+    return largest < mark
+
+
+class Person:
+    """The walk words of a person: the cell bytes +5/+7, the target words +0x28/+0x2a, the stranded mark +0x1b0 and its navigator `walk`,
+    whose counter is the stamp counter 0x5d81f0."""
+
+    def __init__(self, walk, cell, mark, behind):
+        self.walk, self.cell, self.mark, self.behind = walk, cell, mark, behind
+        self.words = None
+
+    def route_point(self, xw, yw):
+        """0x60b8e0: the counter raised; below the mark it clears it; a mark still held returns 0 and changes nothing; else the words, the mark
+        cleared and SetDest 0x63ee80 to the words << 8 (signed words)."""
+        walk = self.walk
+        walk.counter = (walk.counter + 1) & M32
+        if walk.counter < self.mark:
+            self.mark = 0
+        if self.mark and stranded_holds(walk.m, walk.stamps, self.cell, self.mark, self.behind):
+            return 0
+        self.words = (xw & 0xFFFF, yw & 0xFFFF)
+        self.mark = 0
+        sw = lambda w: (w & 0xFFFF) - 0x10000 if w & 0x8000 else w & 0xFFFF
+        return 1 if walk.setup(s32(sw(xw) << 8), s32(sw(yw) << 8), False) else 0
+
+    def route_cell(self, word):
+        """0x60b7f0: the words of the cell word's centre (sub-cell bytes 0x80), then 0x60b8e0's body."""
+        w = (word - 1) & M32
+        return self.route_point(((w & 0x7F) << 8) | 0x80, (((w >> 7) & 0xFF) << 8) | 0x80)
+
+    def staff_route(self, xw, yw, closed):
+        """0x62eb10: a closed park refuses the cells (0x2f, 0x11) and (0x30, 0x11) and returns 0; else the walk mask is 1 when the person's
+        cell or the target's is empty (type 0), else 0; then 0x60b8e0."""
+        if closed and (xw >> 8) & 0xFF in (0x2F, 0x30) and (yw >> 8) & 0xFF == 0x11:
+            return 0
+        m = self.walk.m
+        self.walk.mask = 1 if m.t(*self.cell) == 0 or m.t((xw >> 8) & 0xFF, (yw >> 8) & 0xFF) == 0 else 0
+        return self.route_point(xw, yw)

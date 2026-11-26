@@ -892,7 +892,10 @@ public sealed partial class ThemeParkIncStaffWorld
 
 	private enum WalkResult { Arrived, Walking, Stuck }
 
-	/// <summary>One walk step: arrived, walking or stuck (Theme Park World's walk, see the class remarks).</summary>
+	/// <summary>
+	/// One walk step: arrived, walking or stuck. With Theme Park Inc's navigator (<c>--tpi-native-walk</c>) the walk step <c>0x60B460</c> (<see cref="WalkThemeParkInc"/>), else Theme Park World's walk
+	/// (see the class remarks).
+	/// </summary>
 	private WalkResult Walk( ThemeParkIncStaffMember member )
 	{
 		var navigation = member.Navigation!;
@@ -905,6 +908,8 @@ public sealed partial class ThemeParkIncStaffWorld
 			OpenTPW.WalkResult.Stuck => WalkResult.Stuck,
 			_ => WalkResult.Arrived
 		};
+		if ( grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc )
+			return WalkThemeParkInc( member, beforeX, beforeY, result );
 		// the heading (+0x2C) follows the step's direction ([EXT:tpi-twp-guest-rules]: Theme Park World's walk; Theme Park Inc's arrival also writes it, D1, from the same differences)
 		var (dx, dy) = ((long)navigation.X - beforeX, (long)navigation.Y - beforeY);
 		if ( dx != 0 || dy != 0 )
@@ -930,6 +935,35 @@ public sealed partial class ThemeParkIncStaffWorld
 		return result;
 	}
 
+	/// <summary>
+	/// The rest of the walk step <c>0x60B460</c> after the steering step (<see cref="ThemeParkIncWalkStep"/>): the heading word on arrival and while walking (D1), and while walking the walk or run
+	/// template (D2: a guard with a speed bonus runs) and the interval. The cell chain <c>0x637B70</c> follows at the end of the member's update (<see cref="FollowChain"/>), where nothing between reads
+	/// it; the stranded mark <c>+0x1B0</c> the step clears is never set for a staff member (<see cref="StaffRoute"/>).
+	/// </summary>
+	// [BIN:TPI-EXE:0x60B572 guard carry] a guard that carries a guest (0x5D3B20) walks with the carry template 0x1F (0x9B07D4): the guard's chase is not ported ([EXT:tpi-capability-gates]), so no
+	// member carries anyone
+	private WalkResult WalkThemeParkInc( ThemeParkIncStaffMember member, int x0, int y0, WalkResult result )
+	{
+		var navigation = member.Navigation!;
+		var (x1, y1) = (navigation.X, navigation.Y);
+		if ( result == WalkResult.Stuck )
+			return result;
+		member.SpriteAngle = ThemeParkIncWalkStep.Heading( x0, y0, x1, y1 );
+		(member.HeadingX, member.HeadingY) = ThemeParkIncWalkStep.Vector( member.SpriteAngle );
+		if ( result != WalkResult.Walking )
+			return result;
+		var kind = member.Role == ThemeParkIncStaffRole.Guard ? ThemeParkIncWalkStep.GuardKind : 0;
+		var run = ThemeParkIncWalkStep.Runs( member.SpeedBonus, kind, 0 );
+		var (template, program) = run ? (ThemeParkIncWalkStep.RunTemplate, StaffSpriteEvents.Run) : (ThemeParkIncWalkStep.WalkTemplate, StaffSpriteEvents.Walk);
+		if ( !member.Sprite.RestartsAt( program ) )
+		{
+			member.Template = template;
+			member.Sprite.QueueTemplate( program );
+		}
+		member.Sprite.QueueInterval( ThemeParkIncWalkStep.Interval( x0, y0, x1, y1, run ) );
+		return result;
+	}
+
 	private readonly List<GuestNavigation> neighbours = new();
 
 	/// <summary>Separation's neighbours: the things on the 3 × 3 cells around the member's cell, as Theme Park World's staff query (0x005102F0).</summary>
@@ -951,7 +985,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x62EB10 staff route] park+0x1EAB44 (0x64FA30, nonzero: the park is closed) with the target word's cell x (its high byte) 0x2F or 0x30 and the y word's cell 0x11 answers 0 and leaves the
 	// walk; the member's cell record (+0x418 + 72 × (y << 7 + x + 1), from the bytes +5 and +7) of type 0 (0x67F6D0, its dword +8) or else the target's sets +0x1A0 = 1, else +0x1A0 = 0 (the walk's +0xB4,
 	// the mask the search and the edge test read); then 0x60B8E0 with the two words
-	// [BIN:TPI-EXE:0x60B8E0 staff steer] the stamp counter raised (0x5D81F0, ParkCellMap.StampCounter: OpenTPW counts the edits only); the stranded mark +0x1B0 is tested (0x60BB50) only while nonzero,
+	// [BIN:TPI-EXE:0x60B8E0 staff steer] the stamp counter raised (0x5D81F0, ParkCellMap.NextStamp: counted with Theme Park Inc's navigator, else only the edits count); the stranded mark +0x1B0 is tested (0x60BB50) only while nonzero,
 	// and a staff member's never is: its only setter with a stamp, 0x60A4AE in the wander, is reached by kind 1 (the guests) alone, the staff kinds 4, 5, 6, 8, 7 and 0x14 branching to 0x62C720 at
 	// 0x60A454, and every other writer stores 0 (0x608F94, 0x60A56C, 0x60A84C, 0x60B4CA, 0x60B9FC); then +0x28, +0x2A = the words, +0x1B0 = 0 and SetDest 0x63EE80 (0x63E3A0 with the point << 8)
 	private bool StaffRoute( ParkEconomy economy, ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY )
@@ -960,6 +994,8 @@ public sealed partial class ThemeParkIncStaffWorld
 			return false;
 		var (x, y) = member.Navigation!.Cell;
 		member.Navigation.Mask = grid.Cells.RawTypeAt( x, y ) == 0 || grid.Cells.RawTypeAt( cell.X, cell.Y ) == 0 ? 1 : 0;
+		// 0x60B8F4: the counter raised (a park counting the simulation's calls, ParkCellMap.NextStamp); the mark it then tests is 0
+		grid.Cells.NextStamp();
 		return Route( member, cell, byteX, byteY );
 	}
 
@@ -971,6 +1007,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	}
 
 	/// <summary>The patrol destination: a wander inside the patrol rectangle, or the off-path search from a cell without links; true when a walk is set.</summary>
+	// [EXT:tpi-twp-guest-rules] Theme Park World's wander: Theme Park Inc's 0x609F70 for the staff (its stamp-counter gates 0x609FBE, 0x60A6FB and 0x60A83F, the final route through the staff route
+	// 0x62EB10 and the patrol fallback 0x62C720) is the navigator plan's NV4, so with --tpi-native-walk the counter counts no call of the patrol until then
 	private bool Patrol( ParkEconomy economy, ThemeParkIncStaffMember member )
 	{
 		var cell = member.Navigation!.Cell;

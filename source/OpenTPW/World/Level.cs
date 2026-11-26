@@ -267,6 +267,9 @@ public partial class Level : IDisposable
 	/// </summary>
 	private WalkEdgeRules ParkEdgeRules => parkEdgeRules ??= WalkEdges.RulesForNewPark();
 	private WalkEdgeRules? parkEdgeRules;
+
+	/// <summary>Gives the park's cell map this level's edge test (<see cref="ParkEdgeRules"/>, read once), which also selects how its stamp counter counts (<see cref="ParkCellMap.CountsSimulationCalls"/>).</summary>
+	internal void ApplyParkEdgeRules( ParkCellMap cells ) => cells.EdgeRules = ParkEdgeRules;
 	/// <summary>
 	/// Set when this level shows a shared park read-only (docs/ONLINE.md): building, sandbox saves and
 	/// any economy writes must be refused while it is set.
@@ -765,7 +768,7 @@ public partial class Level : IDisposable
 			: new GuestPathGrid( OriginalCellMap( park, settings, land ) );
 		// every walk of the park's guests and staff (the arrival and the wander included) reads the map's edge test; the free walk is Theme Park World's only (Level.FreeWalk), and Theme Park
 		// Inc's own camera walk (0x468A9E: masks 0, then 1) is not ported
-		grid.Cells.EdgeRules = ParkEdgeRules;
+		ApplyParkEdgeRules( grid.Cells );
 		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
 		// the demolition keeps the NoModify flag of a MAP initial path cell in front of an entrance (tp.exe's cell byte +0x26 bit 8, 0x527EE0)
 		grid.Cells.InitialPathSource = ( x, y ) => park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );

@@ -1,4 +1,4 @@
-"""Theme Park Inc's native guest states (phases P1 and P2) run in the x86 oracle sandbox and compared with the C# port's reading (ThemeParkIncGuestStates, GuestSimulation.ThemeParkInc).
+"""Theme Park Inc's native guest states (phases P1 to P3a) run in the x86 oracle sandbox and compared with the C# port's reading (ThemeParkIncGuestStates, GuestSimulation.ThemeParkInc).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified Theme Park Inc no-CD Game.exe (OPENTPW_TPI_EXE, SHA-256 pinned) are needed, nothing here is shipped.
 Phase P1's four routines run natively, at the game thread's x87 control word 0x7F (24-bit significand):
@@ -22,6 +22,13 @@ Phase P2 adds:
 - the spot animation 0x60FB30 for the animations 0..15 (the id, the mode store native; the sound and the setter recorded) and the mood 0x60CDD0 over generations -1..3 and the bank's byte +0x206;
 - the dispatch 0x619FF0 in states 7 (0x61A179) and 8 (0x61A382), the walk, the wander, the restore and the setter stubbed;
 - state 9 (0x616F10) with the walk, the bin's customer, its script variables and the drop stubbed; the dirt test 0x5E3990 and its rows, which the port gates, are left out of the comparison.
+Phase P3a adds:
+- the attraction score 0x6101E0 over random guests, cells, meters, histories, weights, type words (gender, appearance, golden ticket, upgrade, weather and generation percentages) and park
+  weather: the id, the region record and _ftol native, the special-ride test, the type record, the bank's gender, the back cell, the desk's target, the queue count, the rating, the park
+  record and the age stubbed; against ThemeParkIncAttractionScore.Compute (port_score);
+- the queue place 0x5E0280, the room 0x5DFDD0 and the length test 0x5DFF10 with the limit 0x5DFE00 over random lists of guests in random states, the predicate 0x61AC40 native;
+- states 13 (0x616AC0) and 14 (0x6176C0) with every callee but the world generator, _ftol and the id stubbed and recorded (the CRT rand() at 0x61795E among them), and state 15 in the
+  dispatch; the calls, the fields and the draws against UpdateTpiWalkingToMajor, UpdateTpiStandingInQueue and UpdateTpiTakingQueueStep.
 
 Usage: python3 -I tools/ppc-analysis/oracle_x86/tpi_guest_states_oracle.py [cases]
 """
@@ -622,6 +629,529 @@ def bin_rounds(image: Image, rng: random.Random, cases: int) -> int:
     return bad
 
 
+# ---- Phase P3a: the attraction score, the queue functions, states 13, 14 and 15 ---------------------------------------------------
+
+from fractions import Fraction  # noqa: E402
+
+
+def round24(value: Fraction) -> float:
+    """An exact value rounded once to a single (24-bit significand, nearest even), as the x87 at control word 0x7F."""
+    if value == 0:
+        return 0.0
+    sign = -1 if value < 0 else 1
+    value = abs(value)
+    exponent = value.numerator.bit_length() - value.denominator.bit_length()
+    if Fraction(2) ** exponent > value:
+        exponent -= 1
+    scaled = value / Fraction(2) ** (exponent - 23)
+    whole = scaled.numerator // scaled.denominator
+    rest = scaled - whole
+    if rest > Fraction(1, 2) or (rest == Fraction(1, 2) and whole & 1):
+        whole += 1
+    return sign * float(Fraction(whole) * Fraction(2) ** (exponent - 23))
+
+
+TWO_D = Fraction(struct.unpack('<d', struct.pack('<d', 0.1))[0])
+NEED_TABLE = None
+RELIEF_TABLE = None
+
+
+def s32(value: int) -> int:
+    value &= MASK
+    return value - (1 << 32) if value >> 31 else value
+
+
+def div0(a: int, b: int) -> int:
+    """Signed division truncating toward zero."""
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b > 0) else -q
+
+
+def port_score(c: dict) -> int:
+    """ThemeParkIncAttractionScore.Compute (0x6101E0) over the oracle's case."""
+    if c['special'] or (c['gender'] and c['gender'] != (2 if c['female'] else 1)) or c['sametype']:
+        return 0
+    if c['appearance'] == 3 and (c['umbrella'] != 0 or c['weather'] not in (2, 3, 4)):
+        return 0
+    if c['appearance'] == 1 and (c['balloon'] or c['countdown'] > 0 or c['umbrella'] in (3, 4)):
+        return 0
+    if c['infodesk']:
+        return 0
+    d = (c['gx'] - c['bx']) ** 2 + (c['gy'] - c['by']) ** 2
+    distance = 100 - min(100, d * 100 // 450)
+    if c['modifier']:
+        distance = (distance & MASK) // (c['modifier'] & MASK)
+    if d <= 8:
+        cells = c['cells'] or 1
+        qm, qw = (100 - (c['count'] * 100 & MASK) // (cells * 4 & MASK)) & MASK, c['w'][1]
+    else:
+        qm, qw = 0, 0
+    diff = min(50, abs(c['pref'] - c['rating']))
+    em, ew = 100 - 2 * diff, (c['w'][2] & 0xFFFF) if c['gate'] else 0
+
+    def need(meter, effect):
+        return NEED_TABLE[11 * ((effect & 0xFF) // 10) + (int(meter) & 0xFF) // 10]
+
+    def relief(meter):
+        return RELIEF_TABLE[((int(meter) & 0xFF) + 4) // 5] if c['relief'] else 0
+    w = [c['w'][0] & 0xFFFF, c['w'][3] & 0xFFFF, c['w'][4] & 0xFFFF, c['w'][5] & 0xFFFF, c['w'][6] & 0xFFFF]
+    num = (w[0] * distance + ew * em + qw * qm + w[4] * relief(c['illness']) + w[3] * relief(c['toilet']) + w[2] * need(c['hunger'], c['heff'])
+           + w[1] * need(c['thirst'], c['teff'])) & MASK
+    den = (sum(w) + ew + qw) & MASK
+    if den == 0:
+        return None
+    score = num // den
+    if c['age'] <= c['newdays']:
+        score = (score * c['newmul']) & MASK
+    if s32(c['golden']) > 0:
+        factor = round24(Fraction(round24(TWO_D * (s32(c['golden']) + 1))) + 1)
+        score = int(round24(Fraction(factor) * s32(score))) & MASK
+    elif c['upgrade']:
+        q = round24(Fraction(c['upgrade']) * Fraction(f32(0.00033333333)))
+        if q > 1.0:
+            factor = round24(Fraction(round24(Fraction(q) * Fraction(f32(0.1)))) + 1)
+            score = int(round24(Fraction(factor) * s32(score))) & MASK
+    pct = {2: 'rain', 4: 'snow', 1: 'heat', 3: 'storm'}.get(c['weather'])
+    if pct and c[pct]:
+        score = div0(s32(c[pct] * score), 100) & MASK
+    if c['appearance'] == 3 and (c['balloon'] or c['countdown'] > 0) and c['countdown']:
+        factor = (100 - (c['countdown'] * 100 & MASK) // 255) & MASK
+        if factor:
+            if c['discard']:
+                factor = (c['discard'] * factor & MASK) // 100
+            score = (score * factor & MASK) // 100
+    if c['generation'] in (0, 1, 2):
+        score = div0(s32(c['gen'][c['generation']] * score), 100) & MASK
+    value = s32(score)
+    for slot, divisor in enumerate((5, 4, 3, 2)):
+        if c['used'][slot] == c['id']:
+            value = div0(value, divisor)
+            break
+    for slot, divisor in enumerate((5, 4, 3, 2)):
+        if c['temp'][slot] == c['id']:
+            value = div0(value, divisor)
+    return value & MASK
+
+
+def score_rounds(image: Image, rng: random.Random, cases: int) -> int:
+    """The attraction score 0x6101E0 with the special-ride test, the type record, the bank's gender, the back cell, the info desk's target, the queue count, the rating, the park's weather and the
+    age stubbed; the id, the region record and _ftol native, at control word 0x7F."""
+    global NEED_TABLE, RELIEF_TABLE
+    bad = 0
+    sc: dict = {}
+
+    def out_word(value_key):
+        def stub(sb: Sandbox):
+            sb.write(sb.arg(0), 'H', sc[value_key])
+            return sb.arg(0), 4
+        return stub
+
+    score = Sandbox(image, [(0x6101E0, 0x610D4C), (0x6375C0, 0x6375CD), (0x5D7420, 0x5D7446), (0x86FAB0, 0x86FAD7)] + thunks(0x4080E9, 0x40942B),
+                    stubs={0x40936D: lambda sb: (0 if sc['special'] else 1, 0), 0x4022F2: lambda sb: (sc['types'][sb.reg('ecx')], 0), 0x40BEA1: lambda sb: (int(sc['female']), 0),
+                           0x405B55: out_word('back'), 0x403E45: lambda sb: (0, 0), 0x403968: out_word('link'), 0x402F1D: lambda sb: (sc['count'], 0),
+                           0x403062: lambda sb: ((int(sc['gate']) if sb.arg(0) else sc['rating']), 4), 0x4019B5: lambda sb: (sc['park'], 0), 0x403BB6: lambda sb: (sc['age'], 0)},
+                    budget=20000)
+    NEED_TABLE = list(image.read(0x93E5E8, 121)) if hasattr(image, 'read') else None
+    meters = [0.0, 9.5, 10.0, 49.9, 50.0, 80.0, 95.5, 100.0]
+    for index in range(cases * 25):
+        score.reset()
+        score.set_fpcw(CONTROL_WORD)
+        if NEED_TABLE is None:
+            NEED_TABLE = [score.read(0x93E5E8 + k, 'B') for k in range(121)]
+            RELIEF_TABLE = [score.read(0x93E664 + k, 'B') for k in range(26)]
+        gx, gy = rng.randrange(0, 128), rng.randrange(0, 128)
+        near = rng.random() < 0.5
+        bx = min(127, max(0, gx + (rng.randrange(-2, 3) if near else rng.randrange(-30, 31))))
+        by = min(127, max(0, gy + (rng.randrange(-2, 3) if near else rng.randrange(-30, 31))))
+        c = {'special': rng.random() < 0.05, 'gender': rng.choice([0, 0, 0, 1, 2]), 'female': rng.random() < 0.5, 'sametype': False,
+             'appearance': rng.choice([0, 0, 0, 1, 3, 2]), 'umbrella': rng.choice([0, 0, 0, 1, 2, 3, 4]), 'weather': rng.choice([0, 1, 2, 3, 4]), 'balloon': rng.random() < 0.2,
+             'countdown': rng.choice([0, 0, 0, 1, 100, 254, 255, rng.randrange(0, 600)]), 'infodesk': rng.random() < 0.05, 'gx': gx, 'gy': gy, 'bx': bx, 'by': by,
+             'modifier': rng.choice([0, 0, 0, 1, 2, 3, -1]), 'cells': rng.choice([0, 1, 2, 5]), 'count': rng.choice([0, 1, 3, 8, 20, 40]), 'rating': rng.randrange(0, 256),
+             'gate': rng.random() < 0.8, 'pref': rng.randrange(0, 256), 'thirst': f32(rng.choice(meters + [rng.uniform(0, 100)])), 'hunger': f32(rng.choice(meters + [rng.uniform(0, 100)])),
+             'toilet': f32(rng.choice(meters + [rng.uniform(0, 100)])), 'illness': f32(rng.choice(meters + [rng.uniform(0, 100)])), 'teff': rng.choice([0, 10, 35, 100, rng.randrange(0, 101)]),
+             'heff': rng.choice([0, 10, 35, 100, rng.randrange(0, 101)]), 'relief': rng.random() < 0.3, 'age': rng.choice([0, 3, 7, 8, rng.randrange(0, 400)]),
+             'golden': rng.choice([0, 0, 0, 1, 5, 9, rng.randrange(-3, 40)]) & MASK, 'upgrade': rng.choice([0, 0, 1000, 3000, 3001, 6000, rng.randrange(0, 50000)]),
+             'rain': rng.choice([0, 50, 150]), 'snow': rng.choice([0, 25, 200]), 'heat': rng.choice([0, 75, 120]), 'storm': rng.choice([0, 60, 130]),
+             'generation': rng.choice([0, 1, 2, 3]), 'gen': [rng.choice([0, 75, 100, 125]) for _ in range(3)], 'discard': rng.choice([0, 100, 50]),
+             'w': [rng.choice([1, 2, 0x10001]) for _ in range(7)], 'newdays': rng.choice([7, 0]), 'newmul': rng.choice([5, 1]), 'id': rng.randrange(1, 0x4000)}
+        c['used'] = [rng.choice([0, c['id'], rng.randrange(1, 0x4000)]) for _ in range(4)]
+        c['temp'] = [rng.choice([0, c['id'], rng.randrange(1, 0x4000)]) for _ in range(4)]
+        if c['used'][0] and c['used'][0] != c['id'] and rng.random() < 0.15:
+            c['sametype'] = True
+        type_word = 0x31
+        ride_type = score.object(0x300, {0x78: ('I', c['gender']), 0x174: ('I', c['golden']), 0x200: ('I', c['teff']), 0x204: ('I', c['heff']), 0x21C: ('I', c['appearance']),
+                                         0x244: ('I', int(c['infodesk'])), 0x2AC: ('I', c['upgrade']), 0xF0: ('i', c['snow']), 0xF4: ('i', c['rain']), 0xF8: ('i', c['storm']),
+                                         0xFC: ('i', c['heat']), 0x110: ('i', c['gen'][0]), 0x114: ('i', c['gen'][1]), 0x118: ('i', c['gen'][2])})
+        ride = score.object(0x200, {0x0: ('H', c['id']), 0x16: ('H', type_word), 0x42: ('H', 1 if c['relief'] else 0), 0x50: ('I', c['cells'])})
+        sc.clear()
+        sc.update(c, types={ride: ride_type}, back=((by << 7) + bx + 1) & 0xFFFF, link=0, park=score.object(0x100, {0x70: ('I', c['weather'])}))
+        if c['used'][0]:
+            other = score.object(0x200, {0x0: ('H', c['used'][0]), 0x16: ('H', type_word if c['sametype'] else 0x32)})
+            score.write(0xAA18B0 + 20 * c['used'][0], 'I', other)
+        cells = score.object(REGION + 10 * 0x4000 + 0x100)
+        score.write(CELLS_POINTER, 'I', cells)
+        score.write(cells + REGION + 10 * (by * 128 + bx) + 8, 'h', c['modifier'])
+        for k, value in enumerate(c['w']):
+            score.write(0xA01AC4 + 4 * k, 'I', value)
+        score.write(0xA01AA4, 'I', c['newdays'])
+        score.write(0xA01AA8, 'I', c['newmul'])
+        score.write(0xA01B68, 'I', c['discard'])
+        guest = score.object(0x300, {0x5: ('B', gx), 0x7: ('B', gy), 0x1C8: ('f', c['thirst']), 0x1CC: ('f', c['hunger']), 0x1D0: ('f', c['toilet']), 0x1D4: ('f', c['illness']),
+                                     0x238: ('I', c['umbrella']), 0x294: ('I', int(c['balloon'])), 0x298: ('I', c['countdown']), 0x2A4: ('I', c['generation']), 0x2A8: ('B', c['pref'])})
+        for k in range(4):
+            score.write(guest + 0x20A + 2 * k, 'H', c['used'][k])
+            score.write(guest + 0x212 + 2 * k, 'H', c['temp'][k])
+        try:
+            native = score.call(0x6101E0, args=(ride,), this=guest).eax & MASK
+        except Exception as error:  # a weight sum of 0 faults (divl)
+            native = None if 'weights' not in str(error) else None
+        port = port_score(c)
+        if native != port:
+            bad += 1
+            if bad <= 8:
+                print(f'score {c}: native {native} port {port}')
+    return bad
+
+
+def queue_rounds(image: Image, rng: random.Random, cases: int) -> int:
+    """The queue place 0x5E0280, the room 0x5DFDD0 and the length test 0x5DFF10 with its limit 0x5DFE00 over random lists of guests in random states: the predicate 0x61AC40, the id 0x6375C0, the
+    type record lookup 0x43C700 (stubbed) and _ftol native, at control word 0x7F; against GuestSimulation.TpiQueuePosition, TpiQueueHasRoom, TpiQueueTooLong and ThemeParkIncQueueLimit."""
+    bad = 0
+    sc: dict = {}
+    queue = Sandbox(image, [(0x5E0280, 0x5E033F), (0x5DFDD0, 0x5DFDEE), (0x5DFF10, 0x5DFF32), (0x5DFE00, 0x5DFECE), (0x61AC40, 0x61AC64), (0x6375C0, 0x6375CD), (0x86FAB0, 0x86FAD7)]
+                    + thunks(0x405934, 0x404B1A, 0x4080E9, 0x405588),
+                    stubs={0x403E45: lambda sb: (0, 0), 0x40C1D0: lambda sb: (sc['type'], 4)}, budget=20000)
+    for index in range(cases * 25):
+        queue.reset()
+        queue.set_fpcw(CONTROL_WORD)
+        world = queue.object(0x1EAC00, {TURN: ('I', rng.randrange(0, 1 << 32))})
+        queue.write(WORLD_POINTER, 'I', world)
+        ids = rng.sample(range(1, 0x400), rng.randrange(0, 7))
+        states = [rng.choice([14, 14, 15, 16, 17, 8, 6, 13]) for _ in ids]
+        saved = [rng.choice([14, 6, 17, 18]) for _ in ids]
+        for k, thing_id in enumerate(ids):
+            thing = queue.object(0x300, {0x0: ('H', thing_id), 0x2C0: ('I', states[k]), 0x2C4: ('I', saved[k]), 0x2CC: ('H', ids[k + 1] if k + 1 < len(ids) else 0)})
+            queue.write(0xAA18B0 + 20 * thing_id, 'I', thing)
+        cells = rng.choice([0, 1, 2, 3])
+        has_queue = rng.random() < 0.8
+        speed, init = rng.choice([0, 30, 60, 90]), rng.choice([60, 45, 7])
+        qwtc, capacity, duration = f32(rng.choice([130.0, 1.0, 37.5, rng.uniform(0, 300)])), rng.randrange(0, 256), rng.choice([0, 1, 3, 30, rng.randrange(0, 256)])
+        sc['type'] = queue.object(0x400, {0x29C: ('I', init), 0x2A8: ('f', qwtc)})
+        ride = queue.object(0x200, {0x42: ('H', 8 if has_queue else 0), 0x4C: ('H', ids[0] if ids else 0), 0x50: ('I', cells), 0x64: ('B', 0), 0x6C: ('I', speed),
+                                    0x70: ('B', duration), 0x71: ('B', capacity)})
+
+        def in_queue(k):
+            effective = saved[k] if states[k] == 8 else states[k]
+            return 14 <= effective <= 17
+
+        def position(pid):
+            for k, thing_id in enumerate(ids):
+                if thing_id == pid:
+                    return k
+                if not in_queue(k):
+                    return k + 1 if pid == 0 else -1
+            return len(ids) if pid == 0 else -1
+        probe = rng.choice(ids + [0, 0x3FF]) if ids else rng.choice([0, 0x3FF])
+        native = queue.call(0x5E0280, args=(probe,), this=ride).eax
+        native = native - (1 << 32) if native >> 31 else native
+        if native != position(probe):
+            bad += 1
+            if bad <= 5:
+                print(f'0x5E0280 ids {ids} states {states} saved {saved} probe {probe}: native {native} port {position(probe)}')
+        room = queue.call(0x5DFDD0, this=ride).eax & 0xFF
+        if bool(room) != ((position(0) & MASK) < 4 * cells):
+            bad += 1
+        if not has_queue:
+            limit = 100
+        else:
+            g = 1.0 if speed == 0 else f32(speed / init)
+            value = f32(f32(qwtc * capacity) * g)
+            # fidivl by a duration of 0: x87 gives infinity, or NaN for 0/0 (masked invalid); a NaN fails fcoms against 4.0 (C0 and C3 set) and becomes 4.0, as C#'s !(value > 4f) does
+            value = f32(value / duration) if duration else (math.nan if value == 0 else math.inf)
+            limit = (int(value) & MASK) if value > 4.0 and value != math.inf else (4 if not value > 4.0 else 0)
+        native_long = queue.call(0x5DFF10, this=ride).eax & 0xFF
+        if bool(native_long) != ((position(0) & MASK) >= limit):
+            bad += 1
+            if bad <= 5:
+                print(f'0x5DFF10 length {position(0)} limit {limit} (qwtc {qwtc} cap {capacity} g {speed}/{init} dur {duration}): native {native_long}')
+    return bad
+
+
+def port_state14(g: dict, sc: dict, world: World, rand: list) -> list:
+    """GuestSimulation.UpdateTpiStandingInQueue over the oracle's stubs: the calls the port makes at the stubbed points."""
+    calls: list = []
+
+    def leave(flag=0):
+        calls.extend([('remove', g['id']), ('dismiss', flag), 'walkaway', ('setter', 6)])
+    if g['target'] == 0:
+        return [('setter', 6)]
+    if g['b21b'] == 0 and g['w220'] != 0:
+        if sc['loading'] == g['id']:
+            calls.append('stand')
+            calls.append(('setdest', sc['setdest']))
+            if sc['setdest']:
+                return calls + [('setter', 16)]
+            calls.append(('let go', g['id']))
+        leave()
+        return calls
+    if sc['dirty']:
+        calls.append(('thought', 14))
+        leave()
+        return calls
+    if sc['appearance'] == 3 and sc['weather'] not in (2, 3, 4):
+        if sc['weather'] == 1:
+            leave(1)
+            return calls
+        if g['b28c'] == 0:
+            calls.append('rand')
+            g['w290'] = (rand[0] % sc['slowest'] + (g['turn'] >> 2)) & MASK
+            g['b28c'] = 1
+        elif (g['turn'] >> 2) >= g['w290']:
+            leave(1)
+            return calls
+    p = sc['position']
+    calls.append(('position', g['id']))
+    if p == -1:
+        leave()
+        return calls
+    if p != g['b21b']:
+        if g['w21c'] != 0 and ((g['b21b'] - p) & MASK) <= 2:
+            g['w21c'] -= 1
+        elif not sc['broken']:
+            calls.append('find')
+            if not sc['find']:
+                leave()
+                return calls
+    else:
+        if g['b21b'] > sc['limit']:
+            calls.append(('thought', 16))
+            leave()
+            return calls
+        if sc['coaster'] and not sc['accepts'] or sc['track1'] and sc['word34'] == 0:
+            calls.append(('thought', 13))
+            leave()
+            return calls
+    if ((g['turn'] - g['spot']) & MASK) > 30:
+        h = byte(g['happiness'])
+        if h > 80:
+            if g['umbrella'] in (0, 2):
+                calls += ['mood', ('spot', 'mood')]
+        elif h < 10:
+            calls.append(('thought', 11))
+            leave()
+        elif h < 20:
+            if g['umbrella'] in (0, 2):
+                calls.append(('spot', 4))
+        elif byte(g['toilet']) > 80:
+            calls.append(('thought', 4))
+            if not sc['relief']:
+                leave()
+        return calls
+    if g['turn'] > (g['w224'] + 100) & MASK:
+        calls.append(('thought', 12))
+        leave()
+        return calls
+    if world.word() % 10 != 0:
+        return calls
+    heading = g['heading'] + world.word() % 800 - 400
+    g['heading'] = heading + 0x800 if heading < 0 else heading - 0x800 if heading >= 0x800 else heading
+    return calls
+
+
+def state14_rounds(image: Image, rng: random.Random, cases: int) -> int:
+    """State 14 (0x6176C0) with every callee but the world generator, _ftol and the id stubbed and recorded (the ride's loading slot, the stand point, the route, the setter, the list functions, the
+    dismissal, the walk-away, the dirt test, the type and park records, the CRT rand(), the place, the broken test, FindQueueDestination, the limit, the coaster tests, the thought, the mood and the
+    spot animation); the calls, +0x21C, +0x28C, +0x290, the heading and the draws are compared with UpdateTpiStandingInQueue."""
+    bad = 0
+    calls: list = []
+    sc: dict = {}
+
+    def rec(name, pop, value=None, arg=False):
+        def stub(sb: Sandbox):
+            calls.append((name, sb.arg(0)) if arg else name)
+            return (sc[value] if isinstance(value, str) else (value or 0)), pop
+        return stub
+
+    def stand(sb: Sandbox):
+        calls.append('stand')
+        sb.write(sb.arg(1), 'I', 0x1234)
+        sb.write(sb.arg2 if False else sb.arg(2), 'I', 0x5678)
+        return 0, 12
+
+    def setdest(sb: Sandbox):
+        calls.append(('setdest', sc['setdest']))
+        return sc['setdest'], 8
+
+    stubs = {0x40C2B6: lambda sb: (int(sc['loading'] == sb.arg(0)), 4), 0x405510: stand, 0x403DAF: setdest, 0x4096E2: rec('setter', 4, arg=True),
+             0x40B4BF: lambda sb: (calls.append(('let go', sb.arg(0) & 0xFFFF)), (0, 4))[1], 0x40853A: lambda sb: (calls.append(('remove', sb.arg(0) & 0xFFFF)), (0, 4))[1],
+             0x409C05: lambda sb: (calls.append(('dismiss', sb.arg(0))), (0, 4))[1], 0x405E84: rec('walkaway', 0), 0x404F52: lambda sb: (int(sc['dirty']), 0),
+             0x4022F2: lambda sb: (sc['typeobj'], 0), 0x4019B5: lambda sb: (sc['park'], 0), 0x870D38: lambda sb: (calls.append('rand'), (sc['rand'], 0))[1],
+             0x405934: lambda sb: (calls.append(('position', sb.arg(0) & 0xFFFF)), (sc['position'] & MASK, 4))[1], 0x403332: lambda sb: (int(sc['broken']), 0),
+             0x405556: lambda sb: (calls.append('find'), (int(sc['find']), 0))[1], 0x405588: lambda sb: (sc['limit'], 0), 0x4064A6: lambda sb: (int(sc['coaster']), 0),
+             0x405EE3: lambda sb: (int(sc['accepts']), 0), 0x4071EE: lambda sb: (calls.append(('thought', sb.arg(0))), (0, 8))[1], 0x40A560: lambda sb: (calls.append('mood'), (77, 0))[1],
+             0x404DB3: lambda sb: (calls.append(('spot', 'mood' if sb.arg(0) == 77 else sb.arg(0))), (0, 4))[1], 0x403E45: lambda sb: (0, 0)}
+    state = Sandbox(image, [(0x6176C0, 0x617D4A), (0x6493E0, 0x649415), (0x6375C0, 0x6375CD), (0x86FAB0, 0x86FAD7)] + thunks(0x40A92F, 0x4080E9), stubs=stubs, budget=5000)
+    for index in range(cases * 25):
+        state.reset()
+        state.set_fpcw(CONTROL_WORD)
+        calls.clear()
+        thing_id = rng.randrange(1, 0x4000)
+        turn = rng.randrange(0, 1 << 32)
+        g = {'id': thing_id, 'target': rng.choice([0, 40, 40, 40]), 'b21b': rng.choice([0, 0, 1, 2, 5]), 'w220': rng.choice([0, 0, 1]), 'b28c': rng.choice([0, 0, 1]),
+             'w290': rng.choice([0, (turn >> 2) + rng.randrange(-3, 4)]) & MASK, 'w21c': rng.choice([0, 1, 3]), 'turn': turn,
+             'spot': (turn - rng.choice([0, 10, 30, 31, 200])) & MASK, 'w224': (turn - rng.choice([0, 50, 100, 101, 500])) & MASK, 'happiness': f32(rng.choice([5.0, 9.9, 10.0, 15.0, 19.9, 20.0, 50.0, 80.0, 80.5, 81.0, 95.0])),
+             'toilet': f32(rng.choice([10.0, 80.0, 81.0, 99.0])), 'umbrella': rng.choice([0, 0, 2, 3, 4]), 'heading': rng.randrange(0, 0x800)}
+        sc.update(loading=rng.choice([0, thing_id, thing_id, 99]), setdest=rng.choice([0, 1, 1]), dirty=rng.random() < 0.1, appearance=rng.choice([0, 0, 0, 3]),
+                  weather=rng.choice([0, 1, 2, 3, 4]), slowest=rng.choice([3, 1, 7]), rand=rng.randrange(0, 0x8000), position=rng.choice([-1, 0, 0, 1, 2, 3, 4]),
+                  broken=rng.random() < 0.2, find=rng.random() < 0.7, limit=rng.choice([0, 1, 4, 100]), coaster=rng.random() < 0.1, accepts=rng.random() < 0.5,
+                  track1=rng.random() < 0.1, word34=rng.choice([0, 1]), relief=rng.random() < 0.3)
+        seed = rng.randrange(0, 1 << 32)
+        world = state.object(0x1EAC00, {TURN: ('I', turn), SEED: ('I', seed)})
+        state.write(WORLD_POINTER, 'I', world)
+        state.write(0xAA1484, 'I', world)
+        sc['park'] = state.object(0x100, {0x70: ('I', sc['weather'])})
+        sc['typeobj'] = state.object(0x300, {0x21C: ('I', sc['appearance']), 0x14C: ('I', 1 if sc['track1'] else 0)})
+        state.write(0xA01B64, 'I', sc['slowest'])
+        history = state.object(0x600)
+        ride = state.object(0x200, {0x34: ('I', sc['word34']), 0x42: ('H', 1 if sc['relief'] else 0), 0x130: ('I', history)})
+        state.write(0xAA18B0 + 20 * 40, 'I', ride)
+        thing = state.object(0x300, {0x0: ('H', thing_id), 0x2C: ('I', g['heading']), 0x1BC: ('f', g['happiness']), 0x1D0: ('f', g['toilet']), 0x204: ('H', g['target']),
+                                     0x21B: ('B', g['b21b']), 0x21C: ('I', g['w21c']), 0x220: ('I', g['w220']), 0x224: ('I', g['w224']), 0x230: ('I', g['spot']),
+                                     0x238: ('I', g['umbrella']), 0x28C: ('B', g['b28c']), 0x290: ('I', g['w290'])})
+        state.call(0x6176C0, this=thing)
+        native = {'calls': list(calls), 'w21c': state.read(thing + 0x21C, 'I'), 'b28c': state.read(thing + 0x28C, 'B'), 'w290': state.read(thing + 0x290, 'I'),
+                  'heading': state.read(thing + 0x2C, 'I'), 'seed': state.read(world + SEED, 'I')}
+        replica = World(seed)
+        port_g = dict(g)
+        port_calls = port_state14(port_g, sc, replica, [sc['rand']])
+        port = {'calls': port_calls, 'w21c': port_g['w21c'], 'b28c': port_g['b28c'], 'w290': port_g['w290'], 'heading': port_g['heading'], 'seed': replica.state}
+        if native != port:
+            bad += 1
+            if bad <= 5:
+                print(f'state 14 {g} {sc}: native {native} port {port}')
+    return bad
+
+
+def port_state13(g: dict, sc: dict) -> list:
+    """GuestSimulation.UpdateTpiWalkingToMajor over the oracle's stubs."""
+    calls: list = []
+    if not sc['slot']:
+        return [('setter', 6)]
+    calls.append('walk')
+    walk = sc['walk']
+    if not sc['open'] or walk == 2:
+        return calls + [('loss', 2), ('setter', 6)]
+    if walk == 0:
+        if g['target'] == 0:
+            return calls + [('setter', 6)]
+        calls.append('back')
+        if sc['back'] != g['cell']:
+            calls.append('back')
+            if sc['back'] == 0:
+                return calls + [('setter', 6)]
+            calls.append(('route', sc['back']))
+            return calls if sc['route'] else calls + [('setter', 6)]
+        calls.append('room')
+        if not sc['room']:
+            return calls + [('setter', 6)]
+        calls += ['difference', ('gate', 1)]
+        if sc['gate'] and abs(sc['difference']) >= 45:
+            return calls + [('thought', 12 if sc['difference'] < 0 else 15), ('history', g['target']), ('setter', 6)]
+        calls.append('long')
+        if sc['long']:
+            return calls + [('history', g['target']), ('thought', 16), ('setter', 6), 'walkaway']
+        calls += [('add', g['id']), 'find']
+        if sc['find']:
+            return calls
+        return calls + [('remove', g['id']), ('dismiss', 0), ('setter', 6)]
+    if walk != 1:
+        return calls
+    calls.append('closed')
+    if sc['closed']:
+        return calls + [('loss', 2), ('setter', 6)]
+    if g['target'] != 0:
+        if sc['appearance'] == 1 and g['umbrella'] in (3, 4) or sc['appearance'] == 3 and sc['weather'] not in (2, 3, 4):
+            return calls + [('setter', 6)]
+    if g['count'] + 1 > 11:
+        calls.append('minor')
+    return calls
+
+
+def state13_rounds(image: Image, rng: random.Random, cases: int) -> int:
+    """State 13 (0x616AC0) with the walk, the back cell, the room, the difference and its gate, the thought, the history word, the setter, the length test, the list functions, FindQueueDestination,
+    the dismissal, the walk-away, the route, the happiness loss, the closed park, the type and park records and the minor decision stubbed and recorded; against UpdateTpiWalkingToMajor."""
+    bad = 0
+    calls: list = []
+    sc: dict = {}
+
+    def back(sb: Sandbox):
+        calls.append('back')
+        sb.write(sb.arg(0), 'H', sc['back'])
+        return sb.arg(0), 4
+
+    stubs = {0x40989A: lambda sb: (calls.append('walk'), (sc['walk'], 0))[1], 0x405B55: back, 0x406AA5: lambda sb: (calls.append('room'), (int(sc['room']), 0))[1],
+             0x40CAC2: lambda sb: (calls.append('difference'), (sc['difference'] & MASK, 4))[1], 0x403062: lambda sb: (calls.append(('gate', sb.arg(0))), (int(sc['gate']), 4))[1],
+             0x4071EE: lambda sb: (calls.append(('thought', sb.arg(0))), (0, 8))[1], 0x404F6B: lambda sb: (calls.append(('history', sb.arg(0) & 0xFFFF)), (0, 4))[1],
+             0x4096E2: lambda sb: (calls.append(('setter', sb.arg(0))), (0, 4))[1], 0x40BCDA: lambda sb: (calls.append('long'), (int(sc['long']), 0))[1],
+             0x405E84: lambda sb: (calls.append('walkaway'), (0, 0))[1], 0x40CE78: lambda sb: (calls.append(('add', sb.arg(0) & 0xFFFF)), (0, 4))[1],
+             0x405556: lambda sb: (calls.append('find'), (int(sc['find']), 0))[1], 0x40853A: lambda sb: (calls.append(('remove', sb.arg(0) & 0xFFFF)), (0, 4))[1],
+             0x409C05: lambda sb: (calls.append(('dismiss', sb.arg(0))), (0, 4))[1], 0x4039DB: lambda sb: (calls.append(('route', sb.arg(0) & 0xFFFF)), (int(sc['route']), 4))[1],
+             0x406C26: lambda sb: (calls.append(('loss', sb.arg(0))), (0, 4))[1], 0x4080F8: lambda sb: (calls.append('closed'), (int(sc['closed']), 0))[1],
+             0x4022F2: lambda sb: (sc['typeobj'], 0), 0x4019B5: lambda sb: (sc['park'], 0), 0x40320B: lambda sb: (calls.append('minor'), (0, 0))[1], 0x403E45: lambda sb: (0, 0)}
+    state = Sandbox(image, [(0x616AC0, 0x616E27), (0x6375C0, 0x6375CD)] + thunks(0x4080E9), stubs=stubs, budget=5000)
+    for index in range(cases * 25):
+        state.reset()
+        calls.clear()
+        x, y = rng.randrange(0, 128), rng.randrange(0, 128)
+        cell = ((y << 7) + x + 1) & 0xFFFF
+        g = {'id': rng.randrange(1, 0x4000), 'target': rng.choice([0, 40, 40]), 'cell': cell, 'umbrella': rng.choice([0, 2, 3, 4]), 'count': rng.choice([0, 5, 11, 12])}
+        sc.update(slot=rng.random() < 0.95, walk=rng.choice([0, 0, 1, 1, 2]), open=rng.random() < 0.9, back=rng.choice([cell, cell, 0, cell ^ 1]), route=rng.random() < 0.5,
+                  room=rng.random() < 0.8, difference=rng.choice([0, 44, 45, -45, -44, 100, -50]), gate=rng.random() < 0.8, long=rng.random() < 0.2, find=rng.random() < 0.7,
+                  closed=rng.random() < 0.1, appearance=rng.choice([0, 0, 1, 3]), weather=rng.choice([0, 1, 2, 3, 4]))
+        world = state.object(0x1EAC00)
+        state.write(WORLD_POINTER, 'I', world)
+        state.write(0xAA1484, 'I', world)
+        sc['park'] = state.object(0x100, {0x70: ('I', sc['weather'])})
+        sc['typeobj'] = state.object(0x300, {0x21C: ('I', sc['appearance'])})
+        if sc['slot'] and g['target']:
+            ride = state.object(0x200, {0x7C: ('I', int(sc['open'])), 0x130: ('I', state.object(0x600))})
+            state.write(0xAA18B0 + 20 * g['target'], 'I', ride)
+        elif not g['target']:
+            sc['slot'] = False
+        thing = state.object(0x300, {0x0: ('H', g['id']), 0x5: ('B', x), 0x7: ('B', y), 0x40: ('B', g['count']), 0x204: ('H', g['target']), 0x238: ('I', g['umbrella'])})
+        state.call(0x616AC0, this=thing)
+        port = port_state13(g, sc)
+        count = state.read(thing + 0x40, 'B')
+        expected_count = g['count'] if 'minor' not in port and not (sc['slot'] and sc['walk'] == 1 and 'closed' in port and port[-1] == 'closed') else 0
+        if calls != port:
+            bad += 1
+            if bad <= 5:
+                print(f'state 13 {g} {sc}: native {calls} port {port}')
+        elif 'minor' in port and count != 0 or port and port[-1] == 'closed' and count != g['count'] + 1:
+            bad += 1
+            if bad <= 5:
+                print(f'state 13 walk count {g["count"]}: native {count}')
+    return bad
+
+
+def state15_rounds(image: Image, rng: random.Random, cases: int) -> int:
+    """The dispatch 0x619FF0 in state 15 (0x61A1DB): the walk and the setter stubbed; arrived or stuck set 14."""
+    bad = 0
+    calls: list = []
+    sc: dict = {}
+    dispatch = Sandbox(image, [(0x619FF0, 0x61A3A8)], stubs={0x40989A: lambda sb: (sc['walk'], 0), 0x4096E2: lambda sb: (calls.append(('setter', sb.arg(0))), (0, 4))[1]}, budget=500)
+    for walk in (0, 1, 2, 3):
+        dispatch.reset()
+        calls.clear()
+        sc['walk'] = walk
+        thing = dispatch.object(0x300, {0x2C0: ('I', 15)})
+        dispatch.call(0x619FF0, this=thing)
+        if calls != ([('setter', 14)] if walk in (0, 2) else []):
+            bad += 1
+            print(f'state 15 walk {walk}: native {calls}')
+    return bad
+
+
 # ---- The native runs -------------------------------------------------------------------------------------------------------------
 
 def main(cases: int) -> int:
@@ -811,8 +1341,14 @@ def main(cases: int) -> int:
     bad['spot'] = spot_rounds(image, rng, cases)
     bad['dispatch'] = dispatch_rounds(image, rng, cases)
     bad['bin'] = bin_rounds(image, rng, cases)
+    bad['score'] = score_rounds(image, rng, cases)
+    bad['queue'] = queue_rounds(image, rng, cases)
+    bad['13'] = state13_rounds(image, rng, cases)
+    bad['14'] = state14_rounds(image, rng, cases)
+    bad['15'] = state15_rounds(image, rng, cases)
     print(f"{cases} cases: catch {bad['catch']}, setter {bad['setter']}, pre-update {bad['pre']}, verdict {bad['verdict']}, idle {bad['idle']}, spot and mood {bad['spot']}, "
-          f"states 7 and 8 {bad['dispatch']}, state 9 {bad['bin']} mismatches")
+          f"states 7 and 8 {bad['dispatch']}, state 9 {bad['bin']}, score {bad['score']}, queue functions {bad['queue']}, state 13 {bad['13']}, state 14 {bad['14']}, "
+          f"state 15 {bad['15']} mismatches")
     return sum(bad.values())
 
 

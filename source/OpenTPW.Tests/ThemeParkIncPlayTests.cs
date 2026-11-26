@@ -127,13 +127,15 @@ public class ThemeParkIncPlayTests
 		public readonly ParkPathBuilder Paths;
 		public readonly RideScriptWorld Scripts = new();
 		public readonly List<OriginalObjectRuntime> Runtimes = new();
+		/// <summary>The save record each runtime was built from, in <see cref="Runtimes"/>' order.</summary>
+		public readonly List<SaveObject> Records = new();
 		/// <summary>Cells the world's own records hold (placed objects and fixed items of a prebuilt save).</summary>
 		public readonly HashSet<(int X, int Y)> Occupied = new();
 
 		/// <summary>The Theme Park Inc money economy, when <c>withMoney</c> is set (the path builder then charges it).</summary>
 		public readonly ParkEconomyRuntime? Money;
 
-		public SlicePark( string world, int? arrivalTimeBetween = null, bool withMoney = false )
+		public SlicePark( string world, int? arrivalTimeBetween = null, bool withMoney = false, bool nativeGuests = false )
 		{
 			Park = OriginalPark.Load( world );
 			if ( withMoney )
@@ -141,7 +143,7 @@ public class ThemeParkIncPlayTests
 			Catalog = ObjectCatalog.Load( world );
 			BuildGrid = new OriginalParkGrid( Park );
 			Grid = GuestPathGrid.FromOriginal( Park.Map, Park.Save );
-			var settings = GuestSettings.Load( world );
+			var settings = GuestSettings.Load( world, nativeGuests );
 			if ( arrivalTimeBetween is int interval )
 				settings.ArrivalTimeBetween = interval;
 			Guests = new GuestSimulation( Grid, settings, Level.GuestSeed );
@@ -157,6 +159,7 @@ public class ThemeParkIncPlayTests
 					Occupied.Add( (cell.X, cell.Y) );
 				var runtime = new OriginalObjectRuntime( entry, Scripts, open: true );
 				Runtimes.Add( runtime );
+				Records.Add( record );
 				Level.RegisterWithGuests( runtime, ObjectFootprint.GetAccessPoints( entry.Shape, record.X, record.Y, record.Rotation ), Guests, record.Rotation );
 			}
 		}
@@ -320,6 +323,92 @@ public class ThemeParkIncPlayTests
 				queueing = Math.Max( queueing, park.Guests.GetStatistics().Queueing );
 		}
 		Assert.IsTrue( queueing > 0, "an arrived guest queues at a prebuilt attraction within two minutes" );
+	}
+
+	/// <summary>
+	/// The prebuilt park's objects as the level's object list walk hands them to <see cref="Level.ThemeParkIncAttractionViews"/>, newest first, with the save's attraction thing ids (0 for a record without
+	/// one) and the type's thing cell.
+	/// </summary>
+	private static IEnumerable<(int ThingId, (int X, int Y) Cell, ObjectSettings Settings, RideVisitorBridge Visitors)> SliceObjectList( SlicePark park ) =>
+		park.Runtimes.Select( ( runtime, index ) => (runtime, record: park.Records[index]) ).Reverse().Select( item =>
+		{
+			var settings = item.runtime.Entry.Settings;
+			var thing = park.Park.Save!.FindThemeParkIncAttraction( item.record )?.Id ?? 0;
+			return ((int)thing, OriginalObject.ThingCellOf( settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ), item.record.X, item.record.Y, item.record.Rotation ),
+				settings, item.runtime.Visitors);
+		} );
+
+	/// <summary>The prebuilt park's choosable attractions as the native guests read them: the level's own view (<see cref="Level.ThemeParkIncAttractionViews"/>) over the slice's object list.</summary>
+	private sealed class SliceAttractions( SlicePark park ) : IThemeParkIncGuestWorld
+	{
+		private readonly ThemeParkIncAttractionView[] views = Level.ThemeParkIncAttractionViews( SliceObjectList( park ), park.Guests );
+		public IReadOnlyList<ThemeParkIncThingView> Bins() => [];
+		public IReadOnlyList<ThemeParkIncThingView> Shows() => [];
+		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => [];
+		public ThemeParkIncThingView? Thing( ushort thingId ) => null;
+		public void RecordCustomer( ushort thingId ) { }
+		public IReadOnlyList<ThemeParkIncAttractionView> Attractions() => views;
+	}
+
+	/// <summary>
+	/// The level's attraction view (phase P3a) over the prebuilt Science park: only the choosable types (<c>Info.IsChoosable</c>, the flag <c>+0x42</c> bit 4) whose ride bridge the guests host, in the
+	/// object list's order, with the save's thing ids and the types' score words.
+	/// </summary>
+	[TestMethod]
+	public void TheLevelsAttractionViewReadsTheChoosableHostedRides()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science" );
+		var listed = SliceObjectList( park ).ToList();
+		var views = Level.ThemeParkIncAttractionViews( listed, park.Guests );
+		var expected = listed.Where( item => item.ThingId > 0 && item.Settings.GetInt( "Info.IsChoosable" ) != 0 && park.Guests.Attractions.Contains( item.Visitors ) ).ToList();
+		Assert.IsTrue( expected.Count > 0, "the prebuilt park has choosable hosted attractions" );
+		Assert.IsTrue( listed.Any( item => item.ThingId > 0 && item.Settings.GetInt( "Info.IsChoosable" ) == 0 ), "the object list also holds things the choice skips" );
+		CollectionAssert.AreEqual( expected.Select( item => item.ThingId ).ToArray(), views.Select( view => (int)view.ThingId ).ToArray(), "the choosable hosted things, newest first" );
+		foreach ( var view in views )
+			Assert.AreEqual( Level.ThemeParkIncScoreTermsOf( expected.First( item => item.ThingId == view.ThingId ).Settings ), view.Terms, $"thing {view.ThingId}: its type's score words" );
+		// a ride the guests no longer host (unregistered, as the removal does) leaves the view
+		var gone = views[0].Ride;
+		park.Guests.Unregister( gone );
+		Assert.IsFalse( Level.ThemeParkIncAttractionViews( listed, park.Guests ).Any( view => ReferenceEquals( view.Ride, gone ) ),
+			"an attraction the guests do not host is not offered" );
+	}
+
+	/// <summary>
+	/// Phase P3a of the native guest states (docs/reverse/TPI-GUESTS.md): native guests in the prebuilt Science park choose its rides by Theme Park Inc's score, walk to them, queue and board (through the
+	/// bridged state 16).
+	/// </summary>
+	[TestMethod]
+	public void NativeGuestsChooseQueueAndBoardTheScienceRides()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science", nativeGuests: true );
+		park.Guests.ArrivalsEnabled = false;
+		park.Guests.ThemeParkIncNativeGuests = true;
+		var world = new SliceAttractions( park );
+		park.Guests.ThemeParkIncWorld = world;
+		Assert.IsTrue( world.Attractions().Count > 0, "the prebuilt park has choosable attractions" );
+		Assert.IsTrue( world.Attractions().Any( view => view.Terms.KidPercentage != 0 ), "the Science types carry their GenerationModifier words" );
+		var cells = Enumerable.Range( 0, 128 ).SelectMany( x => Enumerable.Range( 0, 128 ).Select( y => (x, y) ) ).Where( cell => park.Grid.IsWalkable( cell.x, cell.y ) ).ToList();
+		var guests = Enumerable.Range( 0, 30 ).Select( index => park.Guests.SpawnInPark( cells[index * 7 % cells.Count].x, cells[index * 7 % cells.Count].y ) ).ToList();
+		Assert.IsTrue( guests.All( guest => guest.Tpi != null ), "the switch makes native guests" );
+		foreach ( var guest in guests )
+			(guest.Happiness, guest.ExitLevel) = (60, 100000);
+		var seen = new HashSet<int>();
+		var rode = false;
+		for ( var step = 0; step < 300 * FixedStepClock.TicksPerSecond && !(rode && seen.Contains( ThemeParkIncGuestStates.StandingInQueue )); step++ )
+		{
+			park.Step( FixedStepClock.TickDuration );
+			foreach ( var guest in guests )
+			{
+				if ( guest.Tpi is { } tpi )
+					seen.Add( tpi.State );
+				rode |= guest.State == GuestState.Using && guest.Tpi?.State == ThemeParkIncGuestStates.BeingLoaded;
+			}
+		}
+		CollectionAssert.IsSubsetOf( new[] { ThemeParkIncGuestStates.WalkingToMajor, ThemeParkIncGuestStates.TakingQueueStep, ThemeParkIncGuestStates.StandingInQueue }, seen.ToArray(),
+			$"the guests walk to the rides and queue (states seen: {string.Join( ", ", seen.OrderBy( state => state ) )})" );
+		Assert.IsTrue( rode, "a native guest boards a Science ride" );
 	}
 
 	// ---- The money over the corpus (docs/THEME-PARK-INC.md, "Economy") --------------------

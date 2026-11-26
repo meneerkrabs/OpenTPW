@@ -200,6 +200,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public bool HasQueue => Parameters.HasQueue;
 	public IRideVisitorHost? Host { get; set; }
 	public bool IsOpen => ScriptRuns && isOpen() && takesGuests();
+	/// <summary>The owner's open word alone (Theme Park Inc's thing <c>+0x7C</c>, tp.exe's <c>+0x68</c>): <see cref="IsOpen"/> without the script and the coaster or track test.</summary>
+	public bool OpenWord => isOpen();
 	/// <summary>
 	/// The ride's script runs: a guest walking to it may join (state 10). Unlike <see cref="IsOpen"/> it ignores the open word, the breakdown and the coaster or track test,
 	/// which the original's join does not read either (the coaster predicate <c>0x00441970</c> is called by the choice, the reopen guard, the open routines and state 11 only).
@@ -282,6 +284,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 	}
 	public int QueueLength => links.Count;
+	/// <summary>The queue's head (the list's first guest, the original's head word), 0 for an empty queue; with <see cref="NextInQueue"/> a walk of the list that allocates nothing.</summary>
+	internal int QueueHead => head;
+	/// <summary>The guest after <paramref name="guestId"/> in the queue (the next word), 0 at the tail or for a guest the list does not hold.</summary>
+	internal int NextInQueue( int guestId ) => links.TryGetValue( guestId, out var link ) ? link.Next : 0;
+	/// <summary>The guest before <paramref name="guestId"/> in the queue (the previous word), 0 at the head or for a guest the list does not hold.</summary>
+	internal int PreviousInQueue( int guestId ) => links.TryGetValue( guestId, out var link ) ? link.Previous : 0;
 	/// <summary>Guests the script holds (boarded and not yet released).</summary>
 	public IReadOnlyList<int> Riders => onRide;
 	public int BoardedTotal { get; private set; }

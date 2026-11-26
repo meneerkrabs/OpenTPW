@@ -10,6 +10,18 @@ public sealed partial class ParkEconomy
 	public ThemeParkIncAdvisor? TpiAdvisor { get; private set; }
 
 	private readonly ThemeParkIncAdvisorSpeech tpiAdvisorSpeech = new();
+	private Func<int, uint>? tpiAdvisorDuration;
+
+	/// <summary>
+	/// The park clock's rate the player chose (<see cref="GameSpeedScale"/>: 1, 2 or 4), which the client sets while the park runs; a camera flight's rate replaces it
+	/// (<see cref="TpiAdvisorClockRate"/>). It decides how much real time a world tick spans on the advisor clock.
+	/// </summary>
+	// [EXT:speed-buttons] OpenTPW's speeds are 1, 2 and 4, where the original steps its clock rate by 0.8 and 1.25 within 0.25..2
+	internal double TpiSpeedRate { get; set; } = 1;
+
+	/// <summary>The park clock's rate this tick: a playing camera flight's (<see cref="ThemeParkIncCutscene.ClockRate"/>), else the player's.</summary>
+	// [BIN:TPI-EXE:0x5D053C flight clock] the flight sets the park clock's rate to its mode's until its end restores the speed word's rate
+	internal double TpiAdvisorClockRate => TpiCutscene?.ClockRate ?? TpiSpeedRate;
 
 	private void CreateThemeParkIncAdvisor()
 	{
@@ -34,8 +46,13 @@ public sealed partial class ParkEconomy
 	internal void UpdateThemeParkIncAdvisor( long turn )
 	{
 		if ( TpiAdvisor is { } advisor && TpiCareer is { } career )
-			advisor.Update( turn, career, TpiAdviceContext, tpiAdvisorSpeech.Duration );
+			advisor.Update( turn, career, TpiAdviceContext, tpiAdvisorDuration ??= tpiAdvisorSpeech.Duration );
 	}
+
+	// [BIN:TPI-EXE:0x7191AB easy-mode history reset] the advisor's handler clears every history entry but its time stamp (variant -1, played, slaps and plays 0) on RESET_FOR_EASY_MODE
+	// ("Clearing advisor history afer receiving RESET_FOR_EASY_MODE event"). [EXT:tpi-capability-gates] Theme Park Inc's easy mode is not ported (an easy Theme Park Inc save is refused), so
+	// nothing asks for it. [BIN:TPI-EXE:0x7177B0 prebuilt history reset] the same reset runs from the world reset 0x64B940 when the prebuilt park loads (0x7468B0 "PreBuilt\", 0x6A3CF9), the first
+	// world of a new career: OpenTPW's new career builds its history from the constructor's values (ThemeParkIncCareer), which that reset leaves as they are, so it is not repeated
 
 	/// <summary>The advice the advisor played since the last call, oldest first, for the client to voice and caption.</summary>
 	internal IReadOnlyList<ThemeParkIncAdvicePlay> TakeThemeParkIncAdvice() => TpiAdvisor?.TakePlayed() ?? Array.Empty<ThemeParkIncAdvicePlay>();

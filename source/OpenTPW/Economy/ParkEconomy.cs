@@ -465,6 +465,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		crowdPhaseTurn ??= previousTurn;
 		// [EXT:cheats-turn-boundary] the queued cheats apply first, before the turn's thing sweep (its weather update and arrival update) and the calendar; a park without any skips this
 		Cheats.ApplyPending( this, turn );
+		// [EXT:tpi-advisor-tick-clock] the advisor clock moves on by the tick's real time at the park clock's rate, in every world state (the sub-clock runs on in a lost park)
+		TpiAdvisor?.AdvanceClock( TpiAdvisorClockRate );
 		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
 		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
 		// [EXT:headless-economy] without a host sweep (the headless economy of tests and tools, which has no thing pool of guests, rides and staff to visit) the thing update runs in a fixed order of its own, staff, research, rides, challenges, where a level's park turn visits one list newest first (IThingSweep)

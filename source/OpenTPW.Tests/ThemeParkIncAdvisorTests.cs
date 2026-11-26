@@ -37,6 +37,15 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 
 	private static ThemeParkIncAdviceRecord Record( int message, int score ) => new( 0, 0, -1, message, score, true, false, true );
 
+	/// <summary>Updates the advisor at <paramref name="turn"/> with its clock where that many normal-speed ticks put it (248 ms each).</summary>
+	private static void UpdateAt( ThemeParkIncAdvisor advisor, long turn, ThemeParkIncCareer career, ThemeParkIncAdviceContext context, Func<int, uint> speech )
+	{
+		At( advisor, turn );
+		advisor.Update( turn, career, context, speech );
+	}
+
+	private static void At( ThemeParkIncAdvisor advisor, long turn ) => advisor.Restore( advisor.Capture() with { ClockMicroseconds = turn * 248_000 } );
+
 	/// <summary>Puts records into the slots from the first one on, as the oracle writes them.</summary>
 	private static void Fill( ThemeParkIncAdvisor advisor, params ThemeParkIncAdviceRecord[] records )
 	{
@@ -188,15 +197,17 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		career.SetAdviceHistory( Rain, new ThemeParkIncAdviceHistory( 0x40, 0, true, 2, 3 ) );
 		advisor.Restore( advisor.Capture() with { LastStart = 1_000, LastWindow = 500, Playing = Rain } );
 		// the advisor clock is the world tick times 248 ms: tick 7 is 1736, past the window; tick 5 is 1240, inside it
-		Assert.IsTrue( advisor.Cancel( Rain, career, 7, out var stopped ) );
+		At( advisor, 7 );
+		Assert.IsTrue( advisor.Cancel( Rain, career, out var stopped ) );
 		Assert.IsFalse( stopped );
 		CollectionAssert.AreEqual( new[] { false, false, false, false, true, false, false, false }, advisor.Queue.Select( slot => slot.Valid ).ToArray() );
 		Assert.AreEqual( new ThemeParkIncAdviceHistory( 0x40, 0, true, 2, 3 ), career.AdviceHistory( Rain ) );
-		Assert.IsTrue( advisor.Cancel( Rain, career, 5, out stopped ) );
+		At( advisor, 5 );
+		Assert.IsTrue( advisor.Cancel( Rain, career, out stopped ) );
 		Assert.IsTrue( stopped );
 		Assert.AreEqual( new ThemeParkIncAdviceHistory( 0x40, 0, false, 3, 3 ), career.AdviceHistory( Rain ) );
 		Assert.AreEqual( 0u, advisor.LastWindow );
-		Assert.IsFalse( advisor.Cancel( Rain, career, 5, out _ ) );
+		Assert.IsFalse( advisor.Cancel( Rain, career, out _ ) );
 	}
 
 	[TestMethod]
@@ -207,14 +218,14 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		var context = new ThemeParkIncAdviceContext( 0, false, false, 0, 0 );
 		Assert.IsTrue( advisor.Post( Rain, career, 200 << 2, context ) );
 		Assert.IsTrue( advisor.Post( Rain, career, 200 << 2, context ), "a pending duplicate is allowed (limit 255)" );
-		advisor.Update( 800, career, context, _ => 2_750 );
+		UpdateAt( advisor, 800, career, context, _ => 2_750 );
 		Assert.AreEqual( new ThemeParkIncAdvicePlay( Rain, 645, 0, 0 ), advisor.TakePlayed().Single() );
-		Assert.AreEqual( (ThemeParkIncAdvisor.Clock( 800 ), 3_750u), (advisor.LastStart, advisor.LastWindow), "the speech plus 1000 ms" );
+		Assert.AreEqual( (800u * 248, 3_750u), (advisor.LastStart, advisor.LastWindow), "the speech plus 1000 ms" );
 		Assert.AreEqual( new ThemeParkIncAdviceHistory( 800, 0, true, 0, 1 ), career.AdviceHistory( Rain ) );
 		// 3750 ms is 15.1 ticks of 248 ms: the second record waits 16 ticks
-		advisor.Update( 815, career, context, _ => 0 );
+		UpdateAt( advisor, 815, career, context, _ => 0 );
 		Assert.AreEqual( 0, advisor.TakePlayed().Count );
-		advisor.Update( 816, career, context, _ => 0 );
+		UpdateAt( advisor, 816, career, context, _ => 0 );
 		Assert.AreEqual( 645, advisor.TakePlayed().Single().Response, "the one-response cycle stays at variant 0" );
 		Assert.AreEqual( new ThemeParkIncAdviceHistory( 816, 0, true, 0, 2 ), career.AdviceHistory( Rain ) );
 		Assert.AreEqual( 1_000u, advisor.LastWindow, "no voice: the window is the 1000 ms the update adds" );
@@ -227,7 +238,7 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		var advisor = new ThemeParkIncAdvisor( Settings( minimum: 10_000 ), ThemeParkIncAdvisorTable.Shipped );
 		var idle = new ThemeParkIncAdviceContext( 0, false, false, 0, 0 );
 		Assert.IsTrue( advisor.Post( Heatwave, career, 0, idle ) );
-		advisor.Update( 1, career, idle, _ => 0 );
+		UpdateAt( advisor, 1, career, idle, _ => 0 );
 		Assert.AreEqual( 0, advisor.TakePlayed().Count, "the stored score must exceed the minimum" );
 		var flight = idle with { AnimationThing = 7, AnimationVariant = 0 };
 		Assert.AreEqual( -1, advisor.Score( Snow, flight ), "class 2 is not admitted during a flight" );
@@ -252,7 +263,7 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		var advisor = new ThemeParkIncAdvisor( Settings(), Patched( rule: rule, count: 3 ) ) { FromHelpButton = true };
 		career.SetAdviceHistory( Rain, new ThemeParkIncAdviceHistory( 0, last, false, 0, 0 ) );
 		Assert.IsTrue( advisor.PostScored( Rain, 100, career, 0 ) );
-		advisor.Update( 1, career, default, _ => 0 );
+		UpdateAt( advisor, 1, career, default, _ => 0 );
 		Assert.AreEqual( 645 + expected, advisor.TakePlayed().Single().Response );
 		Assert.AreEqual( expected, career.AdviceHistory( Rain ).Variant );
 	}
@@ -262,15 +273,57 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 	{
 		var career = Career();
 		var advisor = new ThemeParkIncAdvisor( Settings() with { PanelDelay = 3_000 }, ThemeParkIncAdvisorTable.Shipped );
-		advisor.PostDelayed( Rain, 0 );
-		advisor.Update( 12, career, default, _ => 0 );
+		advisor.PostDelayed( Rain );
+		UpdateAt( advisor, 12, career, default, _ => 0 );
 		Assert.IsTrue( advisor.DelayedFromPanel, "2976 ms of the 3000 have passed" );
-		advisor.Update( 13, career, default, _ => 0 );
+		UpdateAt( advisor, 13, career, default, _ => 0 );
 		Assert.IsFalse( advisor.DelayedFromPanel );
 		Assert.AreEqual( 0, advisor.TakePlayed().Count, "the posting tick plays nothing" );
 		Assert.AreEqual( Rain, advisor.Queue[0].Message );
-		advisor.Update( 14, career, default, _ => 0 );
+		UpdateAt( advisor, 14, career, default, _ => 0 );
 		Assert.AreEqual( Rain, advisor.TakePlayed().Single().Message );
+	}
+
+	[DataTestMethod]
+	[DataRow( 1.0, 248_000L )]
+	[DataRow( 2.0, 124_000L )]
+	[DataRow( 4.0, 62_000L )]
+	[DataRow( (double)0.7f, 354_286L )]
+	public void AWorldTickSpansTheRealTimeOfItsClockRate( double rate, long microseconds )
+	{
+		// the world ticks run on the rate-scaled park clock, the advisor's sub-clock on real milliseconds: a tick at rate r is 248 / r real ms
+		var advisor = new ThemeParkIncAdvisor( Settings(), ThemeParkIncAdvisorTable.Shipped );
+		advisor.AdvanceClock( rate );
+		advisor.AdvanceClock( rate );
+		Assert.AreEqual( 2 * microseconds, advisor.ClockMicroseconds );
+	}
+
+	[TestMethod]
+	public void TheSpeedDecidesHowManyTicksAWindowSpans()
+	{
+		var economy = ScienceEconomy();
+		economy.TpiSpeedRate = 2;
+		var clock = economy.TpiAdvisor!.ClockMicroseconds;
+		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 10 ) - economy.Tick );
+		Assert.AreEqual( clock + 10 * 124_000, economy.TpiAdvisor.ClockMicroseconds );
+	}
+
+	[TestMethod]
+	public void ASaveWithARecordWhoseScoreCannotBeComputedIsInvalid()
+	{
+		var table = ThemeParkIncAdvisorTable.Shipped;
+		var computed = table.Descriptors.First( row => row.ConstantScore == null ).Message;
+		var advisor = new ThemeParkIncAdvisor( Settings(), table );
+		var state = advisor.Capture();
+		var slots = new ThemeParkIncAdviceRecord[ThemeParkIncAdvisor.Slots];
+		slots[0] = Record( computed, 50 );
+		Assert.IsTrue( ThemeParkIncAdvisor.IsValid( state with { Slots = slots }, table ), "an explicit score needs no callback" );
+		slots[0] = slots[0] with { ExplicitScore = false };
+		Assert.IsFalse( ThemeParkIncAdvisor.IsValid( state with { Slots = slots }, table ), "the playback would score it again" );
+		Assert.IsFalse( ThemeParkIncAdvisor.IsValid( state with { StoredTutorial = slots[0] }, table ) );
+		Assert.IsFalse( ThemeParkIncAdvisor.IsValid( state with { DelayedFromPanel = true, DelayedMessage = computed }, table ) );
+		Assert.IsTrue( ThemeParkIncAdvisor.IsValid( state with { DelayedFromPanel = true, DelayedMessage = Rain }, table ) );
+		Assert.ThrowsException<InvalidDataException>( () => advisor.Restore( state with { Slots = slots } ) );
 	}
 
 	[TestMethod]
@@ -281,7 +334,7 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		var context = new ThemeParkIncAdviceContext( 0, false, false, 0, 0 );
 		Assert.IsTrue( advisor.Post( Rain, career, 0, context ) );
 		Assert.IsTrue( advisor.Post( RedMail, career, 0, context ) );
-		advisor.Update( 1, career, context, _ => 0 );
+		UpdateAt( advisor, 1, career, context, _ => 0 );
 		Assert.AreEqual( new ThemeParkIncAdvicePlay( RedMail, 749, 0, 0 ), advisor.TakePlayed().Single() );
 	}
 
@@ -333,10 +386,11 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		economy.TakeThemeParkIncAdvice();
 		Assert.IsTrue( economy.PostThemeParkIncAdvice( Rain ) );
 		var turn = economy.Turn;
+		var clock = economy.TpiAdvisor!.ClockMicroseconds;
 		economy.Advance( ParkCalendar.TickOfTurn( turn + 1 ) - economy.Tick );
 		Assert.AreEqual( new ThemeParkIncAdvicePlay( Rain, 645, 0, 0 ), economy.TakeThemeParkIncAdvice().Single() );
 		var advisor = economy.TpiAdvisor!;
-		Assert.AreEqual( ThemeParkIncAdvisor.Clock( turn + 1 ), advisor.LastStart );
+		Assert.AreEqual( (uint)((clock + 248_000) / 1000), advisor.LastStart, "a world tick at normal speed is 248 ms on the advisor clock" );
 		Assert.IsTrue( advisor.LastWindow > 2_000, $"the rain voice is longer than a second (window {advisor.LastWindow})" );
 		Assert.AreEqual( new ThemeParkIncAdviceHistory( (uint)(turn + 1), 0, true, 0, 1 ), economy.TpiCareer!.AdviceHistory( Rain ) );
 		Assert.IsFalse( economy.PostThemeParkIncAdvice( Rain ), "after one play group 0's second interval (300 world ticks >> 2) has not passed" );

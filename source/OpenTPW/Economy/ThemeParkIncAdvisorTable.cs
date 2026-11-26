@@ -38,8 +38,22 @@ public sealed class ThemeParkIncAdvisorTable
 	/// <summary>The first row of <paramref name="message"/>, or null (no row, or the no-message id).</summary>
 	public ThemeParkIncAdvisorDescriptor? Find( int message ) => message != NoMessage && first.TryGetValue( message, out var row ) ? row : null;
 
-	/// <summary>The table shipped with OpenTPW, loaded on first use.</summary>
-	public static ThemeParkIncAdvisorTable Shipped => shipped ??= Parse( File.ReadAllText( Path.Combine( AppContext.BaseDirectory, RelativePath ) ) );
+	/// <summary>The table shipped with OpenTPW, loaded on first use; empty (every message refused) when the file is missing or damaged.</summary>
+	public static ThemeParkIncAdvisorTable Shipped => shipped ??= LoadShipped();
+
+	private static ThemeParkIncAdvisorTable LoadShipped()
+	{
+		var path = Path.Combine( AppContext.BaseDirectory, RelativePath );
+		try
+		{
+			return Parse( File.ReadAllText( path ) );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"Theme Park Inc advisor descriptors unavailable ({path}): {exception.Message}" );
+			return new ThemeParkIncAdvisorTable( Array.Empty<ThemeParkIncAdvisorDescriptor>() );
+		}
+	}
 
 	public static ThemeParkIncAdvisorTable Parse( string text )
 	{

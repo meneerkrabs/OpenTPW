@@ -16,9 +16,9 @@ public readonly record struct ThemeParkIncAdvicePlay( int Message, int Response,
 /// </summary>
 public readonly record struct ThemeParkIncAdviceContext( int Mode, bool ObjectFlag2E, bool ObjectFlag2F, ushort AnimationThing, int AnimationVariant );
 
-/// <summary>The advisor's saved state (docs/reverse/TPI-ADVISOR.md §3): the eight slots in queue order, the stored tutorial record, the playback window on the advisor clock and the inputs.</summary>
+/// <summary>The advisor's saved state (docs/reverse/TPI-ADVISOR.md §6): the eight slots in queue order, the stored tutorial record, the playback window, the inputs and the advisor clock.</summary>
 public sealed record ThemeParkIncAdvisorSnapshot( ThemeParkIncAdviceRecord[] Slots, ThemeParkIncAdviceRecord StoredTutorial, uint LastStart, uint LastWindow, int Playing, bool SkipPlayback,
-	bool FromHelpButton, bool DelayedFromPanel, uint DelayStart, int DelayedMessage, bool TutorialOn, bool AdvisorPanelUp );
+	bool FromHelpButton, bool DelayedFromPanel, uint DelayStart, int DelayedMessage, bool TutorialOn, bool AdvisorPanelUp, long ClockMicroseconds );
 
 /// <summary>
 /// Theme Park Inc's advisor thing (model 11, built by the new-world init at <c>0x64836F</c>): the queue of eight advice records, the acceptance of a new record, the replacement on a full
@@ -76,13 +76,22 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 	// partial scan would change which row wins and with it the draws, so the intake stays off
 	public static bool ConditionScan => false;
 
-	/// <summary>
-	/// The advisor clock at <paramref name="turn"/>: the world ticks times the tick's real length at normal speed.
-	/// </summary>
-	// [EXT:tpi-advisor-tick-clock] (user decision D-1, 2026-11-25) the original times the playback window, the window help delay and the cancel's playing test on the park clock's sub-clock
-	// (0x41B780, real milliseconds, frozen while paused); OpenTPW derives that clock from the world ticks, 248 ms each, so a pause freezes it and a replay, a load and a co-op peer see the
-	// same windows. At a game speed other than normal the window spans the ticks of normal speed
-	public static uint Clock( long turn ) => unchecked( (uint)(turn * ParkCalendar.TurnMilliseconds) );
+	/// <summary>The advisor clock in microseconds: the real time of the world ticks so far (<see cref="AdvanceClock"/>).</summary>
+	public long ClockMicroseconds { get; private set; }
+
+	/// <summary>The advisor clock in milliseconds, as the original's 32-bit clock reads.</summary>
+	public uint Now => unchecked( (uint)(ClockMicroseconds / 1000) );
+
+	/// <summary>The real time one world tick takes at the park clock's <paramref name="rate"/>, in microseconds.</summary>
+	public static long TickMicroseconds( double rate ) => (long)Math.Round( ParkCalendar.TurnMilliseconds * 1000.0 / rate, MidpointRounding.ToEven );
+
+	/// <summary>Moves the advisor clock on by one world tick at the park clock's <paramref name="rate"/> (1 at normal speed).</summary>
+	// [EXT:tpi-advisor-tick-clock] (user decision D-1, 2026-11-25) the original times the playback window and the cancel's playing test on the park clock's sub-clock (0x41B780 -> +0x50,
+	// 0x41BD10 -> 0x41BB50 -> 0x41BA20: the raw millisecond deltas without the rate, minus the paused time), while the world ticks run on the rate-scaled main clock (0x6A5B4F -> 0x41B760 ->
+	// 0x41BDE0 -> 0x41C150: delta × rate +0x20), one per eight 31 ms substeps (0x6A5B92, 0x6A5C18). So a tick spans 248 / rate real milliseconds: the advisor clock advances by that per world
+	// tick, not with the frames, so a pause freezes it and a replay, a load and a co-op peer see the same windows. The original's frames (its three-ticks-a-frame cap and 2000 ms backlog cut,
+	// 0x6A5B65) do not enter it
+	public void AdvanceClock( double rate ) => ClockMicroseconds = unchecked( ClockMicroseconds + TickMicroseconds( rate ) );
 
 	/// <summary>The score of <paramref name="message"/> in the context (<c>0x71B7E0</c>): -1 for no row, the no-message id, or a class the context does not admit.</summary>
 	// [BIN:TPI-EXE:0x71B7E0 advice score] the first row of the message, the class check 0x71BDC0, then the row's callback with this = scorer + row+0x14 (0 in every row)
@@ -218,7 +227,7 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 	/// </summary>
 	// [BIN:TPI-EXE:0x718990 advice cancel] a stored tutorial record of the message is dropped (+0x100 = 0); every valid slot of the message is cleared; when the advisor clock is still inside
 	// the window and +0x108 is the message: the speech stops (0x716950), the history's played byte is cleared, its slaps (+0xC) raised and the window (+0xE8) set to 0
-	public bool Cancel( int message, ThemeParkIncCareer career, long turn, out bool stopped )
+	public bool Cancel( int message, ThemeParkIncCareer career, out bool stopped )
 	{
 		var cancelled = false;
 		stopped = false;
@@ -232,7 +241,7 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 				cancelled = true;
 			}
 		}
-		var playing = Clock( turn ) < unchecked( LastStart + LastWindow ) ? Playing : ThemeParkIncAdvisorTable.NoMessage;
+		var playing = Now < unchecked( LastStart + LastWindow ) ? Playing : ThemeParkIncAdvisorTable.NoMessage;
 		if ( playing != message )
 			return cancelled;
 		var history = career.AdviceHistory( message );
@@ -243,9 +252,11 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 	}
 
 	/// <summary>Asks for a window's help message after the panel delay (the fields <c>0x503AD0</c> sets), which the update posts once the delay has passed.</summary>
-	public void PostDelayed( int message, long turn )
+	// [BIN:TPI-EXE:0x503B05 window help delay] the delay's start is GetTickCount (import 0xC6900C), the wall clock, and the update tests it with GetTickCount too (0x7181D2), so it runs on while the
+	// game is paused. [EXT:tpi-advisor-tick-clock] (D-2: window state is simulation input) OpenTPW measures it on the advisor clock, which freezes while the park is paused
+	public void PostDelayed( int message )
 	{
-		(DelayedFromPanel, DelayStart, DelayedMessage) = (true, Clock( turn ), message);
+		(DelayedFromPanel, DelayStart, DelayedMessage) = (true, Now, message);
 	}
 
 	/// <summary>The advice played since the last call, oldest first.</summary>
@@ -260,12 +271,12 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 	/// The advisor thing's update (<c>0x718190</c>), once per world tick: a due delayed message is posted (and nothing else runs), else the intake, then the playback when the window has
 	/// passed. <paramref name="speech"/> is the speech's duration for a response, 0 when it has none.
 	/// </summary>
-	// [BIN:TPI-EXE:0x718190 advisor update] +0x10D: before UIPanelDelay (0xC65244, unsigned compare) has passed the update goes to the playback; after it, +0x10D = 0, the message is posted with
+	// [BIN:TPI-EXE:0x718190 advisor update] +0x10D: before UIPanelDelay (0xC65244, unsigned compare against GetTickCount, see PostDelayed) has passed the update goes to the playback; after it, +0x10D = 0, the message is posted with
 	// its descriptor score and the update returns. Else the intake (0x718227) unless the animation word (0x5D0820) or the game object's +0x2F is set. The playback (0x71830E): the advisor clock
 	// below start + window returns; +0x104 set is cleared and returns; the selected slot's score (an invalid slot -1) must exceed MinScoreForConsideration
 	public void Update( long turn, ThemeParkIncCareer career, ThemeParkIncAdviceContext context, Func<int, uint> speech )
 	{
-		var now = Clock( turn );
+		var now = Now;
 		if ( DelayedFromPanel )
 		{
 			if ( unchecked( now - DelayStart ) >= unchecked( (uint)settings.PanelDelay ) )
@@ -324,7 +335,8 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 
 	// [BIN:TPI-EXE:0x71A9F0 default-score playback] the slot is consumed (+0x14 = 0), the descriptor scores again (0x71B870, which also writes the locate words) and a score below the minimum
 	// fails; nonzero locate words replace the record's; the response is the base plus a variant below the count, else the base; 0x3F6 fails with no duration; the help button's message records
-	// its response (0x9DDBE8) else 0x3F6 is stored; the speech (0x716230) gives the duration; the group gate timer is reset (0x73D3F0, P3); a tag that is not 0x97 is broadcast (kind 0x18)
+	// its response (0x9DDBE8) else 0x3F6 is stored; the speech (0x716230) gives the duration; the group gate timer is reset (0x73D3F0, P3); a tag that is not 0x97 is broadcast (kind 0x18).
+	// The locate words the second score writes (0x71AA9E-0x71AAB3) are not modelled: the constant callbacks posted so far write none, and the callbacks that do come with P3 and P4
 	private uint? PlayDefault( int index, int variant, ThemeParkIncAdviceContext context, Func<int, uint> speech )
 	{
 		var slot = slots[index];
@@ -356,14 +368,17 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 	}
 
 	public ThemeParkIncAdvisorSnapshot Capture() => new( (ThemeParkIncAdviceRecord[])slots.Clone(), StoredTutorial, LastStart, LastWindow, Playing, SkipPlayback, FromHelpButton,
-		DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp );
+		DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp, ClockMicroseconds );
 
-	/// <summary>Whether a snapshot can come from this model: eight slots whose valid records name a message of the table.</summary>
+	/// <summary>
+	/// Whether a snapshot can come from this model: eight slots whose valid records name a message of the table, and every record that takes its descriptor's score (and a delayed message,
+	/// which does) on a message whose score callback OpenTPW runs, so the update never meets a callback it cannot run.
+	/// </summary>
 	public static bool IsValid( ThemeParkIncAdvisorSnapshot? state, ThemeParkIncAdvisorTable table ) =>
-		state is { Slots.Length: Slots }
-		&& state.Slots.All( slot => !slot.Valid || table.Find( slot.Message ) != null )
+		state is { Slots.Length: Slots, ClockMicroseconds: >= 0 }
+		&& state.Slots.Append( state.StoredTutorial ).All( slot => !slot.Valid || table.Find( slot.Message ) is { } row && (slot.ExplicitScore || row.ConstantScore != null) )
 		&& (state.Playing == ThemeParkIncAdvisorTable.NoMessage || table.Find( state.Playing ) != null)
-		&& (!state.DelayedFromPanel || table.Find( state.DelayedMessage ) != null);
+		&& (!state.DelayedFromPanel || table.Find( state.DelayedMessage )?.ConstantScore != null);
 
 	public void Restore( ThemeParkIncAdvisorSnapshot state )
 	{
@@ -372,8 +387,8 @@ public sealed class ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings settings, T
 		state.Slots.CopyTo( slots, 0 );
 		(StoredTutorial, LastStart, LastWindow, Playing, SkipPlayback, FromHelpButton) =
 			(state.StoredTutorial, state.LastStart, state.LastWindow, state.Playing, state.SkipPlayback, state.FromHelpButton);
-		(DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp) =
-			(state.DelayedFromPanel, state.DelayStart, state.DelayedMessage, state.TutorialOn, state.AdvisorPanelUp);
+		(DelayedFromPanel, DelayStart, DelayedMessage, TutorialOn, AdvisorPanelUp, ClockMicroseconds) =
+			(state.DelayedFromPanel, state.DelayStart, state.DelayedMessage, state.TutorialOn, state.AdvisorPanelUp, state.ClockMicroseconds);
 		// the help button's words are statics of the executable, which a load in a new process starts from their initial values (D-5)
 		(HelpMessage, HelpResponse) = (ThemeParkIncAdvisorTable.NoMessage, NoResponse);
 		played.Clear();

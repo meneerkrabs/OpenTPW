@@ -103,6 +103,9 @@ internal sealed partial class GameFlow
 		// [BIN:TPI-EXE:0x5D053C flight clock] a camera flight sets the park clock's rate to its mode's (1.0, 0.7 in mode 1) until its end restores the speed word's rate; 0x41C000 writes the rate (+0x20)
 		// only, and the pause is the clock's own flag (+0x30, 0x41BBF0), so a paused park stays paused under a flight until the pause key (reachable during the flight, ThemeParkIncHud.UpdateFlight) resumes it
 		level.SimulationTimeScale = ThemeParkIncTimeScale( level.Park?.Economy.TpiCutscene?.ClockRate, hud.Speed, hud.TimeScale );
+		// the advisor clock's rate is the player's speed while the park runs (a pause runs no world tick, so it keeps the last one)
+		if ( level.Park?.Economy is { } rated && hud.Speed != GameSpeed.Paused )
+			rated.TpiSpeedRate = GameSpeedScale.Of( hud.Speed );
 		level.Update();
 		GameAudio.Update( level.Guests?.GetStatistics().InPark ?? 0 );
 		if ( level.Park?.Economy.TpiWeather is { } weather )

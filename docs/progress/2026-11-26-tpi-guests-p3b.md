@@ -11,7 +11,8 @@ Inc and Theme Park World behave exactly as before. [TPI-GUESTS.md](../reverse/TP
 - **The exit (`0x619980`) and the use routine (`0x6118D0`)**: the used history, the visit counts, the fee recorded at the call (`+0x1B4`) and paid at the exit (`0x6126D0`), the
   customer, the fatigue, a scripted result, and the outcome `0x612740`: the excitement match, the type's effects, a shop's own terms, the small portions, the special ingredient, a balloon,
   a costume or an umbrella from a shop, a relief object's visit, a won play's gain, the mood with its thought and animation, and the perception records.
-- **Being unloaded (state 19, `0x618380`)**: the walk off, the old major destination (and the photo booth's, unreachable without add-ons), and the mood or shrug animation.
+- **Being unloaded (state 19, `0x618380`)**: the walk off, the old major destination (and the photo booth's, unreachable without add-ons), and the mood or shrug animation. The sprite placement that the entry calls for a teleporting ride (`0x61A70B`) also raises the
+  stamp counter; that raise joins with Theme Park Inc's navigator and its counter of the simulation's calls (NV3).
 - **The removal message** now gives a rider its model back (`0x60D120`, state 20), and **the balloon prank** (state 6's case 5) bursts the balloon of a guest on the prankster's cell.
 
 Labels:

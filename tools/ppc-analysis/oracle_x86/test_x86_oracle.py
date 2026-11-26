@@ -1388,6 +1388,29 @@ class WalkReadingCoverage(unittest.TestCase):
         for record in records[:200]:
             self.assertEqual(layout.record_of_object(lambda o, n: layout.object_of_record(record, bytes(0xBC))[o:o + n]), record)
 
+    def test_tpi_person_inputs_reach_every_branch(self):
+        """NV3's walks arrive, walk and get stuck and queue the walk, run and carry templates; the route requests meet marks above the counter,
+        held and free marks, and persons on queue cells with links behind them."""
+        step = targets.TPI_STEP_TARGET
+        traces = [targets.tpi_step_plan(x) for x in step.inputs(__import__('x86_harness').seeded('oracle-v1:' + step.key), DEFAULT_COUNT)]
+        entries = [entry for trace in traces for entry in trace if entry[0] == 'step']
+        self.assertEqual({entry[1] for entry in entries}, {0, 1, 2})
+        self.assertEqual({entry[6] for entry in entries if entry[1] == 1} - {targets.STEP_SENTINEL}, {1, 2, 0x1F})
+        route = targets.TPI_ROUTE_TARGET
+        layout = __import__('walk_reading')
+        kinds = set()
+        for x in route.inputs(__import__('x86_harness').seeded('oracle-v1:' + route.key), DEFAULT_COUNT):
+            walk, mark = targets.tpi_person_walk(x), x['person']['mark']
+            cell = ((x['walk']['x'] >> 16) & 0xFF, (x['walk']['y'] >> 16) & 0xFF)
+            if mark > x['counter']:
+                kinds.add('future')
+            elif mark:
+                behind = {int(a): b for a, b in x['behind']}
+                kinds.add('held' if layout.stranded_holds(walk.m, walk.stamps, cell, mark, behind) else 'free')
+                if walk.m.t(*cell) in (3, 9) and behind:
+                    kinds.add('queue')
+        self.assertEqual(kinds, {'future', 'held', 'free', 'queue'})
+
     def test_tpi_inputs_reach_every_rule_and_both_search_outcomes(self):
         """The Theme Park Inc maps carry obstacle walkways, holes and unowned land, use masks 0 and 1 only, and their searches both
         succeed and fail."""

@@ -82,7 +82,7 @@ public class ThemeParkIncWanderTests
 	];
 
 	/// <summary>The navigator tests' map with every path and queue cell linked to its path and queue neighbours only, the counter and the block stamps given.</summary>
-	private static ParkCellMap Map( int counter, (int Bx, int By, int Stamp)[]? stamps = null )
+	internal static ParkCellMap Map( int counter, (int Bx, int By, int Stamp)[]? stamps = null )
 	{
 		var map = ThemeParkIncNavigatorTests.Map();
 		for ( var y = 0; y < 128; y++ )

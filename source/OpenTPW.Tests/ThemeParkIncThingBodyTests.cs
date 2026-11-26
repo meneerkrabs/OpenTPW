@@ -34,7 +34,7 @@ public class ThemeParkIncThingBodyTests
 	private static byte Pattern( int index ) => (byte)(0x21 + index % 90);
 
 	/// <summary>A body written from the layout: patterned bytes in every field and ring, with the given entry counts for the rings in the order the layout reads them.</summary>
-	private static byte[] Body( ThemeParkIncThingModel model, params int[] ringCounts )
+	internal static byte[] Body( ThemeParkIncThingModel model, params int[] ringCounts )
 	{
 		var layout = ThemeParkIncBodyLayout.For( model )!;
 		var output = new List<byte>();
@@ -463,7 +463,7 @@ public class ThemeParkIncThingBodyTests
 
 	private static byte[]? prebuilt;
 
-	private static byte[] Prebuilt()
+	internal static byte[] Prebuilt()
 	{
 		if ( prebuilt != null )
 			return (byte[])prebuilt.Clone();
@@ -476,10 +476,10 @@ public class ThemeParkIncThingBodyTests
 		return (byte[])prebuilt.Clone();
 	}
 
-	private static ThemeParkIncSaveWorld World( byte[] payload ) => ThemeParkIncSaveWorld.Parse( payload, SavePayloadLayout.ParseThemeParkInc( payload ), 128, 128 );
+	internal static ThemeParkIncSaveWorld World( byte[] payload ) => ThemeParkIncSaveWorld.Parse( payload, SavePayloadLayout.ParseThemeParkInc( payload ), 128, 128 );
 
 	/// <summary>The prebuilt with <paramref name="things"/> appended to its used-thing list (before ENOD), the old last thing linked to the first new one.</summary>
-	private static byte[] WithThings( byte[] payload, params (int Id, ThemeParkIncThingModel Model, byte[] Body)[] things )
+	internal static byte[] WithThings( byte[] payload, params (int Id, ThemeParkIncThingModel Model, byte[] Body)[] things )
 	{
 		var world = World( payload );
 		var last = world.Things[^1];

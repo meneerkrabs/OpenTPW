@@ -237,6 +237,11 @@ EXPECTED = {
     # member's final route a guest's, the fallback's route to the cell and thought 0x16) differ on 86 of the 200 persons.
     ('tpi-exe-wander', 'plan'): AGREE,
     ('tpi-exe-wander', 'tpw-wander-rules'): (86, (20, (120, 113, 8, 15))),
+    # NV5: Game.exe's person serializer 0x609170. Its load and save halves give a 396-byte block back byte for byte (walk_reading.PERSON_LAYOUT, the
+    # layout of ThemeParkIncPersonRecord), each ending with the re-route 0x609b55 to mAccurateDestX/Y; with the re-route run, the load semantics
+    # (the members verbatim, then 0x60b8e0 with the counter as it stands, a fresh process's 0 included) and the save's re-route agree with walk_reading.py.
+    ('tpi-exe-person-record', 'plan'): AGREE,
+    ('tpi-exe-person-reroute', 'plan'): AGREE,
 }
 
 BASE = 0x400000
@@ -1694,6 +1699,23 @@ class OracleTpi(CoastTests, unittest.TestCase):
         starts = {(x['walk']['x'] >> 16, x['walk']['y'] >> 16) for x in inputs}
         self.assertTrue(any(not any(l[0] == x['walk']['x'] >> 16 and l[1] == x['walk']['y'] >> 16 and l[2] & 0x55 for l in x['links']) for x in inputs), 'a start without links')
         self.assertGreater(len(starts), 100)
+
+    # ------------------------------------------------------------------ NV5: the person serializer and its re-route
+    def test_person_serializer_and_reroute_agree(self):
+        self.check(('tpi-exe-person-record', 'plan'))
+        self.check(('tpi-exe-person-reroute', 'plan'))
+
+    def test_person_reroute_inputs_reach_every_branch(self):
+        """The re-route's inputs reach a fresh process (counter 0, no stamps) and a running one, a held mark, a mark cleared by the counter, a re-route
+        that finds a way and one that does not."""
+        inputs = targets.tpi_person_reroute_inputs(__import__('x86_harness').seeded('oracle-v1:tpi-exe-person-reroute'), 200)
+        plans = [(x, targets.tpi_person_reroute_plan(x)) for x in inputs]
+        self.assertTrue(any(x['fresh'] for x in inputs) and any(not x['fresh'] for x in inputs))
+        mark = lambda x: targets.walk_reading.person_field(bytes(x['block']), 'mStrandedTime')
+        self.assertTrue(any(mark(x) and plan[2][1] == mark(x) for x, plan in plans), 'a held mark')
+        self.assertTrue(any(mark(x) and plan[2][1] == 0 for x, plan in plans), 'a mark cleared')
+        self.assertTrue(any(plan[2][4][44] == 1 for _, plan in plans), 'a re-route that finds no way (mCantReachDest)')
+        self.assertTrue(any(plan[2][4][44] == 0 and plan[2][4][60] == 0 for _, plan in plans), 'a re-route that sets a walk up')
 
     def test_navigator_root_rounds_to_a_single(self):
         self.check(('tpi-exe-navigator-root', 'plan'))

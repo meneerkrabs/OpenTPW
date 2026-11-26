@@ -200,9 +200,27 @@ internal static class ThemeParkIncNativeWalk
 		return ReRoute( grid, walker );
 	}
 
-	/// <summary>The walk members of <paramref name="record"/> on the walker, without the re-route.</summary>
+	/// <summary>
+	/// Why <paramref name="record"/>'s walk members cannot be a walker's, or null: a navigator record OpenTPW's walk cannot hold (<see cref="GuestNavigation.RecordProblem"/>), cell bytes other than the
+	/// navigator's position &gt;&gt; 8 (the chain update <c>0x637B70</c> writes them with every position; OpenTPW derives them), or a wander flag other than 0 or 1 (the only values the game stores).
+	/// </summary>
+	internal static string? Problem( ThemeParkIncPersonRecord record )
+	{
+		var navigator = SaveNavigation.Read( record.Navigator );
+		if ( GuestNavigation.RecordProblem( navigator ) is { } problem )
+			return problem;
+		if ( record.X != unchecked( (ushort)(navigator.Pos.X.Raw >> 8) ) || record.Y != unchecked( (ushort)(navigator.Pos.Y.Raw >> 8) ) )
+			return $"the cell bytes ({record.X:X4}, {record.Y:X4}) are not the navigator's position";
+		if ( record.SetDestSuccessfully > 1 )
+			return $"the wander flag {record.SetDestSuccessfully} is not 0 or 1";
+		return null;
+	}
+
+	/// <summary>The walk members of <paramref name="record"/> on the walker, without the re-route; <see cref="Problem"/> must accept the record.</summary>
 	internal static void Apply( IThemeParkIncWalker walker, ThemeParkIncPersonRecord record )
 	{
+		if ( Problem( record ) is { } problem )
+			throw new InvalidDataException( $"The Theme Park Inc person block cannot be a walker's: {problem}." );
 		var walk = walker.Walk;
 		walk.RestoreNativeRecord( record.Navigator );
 		walker.AccurateDestX = record.AccurateDestX;

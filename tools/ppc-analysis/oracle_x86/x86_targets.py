@@ -3644,7 +3644,9 @@ TPI_SOURCE = 0x5150             # the sprite source handle the inputs give the p
 TPI_PERSON_RANGES = TPI_NAV_RANGES + [
     (0x60B460, 0x60B657), (0x60BC90, 0x60BD48), (0x60B7F0, 0x60B8A2), (0x60B8E0, 0x60B96C), (0x60BB50, 0x60BC4B), (0x62EB10, 0x62EBF2),
     (0x91E074, 0x91E1B4), (0x5D3B20, 0x5D3B2F), (0x5D0F90, 0x5D0F9A), (0x5D10F0, 0x5D1122), (0x5D1080, 0x5D10CC), (0x5D8260, 0x5D828C),
-    (0x64FA30, 0x64FA37), (0x67F6D0, 0x67F6DB)]
+    (0x64FA30, 0x64FA37), (0x67F6D0, 0x67F6DB), (0x60BA80, 0x60BAFC)]
+TPI_STRANDED_PAIRS_INIT = 0x60BA80   # the static initialiser of the stranded test's nine offset pairs 0xaa0060 (BSS: zero until it runs)
+TPI_ATEXIT = 0x86FA6D             # cdecl (function): the initialiser's atexit registration; stubbed
 STEP_SENTINEL = 0x7777          # +0x20 (the pending template), +0x24 (the pending interval) and +0x2c (the heading) before each step
 
 
@@ -3672,7 +3674,7 @@ def tpi_person_stubs(target: Target) -> dict:
         sb.write(out, 'H', sb.person_log['behind'].get(word, 0))
         return out, 0
     return {TPI_NAV_NEIGHBOURS: walk_debug_stub, TPI_CHAIN: chain, TPI_RESTART: restart, TPI_QUEUE_BEHIND: behind,
-            TPI_SPRITE_RUN: lambda sb: sprite(sb, 'run'), TPI_SPRITE_INTERVAL: lambda sb: sprite(sb, 'interval')}
+            TPI_SPRITE_RUN: lambda sb: sprite(sb, 'run'), TPI_SPRITE_INTERVAL: lambda sb: sprite(sb, 'interval'), TPI_ATEXIT: lambda sb: (0, 0)}
 
 
 def tpi_person_world(sb: Sandbox, x: dict) -> int:
@@ -3684,6 +3686,8 @@ def tpi_person_world(sb: Sandbox, x: dict) -> int:
     sb.write(base + 0x1EAB44, 'I', x.get('closed', 0))
     for bx, by, value in x.get('stamps', []):
         sb.write(base + 0x460 + 0x1C0000 + (by * 33 + bx) * 4, 'I', value)
+    # the stranded test's nine offset pairs (0xaa0060) as the game's static initialiser leaves them before any person exists
+    sb.call(TPI_STRANDED_PAIRS_INIT)
     tpi_nav_behaviours(sb)
     sb.person_log = {'asked': [], 'answers': x.get('restarts', [0]), 'calls': 0, 'sprite': [],
                      'behind': {int(k): v for k, v in x.get('behind', [])}}
@@ -4186,8 +4190,177 @@ TPI_WANDER_TARGET = Target(
            'and the navigator\'s record. Run at the control word 0x7f.'],
     budget=600_000_000)
 
+# ------------------------------------------------------------------------------ NV5: the person serializer 0x609170 and its re-route 0x609b55
+# Game.exe's person serializer (TPI-NAVIGATOR.md, NV5): the thing base 0x637230, the sprite 0x5d0cd0, the person words, the navigator 0x63ad30, the
+# trailing words (mSpriteID taken modulo the sprite count 0x6902d0 on load), the thought object 0x638490, then the re-route 0x609b55: the route
+# request 0x60b8e0 to mAccurateDestX/Y (+0x28 / +0x2a). Mode 0 loads, mode 1 saves (version 1, the stream's read 0x7cc930 and write 0x7cc960 stubbed
+# over a byte string as for the navigator's record).
+TPI_PERSON_SERIALIZER = 0x609170  # thiscall person (stream, mode, version, extra), ret 0x10: 0, or 1 on a failed transfer
+TPI_PERSON_REROUTE_THUNK = 0x403DAF   # the serializer's call to 0x60b8e0 goes through this jmp thunk (0x609b61)
+TPI_SPRITE_COUNT = 0x6902D0      # cdecl (mESPSprite) -> the sprite count the load takes mSpriteID modulo; stubbed
+TPI_PERSON_SPRITES = 1000        # the stub's count; the inputs' mSpriteID stay below it, so a load keeps it
+TPI_PERSON_SERIALIZER_RANGES = TPI_NAV_SERIALIZER_RANGES + [
+    (0x609170, 0x609B90), (0x637230, 0x637500), (0x5D0CD0, 0x5D0F00), (0x638490, 0x638810), (0x5C1E50, 0x5C1EB0), (0x5C1340, 0x5C13C0),
+    (0x60C310, 0x60C370), (0x4463E0, 0x446440), (0x4D15A0, 0x4D15A1)]
+
+
+def tpi_person_record_stubs(target: Target) -> dict:
+    """The navigator record's stream and name log, the sprite count; the round trip also stubs the re-route at its thunk (logging its words)."""
+    stubs = tpi_nav_record_stubs(target)
+
+    def count(sb: Sandbox):
+        sb.person_sprite_counts.append(sb.arg(0))
+        return TPI_PERSON_SPRITES, 0
+    stubs[TPI_SPRITE_COUNT] = count
+    return stubs
+
+
+def tpi_person_reroute_stubs(target: Target) -> dict:
+    """The record stubs and the person routines' (the queue walk 0x5e0a50 from the input's links, the neighbour query empty)."""
+    stubs = tpi_person_stubs(target)
+    stubs.update(tpi_person_record_stubs(target))
+    return stubs
+
+
+def tpi_person_roundtrip_stubs(target: Target) -> dict:
+    stubs = tpi_person_record_stubs(target)
+
+    def reroute(sb: Sandbox):
+        sb.person_reroutes.append((sb.arg(0) & 0xFFFF, sb.arg(1) & 0xFFFF))
+        return 1, 8
+    stubs[TPI_PERSON_REROUTE_THUNK] = reroute
+    return stubs
+
+
+def tpi_person_serialize(sb: Sandbox, person: int, mode: int, block: bytes = b'') -> tuple:
+    """One half of 0x609170 on `person`: its answer and, for the save, the bytes written; for the load, the bytes consumed."""
+    sb.navigator_stream = {'bytes': block, 'at': 0, 'sizes': []}
+    answer = sb.call(TPI_PERSON_SERIALIZER, args=(0x10000, mode, 1, 0), this=person).eax
+    stream = sb.navigator_stream
+    return answer, (stream['bytes'] if mode == 1 else stream['at']), tuple(stream['sizes'])
+
+
+def tpi_person_roundtrip_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """The load half of x's block into a zero-filled person, then the save half of that person: the answers, the bytes consumed, the transfer
+    sizes, the re-route's words after each half (stubbed) and the bytes written."""
+    sb.set_fpcw(TPI_X87_CONTROL_WORD)
+    sb.person_sprite_counts, sb.person_reroutes = [], []
+    person = sb.object(TPI_PERSON_SIZE)
+    loaded, consumed, read_sizes = tpi_person_serialize(sb, person, 0, bytes(x['block']))
+    after_load = tuple(sb.person_reroutes)
+    saved, written, write_sizes = tpi_person_serialize(sb, person, 1)
+    return loaded, consumed, read_sizes == write_sizes, after_load, saved, tuple(sb.person_reroutes[len(after_load):]), written
+
+
+def tpi_person_roundtrip_plan(x: dict) -> tuple:
+    """The block is the members in walk_reading.PERSON_LAYOUT's order, read and written alike; each half ends with the re-route to the block's words."""
+    block = bytes(x['block'])
+    words = (walk_reading.person_field(block, 'mAccurateDestX'), walk_reading.person_field(block, 'mAccurateDestY'))
+    return 0, walk_reading.PERSON_BYTES, True, (words,), 0, (words,), block
+
+
+def tpi_person_block(rng: random.Random, walk_record: bytes | None = None, words: dict | None = None) -> bytes:
+    """A person block of random bytes (mSpriteID below the stub's sprite count), with an optional navigator record and person words."""
+    block = bytearray(rng.randrange(256) for _ in range(walk_reading.PERSON_BYTES))
+    at = 0
+    for name, _, size in walk_reading.PERSON_LAYOUT:
+        if name == 'mSpriteID':
+            block[at:at + 4] = rng.randrange(TPI_PERSON_SPRITES).to_bytes(4, 'little')
+        elif name == 'navigator' and walk_record is not None:
+            block[at:at + size] = walk_record
+        elif words and name in words:
+            block[at:at + size] = (words[name] & ((1 << (8 * size)) - 1)).to_bytes(size, 'little')
+        at += size
+    return bytes(block)
+
+
+def tpi_person_roundtrip_inputs(rng: random.Random, n: int) -> list:
+    return [{'block': list(tpi_person_block(rng))} for _ in range(n)]
+
+
+def tpi_person_reroute_input(rng: random.Random) -> dict:
+    """A route-request map with a counter and block stamps, and a person block whose navigator is a walk of walk_reading.py's on it (set up to a
+    point and stepped), its cell bytes the position >> 8, its accurate destination that point or another, its mark of each kind."""
+    x = tpi_route_input(rng)
+    walk = tpi_person_walk(x)
+    walk.counter = x['counter']
+    xw, yw = tpi_route_words(rng, x)
+    walk.setup(walk_reading.s32(((xw - 0x10000) if xw & 0x8000 else xw) << 8), walk_reading.s32(((yw - 0x10000) if yw & 0x8000 else yw) << 8), False)
+    for _ in range(rng.randrange(0, 12)):
+        walk.step()
+    if rng.random() < 0.3:
+        xw, yw = tpi_route_words(rng, x)
+    counter = x['counter']
+    mark = rng.choice([0, 0, counter + rng.randrange(1, 50), rng.randrange(1, counter + 1)])
+    words = {'mX': (walk.x >> 8) & 0xFFFF, 'mY': (walk.y >> 8) & 0xFFFF, 'mAccurateDestX': xw, 'mAccurateDestY': yw, 'mStrandedTime': mark,
+             'mSetDestSuccessfully': rng.randrange(2), 'mPreviousX': walk.x - walk.vx, 'mPreviousY': walk.y - walk.vy}
+    x['block'] = list(tpi_person_block(rng, walk.record(), words))
+    x['fresh'] = rng.random() < 0.5
+    if x['fresh']:
+        x['counter'] = 0
+        x['stamps'] = []
+    del x['paths'], x['paths_inner']
+    return x
+
+
+def tpi_person_reroute_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """The load half of x's block (the re-route runs: 0x60b8e0 on the map), then the save half of the loaded person (its re-route runs again): after
+    each the counter, the mark +0x1b0, the words +0x28 / +0x2a and the navigator's record; and the bytes the save wrote."""
+    sb.set_fpcw(TPI_X87_CONTROL_WORD)
+    tpi_person_world(sb, x)
+    sb.person_sprite_counts = []
+    person = sb.object(TPI_PERSON_SIZE)
+    loaded, consumed, _ = tpi_person_serialize(sb, person, 0, bytes(x['block']))
+
+    def state():
+        return (sb.read(TPI_NAV_COUNTER, 'I'), sb.read(person + 0x1B0, 'I'), sb.read(person + 0x28, 'H'), sb.read(person + 0x2A, 'H'),
+                navigator_record(sb, person + TPI_PERSON_NAV))
+    after_load = state()
+    saved, written, _ = tpi_person_serialize(sb, person, 1)
+    return loaded, consumed, after_load, saved, written, state()
+
+
+def tpi_person_reroute_plan(x: dict) -> tuple:
+    """walk_reading.person_load (the load semantics: the members verbatim, then 0x60b8e0 to the words with the counter as it stands); the save
+    half writes the loaded person's members (its navigator and mark as the load's re-route left them) and re-routes once more."""
+    block = bytes(x['block'])
+    stamps = {(bx, by): v for bx, by, v in x.get('stamps', [])}
+    _, person, walk = walk_reading.person_load(tpi_walk_map_reading(x), stamps, x.get('counter', 0), block, {int(a): b for a, b in x['behind']})
+    words = person.words
+    after_load = (walk.counter, person.mark, words[0], words[1], walk.record())
+    written = walk_reading.person_block(block, walk, {'mStrandedTime': person.mark})
+    person.route_point(*words)
+    return 0, walk_reading.PERSON_BYTES, after_load, 0, written, (walk.counter, person.mark, words[0], words[1], walk.record())
+
+
+def tpi_person_reroute_inputs(rng: random.Random, n: int) -> list:
+    return [tpi_person_reroute_input(rng) for _ in range(min(n, TPI_ROUTE_INPUTS))]
+
+
+TPI_PERSON_RECORD_TARGET = Target(
+    'tpi-exe-person-record', 'tpi', 'Game.exe person serializer 0x609170 (load then save, the re-route stubbed)',
+    'ThemeParkIncPersonRecord.Read / Write (TPI-NAVIGATOR.md, NV5; T4)',
+    TPI_PERSON_SERIALIZER, TPI_PERSON_SERIALIZER_RANGES, tpi_person_roundtrip_stubs, tpi_person_roundtrip_binary, tpi_person_roundtrip_plan,
+    tpi_person_roundtrip_inputs,
+    notes=['A 396-byte block of random bytes (mSpriteID below the stubbed sprite count 0x6902d0) is loaded (mode 0, version 1) into a zero-filled '
+           'person and the person saved again (mode 1): every byte is consumed, the read and write transfers have the same sizes, and the save '
+           'writes the block back. The re-route 0x60b8e0 is stubbed at the thunk 0x403daf the serializer calls and logs its words: '
+           'mAccurateDestX/Y after each half.'],
+    budget=2_000_000)
+TPI_PERSON_REROUTE_TARGET = Target(
+    'tpi-exe-person-reroute', 'tpi', 'Game.exe person serializer 0x609170 with its re-route 0x609b55 after the load and after the save',
+    'ThemeParkIncNativeWalk.Load / SaveAndReRoute (TPI-NAVIGATOR.md, NV5; T2\'s load semantics)',
+    TPI_PERSON_SERIALIZER, TPI_PERSON_SERIALIZER_RANGES + TPI_PERSON_RANGES, tpi_person_reroute_stubs, tpi_person_reroute_binary,
+    tpi_person_reroute_plan, tpi_person_reroute_inputs,
+    notes=['A person block whose navigator is a walk on the route-request maps, loaded into a zero-filled person: the re-route 0x60b8e0 runs with '
+           'the counter and block stamps as they stand (half the inputs a fresh process: counter 0, no stamps, as after the map load 0x5d7126); '
+           'the counter, the mark, the words and the navigator after it. Then the save half writes that person (its navigator and mark as the '
+           're-route left them) and re-routes again (decision N-1).'],
+    budget=800_000_000)
+
 TPI_WALK_TARGETS = [TPI_WALK_EDGE_TARGET, TPI_WALK_COMMIT_TARGET, TPI_WALK_SEARCH_TARGET, TPI_NAV_STEERING_TARGET, TPI_NAV_AVOID_TARGET, TPI_NAV_RECORD_TARGET,
-                    TPI_NAV_ROOT_TARGET, TPI_STEP_TARGET, TPI_SPEED_STEP_TARGET, TPI_ROUTE_TARGET, TPI_STAFF_ROUTE_TARGET, TPI_WANDER_TARGET]
+                    TPI_NAV_ROOT_TARGET, TPI_STEP_TARGET, TPI_SPEED_STEP_TARGET, TPI_ROUTE_TARGET, TPI_STAFF_ROUTE_TARGET, TPI_WANDER_TARGET,
+                    TPI_PERSON_RECORD_TARGET, TPI_PERSON_REROUTE_TARGET]
 
 # ============================================================================== (t) tp.exe TQI movie matrix 0x6710c0 and transform pass 0x67673c
 TQI_MATRIX = 0x6710C0          # cdecl (int *matrix, int quantiser): fills 64 dwords

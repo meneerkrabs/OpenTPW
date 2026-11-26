@@ -598,6 +598,24 @@ class Walk:
         assert len(out) == RECORD_BYTES
         return out
 
+    def load(self, record: bytes):
+        """The serializer's load half (0x63ad30 mode 0): every member from the 177-byte `record`; the unnamed +0x30 is not modelled."""
+        v = list(struct.unpack_from('<11i', record, 0))
+        self.force, self.formation, self.xaxis, self.yaxis = (v[0], v[1]), (v[2], v[3]), (v[4], v[5]), (v[6], v[7])
+        self.mass, self.max_force, self.max_speed = v[8], v[9], v[10]
+        self.stuck, self.mask, self.cnt, self.idx = [struct.unpack_from('<i', record, 44 + 4 * k)[0] for k in range(4)]
+        self.stuck = bool(self.stuck)
+        self.arrived = bool(record[60])
+        w = list(struct.unpack_from('<12i', record, 61))
+        self.prog, self.hist, self.ahead, self.beyond, self.tx, self.ty, self.stamp, self.pc, self.total, self.x, self.y, self.radius = w
+        at = 61 + 48
+        for slot in range(5):
+            bx, by, dist = struct.unpack_from('<3i', record, at)
+            self.buf[slot], self.subdist[slot] = (bx, by), dist
+            at += 12
+        self.vx, self.vy = struct.unpack_from('<2i', record, at)
+        assert at + 8 == RECORD_BYTES
+
     def edit(self, cx, cy, kind):
         """A cell type change that stamps its block with the raised counter (0x5346d0 / 0x4d8c60)."""
         self.m.types[(cx, cy)] = kind
@@ -810,6 +828,55 @@ class Person:
         m = self.walk.m
         self.walk.mask = 1 if m.t(*self.cell) == 0 or m.t((xw >> 8) & 0xFF, (yw >> 8) & 0xFF) == 0 else 0
         return self.route_point(xw, yw)
+
+
+# NV5: the person serializer 0x609170 (the person block, 396 bytes) and its re-route 0x609b55
+# (name, person offset, bytes) in the stream order of both halves; the navigator is the 177-byte record at +0xec (RECORD_LAYOUT), the thought
+# object's members at +0x44 are carried at the offsets its serializer 0x638490 reads them into (mActionHistIndex, mEventHistory, ...)
+PERSON_LAYOUT = ([('mX', 4, 2), ('mY', 6, 2), ('mMapChild', 8, 2), ('mMapParent', 0xA, 2), ('mSpriteScript', 0x14, 4), ('mNextAnim', 0x20, 4),
+                  ('mNextServiceInterval', 0x24, 4), ('mAccurateDestX', 0x28, 2), ('mAccurateDestY', 0x2A, 2), ('mAdjustorSpeed', 0xD8, 2),
+                  ('mBaseSpeed', 0xD4, 2), ('mCount', 0x40, 1), ('mESPSprite', 0x34, 4), ('mLastRecordedMapId', 0xE4, 2), ('navigator', 0xEC, RECORD_BYTES),
+                  ('mPreviousSpeed', 0xDC, 4), ('mPreviousX', 0x1A8, 4), ('mPreviousY', 0x1AC, 4), ('mStrandedTime', 0x1B0, 4), ('mPurposeSpeed', 0xD6, 2),
+                  ('mSetDestSuccessfully', 0xE8, 4), ('mSpriteAngle', 0x2C, 4), ('mSpriteID', 0x30, 4), ('mSpriteUnderRideCtrl', 0x38, 4),
+                  ('mOnRideSoNoFloatingThingsAllowed', 0x3C, 4), ('mWhingeTimeout', 0xE0, 4)])
+PERSON_THOUGHT_BYTES = 2 + 32 * 4 + 12       # mActionHistIndex, mEventHistory[32], mLastThought, mThoughtScript, mTimeBubbleShown (0x638490)
+PERSON_BYTES = sum(size for _, _, size in PERSON_LAYOUT) + PERSON_THOUGHT_BYTES
+NAVIGATOR_AT = sum(size for name, _, size in PERSON_LAYOUT[:PERSON_LAYOUT.index(('navigator', 0xEC, RECORD_BYTES))])
+
+
+def person_field(block: bytes, name: str) -> int:
+    """An unsigned member of a person block by its serializer name."""
+    at = 0
+    for member, _, size in PERSON_LAYOUT:
+        if member == name:
+            return int.from_bytes(block[at:at + size], 'little')
+        at += size
+    raise KeyError(name)
+
+
+def person_block(block: bytes, walk: 'Walk', words: dict) -> bytes:
+    """`block` with its walk members replaced: the navigator's record and the person words in `words` (by serializer name)."""
+    out, at = bytearray(block), 0
+    for member, _, size in PERSON_LAYOUT:
+        if member == 'navigator':
+            out[at:at + size] = walk.record()
+        elif member in words:
+            out[at:at + size] = (words[member] & ((1 << (8 * size)) - 1)).to_bytes(size, 'little')
+        at += size
+    return bytes(out)
+
+
+def person_load(m, stamps, counter, block: bytes, behind):
+    """The load half of 0x609170 and its re-route 0x609b55 (0x60b8e0 to mAccurateDestX/Y) on a person: the walk from the block's navigator, the
+    person words; then the request with the stamp counter as it stands. Returns (the request's answer, the person, its walk)."""
+    walk = Walk(m, stamps, 0, 0, 0, 0, 0, 0, 0)
+    walk.load(block[NAVIGATOR_AT:NAVIGATOR_AT + RECORD_BYTES])
+    walk.counter = counter
+    cell = ((person_field(block, 'mX') >> 8) & 0xFF, (person_field(block, 'mY') >> 8) & 0xFF)
+    person = Person(walk, cell, person_field(block, 'mStrandedTime'), behind)
+    person.words = (person_field(block, 'mAccurateDestX'), person_field(block, 'mAccurateDestY'))
+    answer = person.route_point(*person.words)
+    return answer, person, walk
 
 
 # NV4: the wander and patrol destination 0x609f70 with the patrol rectangle test 0x62c610 and the patrol fallback 0x62c720

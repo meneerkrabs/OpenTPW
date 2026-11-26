@@ -41,9 +41,17 @@ public static class ParkSaveFile
 		public GameEdition Edition { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncWeatherSnapshot? TpiWeather { get; init; }
-		/// <summary>The advisor's pending weather forecasts and their per-kind play history. Absent in saves without one and in Theme Park World saves.</summary>
+		/// <summary>
+		/// The forecast queue of the saves from before the advisor queue (<see cref="TpiAdvisor"/>): never written, and a save that holds it is refused (<see cref="AdvisorMissing"/>).
+		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
-		public ThemeParkIncForecastSnapshot? TpiForecast { get; init; }
+		public JsonElement? TpiForecast { get; init; }
+		/// <summary>
+		/// Theme Park Inc's advisor thing: its queue, window and inputs (its play history is the career's). Required in a Theme Park Inc save; absent in Theme Park World saves. A Theme Park Inc
+		/// save from before it is refused (<see cref="AdvisorMissing"/>).
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncAdvisorSnapshot? TpiAdvisor { get; init; }
 		/// <summary>Theme Park Inc's hiring pool, members and strike records. Absent in Theme Park World saves and in Theme Park Inc saves from before the staff economy.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncStaffSnapshot? TpiStaff { get; init; }
@@ -798,7 +806,7 @@ public static class ParkSaveFile
 			Version = CurrentVersion,
 			Edition = park.Rules.ThemeParkInc ? GameEdition.ThemeParkInc : GameEdition.ThemeParkWorld,
 			TpiWeather = park.TpiWeather?.Capture(),
-			TpiForecast = park.TpiForecast?.Capture(),
+			TpiAdvisor = park.TpiAdvisor?.Capture(),
 			TpiStaff = park.TpiStaff?.Capture(),
 			TpiChallenges = park.TpiChallenges?.Capture(),
 			TpiCareer = park.TpiCareer?.Capture(),
@@ -1126,6 +1134,11 @@ public static class ParkSaveFile
 	internal const string StaffHqMissing = "This Theme Park Inc park was saved before OpenTPW kept the staff HQ and the research lab and cannot be continued; start a new game from the Personnel File.";
 
 	/// <summary>
+	/// The refusal of a Theme Park Inc park save from before the advisor queue (<see cref="Data.TpiAdvisor"/>): its forecasts had a queue and a play history of their own.
+	/// </summary>
+	internal const string AdvisorMissing = "This Theme Park Inc park was saved before OpenTPW kept the advisor's queue and its advice history and cannot be continued; start a new game from the Personnel File.";
+
+	/// <summary>
 	/// The refusal of a Theme Park Inc park save from before the tag tube (<see cref="Data.TpiTagTube"/>): the original files the zone arrival's briefing and every objective letter as unread
 	/// rows, whose count drives the unread-mail advice, so an empty tube is not the park the save left.
 	/// </summary>
@@ -1156,8 +1169,12 @@ public static class ParkSaveFile
 			if ( data.TpiWeather is { } weather && (!ThemeParkIncWeatherSpells.IsValid( weather )
 				|| data.Ledger.MonthIndex > 0 && weather == default) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc weather." );
-			if ( !ThemeParkIncForecastQueue.IsValid( data.TpiForecast ) )
-				throw new InvalidDataException( "Park save has invalid Theme Park Inc forecast advice." );
+			// user decision 2026-11-21 (refuse and document): a Theme Park Inc park save from before the advisor queue (its forecast queue, or no advisor) is refused like the older ones, before any
+			// asset check. Its forecasts kept a private history the player's career never saw, so the career's advice history would not be the park's
+			if ( data.TpiForecast != null || data.TpiAdvisor == null )
+				throw new InvalidDataException( AdvisorMissing );
+			if ( !ThemeParkIncAdvisor.IsValid( data.TpiAdvisor, ThemeParkIncAdvisorTable.Shipped ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc advisor." );
 			// a Theme Park Inc park save from before the staff HQ and the research lab were kept holds neither: the park would continue without the lab the prebuilt Science park brings (the whole
 			// catalogue on offer) and without the HQ's slots, so an obstacle mission could never be met; it is refused, as the saves from before the career, the controller and the challenges are.
 			// Every save since then holds the HQ with its staff (ThemeParkIncStaff.Capture), so the missing HQ marks the older save before any asset check
@@ -1230,7 +1247,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiTagTube != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiSpecialRides != null || data.TpiWages != null || data.TpiGardens != null || data.TpiObjectList != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiTagTube != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiSpecialRides != null || data.TpiAdvisor != null || data.TpiWages != null || data.TpiGardens != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1462,14 +1479,10 @@ public static class ParkSaveFile
 		var park = new ParkEconomy( settings, catalog, data.Mode, 0, tpi ? EconomyRules.ThemeParkIncMoney : null );
 		if ( data.TpiWeather is { } weather )
 			park.TpiWeather!.Restore( weather );
-		if ( data.TpiForecast is { } forecast )
-		{
-			if ( park.TpiForecast == null )
-				throw new InvalidDataException( "Park save has Theme Park Inc forecast advice, but the advisor settings are unavailable." );
-			park.TpiForecast.Restore( forecast );
-		}
 		if ( data.TpiCareer is { } career )
 			park.RestoreThemeParkIncCareer( career );
+		if ( data.TpiAdvisor is { } advisor )
+			park.TpiAdvisor!.Restore( advisor );
 		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1; a Theme Park Inc save without the controller was refused (ValidateEdition)
 		if ( data.TpiMissions is { } missions )
 			park.TpiMissions?.Restore( missions );

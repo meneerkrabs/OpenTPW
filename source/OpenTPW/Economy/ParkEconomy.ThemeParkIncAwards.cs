@@ -31,8 +31,8 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x606EC0 award event] logs "Won a Global golden Award (type - %d, num - %d)"; result 1 (won) by the jump table 0x607AB0, result 2 (moved) by 0x607A90: 0x4313D0(0), the advice
 	// 0x71A930(id), a message object 0x4355D0 posted to 0xA09728 through 0x436DD0; any other result logs "CParkAwardControl::TellTheWorld (Global) is being passed an unrecognised type"; then the
 	// Park Awards panel's refresh 0x561E30 (presentation); no money and no draw
-	// [EXT:tpi-capability-gates] the advice (0xBF, 0x13A..0x13E, 0xC0, 0xC1 won; 0xC3, 0x142..0x146, 0xC4, 0xC5 moved) goes to the advisor's queue, whose descriptor and response rows for these
-	// ids OpenTPW does not read (it carries the forecasts only): the award is shown as a note instead ([EXT:tpi-text-hud])
+	// [EXT:tpi-capability-gates] the advice (0xBF, 0x13A..0x13E, 0xC0, 0xC1 won; 0xC3, 0x142..0x146, 0xC4, 0xC5 moved) goes to the advisor's queue (ThemeParkIncAdvisor), whose response rows
+	// for these ids come with the presentation; the award senders are posted from P4 on, and the award is shown as a note instead ([EXT:tpi-text-hud])
 	private void ThemeParkIncAwardEvent( ThemeParkIncAwardNotice notice )
 	{
 		Log?.Trace( $"Won a Global golden Award (type - {(notice.Moved ? 2 : 1)}, num - {(int)notice.Award})" );

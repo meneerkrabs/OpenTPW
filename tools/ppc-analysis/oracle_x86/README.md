@@ -64,12 +64,20 @@ the rest reports skips; nothing fails. CI has neither.
 
 ## Theme Park Inc advisor weather forecasts
 
-`tpi_advisor_forecast_oracle.py` checks the four forecast descriptors in the identified TPI executable (`OPENTPW_TPI_EXE`). It runs the descriptor initializer at `0x729530`, the forecast response slice at `0x70F59E`, 28 score lookups across the mode word, the game-object flags and the animation word, the 72 class admissions of the eligibility matrix at `0x71BDC0`, caption formatter handoffs, seven admission cases for rain at `0x718820`, and five playback ticks at `0x718190`. It also reads the bank's three red-month advice rows (`0x1A1`–`0x1A3`), their response rows built at `0x7104A0` and the tag-94 caption entry. History and clock values are synthetic; the playback replay captures speech and tag submissions instead of sending them to the actual systems. The oracle does not launch the game, render text or play audio. See [the forecast trace](../../../docs/reverse/TPI-ADVISOR-FORECAST.md) and [the bank mail trace](../../../docs/reverse/TPI-BANK-MAIL.md).
+`tpi_advisor_forecast_oracle.py` checks the four forecast descriptors in the identified TPI executable (`OPENTPW_TPI_EXE`). It runs the descriptor initializer at `0x729530`, the forecast response slice at `0x70F59E`, 28 score lookups across the mode word, the game-object flags and the animation word, the 72 class admissions of the eligibility matrix at `0x71BDC0`, caption formatter handoffs, seven admission cases for rain at `0x718820`, and five playback ticks at `0x718190`. It also reads the bank's three red-month advice rows (`0x1A1`–`0x1A3`), their response rows built at `0x7104A0` and the tag-94 caption entry. History and clock values are synthetic; the playback replay captures speech and tag submissions instead of sending them to the actual systems. The oracle does not launch the game, render text or play audio. See [the advisor trace](../../../docs/reverse/TPI-ADVISOR.md) and [the bank mail trace](../../../docs/reverse/TPI-BANK-MAIL.md).
 
 From the repository root, with Unicorn installed in the selected Python environment:
 
 ```bash
 python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/oracle_x86"); runpy.run_module("tpi_advisor_forecast_oracle", run_name="__main__")'
+```
+
+## Theme Park Inc advisor queue
+
+`tpi_advisor_queue_oracle.py` runs the descriptor initializer at `0x729530` and compares all 664 rows with `content/data/tpi-advisor-descriptors.toml`; it also calls every constant score callback. It replays the acceptance `0x718B40` for each DataRow of `source/OpenTPW.Tests/ThemeParkIncAdvisorTests.cs` on synthetic scorer words, history entries and queues. It also checks enqueue and replacement (`0x718820`, `0x718E90`), selection (`0x718F80`, with and without the advisor panel) and cancel (`0x718990`, whose speech stop is captured). The managed tests repeat these scenarios. `--write-table PATH` writes the table file. See [the advisor trace](../../../docs/reverse/TPI-ADVISOR.md).
+
+```bash
+python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/oracle_x86"); runpy.run_module("tpi_advisor_queue_oracle", run_name="__main__")'
 ```
 
 ## Theme Park Inc lightning and thunder

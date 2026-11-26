@@ -390,7 +390,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 	/// <summary>The details (<c>0x553100</c>): To, From, Subject and the body of <paramref name="row"/>; the go-to shows when it has a target; Delete is enabled; no row empties them.</summary>
 	// [BIN:TPI-EXE:0x553100 tube details] a row: +0x44 = +0xA06, +0x48 = +0x808, +0x4C = +0xC04, the body +0x8 (0x552E30); +0xE10 != 0 shows the go-to 3019 and the footer 3018 and queues
 	// advisor message 0x211 (0x71A930, 0x718820), else hides both; Delete on. No row: the three fields "" (0xA0B714), no body, the go-to hidden, Delete off
-	// [EXT:tpi-capability-gates] the advisor's message 0x211 (descriptor 0x9E5B80, group 1, response 862) is not posted: Theme Park Inc's advisor plays only the weather forecasts
+	// [EXT:tpi-capability-gates] the advisor's message 0x211 (descriptor 0x9E5B80, group 1, response 862) is not posted: Theme Park Inc's advisor queue takes only the forecasts and the letters so far
 	private void Fill( ThemeParkIncTagTubeRow? row )
 	{
 		if ( row == null )

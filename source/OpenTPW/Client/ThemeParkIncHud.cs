@@ -683,6 +683,8 @@ public sealed partial class ThemeParkIncHud
 	// [BIN:TPI-EXE:0x636217 letter window] the tag system opens the window on every accepted notification (ids 6 to 8, 0x5CD060)
 	// [BIN:TPI-EXE:0x526CF1 letter closes the HUD's window] the letter's builder 0x526CD0 calls 0x5013C0 first, which sends message 5 to the window registered at 0xA568BC: an open mission
 	// window closes, as a mission window opening closes a letter
+	// [BIN:TPI-EXE:0x5013C0 close the HUD's window, second branch] with [0xA5E890] holding a window the call closes that window instead (message 4) and sends no message 5, so the letter would not close a mission window;
+	// OpenTPW builds no window for that slot (see OpenMissionWindow)
 	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
 	{
 		CloseMissionWindow();

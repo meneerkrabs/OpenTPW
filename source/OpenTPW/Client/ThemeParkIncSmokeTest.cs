@@ -678,6 +678,21 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	/// </summary>
 	private void PlanAdvisorModel()
 	{
+		// the plan's windows have given the advisor its own advice before (the mission window's every close posts 0x1FA, 0x55BB0A): wait until it is quiet, so the forecast is the next advice it says
+		var quietFrom = -1;
+		steps.AddLast( ("the advisor is quiet", () =>
+		{
+			var advisor = Level.Park!.Economy.TpiAdvisor!;
+			if ( quietFrom < 0 )
+				quietFrom = frame;
+			if ( flow.ThemeParkIncAdvisorView is { Image: not null } || advisor.Presentation.Speaking || advisor.Now < unchecked( advisor.LastStart + advisor.LastWindow )
+				|| advisor.Queue.Any( slot => slot.Valid && slot.Score > advisor.Settings.MinimumScore ) )
+			{
+				Require( frame - quietFrom < 1800, "the advisor says what the plan gave it within thirty seconds" );
+				return false;
+			}
+			return true;
+		}) );
 		Do( "post a rain forecast", () =>
 		{
 			Require( Level.Park!.Economy.PostThemeParkIncAdvice( ThemeParkIncAdviceResponse.ForecastMessage( 2 ) ), "the advisor's queue takes the rain forecast" );

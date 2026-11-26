@@ -27,8 +27,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>The gardener's pre-update: the common part, then, while idle, the search every search period.</summary>
 	// [BIN:TPI-EXE:0x5D2820 gardener pre-update] 0x628050; p = ftol((1.0 - exp / MaxExperience) * 50.0f) (fildll of the unsigned experience, fidivl 0xA02260, fsubrl 0x93B858, fmuls 0x93B89C); p 0 or the
 	// world turn % p == 0 (unsigned divl) with the state +0x1B4 0 runs the search 0x5D28C0, with no finder before it; then 0x6388F0 on +0x44 (the thought's lapse, presentation)
-	// Known x87 divergence (docs/reverse/TPI-STAFF.md, "Known divergence: x87 precision"): the original computes p at the game thread's 24-bit control word, the shared SearchPeriod at 53
-	// bits (experience 34000 of 100000: 33 there, 32 here), as the handyman's [BIN:TPI-EXE:0x5BCD60 precision] reading has it; the planned 24-bit precision change moves both
+	// [EXT:hardware-d3d-path] p is the handyman's SearchPeriod, at the game thread's 24-bit control word (experience 34000 of 100000: every 33rd turn)
 	private void PreUpdateGardener( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		var period = SearchPeriod( member.Experience, settings.MaxExperience );

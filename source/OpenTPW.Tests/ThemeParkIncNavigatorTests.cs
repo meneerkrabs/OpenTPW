@@ -201,7 +201,8 @@ public class ThemeParkIncNavigatorTests
 	[TestMethod]
 	public void TheSquareRootRoundsToASingleOnlyInThemeParkIncsWalk()
 	{
-		// Game.exe 0x5D2060 and 0x63E150 at the control word 0x7F (oracle tpi-exe-walk-root); Theme Park World's walk keeps the 64-bit root X25 confirmed
+		// Game.exe 0x5D2060 and 0x63E150 at the control word 0x7F (oracle tpi-exe-navigator-root). Theme Park World's walk keeps the exact root: X25 ran tp.exe at 0x27F, and its
+		// 0x7F reading is a Theme Park World follow-up (docs/reverse/TPI-NAVIGATOR.md)
 		Assert.AreEqual( (4999, 5000), (Fixed16.Root( 24999999, single: false ), Fixed16.Root( 24999999, single: true )) );
 		Assert.AreEqual( (65535, 65536), (Fixed16.Root( 0xFFFFFFFF, single: false ), Fixed16.Root( 0xFFFFFFFF, single: true )) );
 		Assert.AreEqual( (5517, 5518), (Fixed16.Length( -3781, -4019 ), Fixed16.Length( -3781, -4019, single: true )) );
@@ -258,6 +259,49 @@ public class ThemeParkIncNavigatorTests
 			"a Theme Park World walk writes no record: its save is unchanged" );
 	}
 
+	/// <summary>
+	/// A native guest saved while its walk is a walk to its own point (SetDestination: standing, riding, placed on the grid; an explicit route, not the original's search) keeps its whole
+	/// navigator: the save carries the record, and the restored park hashes alike through the guest's next original walk, whose set-up may fail and keep the old stamp and slots.
+	/// </summary>
+	[TestMethod]
+	public void ANativeGuestSavedWhileStandingKeepsItsNavigator()
+	{
+		var park = Rig( WalkEdgeRules.ThemeParkInc );
+		static bool MidWalk( Guest guest ) => guest.Navigation is { Native: true, Original: true, Arrived: false, Count: > 0 } && guest.IsMoving;
+		var tick = GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.Guests.Any( MidWalk ), 0, 6000 );
+		var stander = park.Simulation.Guests.FirstOrDefault( MidWalk );
+		Assert.IsNotNull( stander, $"the harness reached a native walker (tick {tick})" );
+		// the removal message of its target (here a bin's, tp.exe 0x4FB360): the walker stops where it walks (SetDestination to its own point, StayWhereItStands)
+		stander.BinId = 0x7777;
+		park.Simulation.BinRemoved( 0x7777 );
+		Assert.IsTrue( stander.Navigation is { Native: true, Original: false }, "a native stand-still walk" );
+
+		var loaded = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( park.Simulation.CaptureSnapshot() ) );
+		var saved = loaded.Guests.Single( guest => guest.Id == stander.Id );
+		Assert.IsNull( saved.Navigation.OriginalWalk, "the snapshot's own fields hold a route walk" );
+		CollectionAssert.AreEqual( stander.Navigation.ToRecord().Raw, saved.Navigation.NativeRecord, "and the record the whole navigator" );
+
+		var resumed = Rig( WalkEdgeRules.ThemeParkInc );
+		resumed.Simulation.RestoreSnapshot( loaded );
+		foreach ( var attraction in loaded.Attractions )
+			resumed.Rides.Single( ride => ride.Bridge.AttractionId == attraction.AttractionId ).Script[RideVariables.VAR_LETMEON] = attraction.LetMeOnWritten ? attraction.CalledGuest : 0;
+		var restored = resumed.Simulation.Find( stander.Id )!;
+		CollectionAssert.AreEqual( stander.Navigation.ToRecord().Raw, restored.Navigation.ToRecord().Raw, "every navigator member is back" );
+		Assert.AreEqual( GuestSnapshotTests.CanonicalHash( park ), GuestSnapshotTests.CanonicalHash( resumed ) );
+		var walkedAgain = false;
+		// at least 300 ticks, and on until the guest has walked an original walk again (at most 2000)
+		for ( long end = tick + 2000, least = tick + 300; tick <= end && (tick <= least || !walkedAgain); tick++ )
+		{
+			park.Step();
+			GuestSnapshotTests.Drive( park, tick );
+			resumed.Step();
+			GuestSnapshotTests.Drive( resumed, tick );
+			Assert.AreEqual( GuestSnapshotTests.CanonicalHash( park ), GuestSnapshotTests.CanonicalHash( resumed ), $"the parks diverged at tick {tick}" );
+			walkedAgain |= park.Simulation.Find( stander.Id )?.Navigation.Original == true;
+		}
+		Assert.IsTrue( walkedAgain, "the guest set up an original walk again after the restore" );
+	}
+
 	[TestMethod]
 	public void ANativeRecordThatDisagreesWithTheWalkIsRefused()
 	{
@@ -285,5 +329,11 @@ public class ThemeParkIncNavigatorTests
 		var flag = (byte[])bytes.Clone();
 		flag[60] = 2; // path_finished
 		StringAssert.Contains( GuestNavigation.RecordProblem( SaveNavigation.Read( flag ) ), "finished flag" );
+		var counted = (byte[])bytes.Clone();
+		counted[52] = 2; // path_buffer_count 2 with no slot written
+		StringAssert.Contains( GuestNavigation.RecordProblem( SaveNavigation.Read( counted ) ), "waypoint slots are written for a buffer count of 2" );
+		var index = (byte[])bytes.Clone();
+		index[56] = 3; // path_count (the index) beyond the buffer count 0
+		StringAssert.Contains( GuestNavigation.RecordProblem( SaveNavigation.Read( index ) ), "outside the buffer" );
 	}
 }

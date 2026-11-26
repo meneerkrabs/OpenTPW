@@ -102,6 +102,11 @@ public class SaveNavigationTests
 		var state = person.NavigationState;
 		CollectionAssert.AreEqual( person.Navigation, state.Raw, name );
 		CollectionAssert.AreEqual( person.Navigation, state.Write(), $"{name}: the writer gives the saved bytes back" );
+		// tp.exe's own navigator (its unused subpath_dist slots hold the debug fill 0xCDCDCDCD) loads into the walk and is written back byte for byte
+		Assert.IsNull( GuestNavigation.RecordProblem( state ), name );
+		var walk = new GuestNavigation();
+		walk.LoadRecord( state );
+		CollectionAssert.AreEqual( person.Navigation, walk.ToRecord().Raw, $"{name}: LoadRecord then ToRecord gives the saved bytes back" );
 		Assert.AreEqual( 5, state.Subpaths.Count, name );
 		// pos is the thing's position in cells; the base thing keeps it in 1/256 cell.
 		Assert.AreEqual( person.Base.X / 256.0, state.Pos.X.Value, 1.0 / 256, $"{name}: pos x" );

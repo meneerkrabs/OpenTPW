@@ -39,7 +39,8 @@ public static class Fixed16
 
 	/// <summary>
 	/// The walk's integer square root, tp.exe <c>0x4D49A0</c> and Theme Park Inc's <c>0x5D2060</c> (the same code): <c>fild</c> of the unsigned dword, <c>fsqrt</c>, <c>_ftol</c>. At 64 bits
-	/// (<paramref name="single"/> false, Theme Park World's walk as its oracle X25 runs it) the floor of the root. With <paramref name="single"/> the root is first rounded to a single, as the
+	/// (<paramref name="single"/> false: Theme Park World's walk; its oracle X25 ran tp.exe at the control word 0x37F, and reading it at the game thread's 0x7F is a Theme Park World
+	/// follow-up, docs/reverse/TPI-NAVIGATOR.md) the floor of the root. With <paramref name="single"/> the root is first rounded to a single, as the
 	/// x87 rounds it at Theme Park Inc's game-thread control word 0x7F (<see cref="ThemeParkIncX87"/>): the root of k² − j can then come out as k (oracle <c>tpi-exe-navigator-root</c>). The double
 	/// root of a 32-bit integer is never a single's midpoint, so rounding the correctly rounded double gives the x87's single.
 	/// </summary>
@@ -878,21 +879,14 @@ public sealed class GuestNavigation
 			hash.Add( x * 4096L + y );
 		hash.Add( Mask );
 		// The original walk's own fields join the digest for walks of that kind.
+		if ( Original )
+			AddOriginalState( hash );
+		// Theme Park Inc's native navigator: its other members join the digest (every other park keeps its pins), whatever the walk's kind: the original's navigator is one object
+		// that a walk to the walker's own point (SetDestination) does not replace, so a later set-up that fails still finds its old stamp, lengths and slots
+		if ( !Native )
+			return;
 		if ( !Original )
-			return;
-		hash.Add( Stuck );
-		hash.Add( Stamp );
-		hash.Add( PathCount );
-		hash.Add( Total );
-		hash.Add( Ahead );
-		hash.Add( Beyond );
-		hash.Add( Progress );
-		// Every slot: a failed set-up keeps the old ones and separation reads the first.
-		foreach ( var (x, y) in Buffer )
-			hash.Add( x * 4096L + y );
-		// Theme Park Inc's native navigator: its other members join the digest (every other park keeps its pins).
-		if ( !Native || !Original )
-			return;
+			AddOriginalState( hash );
 		hash.Add( 0x4E415632L );
 		hash.Add( History );
 		hash.Add( Mass );
@@ -910,6 +904,20 @@ public sealed class GuestNavigation
 		foreach ( var distance in SubpathDist )
 			hash.Add( distance );
 		hash.Add( BufferSlotsWritten );
+	}
+
+	private void AddOriginalState( StateHasher hash )
+	{
+		hash.Add( Stuck );
+		hash.Add( Stamp );
+		hash.Add( PathCount );
+		hash.Add( Total );
+		hash.Add( Ahead );
+		hash.Add( Beyond );
+		hash.Add( Progress );
+		// Every slot: a failed set-up keeps the old ones and separation reads the first.
+		foreach ( var (x, y) in Buffer )
+			hash.Add( x * 4096L + y );
 	}
 
 	// ---- The 177-byte record (NV2) ---------------------------------------------------------------------------------------------------------------------------------
@@ -937,7 +945,8 @@ public sealed class GuestNavigation
 
 	/// <summary>
 	/// Why <paramref name="record"/> cannot be this object's navigator, or null: a buffered waypoint that is neither zero nor a cell centre, or a zero slot before a written one (the
-	/// set-ups write the slots from the first), a finished byte other than 0 or 1, or a count outside the buffer.
+	/// set-ups write the slots from the first), fewer written slots than the buffered count (a set-up writes slots 0 .. count − 1), a finished byte other than 0 or 1, or a count or
+	/// an index outside the buffer.
 	/// </summary>
 	public static string? RecordProblem( SaveNavigation record )
 	{
@@ -955,8 +964,10 @@ public sealed class GuestNavigation
 		}
 		if ( record.PathFinished > 1 || record.CantReachDest is not (0 or 1) )
 			return $"the finished flag {record.PathFinished} or mCantReachDest {record.CantReachDest} is not 0 or 1";
-		if ( record.PathBufferCount is < 0 or > BufferedWaypoints || record.PathCount < 0 )
+		if ( record.PathBufferCount is < 0 or > BufferedWaypoints || record.PathCount < 0 || record.PathCount > record.PathBufferCount )
 			return $"the buffer count {record.PathBufferCount} or index {record.PathCount} is outside the buffer";
+		if ( written < record.PathBufferCount )
+			return $"{written} waypoint slots are written for a buffer count of {record.PathBufferCount}";
 		return null;
 	}
 
@@ -1018,17 +1029,30 @@ public sealed class GuestNavigation
 		Array.Clear( SubpathDist );
 		for ( var index = 0; index + 1 < Count; index++ )
 			SubpathDist[index] = SegmentLength( Buffer[index], Buffer[index + 1] );
+		// the restored slots past the count are an earlier set-up's (a failed set-up keeps them): every slot up to the last nonzero one counts as written
 		BufferSlotsWritten = Count;
+		for ( var slot = BufferedWaypoints - 1; slot >= Count; slot-- )
+		{
+			if ( Buffer[slot] != (0, 0) )
+			{
+				BufferSlotsWritten = slot + 1;
+				break;
+			}
+		}
 	}
 
-	/// <summary>The navigator's record for a snapshot of a native walk (<see cref="Native"/>), or null: the members OpenTPW's own snapshot fields do not carry.</summary>
-	internal byte[]? CaptureNative() => Native && Original ? ToRecord().Raw : null;
+	/// <summary>
+	/// The navigator's record for a snapshot of a native walk (<see cref="Native"/>), or null: the members OpenTPW's own snapshot fields do not carry. A walk to the walker's own point
+	/// (<see cref="SetDestination"/>, standing or riding) keeps the navigator's members, as the original's one object does, so its record is written as well.
+	/// </summary>
+	internal byte[]? CaptureNative() => Native ? ToRecord().Raw : null;
 
 	/// <summary>
 	/// Why the native record <paramref name="bytes"/> of a snapshot does not belong with the walk restored from the snapshot's own fields, or null: the record must say the same about
-	/// every member those fields carry (position, velocity, target, counts, index, flags, mask, the original walk's lengths and stamp, the history window, the written waypoints).
+	/// every member those fields carry: position, velocity, target, count, index, the flags and mask, the history window, the waypoint slots the snapshot carries
+	/// (<paramref name="carriedSlots"/>, from the first) and, for an original walk, its lengths and stamp. A route walk's snapshot does not carry the latter, which the record restores.
 	/// </summary>
-	internal string? NativeProblem( byte[] bytes )
+	internal string? NativeProblem( byte[] bytes, int carriedSlots )
 	{
 		if ( bytes.Length != SaveNavigation.Bytes )
 			return $"the native navigator record is {bytes.Length} bytes";
@@ -1038,11 +1062,12 @@ public sealed class GuestNavigation
 		var shadow = new GuestNavigation();
 		shadow.LoadRecord( record );
 		var same = shadow.X == X && shadow.Y == Y && shadow.VelocityX == VelocityX && shadow.VelocityY == VelocityY && shadow.TargetX == TargetX && shadow.TargetY == TargetY
-			&& shadow.Arrived == Arrived && shadow.Index == Index && shadow.Count == Count && shadow.Mask == Mask && shadow.Stuck == Stuck && shadow.Stamp == Stamp
-			&& shadow.PathCount == PathCount && shadow.Total == Total && shadow.Ahead == Ahead && shadow.Beyond == Beyond && shadow.Progress == Progress
-			&& (shadow.History & 0x7fff) == (History & 0x7fff) && Original && shadow.BufferSlotsWritten <= BufferedWaypoints;
-		for ( var slot = 0; same && slot < shadow.BufferSlotsWritten; slot++ )
-			same = shadow.Buffer[slot] == Buffer[slot];
+			&& shadow.Arrived == Arrived && shadow.Index == Index && shadow.Count == Count && shadow.Mask == Mask && shadow.Stuck == Stuck
+			&& (shadow.History & 0x7fff) == (History & 0x7fff);
+		if ( Original )
+			same &= shadow.Stamp == Stamp && shadow.PathCount == PathCount && shadow.Total == Total && shadow.Ahead == Ahead && shadow.Beyond == Beyond && shadow.Progress == Progress;
+		for ( var slot = 0; same && slot < Math.Min( carriedSlots, BufferedWaypoints ); slot++ )
+			same = (slot < shadow.BufferSlotsWritten ? shadow.Buffer[slot] : (0, 0)) == Buffer[slot];
 		return same ? null : "the native navigator record does not match the walk's own fields";
 	}
 
@@ -1060,8 +1085,12 @@ public sealed class GuestNavigation
 		(FormationPosX, FormationPosY, ForceX, ForceY) = (shadow.FormationPosX, shadow.FormationPosY, shadow.ForceX, shadow.ForceY);
 		shadow.SubpathDist.AsSpan().CopyTo( SubpathDist );
 		BufferSlotsWritten = shadow.BufferSlotsWritten;
-		for ( var slot = BufferSlotsWritten; slot < BufferedWaypoints; slot++ )
-			Buffer[slot] = (0, 0);
+		shadow.Buffer.AsSpan().CopyTo( Buffer );
+		if ( !Original )
+		{
+			// a route walk's snapshot does not carry the last set-up's stamp and lengths, which the navigator keeps
+			(Stamp, PathCount, Total, Ahead, Beyond, Progress) = (shadow.Stamp, shadow.PathCount, shadow.Total, shadow.Ahead, shadow.Beyond, shadow.Progress);
+		}
 		Native = true;
 	}
 

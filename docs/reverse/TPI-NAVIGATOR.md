@@ -95,7 +95,7 @@ is the original's navigator for Theme Park World and Theme Park Inc alike:
 | `+0x00` | mass | 0x10000 | none (the steering divides by the literal ONE) | `Mass` |
 | `+0x04` | radius | 0x3333 | none | `RadiusMember` (the step reads it, as the original does) |
 | `+0x08`, `+0x10` | pos, vel | 0 | the steering step | `X`/`Y`, `VelocityX`/`VelocityY` |
-| `+0x18`, `+0x1C` | max_force, max_speed | 0x6666, 0x3333 | the speed setter `0x63EF90` (tp.exe `0x510190`, `GuestSpeed.Caps`) | `MaxForce`, `MaxSpeed`, moved in from `Guest` and the staff member, which forward to them |
+| `+0x18`, `+0x1C` | max_force, max_speed | 0x6666, 0x3333 | the speed setter `0x63EF90` (tp.exe `0x510190`, `GuestSpeed.Caps`) | `MaxForce`, `MaxSpeed`, moved in from `Guest` and the staff member, which forward to them. A Theme Park World guest starts with `GuestSpeed.Floor` (655) in both where tp.exe's constructor `0x50FFE0` gives 0x6666 and 0x3333: harmless, as the speed step writes them before the walk reads them |
 | `+0x20`, `+0x28` | local_xaxis, local_yaxis | 0 | the steering step after the commit: `0x63E150` (unit velocity) and `0x63E300` (perpendicular (−y, x)) | `LocalXAxis*`, `LocalYAxis*` |
 | `+0x30` | (unnamed seek target) | 0 | none; the loader zeroes it, only unregistered behaviours read it | not modelled |
 | `+0x38`, `+0x40` | formation_pos, force | 0 | none (research note NV0 §1): the file's value passes through | `FormationPos*`, `Force*` |
@@ -120,23 +120,28 @@ What changed in the walk [R, O]:
 - **The stamp test.** follow_path's comparison of the block stamp with `+0x48` is unsigned (`jbe`, `0x63D0BF`, tp.exe `0x50ED6F`).
 - **The square root.** `0x5D2060` (tp.exe `0x4D49A0`, the same code) is `fild`, `fsqrt`, `_ftol`. At the game thread's control word 0x7F (`ThemeParkIncX87`,
   `[EXT:hardware-d3d-path]`) `fsqrt` rounds to a single's 24 bits, so the root of k² − j can come out as k (5000 for 24,999,999; oracle `tpi-exe-navigator-root`). Theme Park
-  Inc's walk takes that root (`Fixed16.Root` with `single`) in its lengths, truncations, the ray test and the axes. Theme Park World's walk keeps the 64-bit root its X25 oracle
-  ran with, so its results and pins do not move.
+  Inc's walk takes that root (`Fixed16.Root` with `single`) in its lengths, truncations, the ray test and the axes. Theme Park World's walk keeps the exact root, so its results and
+  pins do not move in this phase. That root is not confirmed for tp.exe's game thread: X25 ran tp.exe at the harness's default control word 0x37F (64-bit significand), while
+  `[EXT:hardware-d3d-path]` models that thread at 0x7F, and the Theme Park World speed setter of the same update already rounds at 24 bits (`Single24.Product`). Reading tp.exe's walk
+  at 0x7F is a Theme Park World follow-up (navigator plan, "Follow-ups"), with its own pin update.
 
 **The record.** The serializer `0x63AD30` (tp.exe `0x50D150`) writes 177 bytes, every member but `+0x30` under its name in alphabetical order: force, formation_pos,
 local_xaxis, local_yaxis, mass, max_force, max_speed, mCantReachDest, nav_mode, path_buffer_count, path_count (the index), path_finished (1 byte), path_last_progress,
 path_stuck_buffer, path_subpath_dist, path_tail_dist, path_target_pos, path_timestamp, path_total_count, path_total_dist, pos, radius, five (subpath_buffer[p], subpath_dist[p])
 pairs, vel (mode 1, versions 0 and 1; a short transfer returns 1). The load half (mode 0) reads the same and zeroes `+0x30`. `SaveNavigation` reads it and `Write` writes it;
 `GuestNavigation.ToRecord` and `LoadRecord` map it onto the walk (a record whose waypoint slots are not cell centres after the first unwritten one, or whose flags are not 0 or 1,
-cannot be held and is refused). This is the record the native park writer will store; OpenTPW's own snapshots keep their format until NV5.
+cannot be held and is refused, as is one with fewer written slots than its buffered count or an index past it). This is the record the native park writer will store; OpenTPW's own snapshots keep their format until NV5.
 
 **Unwritten members.** The constructor leaves `+0x48` and the subpath_dist slots as the allocator's arena (`0x7CA070`, no fill) held them, so a person that has never set a walk up
-carries indeterminate bytes there; tp.exe's saves show its debug heap's `0xCDCDCDCD` in unused slots. OpenTPW starts them at 0, the value of fresh arena memory.
+carries indeterminate bytes there; tp.exe's saves show its debug heap's `0xCDCDCDCD` in unused slots. Nothing observable reads them before a set-up writes them (follow_path's
+comparison with `+0x48` and its subtraction of a slot come only after a successful set-up, and a stale slot's subtraction is overwritten by the refill), so any value there is a
+possible original outcome. OpenTPW starts them at 0, the value of fresh arena memory, and NV5's native writer will emit 0 there.
 
 **Under the switch.** With `--tpi-native-walk` a Theme Park Inc walk is native (`GuestNavigation.Native`): its new members join the digest; a guest starts with the constructor's caps
-(0x3333, 0x6666) until its first speed step; and the guest and staff snapshots carry the walk's record in the optional member `NativeRecord`, written only for a native walk. A
-restore takes from it the members the snapshot's own fields do not hold and refuses a record that disagrees with them, a record without the switch, or a guest record whose caps are
-not the guest's. Without the switch nothing changes: no member joins the digest, no save gains a field, and the default walk is as before.
+(0x3333, 0x6666) until its first speed step; and the guest and staff snapshots carry the walk's record in the optional member `NativeRecord`, written for a native walk of either
+kind: the original keeps one navigator object and saves it whole, so a walk to the walker's own point (`SetDestination`: standing, riding, placed on the grid) keeps the last set-up's
+stamp, lengths and slots, which a later failed set-up still reads. A restore takes from it the members the snapshot's own fields do not hold and refuses a record that disagrees
+with them, a record without the switch (a guest's in the guests' restore, a staff member's in the resume file's validation), or a guest record whose caps are not the guest's. Without the switch nothing changes: no member joins the digest, no save gains a field, and the default walk is as before.
 
 **Verified.** The x86 oracle (docs/reverse/ORACLE.md section 7.19) runs Game.exe's constructor, set-up and steering step through 40 whole walks and compares the whole record after
 every set-up and step (`tpi-exe-walk-steering`), avoid_walls (`tpi-exe-walk-avoid-walls`), the root (`tpi-exe-navigator-root`) and both halves of the serializer

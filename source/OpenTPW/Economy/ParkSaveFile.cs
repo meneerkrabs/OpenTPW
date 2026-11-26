@@ -656,7 +656,7 @@ public static class ParkSaveFile
 					&& walk.PathCount is >= 0 and <= 0xFC && Count == Math.Min( walk.PathCount, GuestNavigation.BufferedWaypoints ) && !OffGrid
 					&& walk.Stamp >= 0 && walk.Total >= 0 && walk.Ahead >= 0 && walk.Beyond >= 0 && walk.Progress <= Fixed16.One && Cursor <= route.Length / 2
 				: Waypoints is null && Cursor <= route.Length / 2 - Count)
-			&& (NativeRecord is null || OriginalWalk != null && RestoreFields().NativeProblem( NativeRecord ) == null);
+			&& (NativeRecord is null || RestoreFields().NativeProblem( NativeRecord, Waypoints != null ? GuestNavigation.BufferedWaypoints : Count ) == null);
 
 		internal GuestNavigation Restore()
 		{

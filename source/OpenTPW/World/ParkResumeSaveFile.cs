@@ -396,6 +396,10 @@ internal static class ParkResumeSaveFile
 	internal static void RequireThemeParkIncLand( ParkLayoutSnapshot.Data? layout ) =>
 		Require( layout?.Cells?.TpiUnowned != null, ThemeParkIncLandMissing );
 
+	/// <summary>Whether the staff of <paramref name="economy"/> may carry native navigator records: only in a save made with Theme Park Inc's navigator rules (<paramref name="nativeWalk"/>).</summary>
+	internal static bool StaffNativeRecordsAllowed( ParkSaveFile.Data? economy, bool nativeWalk ) =>
+		nativeWalk || economy?.TpiStaff?.Members.All( member => member?.World?.Navigation?.NativeRecord == null ) != false;
+
 	/// <summary>
 	/// The envelope's own consistency, with no catalog or settings: header bounds, the embedded economy's format
 	/// and invariants, the layout's pure allocator/identity rules, the script world's graph, one runtime per
@@ -914,6 +918,9 @@ internal static class ParkResumeSaveFile
 		Require( guests.Guests != null, "the guest snapshot has no guest list" );
 		// Theme Park Inc's navigator rules (--tpi-native-walk, docs/reverse/TPI-NAVIGATOR.md) exist only in a Theme Park Inc park; the restore refuses a save whose switch differs from the park's
 		Require( !guests.ThemeParkIncNativeWalk || snapshot.Economy?.Edition == GameEdition.ThemeParkInc, "only a Theme Park Inc park walks with Theme Park Inc's navigator rules" );
+		// a staff member's native navigator record (GuestNavigation.NativeRecord) belongs to a save made with those rules, as a guest's does (GuestSimulation's restore)
+		Require( StaffNativeRecordsAllowed( snapshot.Economy, guests.ThemeParkIncNativeWalk ),
+			"a staff member carries Theme Park Inc's native navigator record in a save made without Theme Park Inc's navigator rules" );
 		Require( guests.Attractions != null, "the guest snapshot has no attraction list" );
 		Require( guests.SeenQueueEdits != null, "the guest snapshot has no seen-queue-edit list" );
 		Require( guests.TickCount >= 0, $"the guest clock's tick count {guests.TickCount} is negative" );

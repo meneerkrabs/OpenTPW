@@ -289,21 +289,32 @@ public sealed record GuestNavigationSnapshot
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public byte[]? NativeRecord { get; init; }
 
-	/// <summary>Why <see cref="NativeRecord"/> does not belong with the walk these fields restore, or null (<see cref="GuestNavigation.NativeProblem"/>); only an original walk has one.</summary>
+	/// <summary>
+	/// Why <see cref="NativeRecord"/> does not belong with the walk these fields restore, or null (<see cref="GuestNavigation.NativeProblem"/>): a walk of either kind, the original walk's
+	/// fields compared only when it is one, the waypoint slots as the restore takes them (all five saved, or the route's from the cursor).
+	/// </summary>
 	internal string? NativeProblem()
 	{
 		if ( NativeRecord is not { } record )
 			return null;
-		if ( OriginalWalk == null || Waypoints is not { Length: GuestNavigation.BufferedWaypoints } waypoints )
-			return "a native navigator record belongs to an original walk only";
 		var shadow = new GuestNavigation
 		{
 			X = X, Y = Y, VelocityX = VelocityX, VelocityY = VelocityY, TargetX = TargetX, TargetY = TargetY, Arrived = Arrived, Index = Index, Count = Count, History = History,
 			Mask = Mask
 		};
 		shadow.RestoreOriginal( OriginalWalk );
-		waypoints.AsSpan().CopyTo( shadow.Buffer );
-		return shadow.NativeProblem( record );
+		var carried = 0;
+		if ( Waypoints is { Length: GuestNavigation.BufferedWaypoints } waypoints )
+		{
+			waypoints.AsSpan().CopyTo( shadow.Buffer );
+			carried = GuestNavigation.BufferedWaypoints;
+		}
+		else if ( Route != null && Cursor >= 0 && Cursor + Count <= Route.Length && Count <= GuestNavigation.BufferedWaypoints )
+		{
+			Route.AsSpan( Cursor, Count ).CopyTo( shadow.Buffer );
+			carried = Count;
+		}
+		return shadow.NativeProblem( record, carried );
 	}
 
 	/// <summary>

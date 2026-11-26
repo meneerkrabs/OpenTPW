@@ -2452,7 +2452,8 @@ the local axes the step writes after the commit (the unit velocity of `0x63e150`
 passed waypoint's slot, a stale one on the last buffered waypoint), the progress history shifted without a mask, and the members the constructor leaves (path_timestamp and
 the subpath_dist slots keep a `0xcd` fill until a set-up writes them). The block-stamp test in follow_path is unsigned (`jbe`). `tpi-exe-walk-avoid-walls` agrees too.
 `tpi-exe-navigator-root` shows the one arithmetic difference from X25's reading of tp.exe: at 24 bits `fsqrt` rounds the root to a single before `_ftol`, so the root of k² − j can
-come out as k; Theme Park Inc's walk takes that root (`Fixed16.Root`), Theme Park World's keeps the 64-bit one its X25 targets were run with. `tpi-exe-navigator-record` runs
+come out as k; Theme Park Inc's walk takes that root (`Fixed16.Root`). Theme Park World's walk keeps the exact root; its X25 targets ran tp.exe at the harness's default control
+word 0x37F, not the game thread's 0x7F that `[EXT:hardware-d3d-path]` models, so a 0x7F reading of tp.exe's walk is an open Theme Park World follow-up. `tpi-exe-navigator-record` runs
 the serializer `0x63ad30`: the save half writes the members in `SaveNavigation`'s order and widths and the load half reads them back and zeroes the unnamed `+0x30`. The
 C# meets three Game.exe walks directly, every member but path_timestamp (`ThemeParkIncNavigatorTests`, from `tpi_navigator_golden.py`, which also checks that the
 serializer gives each of their records back), and `tools/tpi-layouts/navigator.py` lists the serializer's 33 transfers. The X25 steering target compares every member

@@ -237,6 +237,8 @@ public class ThemeParkIncNavigatorTests
 		CollectionAssert.AreEqual( walker.Navigation.ToRecord().Raw, saved.Navigation.NativeRecord, "the snapshot carries the walker's record" );
 
 		var resumed = Rig( WalkEdgeRules.ThemeParkInc );
+		// the layout snapshot carries the cell map's counter, which counts the simulation's calls here (NV3)
+		resumed.Grid.Cells.RestoreBlockStamps( park.Grid.Cells.StampCounter, park.Grid.Cells.CaptureBlockStamps() );
 		resumed.Simulation.RestoreSnapshot( loaded );
 		foreach ( var attraction in loaded.Attractions )
 			resumed.Rides.Single( ride => ride.Bridge.AttractionId == attraction.AttractionId ).Script[RideVariables.VAR_LETMEON] = attraction.LetMeOnWritten ? attraction.CalledGuest : 0;
@@ -282,6 +284,8 @@ public class ThemeParkIncNavigatorTests
 		CollectionAssert.AreEqual( stander.Navigation.ToRecord().Raw, saved.Navigation.NativeRecord, "and the record the whole navigator" );
 
 		var resumed = Rig( WalkEdgeRules.ThemeParkInc );
+		// the layout snapshot carries the cell map's counter, which counts the simulation's calls here (NV3)
+		resumed.Grid.Cells.RestoreBlockStamps( park.Grid.Cells.StampCounter, park.Grid.Cells.CaptureBlockStamps() );
 		resumed.Simulation.RestoreSnapshot( loaded );
 		foreach ( var attraction in loaded.Attractions )
 			resumed.Rides.Single( ride => ride.Bridge.AttractionId == attraction.AttractionId ).Script[RideVariables.VAR_LETMEON] = attraction.LetMeOnWritten ? attraction.CalledGuest : 0;

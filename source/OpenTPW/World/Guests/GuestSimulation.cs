@@ -1516,7 +1516,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool RequestRoute( Guest guest, (int X, int Y) cell, List<(int X, int Y)>? route )
 	{
 		var navigation = guest.Navigation;
-		if ( guest.StrandedMark != 0 && Grid.Cells.StampCounter + 1 < guest.StrandedMark )
+		// the counter is raised first, whatever the mark (0x60B828: a park counting the simulation's calls, ParkCellMap.NextStamp)
+		if ( Grid.Cells.NextStamp() < guest.StrandedMark )
 			guest.StrandedMark = 0;
 		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
 			return false;
@@ -1529,6 +1530,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private WalkResult Step( Guest guest )
 	{
+		if ( WalksThemeParkInc )
+			return StepThemeParkInc( guest );
 		var navigation = guest.Navigation;
 		var (x, y, distance) = (guest.X, guest.Y, guest.DistanceWalked);
 		var (beforeX, beforeY) = (navigation.X, navigation.Y);
@@ -2437,7 +2440,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var start = (X: guest.CellX, Y: guest.CellY);
 		var cells = Grid.Cells;
 		// [BIN:TPW-EXE:0x004F94C6 stranded hold] a guest that found no way on is marked with the stamp counter (+0x198): while no block around its cell (the queue's tail for a queue cell) has been stamped above the mark (0x004FA770) the wander thinks "Confused" (0x0050BE80, 0x11) and returns before any draw
-		if ( guest.StrandedMark != 0 && cells.StampCounter + 1 < guest.StrandedMark )
+		// [BIN:TPI-EXE:0x609FBE wander gate] the counter raised first, whatever the mark (ParkCellMap.NextStamp)
+		if ( cells.NextStamp() < guest.StrandedMark )
 			guest.StrandedMark = 0;
 		if ( guest.StrandedMark != 0 && StrandedHolds( guest, start ) )
 		{
@@ -2448,6 +2452,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		bool Route( (int X, int Y) cell )
 		{
 			// [BIN:TPW-EXE:0x004F9490 wander route] the picked destination is a SetDest (0x00510100), whose search decides success; a failed search leaves the walk stuck (the route cells below are the M3 gate's bookkeeping)
+			// [BIN:TPI-EXE:0x60A6FB off-path gates] each candidate that reaches SetDest raises the counter first (0x60A6FB, 0x60A83F; tp.exe 0x4F9983, 0x4F9B2E); the mark, cleared above, holds nothing
+			cells.NextStamp();
 			var path = Grid.FindPath( start.X, start.Y, cell.X, cell.Y );
 			SetDestination( guest, GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte ), path );
 			if ( !guest.Navigation.Stuck )
@@ -2470,7 +2476,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( stranded )
 			{
 				Think( guest, GuestThought.Confused );
-				guest.StrandedMark = cells.StampCounter + 1;
+				// [BIN:TPI-EXE:0x60A4A5 stranded mark] mark = the raised counter (0x5D81F0), not through 0x60B9A0
+				guest.StrandedMark = cells.NextStamp();
 			}
 			return false;
 		}
@@ -2481,6 +2488,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !Grid.InBounds( destination.Cell.X, destination.Cell.Y ) || destination.ByteX is < 0 or > 255 || destination.ByteY is < 0 or > 255 )
 			throw PolicyError( $"returned the wander goal ({destination.Cell.X}, {destination.Cell.Y}) with bytes ({destination.ByteX}, {destination.ByteY}), outside the map" );
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
+		// [BIN:TPI-EXE:0x60A55F final gate] a guest's final route raises the counter before SetDest (tp.exe 0x4F9CB5); the mark, cleared above, holds nothing
+		cells.NextStamp();
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
 		if ( guest.Navigation.Stuck )
 		{

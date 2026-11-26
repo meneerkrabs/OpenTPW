@@ -224,11 +224,34 @@ public sealed partial class ParkCellMap
 	public int BlocksY { get; }
 
 	/// <summary>
-	/// The stamp counter (tp.exe <c>0x7CDB98</c>): raised by every write that changes a cell type, which stamps the cell's block with it.
+	/// The stamp counter (tp.exe <c>0x7CDB98</c>, Game.exe <c>0xA9D2E8</c>): raised by every write that changes a cell type, which stamps the cell's block with it.
 	/// A walk keeps the counter of its set-up (<see cref="GuestNavigation.Stamp"/>). The original also raises it at every walk set-up and
-	/// route test (<c>0x4D8C50</c>), which changes no comparison of a block stamp with a walk's, so OpenTPW counts the edits only.
+	/// route test (<c>0x4D8C50</c>), which changes no comparison of a block stamp with a walk's, so a Theme Park World park counts the edits only; a park with
+	/// Theme Park Inc's navigator counts every simulation call (<see cref="CountsSimulationCalls"/>).
 	/// </summary>
 	public int StampCounter { get; private set; }
+
+	/// <summary>
+	/// Whether the counter counts every simulation call of the counter routine (Game.exe <c>0x5D81F0</c>): the walk set-ups, the route requests, the wander's gates and its stranded mark, the
+	/// sprite placement's calls from the guest constructor, and the edits. True for a park with Theme Park Inc's navigator (<see cref="WalkEdgeRules.ThemeParkInc"/>, the hidden switch
+	/// <c>--tpi-native-walk</c>), so the stamps a walk and a stranded guest hold are the original's own values (docs/reverse/TPI-NAVIGATOR.md, NV3); false for every other park, whose counter
+	/// counts the edits only, so no comparison and no Theme Park World pin changes.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D81F0 stamp counter] ++[0xA9D2E8], returned; called by the queue length change 0x5E06B3, the wander 0x609FBE / 0x60A4A5 / 0x60A55F / 0x60A6FB / 0x60A83F, the route requests 0x60B828 /
+	// 0x60B8F4, the stranded mark 0x60B9B7, the walk set-up's success 0x63E79B, the cell edits 0x67CC50 / 0x67CE47 / 0x682FB3, the sprite placement 0x60AFFD and the stranded query 0x60BA3E
+	// [EXT:tpi-stamp-counter-sim-only] (user-approved 2026-11-25, decision N-5) the sprite placement 0x60AE00 also raises the counter once per person per rendered frame (the render pass 0x64E270 from
+	// the frame loops 0x6A52DE / 0x6A5CD1), which makes the original's stored stamps depend on the frame rate; only its simulation calls (the guest constructor 0x60CAC9, the mode setter 0x61A70B)
+	// count here. The advisor's condition scan (0x722A90 -> 0x5B7860 -> 0x60BA30, once per person examined) is not ported, so nothing raises the counter there (decision N-2)
+	public bool CountsSimulationCalls => EdgeRules == WalkEdgeRules.ThemeParkInc;
+
+	/// <summary>
+	/// The counter routine as a simulation caller takes it (a route request's or the wander's stranded gate, a stranded mark): with <see cref="CountsSimulationCalls"/> the counter is raised and
+	/// returned; otherwise it is left and the value the next raise would give is returned, which every comparison with a stored stamp decides alike (the edit-only counter of a Theme Park World park).
+	/// </summary>
+	public int NextStamp() => CountsSimulationCalls ? ++StampCounter : StampCounter + 1;
+
+	/// <summary>The stamp a walk set-up that found its route takes (<c>0x63E79B</c>, tp.exe <c>0x50FD0F</c>): the raised counter, or the counter itself where only the edits count.</summary>
+	public int SetupStamp() => CountsSimulationCalls ? ++StampCounter : StampCounter;
 
 	/// <summary>
 	/// The stamp of the 16 × 16-cell block (<paramref name="blockX"/>, <paramref name="blockY"/>): the <see cref="StampCounter"/> of the last
@@ -990,6 +1013,9 @@ public sealed partial class ParkCellMap
 			foreach ( var stamp in blockStamps )
 				hash.Add( stamp );
 		}
+		// a counter that counts the simulation's calls moves without a stamped block, and the next set-up or mark takes it
+		else if ( CountsSimulationCalls && StampCounter != 0 )
+			hash.Add( 0x53544D43L + StampCounter );
 		// The land joins it only on a map that has one (an original level), for the same reason.
 		Land?.AddCanonicalState( hash );
 	}

@@ -286,7 +286,15 @@ public sealed class ThemeParkIncStaffMember
 	/// <summary>Presentation: the walk's heading (the direction of its last step), which turns the sprite.</summary>
 	public float HeadingX { get; internal set; }
 	public float HeadingY { get; internal set; } = 1f;
-	/// <summary>Presentation: the walk position at the start of the member's last update and the tick it was taken, for the draw point's interpolation over the turn.</summary>
+	/// <summary>
+	/// The heading word <c>+0x2C</c> the walk step writes with Theme Park Inc's navigator (<see cref="ThemeParkIncWalkStep.Heading"/>, the switch <c>--tpi-native-walk</c>); <see cref="HeadingX"/>
+	/// and <see cref="HeadingY"/> are then its vector. Not saved or hashed yet: the native walk storage (navigator plan NV5) stores it with the person words.
+	/// </summary>
+	internal int SpriteAngle { get; set; }
+	/// <summary>
+	/// Presentation: the walk position at the start of the member's last update and the tick it was taken, for the draw point's interpolation over the turn. It is <c>mPreviousX/Y</c>
+	/// (<c>+0x1A8</c>/<c>+0x1AC</c>), the copy the speed step <c>0x60BC90</c> takes before the walk step.
+	/// </summary>
 	internal int TurnFromX, TurnFromY;
 	internal long TurnTick = -1;
 	/// <summary>

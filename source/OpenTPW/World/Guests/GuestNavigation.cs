@@ -616,7 +616,7 @@ public sealed class GuestNavigation
 		Index = 0;
 		Arrived = false;
 		Stuck = false;
-		Stamp = map.StampCounter;
+		Stamp = map.SetupStamp();
 		return true;
 	}
 

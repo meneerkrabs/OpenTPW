@@ -213,6 +213,15 @@ EXPECTED = {
     ('tpi-exe-walk-commit', 'tpw-rules'): (107, (1, (0, 113, 24, 15))),
     ('tpi-exe-walk-search', 'plan'): AGREE,
     ('tpi-exe-walk-search', 'tpw-rules'): (90, (0, (104, 30, 24, 25))),
+    # NV2: Game.exe's navigator object. Whole walks through the constructor 0x63ed10, the set-up 0x63e3a0 and the steering step 0x63dd20, every member
+    # of the 177-byte record after each (the local axes, the subpath_dist slots, the whole history word); avoid_walls 0x63c630; the serializer
+    # 0x63ad30's save and load halves. All agree with walk_reading.py, the statement of GuestNavigation with WalkEdgeRules.ThemeParkInc. The square
+    # root 0x5d2060 and the normalisation 0x63e150 at the control word 0x7f round the root to a single; at 64 bits every input differs.
+    ('tpi-exe-walk-steering', 'plan'): AGREE,
+    ('tpi-exe-walk-avoid-walls', 'plan'): AGREE,
+    ('tpi-exe-navigator-record', 'plan'): AGREE,
+    ('tpi-exe-navigator-root', 'plan'): AGREE,
+    ('tpi-exe-navigator-root', 'root-64-bits'): (501, (67076098, (-5886, -4563))),
 }
 
 BASE = 0x400000
@@ -428,6 +437,8 @@ def check_pinned(case, comparison, key):
                 first = targets.skirt_summary(key[0], first)
             elif key[0].startswith('tpi-exe-walk-'):
                 first = (first['mask'], tuple(first['window']))
+            elif key[0] == 'tpi-exe-navigator-root':
+                first = (first['roots'][0], tuple(first['vectors'][0]))
             else:
                 first = wander_summary(first) if key[0] == 'tpw-exe-wander-destination' else coast_summary(first)
         case.assertEqual(first, first_input, key)
@@ -1349,6 +1360,20 @@ class WalkReadingCoverage(unittest.TestCase):
         found = [targets.walk_search_plan(x)[0] for x in inputs]
         self.assertTrue(any(found) and not all(found))
 
+    def test_tpi_navigator_walks_reach_every_result_and_both_fills(self):
+        """NV2's whole walks on Theme Park Inc maps arrive, walk and get stuck, a quarter start from the 0xcd fill, the axes turn, and the record's
+        load half gives every member back."""
+        target = targets.TPI_NAV_STEERING_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        traces = [targets.tpi_nav_steering_plan(x) for x in inputs]
+        self.assertEqual({result for trace in traces for kind, result, _ in trace if kind == 'step'}, {0, 1, 2})
+        self.assertEqual({x['fill'] for x in inputs}, {0, 0xCDCDCDCD})
+        records = [record for trace in traces for _, _, record in trace]
+        self.assertTrue(any(record[16:24] != bytes(8) for record in records), 'a local x axis')
+        layout = __import__('walk_reading')
+        for record in records[:200]:
+            self.assertEqual(layout.record_of_object(lambda o, n: layout.object_of_record(record, bytes(0xBC))[o:o + n]), record)
+
     def test_tpi_inputs_reach_every_rule_and_both_search_outcomes(self):
         """The Theme Park Inc maps carry obstacle walkways, holes and unowned land, use masks 0 and 1 only, and their searches both
         succeed and fail."""
@@ -1593,6 +1618,15 @@ class OracleTpi(CoastTests, unittest.TestCase):
         for key in ('tpi-exe-walk-edge-test', 'tpi-exe-walk-commit', 'tpi-exe-walk-search'):
             self.check((key, 'plan'))
             self.check((key, 'tpw-rules'))
+
+    # ------------------------------------------------------------------ NV2: the navigator object
+    def test_navigator_steering_avoid_walls_and_record_agree(self):
+        for key in ('tpi-exe-walk-steering', 'tpi-exe-walk-avoid-walls', 'tpi-exe-navigator-record'):
+            self.check((key, 'plan'))
+
+    def test_navigator_root_rounds_to_a_single(self):
+        self.check(('tpi-exe-navigator-root', 'plan'))
+        self.check(('tpi-exe-navigator-root', 'root-64-bits'))
 
     def test_walk_structure_records_decide_some_edges_and_searches(self):
         """The maps' second-layer records reach the record rule (0x5d7dfa): a reading without them differs from Game.exe on some edges and

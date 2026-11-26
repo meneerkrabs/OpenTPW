@@ -3412,9 +3412,9 @@ def tpi_nav_steering_binary(sb: Sandbox, x: dict, log) -> tuple:
     return tuple(trace)
 
 
-def tpi_nav_steering_plan(x: dict, map_reading=None) -> tuple:
+def tpi_nav_steering_plan(x: dict) -> tuple:
     init = x['walk']
-    m = (map_reading or tpi_walk_map_reading)(x)
+    m = tpi_walk_map_reading(x)
     walk = walk_reading.Walk(m, {}, init['x'], init['y'], init['vx'], init['vy'], init['mask'], init['max_speed'], init['max_force'],
                              fill=x['fill'])
     trace = []
@@ -3428,20 +3428,10 @@ def tpi_nav_steering_plan(x: dict, map_reading=None) -> tuple:
     return tuple(trace)
 
 
-def tpi_nav_steering_exact_root(x: dict) -> tuple:
-    """The same walks with the square root taken at 64 bits (as X25 reads tp.exe), to show where the 24-bit root decides."""
-    def reading(x):
-        m = tpi_walk_map_reading(x)
-        m.root_64 = True
-        return m
-    return tpi_nav_steering_plan(x, reading)
-
-
 def tpi_nav_steering_inputs(rng: random.Random, n: int) -> list:
     out = []
     for i in range(min(n, WALK_STEERING_INPUTS)):
         x = tpi_walk_cells(rng)
-        x['mask'] = 0
         cx, cy = rng.choice(x['paths'])
         speed = rng.choice([655, 4000, 7733, 13107, 20000, 26214])
         x['walk'] = {'x': (cx << 16) + rng.randrange(8000, 57000), 'y': (cy << 16) + rng.randrange(8000, 57000),
@@ -3592,7 +3582,7 @@ def tpi_nav_root_inputs(rng: random.Random, n: int) -> list:
 
 
 TPI_NAV_ROOT_TARGET = Target(
-    'tpi-exe-walk-root', 'tpi', 'Game.exe integer square root 0x5d2060 and normalisation 0x63e150 at the control word 0x7f',
+    'tpi-exe-navigator-root', 'tpi', 'Game.exe integer square root 0x5d2060 and normalisation 0x63e150 at the control word 0x7f',
     'Fixed16.Length / Normalize with a single-rounded root (TPI-NAVIGATOR.md, NV2)',
     TPI_NAV_ROOT, TPI_NAV_RANGES, tpi_nav_stubs, tpi_nav_root_binary, tpi_nav_root_plan, tpi_nav_root_inputs,
     alternatives={'root-64-bits': lambda x: tpi_nav_root_plan(x, False)},
@@ -3603,7 +3593,6 @@ TPI_NAV_STEERING_TARGET = Target(
     'tpi-exe-walk-steering', 'tpi', 'Game.exe navigator constructor 0x63ed10, set-up 0x63e3a0 and steering step 0x63dd20',
     'GuestNavigation.Navigate / StepOriginal with WalkEdgeRules.ThemeParkInc (TPI-NAVIGATOR.md, NV2)',
     TPI_NAV_STEP, TPI_NAV_RANGES, tpi_nav_stubs, tpi_nav_steering_binary, tpi_nav_steering_plan, tpi_nav_steering_inputs,
-    alternatives={'root-64-bits': tpi_nav_steering_exact_root},
     notes=['A whole walk per input on a Theme Park Inc map (obstacle walkways, holes, unowned land): the constructor over zeroed memory or a '
            '0xcd fill, set-ups, 80 steering steps, map edits that stamp their block ([0xaa1484] + 0x460 + 0x1c0000). The behaviour list is '
            'the registration 0x63ea90\'s (avoid_walls 0xe666, follow_path 0x8000, separation 0x1999); separation runs with its neighbour '

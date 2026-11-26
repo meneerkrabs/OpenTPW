@@ -155,6 +155,7 @@ public sealed class GuestNavigation
 	public const int StuckWindow = 15;
 	/// <summary>At most five route waypoints are buffered (<c>0xff34c</c>).</summary>
 	public const int BufferedWaypoints = 5;
+	// [BIN:TPI-EXE:0x0063EA90 behaviour registration] the steering list [0xAA0B88..0xAA0B8C] emptied, then the behaviours named avoid_walls (0xE666), follow_path (0x8000) and separation (0x1999) taken from the 8-entry table 0x9D4EF8 by name, in that order; tp.exe's 0x50FDF0 is the same
 	public const int AvoidWallsWeight = 0x10000 - 6554;
 	public const int FollowPathWeight = 0x10000 - 0x8000;
 	public const int SeparationWeight = 6553;
@@ -209,6 +210,7 @@ public sealed class GuestNavigation
 
 	// ---- The navigator's other members (NV2, docs/reverse/TPI-NAVIGATOR.md): the 177-byte record holds them all ----------------------------------------------------
 
+	// [BIN:TPI-EXE:0x0063ED10 navigator constructor] +0 mass 0x10000, +4 radius 0x3333, pos, vel, the axes, +0x30, formation_pos, force, target 0, +0x18 max force 0x6666, +0x1C max speed 0x3333, the counts and index 0, +0x60 finished 1, the five buffer slots zeroed by 0x63D820 (vector constructor 0x86FF04), +0xA0..+0xB8 0; +0x48 and +0x8C.. are not written (the arena 0x7CA070 does not fill); tp.exe's 0x50FFE0 is the same
 	/// <summary><c>+0x00</c> mass: 0x10000 from the constructor (<c>0x63ED10</c>, tp.exe <c>0x50FFE0</c>) or the file; nothing reads it (the steering divides its force by the literal ONE).</summary>
 	public int Mass = Fixed16.One;
 	/// <summary>
@@ -563,6 +565,7 @@ public sealed class GuestNavigation
 	/// lengths of the progress measure computed; the progress, its history, the waypoint index, the arrival and the stuck flag reset,
 	/// and the walk takes the cell map's stamp counter. A failed search leaves the walk arrived and stuck with no waypoints.
 	/// </summary>
+	// [BIN:TPI-EXE:0x0063E3A0 walk set-up] tp.exe's routine (the route buffer 0xAA0C18, the search 0x640C50); subpath_dist slot i (+0x8C + 4i) = the octile segment from waypoint i to i + 1 for i below +0x58 − 1, summed into +0xA4 (0x63E63A..0x63E6AF); the other slots keep their values; the stamp counter 0x5D81F0 on success only
 	// [BIN:TPW-EXE:0x0050F8E0 walk set-up] start bytes = position >> 16, goal = target >> 16; 0x511420 with the mask +0xB4; on 0x70000000: +0x4C/+0x50 = target, +0x54, +0x58, +0xA0..+0xB0, +0x5C = 0, +0x60 = 1, +0xB8 = 1, return 0; mode 1 shifts the result one place and puts the position's cell first (count + 1 below 0xFC); +0x54 = count, +0x58 = min(count, 5); +0xA0 = octile(waypoint 0 − position) + every segment; +0x64.. the buffered centres (cell << 16 | 0x8000); +0x8C.. and +0xA4 the buffered segments; +0xA8 the segments beyond; +0xAC, +0xB0, +0x5C, +0x60, +0xB8 = 0; +0x48 = the stamp counter 0x4D8C50
 	private bool Setup( ParkCellMap map, int targetX, int targetY, bool reroute )
 	{
@@ -792,6 +795,7 @@ public sealed class GuestNavigation
 	/// original's arithmetic, the velocity, the position committed through <see cref="WalkEdges.Commit"/> (a refused step adds a
 	/// history bit), then the progress and its history bit. Stuck when a search of the walk failed, else arrived when the progress is ONE.
 	/// </summary>
+	// [BIN:TPI-EXE:0x0063DD20 steering step] tp.exe's step; after the commit the local x axis +0x20 = 0x63E150(+0x10) and the y axis +0x28 = 0x63E300 (perpendicular (−y, x)) of it (0x63DECF..0x63DF02); the refused commit and the progress shift +0xB0 left without a mask (0x63DEAE, 0x63DF1E)
 	// [BIN:TPW-EXE:0x0050F3B0 steering step] behaviours in list order (avoid_walls 0xE666, follow_path 0x8000, separation), each truncated to +0x18 (0x50F600) and FixMul-weighted; the sum truncated to +0x18 and FixDiv by ONE; +0x10 = truncate(+0x10 + force, +0x1C); the commit 0x510510 from the old position's cell to the new one's with +0xB4 (refused: +0xB0 = +0xB0 << 1 | 1, the position kept); then +0xB0 = +0xB0 << 1 | (0x50FD40 <= +0xAC) and +0xAC = the progress
 	// [BIN:TPW-EXE:0x004FA2A0 walk step] the steering step, then 2 when +0x18C (walk +0xB8) is set, 0 when 0x50FD40 is ONE, else 1
 	private WalkResult StepOriginal( int maxSpeed, int maxForce, ParkCellMap map, Func<GuestNavigation, (int X, int Y)>? separation )
@@ -1144,6 +1148,7 @@ public static class GuestSpeed
 	/// tp.exe <c>0x00510190</c>, the speed setter: (+0x1C max speed, +0x18 max force) = max(655, _ftol(min(s, 2) × 13107.2 / 26214.4)), the product of the single and the double constant rounded to
 	/// a 24-bit mantissa by the x87 (<see cref="Single24.Product"/>) before the truncation. NaN is not capped and gives the floor, −∞ the floor, +∞ the cap.
 	/// </summary>
+	// [BIN:TPI-EXE:0x0063EF90 speed setter] Theme Park Inc's is the same routine: min(s, 2.0) (0x93AD1C), +0x18 = _ftol(s × 26214.4) (0x93EB58), +0x1C = _ftol(s × 13107.2) (0x93EB48), each raised to 0x28F; the navigator's own members (GuestNavigation.MaxForce, MaxSpeed)
 	// [BIN:TPW-EXE:0x00510190 speed setter] fld s, fcomp 0x007009A0 (2.0), test ah, 0x41: a speed above 2.0 (not below, not equal, not unordered) becomes 2.0; +0x18 = _ftol(s × the double at 0x007009A8 = 26214.4), +0x1C = _ftol(s × the double at 0x007009B0 = 13107.2); each below 0x28F (655, signed) is raised to 655
 	public static (int MaxSpeed, int MaxForce) Caps( float speed )
 	{

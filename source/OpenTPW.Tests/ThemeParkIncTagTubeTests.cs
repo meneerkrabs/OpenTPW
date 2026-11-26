@@ -199,7 +199,7 @@ public class ThemeParkIncTagTubeTests
 		var events = new List<string>();
 		var window = new ThemeParkIncTagTubeWindow( Strings(), new World( tube ), new ThemeParkIncTagTubeSession(),
 			row => new ThemeParkIncLetterWindow.Letter( $"subject{row.Tag}", $"from{row.Tag}", "to", $"date{row.Date}", $"body{row.Tag}", row.Picture - 1, row.GotoKind, row.GotoArgument ),
-			() => events.Add( "closed" ), ( kind, argument ) => events.Add( $"goto {kind} {argument}" ) );
+			() => events.Add( "closed" ), row => events.Add( $"goto {row.GotoKind} {row.GotoArgument}" ) );
 		window.Build();
 		return (window, tube, events);
 	}

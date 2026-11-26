@@ -208,7 +208,7 @@ public class ThemeParkIncX87Tests
 			"AllStaffConstants.RestLevel", "AllStaffConstants.MinWage", "AllStaffConstants.MotivationFactor", "AllStaffConstants.StaffSlackingEnergy", "AllStaffConstants.MinDistanceForSlacking",
 			"AllStaffConstants.StaffRoomCapacity", "AllStaffConstants.MaxSpeedDifference", "AllStaffConstants.TrainingExtraExperience", "AllStaffConstants.MinExperienceForTraining",
 			"AllStaffConstants.SkillIncrement", "AllStaffConstants.ProgessUpperLimit", "AllStaffConstants.HappyHitCosNoRestArea", "AllStaffConstants.HappyHitCosRoomInaccessible",
-			"AllStaffConstants.PercentageForBadWageDecision", "Strike.MinMonthsForStrike", "Strike.MinStaffOfTypeForStrike", "Strike.EnergyPercentToStrike", "Strike.HappyPercentToStrike",
+			"AllStaffConstants.PercentageForBadWageDecision", "AllStaffConstants.MaxWage", "AllStaffConstants.WageStep", "Strike.MinMonthsForStrike", "Strike.MinStaffOfTypeForStrike", "Strike.EnergyPercentToStrike", "Strike.HappyPercentToStrike",
 			"Strike.MotivationPercentToStrike", "Researcher.MinResearchAbility", "Researcher.MaxResearchAbility" } )
 			Set( key, 1 );
 		Set( "AllStaffConstants.MaxExperience", maxExperience );

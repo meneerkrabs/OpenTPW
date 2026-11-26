@@ -310,12 +310,13 @@ public sealed class ThemeParkIncStaffMember
 	/// <summary>
 	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10, a mechanic's 0, 1, 21 and 22 and a gardener's 0, 1, 0x1F and 0x20, each with the training
 	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25; an entertainer's 0, 1 and 0x17; a guard's 0 and 1 with the training states; and for all six the rest
-	/// states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area).
+	/// states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area) and the strike states 4 (to the strike area) and 5 (striking).
 	/// </summary>
 	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
 		ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher or ThemeParkIncStaffRole.Gardener or ThemeParkIncStaffRole.Entertainer
-			or ThemeParkIncStaffRole.Guard when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch => true,
+			or ThemeParkIncStaffRole.Guard when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch
+				or ThemeParkIncStaffWorld.ToStrike or ThemeParkIncStaffWorld.Striking => true,
 		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Gardener => state is 0 or 1 or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering || IsTrainingState( state ),
@@ -340,15 +341,15 @@ public sealed class ThemeParkIncStaffMember
 		&& role switch
 		{
 			ThemeParkIncStaffRole.Mechanic => world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.EffectCell == null && world.EffectRadius == null
-				&& world.Template is 1 or 3 or 0xF or 0x1A && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			ThemeParkIncStaffRole.Gardener => world.PlantId is >= 0 && world.RideId == null && world.JobTimer == null && world.LitterCell == 0 && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 3 or 0xF or 0x19
+				&& world.Template is 1 or 3 or 0xF or 0x1A or ThemeParkIncStaffWorld.StrikeTemplate && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
+			ThemeParkIncStaffRole.Gardener => world.PlantId is >= 0 && world.RideId == null && world.JobTimer == null && world.LitterCell == 0 && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 3 or 0xF or 0x19 or ThemeParkIncStaffWorld.StrikeTemplate
 				&& area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
 			// an entertainer or a guard keeps his cell effect (0x609E20's cell word and the radius it went down with); the entertainer's performing template is 0x13..0x16, no other role has an effect
-			ThemeParkIncStaffRole.Entertainer => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or (>= 0x13 and <= 0x16)
+			ThemeParkIncStaffRole.Entertainer => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or (>= 0x13 and <= 0x16) or ThemeParkIncStaffWorld.StrikeTemplate
 				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			ThemeParkIncStaffRole.Guard => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 2 or 3 or 0xF
+			ThemeParkIncStaffRole.Guard => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 2 or 3 or 0xF or ThemeParkIncStaffWorld.StrikeTemplate
 				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 2 or 3 or 0xF or 0x19
+			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 2 or 3 or 0xF or 0x19 or ThemeParkIncStaffWorld.StrikeTemplate
 		};
 
 	/// <summary>An entertainer's or a guard's cell effect: a cell word of the map and a radius that is the writer's 16-bit argument.</summary>

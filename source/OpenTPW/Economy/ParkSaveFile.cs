@@ -86,6 +86,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? TpiPerformers { get; init; }
+		/// <summary>
+		/// The Theme Park Inc wage rules the save's staff follow (<see cref="ThemeParkIncWageRules"/>): the wage demands as tag tube rows, the negotiation, the dismissal and the strikes in the park.
+		/// Written by a park with Theme Park Inc's staff; a Theme Park Inc save without it was made before they were ported and is refused.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? TpiWages { get; init; }
 		/// <summary>Theme Park Inc's object list, newest first (<see cref="ParkEconomy.ThemeParkIncObjectList"/>): written by a park with Theme Park Inc's staff, with its ride wear.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int>? TpiObjectList { get; init; }
@@ -776,6 +782,7 @@ public static class ParkSaveFile
 			TpiRideWear = park.TpiStaff != null ? ThemeParkIncRideWearRules : null,
 			TpiGardens = park.TpiStaff != null ? ThemeParkIncGardenRules : null,
 			TpiPerformers = park.TpiStaff != null ? ThemeParkIncPerformerRules : null,
+			TpiWages = park.TpiStaff != null ? ThemeParkIncWageRules : null,
 			TpiObjectList = park.TpiStaff != null ? park.ThemeParkIncObjectList.ToList() : null,
 			TpiResearch = park.CaptureThemeParkIncResearch(),
 			TpiCutscene = park.TpiCutscene?.Capture(),
@@ -1157,6 +1164,10 @@ public static class ParkSaveFile
 			// the refusal is the standing policy for older Science saves, not a fidelity necessity
 			if ( data.TpiStaff != null && data.TpiPerformers != ThemeParkIncPerformerRules )
 				throw new InvalidDataException( ThemeParkIncPerformersMissing );
+			// user decision (refuse and document): a Theme Park Inc park save from before the wage demands, the negotiation and the strikes is refused like the older ones. Its demands were notices the
+			// tube never filed and its months never considered a strike, so it is not the park the ported rules would have made
+			if ( data.TpiStaff != null && data.TpiWages != ThemeParkIncWageRules )
+				throw new InvalidDataException( ThemeParkIncWagesMissing );
 			if ( data.TpiStaff != null && !ParkEconomy.IsValidThemeParkIncObjectList( data.Objects.Select( item => item.Id ), data.TpiObjectList ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc object list." );
 			ValidateThemeParkIncJobs( data );
@@ -1170,7 +1181,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiTagTube != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiGardens != null || data.TpiObjectList != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiTagTube != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiWages != null || data.TpiGardens != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1187,6 +1198,12 @@ public static class ParkSaveFile
 
 	/// <summary>The rules version a Theme Park Inc save with its staff writes for its entertainers and guards (<see cref="Data.TpiPerformers"/>).</summary>
 	public const int ThemeParkIncPerformerRules = 1;
+
+	/// <summary>The rules version a Theme Park Inc save with its staff writes for its wage demands, negotiation and strikes (<see cref="Data.TpiWages"/>).</summary>
+	public const int ThemeParkIncWageRules = 1;
+
+	/// <summary>The refusal of a Theme Park Inc save from before the wage demands, the negotiation and the strikes.</summary>
+	public const string ThemeParkIncWagesMissing = "This Theme Park Inc park was saved before OpenTPW kept the staff's wage demands and strikes and cannot be continued; start a new game from the Personnel File.";
 
 	/// <summary>The refusal of a Theme Park Inc save from before the entertainers and the guards.</summary>
 	public const string ThemeParkIncPerformersMissing = "This Theme Park Inc park was saved before OpenTPW kept the entertainers and the guards and cannot be continued; start a new game from the Personnel File.";

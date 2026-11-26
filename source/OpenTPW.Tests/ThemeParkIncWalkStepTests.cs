@@ -122,7 +122,7 @@ public class ThemeParkIncWalkStepTests
 	/// the wander marks one (the mark is the counter routine's value), so the gates' and the stranded test's comparisons run too.
 	/// </summary>
 	[TestMethod]
-	public void ATheParkWorldRunIsTheSameUnderBothCountingModes()
+	public void AThemeParkWorldRunIsTheSameUnderBothCountingModes()
 	{
 		var edits = new GuestSnapshotTests.Rig();
 		var counted = new GuestSnapshotTests.Rig();

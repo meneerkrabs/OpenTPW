@@ -190,7 +190,7 @@ counts every simulation call (`ParkCellMap.CountsSimulationCalls`; `NextStamp` f
 
 | Caller | Address | OpenTPW |
 | --- | --- | --- |
-| the route requests | `0x60B828`, `0x60B8F4` | `RequestRoute`, `RouteToTpiPoint`, `StaffRoute` |
+| the route requests | `0x60B828`, `0x60B8F4` | `RequestRoute`, `RouteToTpiPoint`, `StaffRoute`, the training walk's fallback cell steer (`EnterToTrainingRoom`) |
 | the walk set-up's success | `0x63E79B` | `GuestNavigation.Setup` (a failed set-up keeps its stamp and raises nothing) |
 | the wander: entry gate, a guest's final route, the off-path tries, the stranded mark | `0x609FBE`, `0x60A55F`, `0x60A6FB` / `0x60A83F`, `0x60A4A5` | `Wander` (the guests'; Theme Park World's `0x4F9490` has the same calls) |
 | the cell edits and the queue length change | `0x67CC50`, `0x67CE47`, `0x682FB3`, `0x5E06B3` | `ParkCellMap.SetType`, `StampBlockAt` (already counted) |
@@ -203,7 +203,7 @@ wander comes with NV4, so under the switch the counter counts none of its calls 
 
 Every comparison of stored stamps is between values of distinct calls (a block stamp against a walk's stamp in follow_path, a block stamp against a mark, a mark against the next
 counter value) and the counter only grows, so counting every call changes no outcome: a Theme Park World map keeps counting the edits only (`NextStamp` answers the next value without
-raising it), and `ThemeParkIncWalkStepTests.ATheParkWorldRunIsTheSameUnderBothCountingModes` runs a Theme Park World guest park with path edits and stranded marks under both modes, tick
+raising it), and `ThemeParkIncWalkStepTests.AThemeParkWorldRunIsTheSameUnderBothCountingModes` runs a Theme Park World guest park with path edits and stranded marks under both modes, tick
 for tick alike. With the switch the counter joins the digest even while no block is stamped, and the layout writes it with the optional `SimulationStampCounter` (docs/PARK-SAVES.md).
 The re-route after a save and after a load (`0x609B55`, decision N-1) raises the counter too; it is NV5's.
 

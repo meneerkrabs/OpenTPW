@@ -65,6 +65,12 @@ public interface IThemeParkIncMissionHost
 	void PostIntroductionLetter();
 	/// <summary>The controller's status broadcast (message 0x27, then <c>0x54D660</c>).</summary>
 	void StatusChanged();
+	/// <summary>Posts advice <paramref name="message"/> with its descriptor's score to the advisor thing (<c>0x71A930</c>, <c>0x718820</c>); a host without an advisor ignores it.</summary>
+	bool PostAdvice( int message ) => false;
+	/// <summary>Cancels advice <paramref name="message"/> on the advisor thing (<c>0x718990</c>); a host without an advisor ignores it.</summary>
+	void CancelAdvice( int message ) { }
+	/// <summary>Whether the player's history has advice <paramref name="message"/> played (<c>0x71B4F0</c> +8); false without an advisor.</summary>
+	bool AdvicePlayed( int message ) => false;
 }
 
 /// <summary>
@@ -202,6 +208,7 @@ public sealed class ThemeParkIncMissionController
 		if ( ObstacleResearchComplete )
 		{
 			career.DiscoverObstacleAbilities();
+			host.PostAdvice( ObstacleResearchedAdvice( career.MissionCounter, host.AdvicePlayed( 0x19B ) ) );
 			State = ThemeParkIncMissionState.ObstacleResearched;
 			host.PlayCamera( new ThemeParkIncCameraRequest( host.CurrentObstacle, 1, 0 ) );
 			ObstacleResearchComplete = false;
@@ -214,6 +221,22 @@ public sealed class ThemeParkIncMissionController
 		if ( (turn & 3) == 0 )
 			EvaluateExitStatistics( turn );
 	}
+
+	/// <summary>
+	/// The advice the researched-obstacle step posts (<c>0x5EF6E2</c>): <c>0x1EB</c>..<c>0x1EE</c> after missions 3, 6, 9 and 12 (the counter), else <c>0x172</c> once <c>0x19B</c> has been played and
+	/// <c>0x19B</c> before.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5EF6E2 obstacle panel advice] the counter +0x105C - 3 through the byte table 0x5EFCBC (0, 4, 4, 1, 4, 4, 2, 4, 4, 3) and the jump table 0x5EFCA8: counters 3, 6, 9 and 12 post
+	// 0x1EB, 0x1EC, 0x1ED and 0x1EE; any other (case 4, and a counter outside 3..12) reads the history's played byte of 0x19B (0x71B4F0 +8): set posts 0x172, else 0x19B; each with
+	// 0x71A930(message, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820, after 0x74C3C0 and before +0x14 = 1 and the camera
+	public static int ObstacleResearchedAdvice( int counter, bool played19B ) => counter switch
+	{
+		3 => 0x1EB,
+		6 => 0x1EC,
+		9 => 0x1ED,
+		12 => 0x1EE,
+		_ => played19B ? 0x172 : 0x19B
+	};
 
 	// [BIN:TPI-EXE:0x5EFA14 daily evaluation] for i = 0..4: type (+4) != 0, zone (+0x20) == the viewed zone or 4, state (+0) == 1; days = (now - start) / 0xC92A69C000 (0x7D8E30, __alldiv, the low
 	// dword); value = 0x5EFF00; when days != +0x1C: 0x74C5B0(i, days, value); if days >= TargetTime (+0xC, signed): 0x74C670 -> state 2, else TargetTime != 0 -> state 3; then message 0x27
@@ -314,7 +337,7 @@ public sealed class ThemeParkIncMissionController
 	/// </summary>
 	// [BIN:TPI-EXE:0x5F0770 on mission complete] the current zone record's +0x64 != EndingTheme and EndingTheme != 3: logs "Mission is complete but we're in the wrong theme!!!" and returns; the words
 	// ObstacleOpened (+0x10D4) and CutsceneObject (+0x10D0) are read as u16; ObstacleOpened != 0: 0x647850 finds the first attraction of the type; found: +0x18 = it, +0x14 = 3, 0x5D0400(it, 2, 0), and
-	// with counter 0 panel 0x26C (presentation); not found: the tick 0x5F0940; else CutsceneObject != 0 and found: +0x14 = 4 (+0x18 is not set), 0x5D0400(it, 2, 0); else the tick
+	// with counter 0 the advice 0x26C; not found: the tick 0x5F0940; else CutsceneObject != 0 and found: +0x14 = 4 (+0x18 is not set), 0x5D0400(it, 2, 0); else the tick
 	public bool OnMissionComplete( long turn )
 	{
 		var ending = career.Mission.EndingTheme;
@@ -333,6 +356,10 @@ public sealed class ThemeParkIncMissionController
 				CutsceneObject = thing;
 				State = ThemeParkIncMissionState.ObstacleOpened;
 				host.PlayCamera( new ThemeParkIncCameraRequest( thing, 2, 0 ) );
+				// [BIN:TPI-EXE:0x5F0827 obstacle opened advice] with the career's counter +0x105C at 0: 0x71A930(0x26C, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820, after the flight
+				// started (its class 6 is admitted only by a flight of mode 0, so the mode-2 flight playing now scores it -1)
+				if ( career.MissionCounter == 0 )
+					host.PostAdvice( 0x26C );
 				return true;
 			}
 		}
@@ -391,25 +418,31 @@ public sealed class ThemeParkIncMissionController
 	}
 
 	/// <summary>Message 0x24 with the obstacle thing <paramref name="thing"/>: the player removes it; the camera flies to it, and its end opens it and completes the mission.</summary>
-	// [BIN:TPI-EXE:0x5F0F96 remove obstacle] logs "Obstacle Removed Message Received"; panel 0x173 when panel 0x19C's byte +8 is set (presentation); +0x14 = 2, +0x18 = the message's thing (word +8),
-	// 0x5D0400(thing, 2, 0); 0x74C430 (career +0x13E5 = 1); with counter 1 panel 0x21D (presentation)
+	// [BIN:TPI-EXE:0x5F0F96 remove obstacle] logs "Obstacle Removed Message Received"; the advice 0x173 when the history's played byte of 0x19C (0x71B4F0 +8) is set (0x71A930(0x173, locate 0, 0,
+	// variant -1, bypass 0, score -1) -> 0x718820); +0x14 = 2, +0x18 = the message's thing (word +8), 0x5D0400(thing, 2, 0); 0x74C430 (career +0x13E5 = 1); with the counter +0x105C at 1 the
+	// advice 0x21D the same way, after the flight started (its class 6 is admitted only by a flight of mode 0, so the mode-2 flight scores it -1)
 	public void RemoveObstacle( ushort thing )
 	{
 		Log?.Trace( "Obstacle Removed Message Received" );
+		if ( host.AdvicePlayed( 0x19C ) )
+			host.PostAdvice( 0x173 );
 		State = ThemeParkIncMissionState.ObstacleRemoved;
 		CutsceneObject = thing;
 		host.PlayCamera( new ThemeParkIncCameraRequest( thing, 2, 0 ) );
 		career.MarkObstacleRemoved();
+		if ( career.MissionCounter == 1 )
+			host.PostAdvice( 0x21D );
 		host.StatusChanged();
 	}
 
 	/// <summary>Message 0x25: a promotion to <paramref name="rank"/>.</summary>
-	// [BIN:TPI-EXE:0x5F10F7 promotion] logs "Promotion Message Received"; 0x74C450(the message's rank, dword +8); panel 0x1A4 (presentation)
+	// [BIN:TPI-EXE:0x5F10F7 promotion] logs "Promotion Message Received"; 0x74C450(the message's rank, dword +8); then 0x71A930(0x1A4, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820
 	/// <returns>False when the promotion's firing line word is one OpenTPW cannot read (<see cref="ThemeParkIncCareer.Promote"/>).</returns>
 	public bool Promotion( int rank )
 	{
 		Log?.Trace( "Promotion Message Received" );
 		var read = career.Promote( rank );
+		host.PostAdvice( 0x1A4 );
 		host.StatusChanged();
 		return read;
 	}
@@ -423,7 +456,7 @@ public sealed class ThemeParkIncMissionController
 	/// then the state and the thing clear.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5F118D camera finished] the message's own thing is not read; +0x14 == 2 or 3: 0x466050(things[+0x18]), things[+0x18]->0x5E8BD0(), 0x5F0940; == 4: 0x637C40(things[+0x18]), 0x5F0940;
-	// then +0x14 = 0, +0x18 = 0 and panels 0x172, 0x19B, 0x1E3, 0x20F, 0x210 close (presentation); the 0x27 broadcast
+	// then +0x14 = 0, +0x18 = 0 and the advice 0x172, 0x19B, 0x1E3, 0x20F and 0x210 is cancelled in that order (0x718990); the 0x27 broadcast
 	public void CameraFinished( long turn )
 	{
 		switch ( State )
@@ -439,8 +472,13 @@ public sealed class ThemeParkIncMissionController
 		}
 		State = ThemeParkIncMissionState.Idle;
 		CutsceneObject = 0;
+		foreach ( var message in FlightCancels )
+			host.CancelAdvice( message );
 		host.StatusChanged();
 	}
+
+	/// <summary>The advice the end of a camera flight cancels (<c>0x5F11F8</c>..<c>0x5F1266</c>), in that order.</summary>
+	public static readonly IReadOnlyList<int> FlightCancels = new[] { 0x172, 0x19B, 0x1E3, 0x20F, 0x210 };
 
 	// [BIN:TPI-EXE:0x5F077E current zone] the career's current record (+0x4C) +0x64 goes through 0x74F4B0 and that record's +0x64 is compared
 	private int CurrentZoneNumber()

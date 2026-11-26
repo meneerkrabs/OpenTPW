@@ -33,7 +33,7 @@ TEST_ROW = 0x9E3E30
 
 ROW_PATTERN = re.compile(
     r'^\s*\{ row = (\d+), kind = (\d), message = 0x([0-9a-f]+), group = (\d+), class = (\d+), callback = 0x([0-9a-f]+), '
-    r'duplicates = (\d+), response = (\d+), count = (\d+), variant = (\d+)(?:, score = (-?\d+))? \},?$')
+    r'duplicates = (\d+), response = (\d+), count = (\d+), variant = (\d+)(?:, score = (-?\d+))?(?:, field = 0x([0-9a-f]+))? \},?$')
 CASE_PATTERN = re.compile(r'^\s*\[DataRow\(([^\r\n]+)\)\]\s*$', re.MULTILINE)
 
 
@@ -62,6 +62,15 @@ def constant_score(image, callback):
     return target, None
 
 
+def getter_field(image, callback):
+    """The scorer offset a callback returns when it is `mov eax, [ecx + imm32]; ret`, else None."""
+    target = thunk_target(image, callback)
+    code = image_bytes(image, target, 7)
+    if code[:2] == b'\x8b\x81' and code[6] == 0xC3:
+        return target, struct.unpack_from('<I', code, 2)[0]
+    return target, None
+
+
 def native_rows(arena):
     count = arena.read(COUNT_WORD, 'I')
     check(count, 665, 'descriptor rows including the terminator')
@@ -77,9 +86,10 @@ def table_lines(image, rows):
     lines = []
     for index, row in enumerate(rows):
         _, score = constant_score(image, row[4] & 0xFFFFFFFF)
+        _, field = getter_field(image, row[4] & 0xFFFFFFFF)
         line = (f'  {{ row = {index}, kind = {row[0]}, message = 0x{row[1]:x}, group = {row[2]}, class = {row[3]}, '
                 f'callback = 0x{row[4] & 0xFFFFFFFF:x}, duplicates = {row[8] & 0xFF}, response = {row[9]}, count = {row[10]}, '
-                f'variant = {row[11]}{"" if score is None else f", score = {score}"} }},')
+                f'variant = {row[11]}{"" if score is None else f", score = {score}"}{"" if field is None else f", field = 0x{field:x}"} }},')
         lines.append(line)
     return lines
 
@@ -93,7 +103,8 @@ HEADER = '''# Advisor message descriptors of Theme Park Inc (no-CD Game.exe, SHA
 # 1 code posts the message; message: message id (+4); group: message group (+8); class: the advice context class
 # (+0xC); callback: the score callback's address (+0x10); duplicates: pending duplicates allowed (+0x20);
 # response: first response id (+0x24); count: responses (+0x28); variant: the variant rule (+0x2C); score: the
-# callback's constant result where the callback is a constant (mov eax, imm32; ret).
+# callback's constant result where the callback is a constant (mov eax, imm32; ret); field: the scorer offset the
+# callback returns where it reads one word of the scorer (mov eax, [ecx + imm32]; ret), an Advisor.sam key.
 
 messages = ['''
 
@@ -104,6 +115,22 @@ def check_table(image, rows, path):
     check(len(lines), len(expected), f'{path} rows')
     for index, (line, native) in enumerate(zip(lines, expected)):
         check(line.rstrip(','), native.rstrip(','), f'{path} row {index}')
+
+
+def check_getters(arena, image, rows):
+    """Each field getter runs on a synthetic scorer whose words are their own offsets."""
+    scorer = arena.object(0x1000)
+    for offset in range(0, 0x1000, 4):
+        arena.write(scorer + offset, 'I', 0x5A000000 | offset)
+    seen = 0
+    for row in rows:
+        _, field = getter_field(image, row[4] & 0xFFFFFFFF)
+        if field is None:
+            continue
+        arena.executed = 0
+        check(arena.call(row[4] & 0xFFFFFFFF, this=scorer).eax, 0x5A000000 | field, f'callback {row[4]:#x} field')
+        seen += 1
+    return seen
 
 
 def check_constants(arena, image, rows):
@@ -320,9 +347,12 @@ def main():
     arena.call(0x729530)
     rows = native_rows(arena)
     targets = {}
+    getters = {}
     for row in rows:
         target, _ = constant_score(image, row[4] & 0xFFFFFFFF)
         targets[row[4] & 0xFFFFFFFF] = target
+        if getter_field(image, row[4] & 0xFFFFFFFF)[1] is not None:
+            getters[row[4] & 0xFFFFFFFF] = target
     if args.write_table:
         args.write_table.write_text(HEADER + '\n' + '\n'.join(table_lines(image, rows)) + '\n]\n', encoding='utf-8')
         print(f'{len(rows)} rows written to {args.write_table}')
@@ -337,6 +367,10 @@ def main():
                              budget=200_000)
     constant_arena.call(0x729530)
     constants = check_constants(constant_arena, image, rows)
+    getter_arena = Sandbox(image, [*((target, target + 7) for target in set(getters.values())),
+                                   *((callback, callback + 5) for callback, target in getters.items() if callback != target)],
+                           budget=200_000)
+    fields = check_getters(getter_arena, image, rows)
 
     queue = Queue(arena)
     cases = cases_from(args.check)
@@ -345,7 +379,7 @@ def main():
     for case in cases:
         check(acceptance(queue, case), case[-1], f'acceptance case {case}')
     check_enqueue_and_selection(arena, queue, clock, stops)
-    print(f'{len(rows)} descriptor rows ({constants} constant scores), {len(cases)} acceptance cases, '
+    print(f'{len(rows)} descriptor rows ({constants} constant scores, {fields} field getters), {len(cases)} acceptance cases, '
           '3 enqueue, 6 selection and 3 cancel scenarios match')
 
 

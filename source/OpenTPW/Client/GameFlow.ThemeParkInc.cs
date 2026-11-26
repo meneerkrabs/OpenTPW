@@ -133,11 +133,6 @@ internal sealed partial class GameFlow
 			// a mail that comes while a letter is open waits for it: what the tag system does with a second notification then is not read (docs/reverse/TPI-BANK-MAIL.md)
 			if ( !hud.LetterOpen && tpiEconomy.TakeTpiMail() is { } mail )
 				PresentThemeParkIncMail( hud, tpiEconomy, mail );
-			// [BIN:TPI-EXE:0x54F1A0 unread advice] the tube's counter posts advisor message 0x198 (descriptor 0x9E3F80, group 0, response 739) or 0x15D (0x9E3FB8, group 0, two responses from 652)
-			// [EXT:tpi-capability-gates] Theme Park Inc's advisor queue (ThemeParkIncAdvisor) takes the forecasts and the letters so far: these descriptors' score callbacks (0x405C68, 0x406F23)
-			// and their response rows are not ported, so the message is noted and not posted (P4)
-			foreach ( var advice in tpiEconomy.TakeThemeParkIncTubeAdvice() )
-				Log.Trace( $"Theme Park Inc unread mail advice {advice:X} is not said: the advisor's message path is not ported." );
 			// [BIN:TPI-EXE:0x628D93 wage demand advice] the daily routine posts advisor message 0x1C8 with each wage demand; [BIN:TPI-EXE:0x7176E0 strike messages] the HQ's and the strikers' type-0x17
 			// messages reach only the advisor's listener. [EXT:tpi-capability-gates] neither is posted (the staff senders come with P5): they are noted
 			foreach ( var advice in tpiEconomy.TakeThemeParkIncStaffAdvice() )

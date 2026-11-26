@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -37,6 +39,9 @@ public sealed record ThemeParkIncCareerSnapshot( int FiringLine, bool GameFinish
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public byte[]? Shares { get; init; }
 }
+
+/// <summary>One advisor message's history in the career (<c>mHistory</c>): the world word at its last play, that play's variant, whether it played since its last cancel, its slaps and its plays.</summary>
+public readonly record struct ThemeParkIncAdviceHistory( uint WorldTime, int Variant, bool Played, int Slaps, int Plays );
 
 /// <summary>A zone record as a park save keeps it: the global save's 215 bytes after the name.</summary>
 public sealed record ThemeParkIncZoneSnapshot( byte[] Name, byte[] OneShot, byte[] OptionalFlags, int[] OptionalValues, byte[] AwardFlags, int[] AwardValues, ushort[] SignA, ushort[] SignB,
@@ -168,8 +173,33 @@ public sealed class ThemeParkIncCareer
 	public IReadOnlyList<int> Statuses => statuses;
 	/// <summary><c>+0x14EC</c>: the refresh (<c>.GMI</c>) flag the writer stores.</summary>
 	public bool GmiFlag { get; internal set; }
-	/// <summary><c>mHistory[0x284]</c> (<c>+0x14F0</c>), raw: its writers are not traced.</summary>
+	/// <summary><c>mHistory[0x284]</c> (<c>+0x14F0</c>), raw: one 20-byte entry per advisor message (<see cref="AdviceHistory"/>).</summary>
 	public ReadOnlySpan<byte> History => history;
+
+	/// <summary>The advisor's history of <paramref name="message"/> (docs/reverse/TPI-ADVISOR.md §3).</summary>
+	// [BIN:TPI-EXE:0x7185A8 advice history] entry +0x14F0 + 20·id: +0 the world word at the last play (0x448DA0), +4 its variant, the byte +8 played, +0xC the slaps (0x718A57), +0x10 the plays;
+	// the bytes +9..+0xB are never written
+	public ThemeParkIncAdviceHistory AdviceHistory( int message )
+	{
+		var entry = HistoryEntry( message );
+		return new( BinaryPrimitives.ReadUInt32LittleEndian( entry ), BinaryPrimitives.ReadInt32LittleEndian( entry[4..] ), entry[8] != 0,
+			BinaryPrimitives.ReadInt32LittleEndian( entry[0xC..] ), BinaryPrimitives.ReadInt32LittleEndian( entry[0x10..] ) );
+	}
+
+	/// <summary>Writes the advisor's history of <paramref name="message"/>; the played byte is written as 0 or 1 and the three bytes after it are kept.</summary>
+	public void SetAdviceHistory( int message, ThemeParkIncAdviceHistory value )
+	{
+		var entry = HistoryEntry( message );
+		BinaryPrimitives.WriteUInt32LittleEndian( entry, value.WorldTime );
+		BinaryPrimitives.WriteInt32LittleEndian( entry[4..], value.Variant );
+		entry[8] = value.Played ? (byte)1 : (byte)0;
+		BinaryPrimitives.WriteInt32LittleEndian( entry[0xC..], value.Slaps );
+		BinaryPrimitives.WriteInt32LittleEndian( entry[0x10..], value.Plays );
+	}
+
+	private Span<byte> HistoryEntry( int message ) => (uint)message < ThemeParkIncGlobalSave.HistoryEntries
+		? history.AsSpan( message * ThemeParkIncGlobalSave.HistoryEntryBytes, ThemeParkIncGlobalSave.HistoryEntryBytes )
+		: throw new ArgumentOutOfRangeException( nameof( message ), $"Advisor message {message:X} has no history entry." );
 	/// <summary>The zone records by name (map order: byte-wise).</summary>
 	public IReadOnlyDictionary<string, ThemeParkIncZoneRecord> Zones => zones;
 	/// <summary><c>+0x4C</c>: the current zone's record, or null.</summary>

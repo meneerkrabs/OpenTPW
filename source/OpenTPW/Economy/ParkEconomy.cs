@@ -65,11 +65,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// ([EXT:tpi-money-only] Theme Park Inc has no traced calendar of its own: its park keeps the synchronised start)
 		PendingInitialDay = !Rules.ThemeParkInc;
 		if ( Rules.ThemeParkInc && settings.Weather is { } weather )
-		{
 			TpiWeather = new ThemeParkIncWeatherSpells( weather );
-			TpiForecast = CreateThemeParkIncForecast();
-		}
 		CreateThemeParkIncCareer();
+		CreateThemeParkIncAdvisor();
 		if ( Rules.ThemeParkInc && settings.ThemeParkIncStaff is { } staffSettings )
 		{
 			TpiStaff = new ThemeParkIncStaff( staffSettings, TpiStaffNameText );
@@ -143,24 +141,6 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// </summary>
 	private static string TpiStaffNameText( ThemeParkIncStaffRole role, int index ) => $"{role}:{index}";
 
-	/// <summary>Theme Park Inc's forecast advice queue (null in Theme Park World, and where <c>Advisor.sam</c> is missing or lacks the group keys).</summary>
-	internal ThemeParkIncForecastQueue? TpiForecast { get; private set; }
-
-	/// <summary>
-	/// The original game tick's packed word for the advisor's repeat check: the dword the world tick
-	/// (<c>0x649450</c>) increments once per world update, which is the park turn, shifted right by two as <c>0x448EA0</c> reads it.
-	/// </summary>
-	internal uint TpiForecastWorldTime => unchecked( (uint)(Turn >> 2) );
-
-	/// <summary>
-	/// [BIN:TPI-EXE:0x71BDC0 forecast eligibility] The four rows are class 2 (<c>+0xC = 2</c>), which the native check
-	/// admits only in its default context: a mode word other than 3 with the game object's bytes <c>+0x2E</c>/<c>+0x2F</c>
-	/// clear and no animation word set. Mode word 3 selects class 3, <c>+0x2E</c> class 5, <c>+0x2F</c> class 7, and the
-	/// animation word classes 6/5/4 by its variant; a running Science park has none of those contexts and no cutscenes, so
-	/// the rows are admissible. The game's names for those contexts are not established (docs/reverse/TPI-ADVISOR-FORECAST.md).
-	/// </summary>
-	internal bool TpiForecastEligible => true;
-
 	/// <summary>
 	/// The Theme Park Inc advice mail the bank queued at this month end, if any: the tag system's record for the
 	/// bank's six-months-in-the-red notification. The client takes it once per month (null in Theme Park World).
@@ -173,21 +153,6 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var mail = TpiPendingMail;
 		TpiPendingMail = null;
 		return mail;
-	}
-
-	private static ThemeParkIncForecastQueue? CreateThemeParkIncForecast()
-	{
-		try
-		{
-			return ThemeParkIncForecastSettings.Load() is { } settings ? new ThemeParkIncForecastQueue( settings.Timing ) : null;
-		}
-		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or FormatException or OverflowException )
-		{
-			// [BIN:TPI-EXE:0x718B40 repeat lookup] without the file's group keys the native advisor has no
-			// descriptor to play, so a park without them simply has no forecast advice.
-			Log.Warning( $"Theme Park Inc forecast advice unavailable ({ThemeParkIncForecastSettings.Path}): {exception.Message}" );
-			return null;
-		}
 	}
 
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
@@ -501,6 +466,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		crowdPhaseTurn ??= previousTurn;
 		// [EXT:cheats-turn-boundary] the queued cheats apply first, before the turn's thing sweep (its weather update and arrival update) and the calendar; a park without any skips this
 		Cheats.ApplyPending( this, turn );
+		// [EXT:tpi-advisor-tick-clock] the advisor clock moves on by the tick's real time at the park clock's rate, in every world state (the sub-clock runs on in a lost park)
+		TpiAdvisor?.AdvanceClock( TpiAdvisorClockRate );
 		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
 		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
 		// [EXT:headless-economy] without a host sweep (the headless economy of tests and tools, which has no thing pool of guests, rides and staff to visit) the thing update runs in a fixed order of its own, staff, research, rides, challenges, where a level's park turn visits one list newest first (IThingSweep)
@@ -541,8 +508,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
 			// the calendar's month field is zero-based (mMonthAtLastUpdate); the weather reads the date's month, 1 to 12
 			// [BIN:TPI-EXE:0x6420EB] the advice belongs to the spell this message rolls; a pending or starting spell posts none
+			// [BIN:TPI-EXE:0x6420EB forecast advice] the record is built with the descriptor's score (0x71A930, score -1) and posted to the advisor as a kind-5 message (0x7194A4 -> 0x718820)
 			if ( TpiWeather?.OnMonth( stored.Month + 1, stored.Year - ParkCalendar.Epoch.Year, bound => (int)World.Next( (uint)bound ) ) is { Kind: >= 1 and <= 4 } rolled )
-				TpiForecast?.Post( rolled.Kind, TpiForecastWorldTime, TpiForecastEligible );
+				PostThemeParkIncAdvice( ThemeParkIncAdviceResponse.ForecastMessage( rolled.Kind ) );
 		}
 		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
@@ -606,6 +574,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			UpdateThemeParkIncResearch( turn );
 			// [EXT:headless-economy] the tag system (built at 0x6483B7, before the research manager) is older still
 			UpdateThemeParkIncTagTube( turn );
+			// [EXT:headless-economy] the advisor (built at 0x64836F, before the tag system) is older still
+			UpdateThemeParkIncAdvisor( turn );
 			return;
 		}
 		UpdateStaffVitals();

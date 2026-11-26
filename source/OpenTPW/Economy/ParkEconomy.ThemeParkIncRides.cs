@@ -67,7 +67,7 @@ public sealed partial class ParkEconomy
 	// (Info.RunsContinuously, 0x5DB782); the turn & 0x3F zero (0x5E2614); variable 5 (VAR_ONRIDE) 0 gives the wear 0, else 0x5E21A0(the script's speed +0xC0 (0x6B0C30), variables 2 and 3 as floats, 0)
 	// [BIN:TPI-EXE:0x5E26A6 wear gauges] +0x54 = clamp(+0x54 - wear); unless the type's +0x5C (Info.IsSpecial) is 1, +0x58 = clamp(+0x58 - 0.02f × wear) (0x5E26FB..0x5E273C); then the repair
 	// byte below the type's +0x3CC (RideBreakDown.WarnPlayer) writes VAR_WORN = 1 (0x5E2761), and below +0x3C8 (RideBreakDown.Imminent) with the byte plus the wear not below it posts advice 0x40
-	// [EXT:tpi-capability-gates] the advice 0x40 (0x71A930 -> 0x718820) is not posted: Theme Park Inc's advisor queue carries the forecasts only (the advisor's other messages); it draws nothing
+	// [EXT:tpi-capability-gates] the advice 0x40 (0x71A930 -> 0x718820) is not posted: Theme Park Inc's advisor queue takes only the forecasts and the letters so far (the other senders come with P4 and P5); it draws nothing
 	internal void WearThemeParkInc( ParkObjectState item, EconomyObjectInfo info, long turn )
 	{
 		if ( info.Upgrades.Count == 0 )

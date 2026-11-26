@@ -79,6 +79,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
 			// [BIN:TPI-EXE:0x6482E3 staff HQ thing] the new-world init builds the staff HQ, whose constructor fills its slot table from the career's mission (0x632270 -> 0x634600)
 			TpiStaff.Hq.BuildSlots( TpiCareer.Mission );
+			TpiSpecialRides = new ThemeParkIncSpecialRides();
 		}
 		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
 		CreateThemeParkIncChallenges();
@@ -2355,6 +2356,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		objects.Add( item.Id, item );
 		// [BIN:TPI-EXE:0x64F3E0 object list] a new Theme Park Inc object enters the object list at its head
 		tpiObjectList?.Insert( 0, item.Id );
+		AddThemeParkIncSpecialRide( item, info );
 		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it

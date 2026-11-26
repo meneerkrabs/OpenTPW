@@ -118,10 +118,9 @@ public sealed class ThemeParkIncStaffHeadquarters
 	/// Release (<c>0x634730</c>, messages 0x21 for a staff thing and 0x2A): the member's ability count falls; a member with an ability who fills a slot leaves it, and a gardener, handyman or mechanic
 	/// of his role with the same ability who fills none takes it.
 	/// </summary>
-	// [BIN:TPI-EXE:0x634730 release] count[+0x218]-- whatever the ability; ability 0 returns; 0x6241B0(id) (the per-object staff requirements, see TrainingFinished); then the id's slot: none returns;
+	// [BIN:TPI-EXE:0x634730 release] count[+0x218]-- whatever the ability; ability 0 returns; 0x6241B0(id) (the special rides' staff slots, ParkEconomy.ThemeParkIncReleaseSpecialRides); then the id's slot: none returns;
 	// a replacement by the member's kind (0x14 the gardener finder, 5 the handyman's, 4 the mechanic's) with his ability, the table given, so neither he nor another slotted member is picked; then his
 	// own slot is cleared (0x634807) and a replacement found is assigned (0x634B00)
-	// [EXT:tpi-capability-gates] the per-object trained-staff requirement lists at 0xAA0330 (0x6241B0 here, 0x623FB0 at a training's end), which an attraction's activation reads, are not ported
 	public void Release( IReadOnlyList<ThemeParkIncStaffMember> members, ThemeParkIncStaffMember member )
 	{
 		CountAbility( member.Ability, -1 );
@@ -136,7 +135,7 @@ public sealed class ThemeParkIncStaffHeadquarters
 	}
 
 	/// <summary>Message 0x2B, a member's training finished: his new ability's count rises and he takes a slot that asks for it.</summary>
-	// [BIN:TPI-EXE:0x63256F training finished] count[+0x218]++, 0x634B00(id), then 0x623FB0(id), the per-object requirements (not ported, see Release)
+	// [BIN:TPI-EXE:0x63256F training finished] count[+0x218]++, 0x634B00(id), then 0x623FB0(id), the special rides' staff slots (ParkEconomy.ThemeParkIncTrainingFinishedSpecialRides)
 	public void TrainingFinished( ThemeParkIncStaffMember member )
 	{
 		CountAbility( member.Ability, +1 );

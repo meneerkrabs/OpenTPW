@@ -32,6 +32,10 @@ public sealed partial class GuestSimulation
 	// [EXT:umbrellas-balloon-gate] a balloon shop scores 0 for a balloon holder only in a park that uses umbrellas (a brolly shop, or a guest with an umbrella): tp.exe's own score reads no appearance word, so every other park keeps its balloon shops as they were
 	internal uint HostScore( Guest guest, IRideVisitorBridge attraction, uint score )
 	{
+		// [BIN:TPI-EXE:0x6101FD awaiting activation] the score's first test: an attraction whose thing 0x6242F0 does not free (a special ride whose record still names it, ThemeParkIncSpecialRides)
+		// scores 0 before any other rule, whatever its open word (the constructor opens every attraction, 0x5DB5FB); a score of 0 never beats the choice's floor, so no guest chooses it
+		if ( Payments?.AwaitsActivation( attraction ) == true )
+			return 0;
 		// [EXT:winter-extension] a winter kiosk or glühwein stall (the extension's own objects) has its own gate and percentages (GuestSimulation.Winter.cs)
 		if ( attraction.WinterTerms is { } winterTerms )
 			return WinterHostScore( guest, attraction, score, winterTerms );

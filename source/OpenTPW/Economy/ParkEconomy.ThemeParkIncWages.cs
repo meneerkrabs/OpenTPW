@@ -130,6 +130,8 @@ public sealed partial class ParkEconomy
 	private void DestroyThemeParkIncMember( ThemeParkIncStaff staff, ThemeParkIncStaffMember member, Action<ThemeParkIncStaffMember>? destroyThing )
 	{
 		staff.Hq.Release( staff.Members, member );
+		// [BIN:TPI-EXE:0x634772 special ride release] the HQ's release 0x634730 calls 0x6241B0 (thunk 0x4082BF) for a member with an ability, so the dismissed member leaves his special-ride slot
+		ThemeParkIncReleaseSpecialRides( member );
 		TpiResearch?.StaffRemoved( member, staff.Members );
 		foreach ( var item in objects.Values.OrderBy( item => item.Id ) )
 		{

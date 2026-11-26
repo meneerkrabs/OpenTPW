@@ -258,6 +258,27 @@ public class ThemeParkIncShareChallengeTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
+	public void ADismissedMemberLeavesHisSpecialRideSlot()
+	{
+		// [BIN:TPI-EXE:0x634772 special ride release] the dismissal 0x629040 destroys the member's thing (0x637C40): message 0x21 reaches the staff HQ (0x632520 -> 0x634730), whose release calls 0x6241B0
+		var economy = ScienceEconomy();
+		var staff = economy.TpiStaff!;
+		var water = Build( economy, WaterRide );
+		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Gardener );
+		Assert.IsTrue( staff.BeginHire( slot ) );
+		var member = staff.EndHire( slot, placed: true )!;
+		member.ThingId = 300;
+		member.Ability = 10;
+		economy.TpiSpecialRides!.Assign( member, _ => false );
+		economy.TpiCareer!.AddGoldenTickets( 2 );
+		Assert.AreEqual( (ushort)300, economy.TpiSpecialRides.Find( water.Id )!.Slots.First( entry => entry.StaffType != 7 ).Thing );
+		Assert.IsTrue( economy.CanActivateThemeParkIncSpecialRide( water.Id ) );
+		economy.DismissThemeParkIncMember( member, null );
+		Assert.AreEqual( (ushort)0, economy.TpiSpecialRides.Find( water.Id )!.Slots.First( entry => entry.StaffType != 7 ).Thing, "the slot is empty again" );
+		Assert.IsFalse( economy.CanActivateThemeParkIncSpecialRide( water.Id ), "the button needs the dismissed member's slot filled" );
+	}
+
+	[TestMethod]
 	public void TheTriggerOfTheScienceRidersChallengeFollowsTheLabUntilTheRideStandsAndThenItsActivation()
 	{
 		var economy = ScienceEconomy();

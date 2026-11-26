@@ -200,7 +200,9 @@ public sealed class ThemeParkIncSpecialRides
 	/// </summary>
 	internal static bool IsValid( ThemeParkIncSpecialRidesSnapshot? state ) =>
 		state == null || state.Records is { Length: <= Capacity } saved && state.Activated != null
-		&& saved.All( record => record != null && record.Instance >= 0 && record.Slots is { Length: SlotCount } )
+		&& saved.All( record => record != null && record.Instance >= 0 && record.Slots is { Length: SlotCount }
+			// the builder's staff types are the 0x62B688 table's 0, 1, 3, 5 and 7; abilities run 1..14 (the SkillSet index + 1), 0 in a padding slot
+			&& record.Slots.All( slot => slot.StaffType is 0 or 1 or 3 or 5 or 7 && slot.Ability is >= 0 and <= SkillSets ) )
 		&& state.Activated.All( instance => instance > 0 ) && state.Activated.Distinct().Count() == state.Activated.Length
 		&& saved.Where( record => record.Instance != 0 ).Select( record => record.Instance ).Distinct().Count() == saved.Count( record => record.Instance != 0 );
 

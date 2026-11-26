@@ -4529,8 +4529,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [EXT:rain-mood-imported-age] the optional load turn of an imported guest: never negative, and only for a guest without a time in the park
 			if ( guest.RainMoodAgeStartTurn is { } ageStart && (ageStart < 0 || guest.TimeInParkSeconds != null) )
 				Error( $"Guest {guest.Id} rain mood age start {ageStart} is negative or set for a guest with a known time in the park." );
-			// the bin walk (state 9) names its bin; after it the bin stays the target (+0x1DC) wherever an attraction target may stay, and never beside one
-			if ( guest.BinId < 0 || (guest.State == GuestState.ThrowingAwayLitter && guest.BinId == 0)
+			// the bin walk (state 9) names its bin; after it the bin stays the target (+0x1DC) wherever an attraction target may stay, and never beside one (a native Theme Park Inc guest names its bin in
+			// its own target word +0x204, which may be 0 on a bin walk: state 9 then drops the litter where it arrives, 0x617017)
+			if ( guest.BinId < 0 || (guest.Tpi == null && guest.State == GuestState.ThrowingAwayLitter && guest.BinId == 0)
 				|| (guest.BinId != 0 && guest.State != GuestState.ThrowingAwayLitter && (!CanRetainTarget( guest.State, guest.Activity ) || guest.AttractionId != 0)) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );

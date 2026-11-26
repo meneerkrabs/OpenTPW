@@ -32,6 +32,17 @@ public sealed partial class ParkEconomy
 		FileThemeParkIncLetter( ThemeParkIncTagLetter.Notification( mail, Turn ) );
 	}
 
+	/// <summary>
+	/// An advice's caption: the tag system receives the playback's kind-0x18 broadcast and files a Message Centre row from the tag's record (<c>0x635D80</c>, branch 0x18), unread.
+	/// </summary>
+	// [BIN:TPI-EXE:0x635A63 tag subscriptions] the tag system's constructor subscribes to kinds 0x18, 0x19 and 0x1B; [BIN:TPI-EXE:0x6362CA advice row] a tag without a record (0x637000) files
+	// nothing; the row is filed only when the body formatter (0x6365A0) succeeds with a text that is not empty (0x6363BC), which the plain body of every ported tag is
+	internal void FileThemeParkIncAdviceRow( ThemeParkIncAdviceBroadcast broadcast )
+	{
+		if ( ThemeParkIncTagLetter.Advice( broadcast, Turn ) is { } row )
+			FileThemeParkIncLetter( row );
+	}
+
 	/// <summary>The tag thing's update, once per world pass (<c>0x635AB0</c>), not in a lost park.</summary>
 	// [BIN:TPI-EXE:0x63770E tag system update] the world pass's thing-class dispatch sends class 12 to 0x635AB0
 	internal void UpdateThemeParkIncTagTube( long turn ) => TpiTagTube?.Update( unchecked( (uint)turn ) );

@@ -16,6 +16,9 @@ internal sealed class AdvisorRandom
 
 	public AdvisorRandom( uint seed = 1 ) => this.seed = seed;
 
+	/// <summary>The generator's state (the C runtime's seed word), which a saved stream keeps.</summary>
+	public uint State => seed;
+
 	/// <summary>0..32767.</summary>
 	public int Next()
 	{
@@ -25,29 +28,41 @@ internal sealed class AdvisorRandom
 }
 
 /// <summary>
-/// Lengths in milliseconds of the advisor's animation clips 1–20, as the original's table at 0xF796C8 holds them.
+/// Lengths in milliseconds of the advisor's animation clips 1–20, as the original's table at 0xF796C8 holds them. Theme Park Inc's table
+/// (<c>0xBEF0D0</c>) has 25 entries (<see cref="ThemeParkIncCount"/>); Theme Park World's keeps 20.
 /// </summary>
 internal sealed class AdvisorClipDurations
 {
-	/// <summary>The table has one entry for each of the clips 1–20.</summary>
+	/// <summary>Theme Park World's table has one entry for each of the clips 1–20.</summary>
 	public const int Count = 20;
+	/// <summary>Theme Park Inc's table has one entry for each of the clips 1–25.</summary>
+	// [BIN:TPI-EXE:0x715966 advisor clip lengths] the init 0x715850 reads entries 0..24 (0xBEF0D0 up to 0xBEF134) through 0x4E0B20(model, 5, index), the same rule as Theme Park World's 0x474070
+	public const int ThemeParkIncCount = 25;
 	/// <summary>Clip 14 opens every generated sequence (and the fixed sequences 21–27); its length is forced to 0.</summary>
 	public const int StartClip = 14;
 	/// <summary>Clip 15 closes every generated sequence and is added once more by the response player.</summary>
 	public const int EndClip = 15;
 
-	private readonly uint[] milliseconds = new uint[Count];
-	private readonly uint[] played = new uint[Count];
+	private readonly uint[] milliseconds;
+	private readonly uint[] played;
+
+	/// <summary>The number of clips the table holds (<see cref="Count"/> or <see cref="ThemeParkIncCount"/>).</summary>
+	public int Clips => milliseconds.Length;
 
 	/// <param name="trailerWord2">Trailer word 2 of clip n at index n − 1 (0 for a clip that does not exist).</param>
-	public AdvisorClipDurations( IReadOnlyList<uint> trailerWord2 )
+	/// <param name="count">The table's size: <see cref="Count"/> for Theme Park World, <see cref="ThemeParkIncCount"/> for Theme Park Inc.</param>
+	public AdvisorClipDurations( IReadOnlyList<uint> trailerWord2, int count = Count )
 	{
 		ArgumentNullException.ThrowIfNull( trailerWord2 );
+		ArgumentOutOfRangeException.ThrowIfLessThan( count, StartClip );
+		milliseconds = new uint[count];
+		played = new uint[count];
 		// [BIN:TPW-EXE:0x005989C0 advisor clip lengths] the 20 entries are read through 0x474070 from the level advisor's clips when one is loaded, else the global advisor's; afterwards the entry of clip 14 (0xF796FC) is set to 0
-		for ( var index = 0; index < Count && index < trailerWord2.Count; index++ )
+		// [BIN:TPI-EXE:0x715985 advisor clip lengths] Theme Park Inc's init does the same with 25 entries from model 1 (the level advisor 0x4B0170 loads) when it is loaded, else model 0, and zeroes 0xBEF104 (clip 14)
+		for ( var index = 0; index < count && index < trailerWord2.Count; index++ )
 			milliseconds[index] = FromTrailer( trailerWord2[index] );
 		// The animation itself still plays clip 14 for its whole length: the zero only keeps the opening out of the sequence's budget and sum.
-		Array.Copy( milliseconds, played, Count );
+		Array.Copy( milliseconds, played, count );
 		milliseconds[StartClip - 1] = 0;
 	}
 
@@ -56,14 +71,14 @@ internal sealed class AdvisorClipDurations
 	public static uint FromTrailer( uint trailerWord2 ) => unchecked(trailerWord2 * 1000u) / 30u;
 
 	/// <summary>Length of clip <paramref name="clip"/> (1–20) in the table the sequence builder reads (clip 14 is 0); 0 outside the table.</summary>
-	public uint Of( int clip ) => clip is >= 1 and <= Count ? milliseconds[clip - 1] : 0;
+	public uint Of( int clip ) => clip >= 1 && clip <= milliseconds.Length ? milliseconds[clip - 1] : 0;
 
 	/// <summary>
 	/// How long clip <paramref name="clip"/> plays: its own length, including clip 14's (<see cref="Of"/> forces that to 0 for the
 	/// budget); 0 outside the table or for a clip the archive lacks.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004735D0 animation sampler] a clip runs to its own length before the sampler frees the channel (0x473743-0x47374E); only the table entry of clip 14 (0xF796FC) is zeroed, by 0x5989C0
-	public uint PlayOf( int clip ) => clip is >= 1 and <= Count ? played[clip - 1] : 0;
+	public uint PlayOf( int clip ) => clip >= 1 && clip <= played.Length ? played[clip - 1] : 0;
 
 	private static readonly Regex ClipName = new( @"^Advisor(?:_[A-Za-z]+)?m(\d+)\.MD2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant );
 
@@ -71,16 +86,16 @@ internal sealed class AdvisorClipDurations
 	/// Lengths from <paramref name="level"/>'s advisor clips (<c>/levels/&lt;level&gt;/advisor</c>) when it has them, else from
 	/// the global advisor's (<c>/global/advisor</c>); null when neither archive holds a clip.
 	/// </summary>
-	public static AdvisorClipDurations? Load( BaseFileSystem fileSystem, string? level )
+	public static AdvisorClipDurations? Load( BaseFileSystem fileSystem, string? level, int count = Count )
 	{
 		foreach ( var archive in level == null ? new[] { Advisor.ArchivePath } : new[] { $"/levels/{level}/advisor", Advisor.ArchivePath } )
-			if ( LoadArchive( fileSystem, archive ) is { } durations )
+			if ( LoadArchive( fileSystem, archive, count ) is { } durations )
 				return durations;
 		return null;
 	}
 
 	/// <summary>Lengths from the clips of one archive (the model that plays them); null when it holds no clip.</summary>
-	public static AdvisorClipDurations? LoadArchive( BaseFileSystem fileSystem, string archive )
+	public static AdvisorClipDurations? LoadArchive( BaseFileSystem fileSystem, string archive, int count = Count )
 	{
 		{
 			IEnumerable<string> members;
@@ -92,12 +107,12 @@ internal sealed class AdvisorClipDurations
 			{
 				return null;
 			}
-			var words = new uint[Count];
+			var words = new uint[count];
 			var found = false;
 			foreach ( var member in members )
 			{
 				var match = ClipName.Match( Path.GetFileName( member ) );
-				if ( !match.Success || !int.TryParse( match.Groups[1].Value, out var number ) || number < 1 || number > Count )
+				if ( !match.Success || !int.TryParse( match.Groups[1].Value, out var number ) || number < 1 || number > count )
 					continue;
 				try
 				{
@@ -113,7 +128,7 @@ internal sealed class AdvisorClipDurations
 				}
 			}
 			if ( found )
-				return new AdvisorClipDurations( words );
+				return new AdvisorClipDurations( words, count );
 		}
 		return null;
 	}

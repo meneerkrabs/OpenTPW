@@ -378,7 +378,7 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
-	public void AForecastPlaysAtTheAdvisorsNextTickAndHoldsItsVoiceAsTheWindow()
+	public void AForecastPlaysAtTheAdvisorsNextTickAndHoldsItsSequenceAsTheWindow()
 	{
 		var economy = ScienceEconomy();
 		// a play stamped at a world word below 4 reads as never played (time >> 2 == 0): start past it
@@ -391,7 +391,8 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( new ThemeParkIncAdvicePlay( Rain, 645, 0, 0 ), economy.TakeThemeParkIncAdvice().Single() );
 		var advisor = economy.TpiAdvisor!;
 		Assert.AreEqual( (uint)((clock + 248_000) / 1000), advisor.LastStart, "a world tick at normal speed is 248 ms on the advisor clock" );
-		Assert.IsTrue( advisor.LastWindow > 2_000, $"the rain voice is longer than a second (window {advisor.LastWindow})" );
+		// canned row 9 with the Science advisor's clips: 4 × clip 25 (633 ms) + clip 26 (the clip list's first word, 25), clip 15 (666 ms), 1000 ms in the speech and 1000 in the update
+		Assert.AreEqual( 4 * 633u + 25 + 666 + 1_000 + 1_000, advisor.LastWindow );
 		Assert.AreEqual( new ThemeParkIncAdviceHistory( (uint)(turn + 1), 0, true, 0, 1 ), economy.TpiCareer!.AdviceHistory( Rain ) );
 		Assert.IsFalse( economy.PostThemeParkIncAdvice( Rain ), "after one play group 0's second interval (300 world ticks >> 2) has not passed" );
 	}

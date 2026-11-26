@@ -293,10 +293,19 @@ With `opentpw.cheats` on, a Theme Park Inc park's challenge panel shows both but
   message 0x2C are not posted `[EXT:tpi-capability-gates]`. Get Promoted goes through the controller's message 0x25 handler.
 - A promotion past rank 6 reads on past the `FiringLineForRank` table into the Standard object, as the original does ([TPI-CAREER.md](reverse/TPI-CAREER.md) §2).
 - A Theme Park World save that carries either cheat is refused.
-- A Theme Park Inc park takes no Theme Park World cheat, and a Theme Park World park takes neither of these two.
+- A Theme Park Inc park takes no Theme Park World cheat, and a Theme Park World park takes none of the Theme Park Inc ones.
 
 An earlier research note named `0x538F30` as the Get Promoted dialog. That is the obstacle and ticket debug page. See
 [TPI-CAREER.md](reverse/TPI-CAREER.md) §4.
+
+### Win the game...
+
+November 23, 2026 (the debug cheats are approved, user decision 2026-11-21). The executable's debug menu (its procedure `0x538030`, built at `0x537B7F`) has a
+button **Win the game...** (text at `0x9B81F4`). It gives the player 51 % of `ShareInfo.CompanySharesIssued` (30000 × 51 / 100 = 15300 shares, through the shares
+game's gift `0x621CE0`), which is miss17's share target, and then posts the end-of-game letter `0x5CD6E0(0x5D, 6, 1)` `[BIN:TPI-EXE:0x53835D]`. With `opentpw.cheats`
+on, the challenge panel shows it as a third button (`CheatKind.WinTheGame`, the executable's English text). The shares are given; the end-of-game letter is not posted,
+because the ending sequence is not ported `[EXT:tpi-capability-gates]`. The menu's other share buttons, Award 10 Shares (`0x538353`), Increase share value by 5%
+(`0x5384CF`) and Trigger Next Annual Report (`0x5384F9`), are not offered. A Theme Park World save that carries it is refused like the other two.
 
 ## Phases
 

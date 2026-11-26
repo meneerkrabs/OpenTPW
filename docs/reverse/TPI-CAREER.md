@@ -125,10 +125,11 @@ The markers are dwords, so the file reads `TATS AMTA MEHT DTOT RAHS MAPS`. OpenT
 ### 3.3 Session sections
 
 The options, `mFirstHourTime`, the `0xA6C0A0` block, the shares, the `0xAA0180` flags and the ambient tags belong to other objects, not the career.
-OpenTPW does not port those systems (`[EXT:tpi-capability-gates]`). It carries their sections through from the last player file it loaded. A new
+The shares game is ported and kept with the career, which resets it with its own reset (`0x74BE97`) and writes its 182 bytes into the player file
+([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)). OpenTPW does not port the other systems (`[EXT:tpi-capability-gates]`). It carries their sections through from the last player file it loaded. A new
 file takes their start-up state:
 - **Options:** `0x459520` over `sound.sam`, then `Config.sam`'s `DefaultConfig` entry, as on a machine no `Config[i]` matches.
-- **Shares:** the reset `0x621210`, with the company name from `TAG_SYSTEM.str` entry 172.
+- **Shares:** the reset `0x621210`, with the company name from `TAG_SYSTEM.str` entry 172; the park's build then gives 1000 shares at a price of 100 (`0x620930`).
 - **`0xAA0180`:** the constructor `0x622800`'s 17 zero flags.
 - **Ambient tags:** none.
 

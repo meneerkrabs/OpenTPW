@@ -401,8 +401,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// Queues a cheat for the start of the next park turn (<see cref="ParkCheats"/>). False when the park cannot cheat (a Theme Park Inc economy: only Theme Park World's cheats are traced), the action is not
 	/// valid or the queue is full. The caller refuses read-only visits and online sessions.
 	/// </summary>
-	// [EXT:cheats-extension] a Theme Park World park takes tp.exe's cheats (docs/CHEATS.md); a Theme Park Inc park only its executable's two debug-dialog buttons, Skip Mission and Get Promoted
-	// (user decision 2026-11-21), with the extension on
+	// [EXT:cheats-extension] a Theme Park World park takes tp.exe's cheats (docs/CHEATS.md); a Theme Park Inc park only its executable's debug buttons, the debug dialog's Skip Mission and Get Promoted
+	// and the debug menu's Win the game... (user decisions 2026-11-21), with the extension on
 	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
 	// [EXT:cheats-ride-vehicles] a ride's vehicle limit only for a ride the level can raise now
 	public bool QueueCheat( CheatAction action ) => (Rules.ThemeParkInc
@@ -450,6 +450,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 				return SkipThemeParkIncMission();
 			case CheatKind.GetPromoted:
 				return PromoteThemeParkIncCareer();
+			case CheatKind.WinTheGame:
+				return WinThemeParkIncGame();
 			default:
 				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
 		}
@@ -509,6 +511,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 		}
 		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
+		// [BIN:TPI-EXE:0x6086DE annual report] at the year change the calendar sends the shares game the annual report 0x621300(the stored year, the viewed zone, 12), then 0x6231D0 on 0xAA0180
+		// [EXT:tpi-capability-gates] the annual report is not run: its record reads the analyser's money-in, money-out and park-value rings (+0x1FEF8, +0x1F808, +0x1F368) and the ring of 0x6226D0,
+		// which OpenTPW does not keep as Theme Park Inc's analyser; its score and price step are ported (ThemeParkIncSharesGame.AnnualScore, ApplyAnnualScore) and the saved report slots are kept
+		// [BIN:TPI-EXE:0x5D6600 award gate] then the park awards' check of the tick (ParkEconomy.CheckThemeParkIncAwards)
+		CheckThemeParkIncAwards( turn );
 		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
 		if ( Features.GoldenTickets && RunsGoldenTicketCheck( turn, Mode ) )
 			CheckGoldenTickets();

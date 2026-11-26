@@ -82,6 +82,6 @@ The four forecast rows are class 2, group 0, limit 255, one response, and their 
 - The condition table is referenced: the scan `0x71C0B0` evaluates one row every world tick (§1).
 - The table has 664 rows and 606 ids, not 518 rows and 501 ids; `0x58`–`0x5C` have rows (§2).
 - The variant rule is row `+0x2C`, not `+8` (`+8` is the group) (§4).
-- `0x606EC0(award, won|moved)` is called from `0x606D99` and `0x606E69`; the pushes of 6 and 7 belong to `0x74C760`.
+- The Park Awards dispatcher `0x606EC0` is reached for every award index, won and moved ([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)).
 - The playback window is the speech's return plus 1000, and the speech's return is the sequence plus the closing clip plus 1000 (§4), not the voice length plus 1000.
 - The tag system subscribes to kind `0x18` (`0x635A63`): every captioned advice files a tag-tube row (branch `0x18`, see `TPI-TAG-TUBE.md`).

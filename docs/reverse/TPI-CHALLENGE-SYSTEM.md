@@ -421,8 +421,8 @@ the cheats extension's Skip Mission advances it. Every Science row except 8 and 
   `mHasBeenOpenedAtSomePoint` (`+0x12D`), neither modelled at run time, and the record `+0x5C` test is only a candidate reading; type 17's ride-use sender
   `0x61A85B` and type 48's satisfaction value are not wired). All other types (the Arabian and Water levels' included) are unmeasured as well; types 19 and 28 also
   have unported win tests.
-- **Shares.** The won branch's `0x621CE0(SharePrize)` and `0x621D30(SharePriceEffectIfWon)` and the first loss's `0x621D30(-SharePriceEffectIfLost)` are left
-  off: Theme Park Inc's share system is not ported.
+- **Shares.** Ported since November 23, 2026: the won branch's `0x621CE0(SharePrize)` and `0x621D30(SharePriceEffectIfWon)` and the first loss's
+  `0x621D30(-SharePriceEffectIfLost)` act on the shares game ([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)).
 - **Promotions.** `PromoGiven` (message `0x25` → `0x74C450`: the rank and the firing line of `FiringLineForRank`) is left off: promotions are not ported, so the
   firing line only falls.
 - **Level record.** The won branch's `+0xF0`/`+0xF4` of the career's level record (`0x5C4514`–`0x5C45FC`) are left off with the missions.

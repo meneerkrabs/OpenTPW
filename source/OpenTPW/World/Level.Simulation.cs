@@ -294,6 +294,7 @@ public partial class Level
 		if ( substep.TourDue )
 			ScheduleSprites( spriteClock );
 		AttachThemeParkIncMissionWorld();
+		AttachThemeParkIncAwardPark();
 		AttachThemeParkIncResearchInfos();
 		Park!.Economy.ThingSweep = new LevelThingSweep( this );
 		try

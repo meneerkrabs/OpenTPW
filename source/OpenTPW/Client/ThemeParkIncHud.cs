@@ -32,18 +32,6 @@ public sealed partial class ThemeParkIncHud
 	/// <summary>Seconds a build/refusal message stays on screen (the TW HUD's message timing, UI-025).</summary>
 	public const float MessageSeconds = 8f;
 
-	/// <summary>The advice the advisor's queue or the bank's mail last played (null until then).</summary>
-	private string? advisorCaption;
-
-	/// <summary>
-	/// Shows a played advice's caption: a weather forecast's tag entry or the bank's red-month mail. The original keeps
-	/// the row with no auto-delete, so this line holds until the next one.
-	/// </summary>
-	internal void ShowAdvisorCaption( string text ) => advisorCaption = text;
-
-	/// <summary>The advice line as shown (tests).</summary>
-	internal string? AdvisorCaption => advisorCaption;
-
 	private readonly Level level;
 	private readonly UiStringTable strings;
 	private readonly ThemeParkIncHudHost host;
@@ -82,9 +70,6 @@ public sealed partial class ThemeParkIncHud
 		AddLabel( "money", MoneyText, new UiRect( 960, 196, 1000, 60 ) );
 		AddLabel( "selection", () => SelectedText, new UiRect( 24, 256, 1300, 60 ) );
 		AddLabel( "message", () => messages.Count > 0 ? messages[0].Text : "", new UiRect( 24, 316, 1300, 120 ) );
-		// [BIN:TPI-EXE:0x636880 mail insertion] A forecast tag's row carries no auto-delete duration (+0x14 = 0) and
-		// replaces nothing (+4 = 0x97), so it stays until the next forecast row is inserted ahead of it.
-		AddLabel( "forecast", () => advisorCaption ?? "", new UiRect( 24, 436, 1300, 120 ) );
 		BuildTopLine();
 		BuildWindow();
 		BuildStaffPanel();

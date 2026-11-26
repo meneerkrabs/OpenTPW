@@ -276,7 +276,7 @@ Caller side: `mActualThing[i] = 0`. On an early loss (`d ≠ 0`) `0x5C73D0` (Typ
 
 ### 6.3 Other side effects
 
-- `0x5C2150(Sender)` at time-out: copies 9 dwords at `0x9CD000 + 36·Sender`, calls advisor `0x718990(dword1)`, which clears the
+- `0x5C2150(Sender)` at time-out: copies 9 dwords at `0x9CD000 + 36·Sender`, calls advisor `0x718990(dword4)` (`[esp+0x18]` of the copy at `esp+8`; the uncalled twin `0x5C2100` reads dword 1), which clears the
   advisor's active flag (+0x100) when its current advice (+0xF8) is that id. Table rows 2..6 hold e.g. `0x35,0x239,…` (row 2);
   rows 0,1,7,8 are placeholders `0x285`.
 - Type 42: `0x650800(kind,open)` walks the world shop list (`+0x1EAB88`), for things whose record `+0x218 == kind` calls

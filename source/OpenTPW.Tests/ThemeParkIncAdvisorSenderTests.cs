@@ -165,9 +165,13 @@ public sealed class ThemeParkIncAdvisorSenderTests : ThemeParkIncScienceTestBase
 	[TestMethod]
 	public void TheChallengeSendersNameTheirAdvice()
 	{
-		CollectionAssert.AreEqual( new[] { 0x239, 0x25C, 0x245, 0x265, 0x255 }, Enumerable.Range( 2, 5 ).Select( ThemeParkIncChallenges.SenderAdvice ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 0x239, 0x25C, 0x245, 0x265, 0x255 }, Enumerable.Range( 2, 5 ).Select( sender => ThemeParkIncChallenges.SenderAdvice( sender ) ).ToArray(),
+			"word 1, which the accept cancels (0x5C84EB)" );
+		CollectionAssert.AreEqual( new[] { 0x23A, 0x25D, 0x246, 0x266, 0x256 },
+			Enumerable.Range( 2, 5 ).Select( sender => ThemeParkIncChallenges.SenderAdvice( sender, ThemeParkIncChallenges.TimeOutCancelWord ) ).ToArray(), "word 4, which the time-out cancels (0x5C216E)" );
 		foreach ( var sender in new[] { 0, 1, 7, 8, 9 } )
 			Assert.ThrowsException<NotSupportedException>( () => ThemeParkIncChallenges.SenderAdvice( sender ), $"sender {sender}" );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => ThemeParkIncChallenges.SenderAdvice( 2, 2 ) );
 	}
 
 	[TestMethod]

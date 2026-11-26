@@ -376,7 +376,21 @@ def check_senders(image):
     check(posts, [('enqueue', advisor + 0xEC)], 'the stored record itself goes to 0x718820')
     check((arena.read(advisor + 0xEC + 0x10, 'i'), arena.read(advisor + 0xEC + 0x15, 'B'), arena.read(advisor + 0xEC + 0x16, 'B')), (900, 1, 1),
           'score, bypass and explicit bytes')
-    return 4 + 12 + 1 + 2
+    # The challenge senders' cancels: the time-out 0x5C2150 cancels word 4 of the sender's row at 0x9CD000, the uncalled 0x5C2100 word 1
+    cancels = []
+
+    def cancel(arena_):
+        cancels.append(arena_.arg(0))
+        return 0, 4
+    challenge = Sandbox(image, [(0x5C2100, 0x5C213D), (0x5C2150, 0x5C218D)],
+                        stubs={0x4077F2: lambda _: (advisor, 0), 0x4092AF: cancel}, budget=10_000)
+    for entry, expected in ((0x5C2150, (0x23A, 0x25D, 0x246, 0x266, 0x256)), (0x5C2100, (0x239, 0x25C, 0x245, 0x265, 0x255))):
+        cancels.clear()
+        for sender in range(2, 7):
+            challenge.executed = 0
+            challenge.call(entry, (sender,))
+        check(tuple(cancels), expected, f'{entry:#x} cancels by sender 2 to 6')
+    return 4 + 12 + 1 + 2 + 10
 
 
 def cases_from(path):

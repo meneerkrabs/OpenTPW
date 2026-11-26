@@ -57,8 +57,8 @@ public sealed partial class ParkEconomy
 			throw new InvalidOperationException( "This park runs no Theme Park Inc challenges." );
 		if ( !CanAcceptThemeParkIncChallenge( index ) )
 			throw new InvalidOperationException( $"Theme Park Inc challenge {index} cannot be accepted now: it must be on offer and the park open." );
-		// [BIN:TPI-EXE:0x5C84DA accept cancel] the accept first cancels the sender's advice (row 0x9CD000 + 36·sender, word 1) on the advisor thing (0x718990)
-		CancelThemeParkIncAdvice( ThemeParkIncChallenges.SenderAdvice( challenges.Slots[index].Sender ) );
+		// [BIN:TPI-EXE:0x5C84EB accept cancel] the accept first cancels the sender's advice (row 0x9CD000 + 36·sender, word 1) on the advisor thing (0x718990)
+		CancelThemeParkIncAdvice( ThemeParkIncChallenges.SenderAdvice( challenges.Slots[index].Sender, ThemeParkIncChallenges.AcceptCancelWord ) );
 		challenges.Accept( index, Turn );
 	}
 
@@ -138,8 +138,8 @@ public sealed partial class ParkEconomy
 	{
 		public bool ParkOpen => economy.IsParkOpen;
 
-		// [BIN:TPI-EXE:0x5C2150 challenge time-out cancel] the sender's advice is cancelled on the advisor thing (0x718990)
-		public void CancelSenderAdvice( int sender ) => economy.CancelThemeParkIncAdvice( ThemeParkIncChallenges.SenderAdvice( sender ) );
+		// [BIN:TPI-EXE:0x5C2150 challenge time-out cancel] word 4 of the sender's row is cancelled on the advisor thing (0x718990)
+		public void CancelSenderAdvice( int sender, int word ) => economy.CancelThemeParkIncAdvice( ThemeParkIncChallenges.SenderAdvice( sender, word ) );
 
 		// [BIN:TPI-EXE:0x5C7967 mission gate] the switch and the availability read the career's +0x105C (ThemeParkIncCareer.MissionCounter)
 		public int MissionCounter => economy.TpiCareer!.MissionCounter;

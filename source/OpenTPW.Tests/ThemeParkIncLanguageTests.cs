@@ -187,6 +187,17 @@ public class ThemeParkIncLanguageTests
 		Assert.AreEqual( 37 * 5, tables );
 	}
 
+	[TestMethod]
+	public void TheSharesAndAwardsLabelsAreTheGamesOwnWords()
+	{
+		// the HUD's shares and awards line (ThemeParkIncHud.SharesAndAwardsText) reads UITEXT 23 to 25 and 452 to 460, the words of the native share and Park Awards panels
+		var entries = GameLanguage.Resolve( TpiData(), "English", null ).LoadStrings( "UITEXT.str" );
+		Assert.AreEqual( ("Shareholding % :", "Shares Owned :", "Share Price :"), (entries[ThemeParkIncHud.ShareholdingLabel].Trim(), entries[ThemeParkIncHud.SharesOwnedLabel].Trim(),
+			entries[ThemeParkIncHud.SharePriceLabel].Trim()) );
+		StringAssert.StartsWith( entries[ThemeParkIncHud.ParkAwardsPrefix], "Park Awards" );
+		Assert.AreEqual( "Highest Coaster", entries[ThemeParkIncHud.FirstAwardName].Trim() );
+	}
+
 	[DataTestMethod]
 	[DataRow( "English", "Quit Game", "Photo Kiosk" )]
 	[DataRow( "Dutch", "Spel afsluiten", "Fotostalletje" )]

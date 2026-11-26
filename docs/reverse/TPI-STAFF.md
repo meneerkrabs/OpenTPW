@@ -242,7 +242,7 @@ Ported as an economy model, without the world simulation, and checked against th
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21). The label was widened on 2026-11-22
   (user decision) to the guests' four sites `0x613F18`, `0x615318`, `0x615328` and `0x61795E`; `rand() % N` is `world.Next(N)` there too (docs/reverse/TPI-GUESTS.md).
 
-Not ported yet: the guard's chase, carry and first aid (see "Entertainer and guard" below); the wage negotiation dialog (`0x559E00`). Slacking (`0x62D650`) and the low-motivation rest (`0x62D866`) are ported with the rest areas (§13). Training is ported since November 21, 2026 (§12.2).
+Not ported yet: the guard's chase, carry and first aid (see "Entertainer and guard" below). The wage demands, the negotiation, the dismissal and the strikes in the park are in [TPI-WAGES.md](TPI-WAGES.md). Slacking (`0x62D650`) and the low-motivation rest (`0x62D866`) are ported with the rest areas (§13). Training is ported since November 21, 2026 (§12.2).
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.
@@ -276,7 +276,7 @@ refuses its staff capability, so its staff world is not built in a Theme Park In
   area (`0x62BA20`): one he can reach sends him there (state 2, §13); with none he takes a world draw whose low nibble 0 costs HappyHitCosNoRestArea, and a working member is set to 0; above RestLevel the base speed follows the energy's
   tens through the words at `0x9CFB28`, read past the five-entry table as the executable does (index 7 is 0x4020, index 9 is 0x40C0, the high words of the floats 2.5 and 6.0),
   and a happiness byte above 97 takes a world draw for the mood thought; the gate then answers 0 (`+0x27E` is written only for researchers by `0x62E240`).
-- **Economy.** The day message runs each member's daily routine (`0x628CA0`: experience and the wage demand, shown as a note; the negotiation `0x559E00` is WP6; each day message replaces the previous day's demands, which the HUD takes every frame, so a run without the HUD holds at most one day's) and the counter
+- **Economy.** The day message runs each member's daily routine (`0x628CA0`: experience and the wage demand, filed in the tag tube; [TPI-WAGES.md](TPI-WAGES.md)) and the counter
   reset (`0x62D1A0`); the month message debits each salary and reviews the wage (`0x6265DE`); the members hear both in ascending thing-handle order.
 - **Guest litter.** The guests' litter step is Theme Park Inc's (`0x614B71`): the urge byte at least 90, then a world draw whose low two bits must be 0 (else no litter and the urge
   kept), the bin search of radius 3, the type draw `C % 5 + 1` taken before the cell test, and an occupied cell skips both the drop and the urge's reset. The drop (`0x5D8C80`)
@@ -300,7 +300,7 @@ The rest-area finder `0x62BA20` (in the gate, the slack test `0x62D650` on enter
 nonzero), which the thing builder sets only from the type record's `+0x1B0` (`UsageInfo.ChillsYouOut`, `0x5DB6E2`). Until the facilities were loaded no object of the catalogue set the key and
 the finder answered none; the staff rooms of the facilities folders set it, and the rest areas are ported in §13.
 
-Not read or not ported in this package (inert, no stand-in): strikes in the park (WP5: no role's strike flag is set); the wage negotiation (WP6); the drop fallback's scan
+Not read or not ported in this package (inert, no stand-in; the strikes and the negotiation came later, [TPI-WAGES.md](TPI-WAGES.md)): the drop fallback's scan
 of a 180 or 270 degree object covers the rectangle `0x5E9320` computes, which is not the turned footprint (ported as the executable has it); the thoughts and voices' presentation (`0x638960`, `0x60BE90`:
 their draws are taken, the voices queued); TPI litter types 9 to 12 (the pending-item drop `0x613D00`, whose gate
 is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0x5D73A0` (no static caller).

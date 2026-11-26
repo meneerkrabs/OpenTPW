@@ -54,7 +54,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 	private readonly ThemeParkIncTagTubeSession session;
 	private readonly Func<ThemeParkIncTagTubeRow, ThemeParkIncLetterWindow.Letter> compose;
 	private readonly Action close;
-	private readonly Action<int, int> goTo;
+	private readonly Action<ThemeParkIncTagTubeRow> goTo;
 	private readonly List<ThemeParkIncTagTubeRow> listed = new();
 
 	/// <summary>One empty tab-split cell per listed row: <see cref="DrawCell"/> draws the row itself; the list reads only the count.</summary>
@@ -73,7 +73,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 	private ThemeParkIncTagTubeRow? pendingDelete;
 
 	public ThemeParkIncTagTubeWindow( UiStringTable strings, IThemeParkIncTagTubeWorld world, ThemeParkIncTagTubeSession session, Func<ThemeParkIncTagTubeRow, ThemeParkIncLetterWindow.Letter> compose,
-		Action close, Action<int, int> goTo )
+		Action close, Action<ThemeParkIncTagTubeRow> goTo )
 	{
 		this.strings = strings;
 		this.world = world;
@@ -453,7 +453,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 		var row = listed[index];
 		Read( Selected );
 		close();
-		goTo( row.GotoKind, row.GotoArgument );
+		goTo( row );
 	}
 
 	/// <summary>Closes the window: the shown row is read (<c>0x553480</c>) and the window is destroyed.</summary>

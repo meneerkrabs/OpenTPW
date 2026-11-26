@@ -276,13 +276,13 @@ loans start fresh in the new session, like the guests.
 
 **Staff (handymen, mechanics, gardeners and researchers).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner, a Mechanic, a Researcher or a Gardener: activating his row puts him in the hand, a click on a path or grass cell drops
 him (the drop's cell tests and its redirect of a drop on an object to the object's entrance, exit or nearest path cell are the executable's, `0x4D4EB0`), and right-click or Esc cancels. A placed handyman runs Theme Park Inc's own state machine (states 0, 1, 0x0F and 0x10:
-idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, shown as notes), and the
+idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, filed in the tag tube), and the
 guests drop litter by Theme Park Inc's litter step (`0x614B71`). A placed mechanic runs Theme Park Inc's mechanic (states 0, 1, 21 and 22: idle, walk, to the ride and repair, with the
 search `0x5DA3D0`, the ride finder `0x5DAAD0` and the claims), and the rides wear by Theme Park Inc's own rules (see below). A placed gardener runs Theme Park Inc's gardener (states 0, 1, 0x1F and 0x20: idle, walk, to the plant and watering, with the search `0x5D28C0`, the plant chooser `0x5D2DC0` and the claims), and the plants wither by their own script (see below). A Researcher is hired and placed the same way and runs his own states (0 and 1, 25 to his research room, 24 researching). A placed entertainer runs Theme Park Inc's entertainer (states 0, 1 and 0x17: idle, walk and performing, with the search `0x5D1A30` and the setter `0x5D1D30`) and a placed guard his idle, patrol and training (the decision `0x5D3C10`); both keep their row on the region grid (`0x5D1960`, `0x5D3B40`). The guard does not chase or give first aid yet (`[EXT:tpi-capability-gates]`: both read the guests' own state numbers; docs/reverse/TPI-STAFF.md, "Entertainer and guard"). The members walk with Theme Park World's
 walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleaning and the litter bins' fill are unported, so the handymen sweep litter only
 (`[EXT:tpi-no-maintenance-wear]`). The staff rooms (Science 1400, Water 2420, Arabian 3418) are the rest areas: a tired member of any of the six roles walks to the nearest one he reaches, rests until his energy is full
 and recovers his happiness and motivation, waits beside a full room, slacks there when his energy runs low near one, and goes there when his motivation drops (docs/reverse/TPI-STAFF.md §13).
-Strikes in the park, the wage negotiation, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11). Training (states 7 and 8: the walk to the training room, 300 updates, the reward, the cancel when the room goes), the staff HQ's twenty obstacle slots and the research lab of the Science prebuilt, with its panel as text HUD rows, are ported (docs/reverse/TPI-STAFF.md §12). The research room (1404) and the training room (1440) are facilities: the build list offers the research room from mission 1 and the training room from mission 2 (or mission 1 once the obstacle research is done), so a researcher hired in mission 0 finds no room and idles.
+**Wages and strikes** ([TPI-WAGES.md](reverse/TPI-WAGES.md)). A member whose wage review found his salary short demands a rise on his demand day: the tag tube files the demand as an unread row ("Urgent Wage Demand" from Miss Moody, `0x5CEFB0`), and the row's go-to opens the wage demand window (table `0x9C9F64`) with the member's statistics and an offer box that starts at the demand. OK negotiates the offer, the close and cancel buttons an offer of nothing, and the fire button dismisses the member. The results dialog (table `0x9BE518`) answers with the decision `0x559E00`: an offer that meets the demand or comes within `PercentageForBadWageDecision` of it raises the salary by the offer; a lower one offers "Accept the demand" or "Let them leave". A dismissal pays one more salary and takes the member out of the park. At each month's end the staff HQ considers every role: a grievance warns, then strikes, and the strikers walk to the strike area outside the gate, stand there until the next month ends the strike and walk back in. The advisor's wage demand message and the strike messages are noted, not said (`[EXT:tpi-capability-gates]`), and the member's picture in both windows and the window's "Employed for" value are not shown. Pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11). Training (states 7 and 8: the walk to the training room, 300 updates, the reward, the cancel when the room goes), the staff HQ's twenty obstacle slots and the research lab of the Science prebuilt, with its panel as text HUD rows, are ported (docs/reverse/TPI-STAFF.md §12). The research room (1404) and the training room (1440) are facilities: the build list offers the research room from mission 1 and the training room from mission 2 (or mission 1 once the obstacle research is done), so a researcher hired in mission 0 finds no room and idles.
 The handymen, the mechanics, the gardeners, the entertainers and the guards are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`, `Generic\Mechanics`, `Generic\Gardeners`, the park theme's `Entertainers` folder and `Generic\Guards`) and
 animate as their states ask (stand, walk, sweep, repair, water, perform).
 
@@ -307,9 +307,9 @@ animation, and repairs it fully (`0x5E2910`), which reopens it unless its guard,
 Ride Upgrading takes one; a mechanic trains through the common handler as the others do (the training's states 7 and 8), but the economy sells no Theme Park Inc upgrade, so no ride reaches the upgrade's state. The advisor's ride messages are not posted. Details and addresses:
 [TPI-STAFF.md](reverse/TPI-STAFF.md#mechanics-and-ride-wear-wp9-november-21-2026).
 
-**What stays refused.** The guard's chase and first aid (`[EXT:tpi-capability-gates]`) and, on the default path, the guests' reaction to a performing entertainer (`[EXT:tpi-twp-guest-rules]`; the guests of the
+**What stays refused.** The guard's chase and first aid (`[EXT:tpi-capability-gates]`) and, on the default path, the guests' reaction to a performing entertainer (`[EXT:tpi-capability-gates]`: Theme Park World's turn towards a performer never sees Theme Park Inc staff; the guests of the
 hidden native states react, docs/reverse/TPI-GUESTS.md); a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`, which no longer covers the rides), and no
-upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below); the shares game; Theme Park Inc's
+upgrade is installed; research in a park whose lab no park file brought: a new zone's lab fill (`0x61C9E0` with the `rand() % 2 + 1` of `0x61FD50`) waits for the zone package, so such a park and the headless economy keep the whole catalogue on offer (`[EXT:tpi-no-research]`, narrowed to that case); the challenge types OpenTPW cannot measure (see below); the coaster awards and the shares' annual report (see the missions section); Theme Park Inc's
 weather presentation's sky; the advisor's other messages; the native park save formats (the player file `.GMS` is written on desktop). Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
 
@@ -330,8 +330,8 @@ What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count c
 entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
 or value reads park state OpenTPW does not model. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
 but its completion waits for the mission window's complete button, which the slice does not offer yet, so a career stays at mission 0 unless the cheats extension's
-Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. Left off
-under the same label: the shares (prize and price effect). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
+Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. A win
+pays its share prize and raises the share price, a slot's first loss lowers it (the shares game, below). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
 their `CHALLENGE_TITLES.str` title with the days left and the progress value, and accepts an offered row while the park is open, as the original's mail does
 (`[EXT:tpi-text-hud]`); the challenge mail's full text, its sounds and the advisor's sender advice are not ported.
 
@@ -341,9 +341,9 @@ their `CHALLENGE_TITLES.str` title with the days left and the progress value, an
 Since November 21, 2026 a Theme Park Inc park runs the executable's mission controller (`ThemeParkIncMissionController`, `ParkEconomy.TpiMissions`;
 [TPI-MISSIONS.md](reverse/TPI-MISSIONS.md)). It starts the mission's exit statistics in the viewed zone, tests them once a game day on every fourth world tick, and
 answers the obstacle, promotion and camera messages. Its completion tick spends the tickets, grows the land by the mission's extent, opens a theme, advances the
-career, finds the next obstacle and starts the new mission's statistics; the build list's mission gate reads the career's mission number. Types 1, 2, 3, 5 and 8
-are measured from the park; 4 (last month's takings, whose ride and facility rows OpenTPW's ledger does not keep), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
-Science continuation save.
+career, finds the next obstacle and starts the new mission's statistics; the build list's mission gate reads the career's mission number. Types 1, 2, 3, 5, 6 (the park
+awards held) and 7 (the shares owned as a percentage) are measured from the park, and so is 8; 4 (last month's takings, whose ride and facility rows OpenTPW's ledger does not keep) is never decided
+(`[EXT:tpi-capability-gates]`). The controller is saved in the Science continuation save.
 
 **Camera flights and obstacles.** The cutscene thing flies the controller's cameras as the original does: the ride view on the target's camera seat while its own
 script plays the clip, the clock at the flight's rate, the HUD hidden; its end posts the completion message 0x29. A new game's Science park opens with the zone
@@ -372,6 +372,20 @@ opens with the M key or the text HUD's button below "Current Objective", which s
 subject, picture and body, reads it after 2.5 seconds, deletes it with Delete and runs its go-to; no row click opens the letter window. The tube is kept in the
 Science continuation save. The advisor's unread-mail messages (0x198, 0x15D), the native panel's chime and picture and the body's scroll are not ported
 (`[EXT:tpi-capability-gates]`).
+
+**Park awards and the shares game.** Since November 23, 2026 the park runs the executable's park awards and shares game ([TPI-AWARDS-SHARES.md](reverse/TPI-AWARDS-SHARES.md)),
+which the last mission (miss17: six awards and 51 % of the shares) needs. Every 100th world tick the award check measures the park against `levels/Standard.sam`'s
+`ParkAward` thresholds and decides at most one award: the cleanest park (90 % of the path, queue and littered cells clean, with 1000 covered cells), the most decoration
+(the features' footprint over the covered cells), the best security (the guards' patrol areas plus the cells the cameras and guards make secure), the best staff
+training (half the staff trained, ten staff at least), the fastest go-kart track (its longest straight) and the longest water ride (its sections). An award moves to the
+zone that beats its holder's value; the career counts the awards ever won. The two coaster awards are not decided: their measure needs a coaster's "viewed" byte, which only
+the original's attraction window sets, and its track record (`[EXT:tpi-capability-gates]`). The shares game starts the career with 1000 shares at a price of 100; a won
+challenge pays its share prize and raises the price by its `SharePriceEffectWon` (4 %), a slot's first loss lowers it by its `SharePriceEffectLost` (2 %). The thirteen share
+prizes add up to exactly the 15300 shares miss17's 51 % needs; none of those challenges is offered yet (their types are unmeasured), so the 51 % is reachable only through the cheat below until they are ported. The annual report's score and price step are ported, but the report is not run at the year change: it reads
+analyser rings OpenTPW does not keep (`[EXT:tpi-capability-gates]`). The text HUD's challenge panel shows the shares owned, the percentage, the price and the awards held,
+and an award decided becomes a note, in the game's own words (UITEXT); the native share portfolio and Park Awards panels and the advisor's award messages are not ported
+(`[EXT:tpi-text-hud]`, `[EXT:tpi-capability-gates]`). The shares are kept with the career, in the player file and the Science continuation save. The cheats extension's
+"Win the game..." gives 51 % of the issued shares, as the original's debug menu does.
 
 ### Prebuilt science save
 

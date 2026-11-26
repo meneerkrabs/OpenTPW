@@ -210,6 +210,16 @@ def parse_layout(image: Image, address: int) -> tuple[list[dict], int]:
                 nodes.append(node)
                 node['children'] = walk(node, depth + 1)
                 continue
+            if command == 19:
+                # a node of type 5, attributes 0x101, id 3 over the rectangle, built on the parent (0x85D1A8 in Theme Park Inc's builder, jump table 0x84E968
+                # entry 19 -> 0x84E56F) without a stream of its own: a varibox's value field; no Theme Park World table of tp.exe uses it
+                count += 1
+                if count > 512:
+                    raise ValueError('layout has too many nodes')
+                rect = [stream.s16() for _ in range(4)]
+                nodes.append({'type': 5, 'attributes': 0x101, 'id': 3, 'rect': rect, 'help': -1, 'help2': -1, 'hash': None, 'hash2': None, 'inner': None,
+                              'implied': command, 'at': at, 'children': []})
+                continue
             if command == 5:
                 return nodes
             if parent is None:

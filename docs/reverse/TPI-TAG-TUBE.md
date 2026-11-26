@@ -33,8 +33,8 @@ Only message type 0x19 (the letter wrapper `0x435DC0`, vtable `0x93A388`) reache
 | Arrival flyover's end `0x5F1760` (post at `0x5F18DA`) | briefing, tag letter `0x5CD6E0(0x5C, 5, 1)` | tag 0x5C, the tag record's texts, category 0, unread |
 | Bank `0x5C0969` | red-month notification `0x5CEE50(8)` | tag 0x5E, category 2, read; the letter window opens |
 | Challenge system `0x5C48DD` | firing notification `0x5CEE50(7)` | tag 0x5F, category 2, read; the letter window opens |
-| Staff wage review | wage demand `0x5CEFB0(0xA/0xB, member, shortfall)` | not ported yet (staff package) |
-| Staff training | `0x5CEFB0(0xC/0xD, member, ability)` | not ported yet (staff package) |
+| Staff day routine `0x628CA0` | wage demand `0x5CEFB0(0xA/0xB, member, shortfall)` | tag 0x90, go-to 0xE (the wage demand window) with the demand, key the member's thing, category 2, unread ([TPI-WAGES.md](TPI-WAGES.md)) |
+| Staff training | `0x5CEFB0(0xC/0xD, member, ability)` from `0x62AC4D` and `0x62E8D6` | not ported yet (tag 0x8E/0x8F, go-to 5: the staff window `0x58C6C0`, not built) |
 | Challenge won | promotion letter `0x5CF4D0` (id 0xE) | not ported (OpenTPW composes no promotion letter) |
 
 The other posts are debug pages. `0x538030` is the window procedure of a page that `0x5379C0` builds; `0x5379C0` is reached only from the debug menu's procedure
@@ -87,4 +87,4 @@ checked, because the arrival's briefing and every objective letter would have be
 - The native mail panel's picture by category (control 0x47) and its chime (sound 0x1E of the bank `0xAE0124`), and the help button's advisor help (`0x503A40(0x1AF)`).
 - The body's scroll text (message 0x800 with the slider 3017).
 - The tag-definition rows (branch 0x18) and branch 0x1B of the row builder, which no ported sender posts.
-- Delete by key (`0x636B10`): it flags every unflagged row whose `+0xE14` is a removed thing's id (callers `0x618790`, `0x629040` and `0x63A1E0` on message 0x21). Every ported row has key 0, so no removal reaches one.
+- Delete by key (`0x636B10`) from `0x618790` and `0x63A1E0` (message 0x21): the dismissal `0x629040` calls it (ported, [TPI-WAGES.md](TPI-WAGES.md)); the other removals of a keyed thing are not senders of a ported row.

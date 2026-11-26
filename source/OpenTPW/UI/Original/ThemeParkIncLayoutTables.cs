@@ -252,4 +252,70 @@ public static class ThemeParkIncLayoutTables
 			new( 2, 0x1u, 0xBCDu, 1799, 46, 1882, 129, 279, -1, "b_help", null, null, System.Array.Empty<LayoutNode>() ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPI-EXE:0x9c9f64] layout table WageDemand.</summary>
+	public static readonly LayoutTable WageDemand = new( "WageDemand", 0x9C9F64, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0xCA181u, 453, 191, 1771, 1165, -1, -1, "!window", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFEu, 1580, 1020, 1682, 1122, 3, -1, "b_cancel", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xCA182u, 1632, 198, 1715, 281, 1, -1, "b_close", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xCA183u, 542, 1020, 644, 1122, 0, -1, "b_fire", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xCA184u, 1469, 1020, 1571, 1122, 0, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 12, 0x1u, 0xCA185u, 544, 818, 953, 998, -1, -1, "varibox", null, null, new LayoutNode[]
+			{
+				new( 2, 0x21u, 0x2u, 556, 844, 620, 908, -1, -1, "b_minus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x1u, 877, 844, 941, 908, -1, -1, "b_plus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 5, 0x101u, 0x3u, 630, 856, 866, 900, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0xCA186u, 974, 317, 1683, 579, -1, -1, "!frame", null, new[] { 1001, 342, 1656, 554 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xCA187u, 542, 599, 955, 685, -1, -1, "!frame", null, new[] { 563, 620, 933, 665 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xCA188u, 974, 597, 1683, 999, -1, -1, "!frame", null, null, new LayoutNode[]
+			{
+				new( 9, 0x1u, 0xCA189u, 1352, 673, 1660, 718, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 9, 0x1u, 0xCA18Au, 1352, 930, 1660, 975, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 9, 0x1u, 0xCA18Bu, 1352, 879, 1660, 923, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA18Cu, 998, 622, 1346, 667, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA18Du, 1352, 622, 1660, 667, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA18Eu, 998, 724, 1346, 769, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA18Fu, 1352, 724, 1660, 769, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA190u, 998, 673, 1346, 718, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA191u, 998, 930, 1346, 975, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA192u, 998, 879, 1346, 923, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA193u, 998, 775, 1346, 820, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA194u, 1352, 775, 1660, 820, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA195u, 1352, 828, 1660, 873, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xCA196u, 998, 828, 1346, 873, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0xCA197u, 563, 927, 933, 972, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xCA198u, 603, 316, 894, 580, -1, -1, "!frame", null, new[] { 624, 337, 872, 559 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xCA199u, 549, 203, 1533, 282, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xCA19Au, 1543, 198, 1626, 281, 279, -1, "b_help", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
+	/// <summary>[BIN:TPI-EXE:0x9be518] layout table WageNegotiation.</summary>
+	public static readonly LayoutTable WageNegotiation = new( "WageNegotiation", 0x9BE518, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0xB284u, 453, 430, 1772, 926, -1, -1, "!window", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xB285u, 1629, 436, 1713, 519, 1, -1, "b_close", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xB286u, 823, 557, 1592, 759, -1, -1, "!frame", null, new[] { 846, 632, 1571, 737 }, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0xB287u, 847, 580, 1097, 624, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xB288u, 1103, 580, 1573, 624, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0xB289u, 508, 559, 799, 823, -1, -1, "!frame", null, new[] { 530, 579, 778, 802 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0xB28Au, 551, 442, 1534, 522, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xB28Bu, 1614, 771, 1716, 874, -1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 8, 0x11u, 0xB28Cu, 822, 773, 1593, 871, -1, -1, "!f_plain", null, null, new LayoutNode[]
+			{
+				new( 2, 0x11u, 0xB28Du, 840, 790, 904, 854, -1, -1, "checkbox2", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0xB28Eu, 1211, 790, 1275, 854, -1, -1, "checkbox2", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xB28Fu, 912, 800, 1202, 845, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0xB290u, 1282, 800, 1572, 845, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 2, 0x1u, 0xB291u, 1540, 436, 1624, 519, 279, -1, "b_help", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }

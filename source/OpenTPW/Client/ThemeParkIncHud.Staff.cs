@@ -238,16 +238,6 @@ public sealed partial class ThemeParkIncHud
 		return toolPress = true;
 	}
 
-	/// <summary>The wage demands of the day, as notes (the negotiation is not ported yet).</summary>
-	private void ShowWageDemands()
-	{
-		if ( level.Park?.Economy is not { } economy || economy.TpiWageDemands.Count == 0 )
-			return;
-		foreach ( var demand in economy.TpiWageDemands )
-			PostMessage( string.Format( T( OpenTpwText.TpiStaffWageDemand ), strings.StaffName( (int)demand.Member.Role, demand.Member.NameIndex ), demand.Shortfall.ToString( "N0" ) ) );
-		economy.TpiWageDemands.Clear();
-	}
-
 	private void ToggleStaffPanel()
 	{
 		if ( staffOpen )

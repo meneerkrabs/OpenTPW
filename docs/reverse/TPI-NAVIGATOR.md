@@ -1,6 +1,6 @@
 # Theme Park Inc: the navigator (guest and staff walks)
 
-Status: phase NV1 of the navigator port. Static reading of the identified no-CD `Game.exe`; the game was never run. Addresses are `Game.exe` virtual addresses
+Status: phases NV1 and NV2 of the navigator port. Static reading of the identified no-CD `Game.exe`; the game was never run. Addresses are `Game.exe` virtual addresses
 unless marked as tp.exe's. Tags: [R] read in the listing, [O] confirmed by the x86 oracle (docs/reverse/ORACLE.md section 7.19).
 
 ## What the navigator is
@@ -85,14 +85,77 @@ takes the kinds 1, 4, 5, 6, 8, 7, **0x14** and 0x12 (`0x63F2AD..0x63F2CB`), skip
 OpenTPW needs no new code for it: `ThemeParkIncStaffWorld` files every placed member on the staff chain (`GuestSimulation.StaffChain`), gardeners included, and
 `GuestSimulation.AppendCellChain` reads that chain without a kind test. `ThemeParkIncGardenerTests.AGardenerIsASeparationNeighbourOfTheGuestsAndTheStaff` pins it.
 
+## The navigator object (NV2)
+
+Theme Park Inc's navigator is a 0xBC-byte object at person `+0xEC` (tp.exe's guest `+0xD4`). OpenTPW's `GuestNavigation` now holds every member of it, so that one walk object
+is the original's navigator for Theme Park World and Theme Park Inc alike:
+
+| nav | Member | Constructor `0x63ED10` | Writer in the simulation | OpenTPW |
+| --- | --- | --- | --- | --- |
+| `+0x00` | mass | 0x10000 | none (the steering divides by the literal ONE) | `Mass` |
+| `+0x04` | radius | 0x3333 | none | `RadiusMember` (the step reads it, as the original does) |
+| `+0x08`, `+0x10` | pos, vel | 0 | the steering step | `X`/`Y`, `VelocityX`/`VelocityY` |
+| `+0x18`, `+0x1C` | max_force, max_speed | 0x6666, 0x3333 | the speed setter `0x63EF90` (tp.exe `0x510190`, `GuestSpeed.Caps`) | `MaxForce`, `MaxSpeed`, moved in from `Guest` and the staff member, which forward to them. A Theme Park World guest starts with `GuestSpeed.Floor` (655) in both where tp.exe's constructor `0x50FFE0` gives 0x6666 and 0x3333: harmless, as the speed step writes them before the walk reads them |
+| `+0x20`, `+0x28` | local_xaxis, local_yaxis | 0 | the steering step after the commit: `0x63E150` (unit velocity) and `0x63E300` (perpendicular (−y, x)) | `LocalXAxis*`, `LocalYAxis*` |
+| `+0x30` | (unnamed seek target) | 0 | none; the loader zeroes it, only unregistered behaviours read it | not modelled |
+| `+0x38`, `+0x40` | formation_pos, force | 0 | none (research note NV0 §1): the file's value passes through | `FormationPos*`, `Force*` |
+| `+0x48` | path_timestamp | not written | the set-up: the raised stamp counter | `Stamp` (OpenTPW's edit counter until NV3) |
+| `+0x64` | subpath_buffer[5] | zeroed by `0x63D820` | the set-up: the buffered cell centres | `Buffer` (cells) and `BufferSlotsWritten` (the slots written; the rest stay zero) |
+| `+0x8C` | subpath_dist[5] | not written | the set-up: slot i = the octile segment from waypoint i to i + 1, for i below the count − 1 | `SubpathDist` |
+| `+0xB0` | path_stuck_buffer | 0 | the step: shifted left without a mask; follow_path counts bits 0..14 | `History` (the whole word) |
+
+The other members (`+0x4C` .. `+0xB8`) were already there. The behaviour registration `0x63EA90` binds avoid_walls (`0xE666`), follow_path (`0x8000`) and separation (`0x1999`)
+in that order, tp.exe's `0x50FDF0`'s list.
+
+What changed in the walk [R, O]:
+
+- **The local axes.** After the commit the steering step stores the normalised velocity as the x axis and its perpendicular as the y axis (`0x63DECF..0x63DF02`, tp.exe
+  `0x50F576..0x50F5A9`). `Fixed16.Normalize` ports `0x63E150`: below 2^12 the root of (x² + y²) << 6 and the factor 0x80000 / root as a 32-bit product, below 2^22 the
+  components >> 8 and 0x1000000 / root, else >> 18 and 0x4000 / root, by FixMul; a zero velocity gives zero axes. Nothing but the saver reads them.
+- **subpath_dist.** The set-up writes the slots of the buffered segments and keeps the rest; follow_path subtracts the passed waypoint's slot from `+0xA4` (`0x63D2F5`,
+  tp.exe `0x50EFAC`). On the last buffered waypoint that slot is stale, but the refill's set-up writes `+0xA4` again, so every result is the one the segment lengths gave.
+  A walk restored from OpenTPW's own snapshot rebuilds the slots of its buffered waypoints.
+- **The history word.** The step shifts `+0xB0` without masking it; only bits 0..14 are read. OpenTPW keeps the whole word; the digest and the snapshots of Theme Park World
+  walks keep the 15-bit window they held.
+- **The stamp test.** follow_path's comparison of the block stamp with `+0x48` is unsigned (`jbe`, `0x63D0BF`, tp.exe `0x50ED6F`).
+- **The square root.** `0x5D2060` (tp.exe `0x4D49A0`, the same code) is `fild`, `fsqrt`, `_ftol`. At the game thread's control word 0x7F (`ThemeParkIncX87`,
+  `[EXT:hardware-d3d-path]`) `fsqrt` rounds to a single's 24 bits, so the root of k² − j can come out as k (5000 for 24,999,999; oracle `tpi-exe-navigator-root`). Theme Park
+  Inc's walk takes that root (`Fixed16.Root` with `single`) in its lengths, truncations, the ray test and the axes. Theme Park World's walk keeps the exact root, so its results and
+  pins do not move in this phase. That root is not confirmed for tp.exe's game thread: X25 ran tp.exe at the harness's default control word 0x37F (64-bit significand), while
+  `[EXT:hardware-d3d-path]` models that thread at 0x7F, and the Theme Park World speed setter of the same update already rounds at 24 bits (`Single24.Product`). Reading tp.exe's walk
+  at 0x7F is a Theme Park World follow-up (navigator plan, "Follow-ups"), with its own pin update.
+
+**The record.** The serializer `0x63AD30` (tp.exe `0x50D150`) writes 177 bytes, every member but `+0x30` under its name in alphabetical order: force, formation_pos,
+local_xaxis, local_yaxis, mass, max_force, max_speed, mCantReachDest, nav_mode, path_buffer_count, path_count (the index), path_finished (1 byte), path_last_progress,
+path_stuck_buffer, path_subpath_dist, path_tail_dist, path_target_pos, path_timestamp, path_total_count, path_total_dist, pos, radius, five (subpath_buffer[p], subpath_dist[p])
+pairs, vel (mode 1, versions 0 and 1; a short transfer returns 1). The load half (mode 0) reads the same and zeroes `+0x30`. `SaveNavigation` reads it and `Write` writes it;
+`GuestNavigation.ToRecord` and `LoadRecord` map it onto the walk (a record whose waypoint slots are not cell centres after the first unwritten one, or whose flags are not 0 or 1,
+cannot be held and is refused, as is one with fewer written slots than its buffered count or an index past it). This is the record the native park writer will store; OpenTPW's own snapshots keep their format until NV5.
+
+**Unwritten members.** The constructor leaves `+0x48` and the subpath_dist slots as the allocator's arena (`0x7CA070`, no fill) held them, so a person that has never set a walk up
+carries indeterminate bytes there; tp.exe's saves show its debug heap's `0xCDCDCDCD` in unused slots. Nothing observable reads them before a set-up writes them (follow_path's
+comparison with `+0x48` and its subtraction of a slot come only after a successful set-up, and a stale slot's subtraction is overwritten by the refill), so any value there is a
+possible original outcome. OpenTPW starts them at 0, the value of fresh arena memory, and NV5's native writer will emit 0 there.
+
+**Under the switch.** With `--tpi-native-walk` a Theme Park Inc walk is native (`GuestNavigation.Native`): its new members join the digest; a guest starts with the constructor's caps
+(0x3333, 0x6666) until its first speed step; and the guest and staff snapshots carry the walk's record in the optional member `NativeRecord`, written for a native walk of either
+kind: the original keeps one navigator object and saves it whole, so a walk to the walker's own point (`SetDestination`: standing, riding, placed on the grid) keeps the last set-up's
+stamp, lengths and slots, which a later failed set-up still reads. A restore takes from it the members the snapshot's own fields do not hold and refuses a record that disagrees
+with them, a record without the switch (a guest's in the guests' restore, a staff member's in the resume file's validation), or a guest record whose caps are not the guest's. Without the switch nothing changes: no member joins the digest, no save gains a field, and the default walk is as before.
+
+**Verified.** The x86 oracle (docs/reverse/ORACLE.md section 7.19) runs Game.exe's constructor, set-up and steering step through 40 whole walks and compares the whole record after
+every set-up and step (`tpi-exe-walk-steering`), avoid_walls (`tpi-exe-walk-avoid-walls`), the root (`tpi-exe-navigator-root`) and both halves of the serializer
+(`tpi-exe-navigator-record`); all agree with `walk_reading.py`. `ThemeParkIncNavigatorTests` holds three Game.exe walks on one map, every member but path_timestamp after each step,
+and loads and saves each of their records unchanged; `tools/tpi-layouts/navigator.py` runs the serializer's round trip (T4). X25's steering target compares every member of tp.exe's
+navigator as well.
+
 ## Random numbers
 
-No world draw and no C runtime `rand()` (`0x870D38`) is reached from the edge test, the commit, the search or the neighbour query [R].
+No world draw and no C runtime `rand()` (`0x870D38`) is reached from the edge test, the commit, the search or the neighbour query [R], nor from the constructor, the set-up, the
+steering step, the speed setter or the serializer [R, O: the oracle allows none of them].
 
 ## Later phases
 
-- NV2: the navigator's remaining members (mass, radius, the local axes, `formation_pos`, `force`, `subpath_dist[5]`, the speed caps) and its 177-byte serializer
-  `0x63AD30`.
 - NV3: the walk step `0x60B460` (the heading on arrival, only kids run), the speed step `0x60BC90`, the route requests `0x60B7F0` / `0x60B8E0` and the stamp counter
   `0x5D81F0`, which counts simulation calls only (the user-approved label `tpi-stamp-counter-sim-only`, 2026-11-25).
 - NV4: the wander and patrol destination `0x609F70`; the switch turns on and the walk scope of `[EXT:tpi-twp-guest-rules]` retires.

@@ -218,7 +218,7 @@ public class WalkSearchTests
 		Assert.AreEqual( 4718592, navigation.Total, "route length +0xA0" );
 		Assert.AreEqual( 2490368, navigation.Ahead, "buffered length +0xA4" );
 		Assert.AreEqual( 1507328, navigation.Beyond, "length beyond the buffer +0xA8" );
-		// (step, x, y, velocity x, velocity y, waypoint index, progress, history)
+		// (step, x, y, velocity x, velocity y, waypoint index, progress, history word)
 		var checkpoints = new (int Step, int X, int Y, int VelocityX, int VelocityY, int Index, int Progress, int History)[]
 		{
 			(0, 1343488, 2712011, 0, -7733, 0, 108, 0),
@@ -236,7 +236,8 @@ public class WalkSearchTests
 			(576, 1641567, 2258657, 6969, -3424, 4, 64209, 0),
 			(577, 1648355, 2255480, 6788, -3177, 4, 65536, 0),
 			(578, 1651749, 2253891, 3394, -1589, 4, 65536, 1),
-			(899, 1655138, 2251987, 0, -1, 4, 65536, 32767),
+			// the whole history word: the step shifts it without a mask (0x50F3B0, Theme Park Inc 0x63DEAE); follow_path reads bits 0..14
+			(899, 1655138, 2251987, 0, -1, 4, 65536, -1),
 		};
 		var next = 0;
 		for ( var step = 0; step < 900; step++ )

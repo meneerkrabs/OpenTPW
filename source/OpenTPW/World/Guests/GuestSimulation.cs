@@ -528,13 +528,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// then five meter/prank draws at 0x60C734. Keep the code separate from TPW's prank actions.
 		var profile = settings.ReadProfile( random );
 		var meters = ThemeParkIncGuestStart.ReadMeters( profile.Generation, settings.PrankLikelihood, (ushort)id, random.NextWord );
-		return new Guest( id, profile.Type )
+		var guest = new Guest( id, profile.Type )
 		{
 			Money = profile.Money, ExitLevel = profile.ExitLevel, Happiness = meters.Happiness,
 			Thirst = meters.Thirst, Hunger = meters.Hunger, Toilet = meters.Toilet,
 			ToiletBonus = GuestSpeed.ToiletBonus, TpiPrankCode = meters.Prank,
 			Tpi = NativeTpi != null ? NewThemeParkIncRecord( profile ) : null
 		};
+		// [BIN:TPI-EXE:0x0063ED10 navigator constructor] Theme Park Inc's native walk (--tpi-native-walk) starts the person's navigator (+0xEC, called at 0x608F83) with the constructor's caps
+		// 0x3333 and 0x6666; the speed step sets them before the first walk step
+		if ( Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc )
+			(guest.MaxSpeed, guest.MaxForce) = (GuestNavigation.ConstructorMaxSpeed, GuestNavigation.ConstructorMaxForce);
+		return guest;
 	}
 
 	/// <summary>
@@ -4276,13 +4281,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Cursor = navigation.Cursor,
 				WalkCrossings = navigation.WalkCrossings,
 				AlsoOpen = navigation.AlsoOpen.ToArray(),
-				History = navigation.History,
+				History = navigation.History & 0x7fff,
 				PreviousRemaining = navigation.PreviousRemaining,
 				OffGrid = navigation.OffGrid,
 				Reroutes = navigation.Reroutes,
 				OriginalWalk = navigation.CaptureOriginal(),
 				Waypoints = navigation.Buffer.ToArray(),
-				Mask = navigation.Mask
+				Mask = navigation.Mask,
+				NativeRecord = navigation.CaptureNative()
 			},
 			CellX = guest.CellX,
 			CellY = guest.CellY,
@@ -4802,6 +4808,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
 		foreach ( var problem in navigation.Problems( guest.Id, Grid.InBounds ) )
 			error( char.ToUpperInvariant( problem[0] ) + problem[1..] + "." );
+		// a native navigator record only with Theme Park Inc's navigator (--tpi-native-walk), and with the guest's own caps
+		if ( navigation.NativeRecord is { Length: SaveNavigation.Bytes } nativeRecord )
+		{
+			if ( Grid.Cells.EdgeRules != WalkEdgeRules.ThemeParkInc )
+				error( $"Guest {guest.Id} carries Theme Park Inc's native navigator record without Theme Park Inc's navigator rules." );
+			var record = SaveNavigation.Read( nativeRecord );
+			if ( record.MaxSpeed.Raw != guest.MaxSpeed || record.MaxForce.Raw != guest.MaxForce )
+				error( $"Guest {guest.Id} native navigator caps ({record.MaxSpeed.Raw}, {record.MaxForce.Raw}) are not its own ({guest.MaxSpeed}, {guest.MaxForce})." );
+		}
 		// [BIN:TPI-EXE:0x60C712 guest base speed] a Theme Park Inc guest's base speed is a walk speed scaled by its profile's SpeedMultiplier
 		if ( !IsBirthBaseSpeed( guest.BaseSpeed, guest.Type, guest.TpiPrankCode.HasValue ) )
 			error( $"Guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds." );
@@ -5060,6 +5075,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else
 			for ( var index = 0; index < navigationSnapshot.Count; index++ )
 				navigation.Buffer[index] = navigation.Route[navigationSnapshot.Cursor + index];
+		navigation.RestoreSegments();
+		if ( navigationSnapshot.NativeRecord is { } native )
+			navigation.RestoreNative( native );
 	}
 
 	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: gameplay fields, in id order.

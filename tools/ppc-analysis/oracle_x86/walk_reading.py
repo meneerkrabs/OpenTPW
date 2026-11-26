@@ -5,12 +5,17 @@ the x86 walk targets (docs/reverse/ORACLE.md section 7, X25). Pure Python: no ex
 * `find` the route search 0x511420 (line search 0x511470 with its tracers 0x511c90, shortcuts 0x5110d0, refinement 0x5108a0);
 * `avoid_walls` 0x50e4a0 with the ray test 0x50cc20;
 * `Walk` the walk set-up 0x50f8e0 and the steering step 0x50f3b0 (follow_path 0x50ed10, progress 0x50fd40), separation without
-  neighbours.
+  neighbours, with every member of the navigator object (NV2): the local axes the step writes, the five subpath_dist slots, the whole
+  progress history word, and `record` / `load_record` the 177-byte serializer 0x50d150 (Theme Park Inc 0x63ad30).
 
 A `Map` with `tpi` set reads Theme Park Inc's edge test 0x5d7b60 (WalkEdgeRules.ThemeParkInc): an obstacle's walkway cell (the obstacle
 flag, cell +0x24) is no walkway fast path, unowned land (flag 0x40) blocks after the path and walkway rules, and type 8 blocks. Only masks 0
 and 1 are read that way: no Theme Park Inc walk passes 2 or 3 (docs/reverse/TPI-NAVIGATOR.md). The commit and the search are the same.
+A `Map` with `tpi` also takes the walk's integer square root (0x5d2060) as Game.exe runs it at the game thread's control word 0x7f: fsqrt
+rounded to a single's 24-bit significand, then truncated (_ftol); tp.exe's 0x4d49a0 is the same code, read at 64 bits as X25 runs it.
 """
+import math
+import struct
 D = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 FAIL = 0x70000000
 
@@ -23,6 +28,10 @@ class Map:
     def l(self, x, y): return self.links.get((x, y), 0)
     def q(self, x, y): return self.qlinks.get((x, y), 0)
     def f(self, x, y): return self.flags.get((x, y), 0)
+
+def single_root(m):
+    """Whether the walk's square root rounds to a single (Game.exe at the control word 0x7f); `root_64` reads it at 64 bits instead."""
+    return m.tpi and not getattr(m, 'root_64', False)
 
 def blocked(m, x, y, d, mask):
     x &= 0xff; y &= 0xff; d &= 0xff
@@ -335,34 +344,57 @@ def fdiv(a, b):  # 0x50e080: (a << 16) / b truncated toward zero
     n = a * 65536
     q = abs(n) // abs(b)
     return s32(q if (n >= 0) == (b > 0) else -q)
-def isqrt(v):
-    import math
-    return math.isqrt(v & M32)
-def length(x, y):  # 0x50f600 / 0x50e4a0 length
+def f32(value):
+    """A double rounded to a single (round to nearest even), as the x87 rounds a result at the control word 0x7f."""
+    return struct.unpack('<f', struct.pack('<f', value))[0]
+def isqrt(v, single=False):
+    """0x4d49a0 / 0x5d2060: fild of the unsigned dword, fsqrt, _ftol. At 64 bits the floor of the root; at 24 bits (single) the root
+    rounded to a single first, which can reach the next integer (the double root of a 32-bit integer is never a single's midpoint)."""
+    v &= M32
+    return int(f32(math.sqrt(v))) if single else math.isqrt(v)
+def length(x, y, single=False):  # 0x50f600 / 0x50e4a0 length
     ax, ay = abs(x) & M32, abs(y) & M32
     bits = ax | ay
-    if bits & 0xfffff000 == 0: return isqrt((ax * ax + ay * ay) & M32)
-    if bits & 0xffc00000 == 0: return s32(isqrt((((ax >> 8) * (ax >> 8)) + ((ay >> 8) * (ay >> 8))) & M32) << 8)
-    return s32(isqrt((((ax >> 18) * (ax >> 18)) + ((ay >> 18) * (ay >> 18))) & M32) << 18)
+    if bits & 0xfffff000 == 0: return isqrt((ax * ax + ay * ay) & M32, single)
+    if bits & 0xffc00000 == 0: return s32(isqrt((((ax >> 8) * (ax >> 8)) + ((ay >> 8) * (ay >> 8))) & M32, single) << 8)
+    return s32(isqrt((((ax >> 18) * (ax >> 18)) + ((ay >> 18) * (ay >> 18))) & M32, single) << 18)
 
-def ray(pos, d, corner, r):  # 0x50cc20
+def normalize(x, y, single=False):  # 0x63e150 (tp.exe's twin writes the axes at 0x50f57e)
+    """The unit vector of (x, y) in 16.16, (0, 0) for a zero vector: below 2^12 the root of (x^2 + y^2) << 6 and the factor 0x80000 / root
+    times each component (a 32-bit product); below 2^22 the root of the components >> 8 and 0x1000000 / root, else >> 18 and 0x4000 / root,
+    each component FixMul'ed by it."""
+    ax, ay = abs(x) & M32, abs(y) & M32
+    bits = ax | ay
+    def quotient(numerator, root):
+        return numerator // root if root else 0
+    if bits & 0xfffff000 == 0:
+        root = isqrt(((ax * ax + ay * ay) << 6) & M32, single)
+        f = quotient(0x80000, root)
+        return s32(x * f), s32(y * f)
+    shift, numerator = (8, 0x1000000) if bits & 0xffc00000 == 0 else (18, 0x4000)
+    ax, ay = s32(ax) >> shift, s32(ay) >> shift
+    root = isqrt((ax * ax + ay * ay) & M32, single)
+    f = quotient(numerator, root)
+    return fmul(x, f), fmul(y, f)
+
+def ray(pos, d, corner, r, single=False):  # 0x50cc20
     mx = s32(pos[0] - corner[0]); my = s32(pos[1] - corner[1])
     a = s32(fmul(d[0], d[0]) + fmul(d[1], d[1]))
     b = s32((fmul(d[0], mx) + fmul(d[1], my)) * 2)
     c = s32(fmul(mx, mx) + fmul(my, my) - fmul(r, r))
     disc = s32(fmul(b, b) - s32(fmul(a, c) * 4))
     if disc <= 0: return -0x80000000
-    s = isqrt(disc)
+    s = isqrt(disc, single)
     t1 = s32(s - b); t2 = s32(-(s + b))
     return (t2 if t2 <= t1 else t1) >> 1
 
 def avoid_walls(m, nav):
     """0x50e4a0: nav dict with r, x, y, vx, vy, mask"""
-    r = nav['r']; mask = nav['mask']
+    r = nav['r']; mask = nav['mask']; single = single_root(m)
     px = s32(nav['x'] + fmul(nav['vx'], 0x10000)); py = s32(nav['y'] + fmul(nav['vy'], 0x10000))
     cx = (nav['x'] & M32) >> 16; cy = (nav['y'] & M32) >> 16
     vx = s32(px - nav['x']); vy = s32(py - nav['y'])
-    ln = length(vx, vy)
+    ln = length(vx, vy, single)
     dx, dy = (vx, vy) if ln == 0 else (fdiv(vx, ln), fdiv(vy, ln))
     xpos = dx >= 0; ypos = dy >= 0
     B = lambda x, y, d: blocked(m, x, y, d, mask)
@@ -381,7 +413,7 @@ def avoid_walls(m, nav):
     def corner(diag, dd1, dd2, side1, sd1, side2, sd2, pt):
         if not (B(diag[0], diag[1], dd1) or B(diag[0], diag[1], dd2)): return None
         if B(side1[0], side1[1], sd1) or B(side2[0], side2[1], sd2): return None
-        t = ray((nav['x'], nav['y']), (dx, dy), pt, r)
+        t = ray((nav['x'], nav['y']), (dx, dy), pt, r, single)
         if t == 0x7fffffff or t <= 0 or t > ln: return None
         hx = s32(nav['x'] + fmul(dx, t)); hy = s32(nav['y'] + fmul(dy, t))
         return (fdiv(s32(hx - pt[0]), r), fdiv(s32(hy - pt[1]), r))
@@ -406,8 +438,8 @@ def octile(x, y):
     return ax + ay - (min(ax, ay) >> 1)
 
 
-def truncate(x, y, maximum):  # 0x50f600
-    size = length(x, y)
+def truncate(x, y, maximum, single=False):  # 0x50f600
+    size = length(x, y, single)
     if size < maximum:
         return x, y
     scale = fdiv(maximum, size)
@@ -423,22 +455,29 @@ def segment(a, b):
 
 
 class Walk:
-    """The walk object's fields (walk +8 .. +0xb8) with block stamps kept by the caller's `stamps` dict."""
+    """The navigator object (walk +0 .. +0xb8) with block stamps kept by the caller's `stamps` dict. The members start as the constructor
+    0x50ffe0 / 0x63ed10 leaves them; `fill` stands for the two it does not write (path_timestamp +0x48 and subpath_dist +0x8c..), which
+    hold whatever the allocator's memory held. The waypoint buffer +0x64 keeps the raw 16.16 centres (zero until a set-up writes a slot)."""
 
-    def __init__(self, m, stamps, x, y, vx, vy, mask, max_speed, max_force):
+    def __init__(self, m, stamps, x, y, vx, vy, mask, max_speed, max_force, fill=0):
         self.m, self.stamps = m, stamps
+        self.single = single_root(m)
+        self.mass, self.radius = ONE, RADIUS
         self.x, self.y, self.vx, self.vy, self.mask = x, y, vx, vy, mask
         self.max_speed, self.max_force = max_speed, max_force
+        self.xaxis, self.yaxis = (0, 0), (0, 0)
+        self.formation, self.force = (0, 0), (0, 0)
         self.tx = self.ty = 0
         self.pc = self.cnt = self.idx = 0
         self.arrived = True
         self.buf = [(0, 0)] * 5
+        self.subdist = [s32(fill)] * 5
         self.total = self.ahead = self.beyond = self.prog = self.hist = 0
         self.stuck = False
-        self.stamp = 0
+        self.stamp = s32(fill)
         self.counter = 0
 
-    def setup(self, tx, ty, reroute):  # 0x50f8e0
+    def setup(self, tx, ty, reroute):  # 0x50f8e0 / 0x63e3a0
         start = ((self.x >> 16) & 0xFF, (self.y >> 16) & 0xFF)
         goal = ((tx >> 16) & 0xFF, (ty >> 16) & 0xFF)
         self.tx, self.ty = tx, ty
@@ -457,8 +496,11 @@ class Walk:
         fx, fy = centre(path[0])
         self.total = octile(fx - self.x, fy - self.y) + sum(segment(path[i], path[i + 1]) for i in range(self.pc - 1))
         for i in range(self.cnt):
-            self.buf[i] = path[i]
-        self.ahead = sum(segment(path[i], path[i + 1]) for i in range(self.cnt - 1))
+            self.buf[i] = centre(path[i])
+        # the buffered segments, each in its slot (+0x8c + 4 i); the slots from cnt - 1 on keep their old values
+        for i in range(self.cnt - 1):
+            self.subdist[i] = segment(path[i], path[i + 1])
+        self.ahead = sum(self.subdist[i] for i in range(self.cnt - 1))
         self.beyond = sum(segment(path[i], path[i + 1]) for i in range(self.cnt - 1, self.pc - 1))
         self.prog = self.hist = self.idx = 0
         self.arrived = False
@@ -470,15 +512,16 @@ class Walk:
     def progress(self):  # 0x50fd40
         if self.arrived:
             return ONE
-        wx, wy = centre(self.buf[min(self.idx, 4)])
+        wx, wy = self.buf[min(self.idx, 4)]
         remaining = octile(wx - self.x, wy - self.y) + self.ahead + self.beyond
         if self.total == 0:
             return ONE
         q = abs(remaining) * 65536 // self.total
         return s32(ONE - (q if remaining >= 0 else -q))
 
-    def follow(self):  # 0x50ed10
-        if self.stamp < self.stamps.get((self.x >> 20, self.y >> 20), 0):
+    def follow(self):  # 0x50ed10 / 0x63d060
+        # an unsigned comparison (jbe at 0x50ed6f / 0x63d0bf): a block stamped after the set-up's counter value
+        if (self.stamp & M32) < (self.stamps.get((self.x >> 20, self.y >> 20), 0) & M32):
             if not self.setup(self.tx, self.ty, True):
                 self.stuck = True
         if not self.arrived and self.progress() != ONE:
@@ -490,47 +533,65 @@ class Walk:
             return -self.vx, -self.vy
         if self.idx == self.pc - 1:
             gx, gy = self.tx, self.ty
-            if octile(gx - self.x, gy - self.y) < fmul(RADIUS, 0x19999):
+            if octile(gx - self.x, gy - self.y) < fmul(self.radius, 0x19999):
                 self.arrived = True
         else:
-            gx, gy = centre(self.buf[self.idx])
-            if octile(gx - self.x, gy - self.y) < fmul(RADIUS, 0x20000):
-                if self.idx + 1 < self.cnt:
-                    self.ahead -= segment(self.buf[self.idx], self.buf[self.idx + 1])
+            gx, gy = self.buf[self.idx]
+            if octile(gx - self.x, gy - self.y) < fmul(self.radius, 0x20000):
+                # the passed waypoint's slot, read whatever it holds (0x63d2f5): the last buffered one's is stale, and the set-up below
+                # writes +0xa4 again
+                self.ahead = s32(self.ahead - self.subdist[self.idx])
                 self.idx += 1
                 if self.idx == self.cnt:
                     self.setup(self.tx, self.ty, False)
-            gx, gy = centre(self.buf[min(self.idx, 4)])
+            gx, gy = self.buf[min(self.idx, 4)]
         ox, oy = gx - self.x, gy - self.y
         if self.idx < self.pc - 1:
             return fmul(ox, ONE) - self.vx, fmul(oy, ONE) - self.vy
-        size = length(ox, oy)
+        size = length(ox, oy, self.single)
         if size == 0:
             return 0, 0
         desired = min(fdiv(size, 0x20000), self.max_speed)
         scale = fdiv(desired, size)
         return fmul(ox, scale) - self.vx, fmul(oy, scale) - self.vy
 
-    def step(self):  # 0x50f3b0 through 0x4fa2a0; returns 0 arrived, 1 walking, 2 stuck
-        wall = avoid_walls(self.m, dict(r=RADIUS, mask=self.mask, x=self.x, y=self.y, vx=self.vx, vy=self.vy))
+    def step(self):  # 0x50f3b0 / 0x63dd20 through 0x4fa2a0; returns 0 arrived, 1 walking, 2 stuck
+        single = self.single
+        wall = avoid_walls(self.m, dict(r=self.radius, mask=self.mask, x=self.x, y=self.y, vx=self.vx, vy=self.vy))
         path = self.follow()
-        ax, ay = truncate(*wall, self.max_force)
-        fx, fy = truncate(*path, self.max_force)
+        ax, ay = truncate(*wall, self.max_force, single)
+        fx, fy = truncate(*path, self.max_force, single)
         tx = fmul(ax, 0xE666) + fmul(fx, 0x8000)
         ty = fmul(ay, 0xE666) + fmul(fy, 0x8000)
-        tx, ty = truncate(tx, ty, self.max_force)
-        self.vx, self.vy = truncate(self.vx + tx, self.vy + ty, self.max_speed)
+        tx, ty = truncate(tx, ty, self.max_force, single)
+        tx, ty = fdiv(tx, ONE), fdiv(ty, ONE)
+        self.vx, self.vy = truncate(s32(self.vx + tx), s32(self.vy + ty), self.max_speed, single)
         nx, ny = s32(self.x + self.vx), s32(self.y + self.vy)
         f = ((self.x & M32) >> 16, (self.y & M32) >> 16)
         t = ((nx & M32) >> 16, (ny & M32) >> 16)
         if commit(self.m, f if f[0] < 128 and f[1] < 128 else (-1, -1), t if t[0] < 128 and t[1] < 128 else None, self.mask):
             self.x, self.y = nx, ny
         else:
-            self.hist = ((self.hist << 1) | 1) & 0x7FFF
+            self.hist = s32((self.hist << 1) | 1)
+        # the local axes (0x63decf..0x63df02, tp.exe 0x50f57e / 0x50f5a1): the unit velocity and its perpendicular (-y, x)
+        self.xaxis = normalize(self.vx, self.vy, single)
+        self.yaxis = (s32(-self.xaxis[1]), self.xaxis[0])
         p = self.progress()
-        self.hist = ((self.hist << 1) | (1 if p <= self.prog else 0)) & 0x7FFF
+        self.hist = s32((self.hist << 1) | (1 if p <= self.prog else 0))
         self.prog = p
         return 2 if self.stuck else 0 if p == ONE else 1
+
+    def record(self) -> bytes:
+        """The 177 bytes the serializer's save half writes (0x63ad30 mode 1, tp.exe 0x50d150): the members in alphabetical order."""
+        i = lambda *values: b''.join(struct.pack('<i', s32(v)) for v in values)
+        out = i(*self.force, *self.formation, *self.xaxis, *self.yaxis, self.mass, self.max_force, self.max_speed, int(self.stuck), self.mask,
+                self.cnt, self.idx) + bytes([1 if self.arrived else 0])
+        out += i(self.prog, self.hist, self.ahead, self.beyond, self.tx, self.ty, self.stamp, self.pc, self.total, self.x, self.y, self.radius)
+        for slot in range(5):
+            out += i(*self.buf[slot], self.subdist[slot])
+        out += i(self.vx, self.vy)
+        assert len(out) == RECORD_BYTES
+        return out
 
     def edit(self, cx, cy, kind):
         """A cell type change that stamps its block with the raised counter (0x5346d0 / 0x4d8c60)."""
@@ -539,5 +600,33 @@ class Walk:
         self.stamps[(cx >> 4, cy >> 4)] = self.counter
 
     def fields(self):
+        cells = tuple(((bx >> 16) & 0xFF, (by >> 16) & 0xFF) for bx, by in self.buf[:self.cnt])
         return (self.x, self.y, self.vx, self.vy, self.tx, self.ty, self.pc, self.cnt, self.idx, int(self.arrived), self.total,
-                self.ahead, self.beyond, self.prog, self.hist, int(self.stuck), tuple(self.buf[:self.cnt]))
+                self.ahead, self.beyond, self.prog, self.hist & 0x7FFF, int(self.stuck), cells)
+
+
+RECORD_BYTES = 177
+# (name, navigator offset, bytes) in the serializer's order (0x63ad30 / 0x50d150): the alphabetical member names, the five
+# (subpath_buffer[p], subpath_dist[p]) pairs interleaved; the unnamed +0x30 is not written and the loader zeroes it
+RECORD_LAYOUT = ([('force', 0x40, 8), ('formation_pos', 0x38, 8), ('local_xaxis', 0x20, 8), ('local_yaxis', 0x28, 8), ('mass', 0, 4),
+                  ('max_force', 0x18, 4), ('max_speed', 0x1C, 4), ('mCantReachDest', 0xB8, 4), ('nav_mode', 0xB4, 4),
+                  ('path_buffer_count', 0x58, 4), ('path_count', 0x5C, 4), ('path_finished', 0x60, 1), ('path_last_progress', 0xAC, 4),
+                  ('path_stuck_buffer', 0xB0, 4), ('path_subpath_dist', 0xA4, 4), ('path_tail_dist', 0xA8, 4), ('path_target_pos', 0x4C, 8),
+                  ('path_timestamp', 0x48, 4), ('path_total_count', 0x54, 4), ('path_total_dist', 0xA0, 4), ('pos', 8, 8), ('radius', 4, 4)]
+                 + [entry for p in range(5) for entry in ((f'subpath_buffer[{p}]', 0x64 + 8 * p, 8), (f'subpath_dist[{p}]', 0x8C + 4 * p, 4))]
+                 + [('vel', 0x10, 8)])
+
+
+def record_of_object(read) -> bytes:
+    """The record a navigator object's bytes give (`read(offset, size)`), in the serializer's order."""
+    return b''.join(read(offset, size) for _, offset, size in RECORD_LAYOUT)
+
+
+def object_of_record(record: bytes, old: bytes) -> bytes:
+    """The serializer's load half (0x63b583..): the 0xbc-byte object `old` with every recorded member replaced and the unnamed +0x30 zeroed."""
+    out, at = bytearray(old), 0
+    for _, offset, size in RECORD_LAYOUT:
+        out[offset:offset + size] = record[at:at + size]
+        at += size
+    out[0x30:0x38] = bytes(8)
+    return bytes(out)

@@ -364,6 +364,55 @@ public class ThemeParkIncHandymanTests
 		Assert.AreEqual( balance - salary, economy.Balance, "the month's only debit is the member's salary" );
 	}
 
+	/// <summary>
+	/// With Theme Park Inc's navigator rules (--tpi-native-walk) a placed member's walk is native: his save carries the navigator's record (GuestNavigation.NativeRecord), the restored
+	/// member has every navigator member back, and both go on alike. The member's first walk is SetDestination's stand-still walk, so the record covers that kind of walk too.
+	/// </summary>
+	[TestMethod]
+	public void ANativeHandymanSurvivesASaveWithHisNavigatorRecord()
+	{
+		var economy = ScienceEconomy();
+		var grid = Row( economy );
+		grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
+		var world = new ThemeParkIncStaffWorld( grid );
+		PlaceLitter( economy, (6, 5) );
+		var member = Hire( economy, world, (2, 5), experience: economy.TpiStaff!.Settings.MaxExperience / 2 );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 2; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.IsTrue( member.Navigation!.Native, "the walk on Theme Park Inc's rules is native" );
+		var json = ParkSaveFile.Serialize( economy );
+		StringAssert.Contains( json, "\"NativeRecord\"", "the save carries the record" );
+		var data = ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) );
+		Assert.IsFalse( ParkResumeSaveFile.StaffNativeRecordsAllowed( data, nativeWalk: false ), "a resume file without the switch refuses the staff record" );
+		Assert.IsTrue( ParkResumeSaveFile.StaffNativeRecordsAllowed( data, nativeWalk: true ) );
+		var directory = Directory.CreateTempSubdirectory( "opentpw-tpi-native-handyman-" );
+		ParkEconomy restored;
+		try
+		{
+			var path = Path.Combine( directory.FullName, "science.json" );
+			ParkSaveFile.Save( path, economy );
+			restored = ParkSaveFile.Load( path );
+		}
+		finally
+		{
+			directory.Delete( recursive: true );
+		}
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ), "the save round-trips exactly" );
+		var restoredMember = restored.TpiStaff!.Members.Single();
+		CollectionAssert.AreEqual( member.Navigation.ToRecord().Raw, restoredMember.Navigation!.ToRecord().Raw, "every navigator member is back" );
+		var restoredGrid = Row( restored );
+		restoredGrid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
+		var restoredWorld = new ThemeParkIncStaffWorld( restoredGrid );
+		for ( var step = 0; step < 60; step++ )
+		{
+			turn++;
+			world.Update( economy, member, turn );
+			restoredWorld.Update( restored, restoredMember, turn );
+		}
+		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ), "both go on alike" );
+	}
+
 	[TestMethod]
 	public void APlacedHandymanSurvivesASaveMidWalkAndGoesOnExactly()
 	{

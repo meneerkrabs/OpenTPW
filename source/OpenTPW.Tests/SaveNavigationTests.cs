@@ -74,6 +74,21 @@ public class SaveNavigationTests
 	}
 
 	[TestMethod]
+	public void TheWriterGivesTheReadersBytesBack()
+	{
+		// the save half of the serializer (tp.exe 0x50D150, Theme Park Inc 0x63AD30) writes the members in the reader's order and widths
+		var bytes = Synthetic();
+		CollectionAssert.AreEqual( bytes, SaveNavigation.Read( bytes ).Write() );
+		var random = new Random( 17 );
+		for ( var trial = 0; trial < 50; trial++ )
+		{
+			var noise = new byte[SaveNavigation.Bytes];
+			random.NextBytes( noise );
+			CollectionAssert.AreEqual( noise, SaveNavigation.Read( noise ).Write(), $"trial {trial}" );
+		}
+	}
+
+	[TestMethod]
 	public void AWrongLengthIsRejected()
 	{
 		Assert.ThrowsException<InvalidDataException>( () => SaveNavigation.Read( new byte[176] ) );
@@ -86,6 +101,7 @@ public class SaveNavigationTests
 	{
 		var state = person.NavigationState;
 		CollectionAssert.AreEqual( person.Navigation, state.Raw, name );
+		CollectionAssert.AreEqual( person.Navigation, state.Write(), $"{name}: the writer gives the saved bytes back" );
 		Assert.AreEqual( 5, state.Subpaths.Count, name );
 		// pos is the thing's position in cells; the base thing keeps it in 1/256 cell.
 		Assert.AreEqual( person.Base.X / 256.0, state.Pos.X.Value, 1.0 / 256, $"{name}: pos x" );

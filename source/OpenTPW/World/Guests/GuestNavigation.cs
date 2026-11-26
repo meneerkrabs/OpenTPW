@@ -20,15 +20,56 @@ public static class Fixed16
 	}
 
 	/// <summary>Vector length as in <c>0xff098</c>/<c>0xfe958</c>: exact below 2^12, else in units of 2^8 or 2^18.</summary>
-	public static int Length( int x, int y )
+	public static int Length( int x, int y ) => Length( x, y, single: false );
+
+	/// <summary>
+	/// <see cref="Length(int, int)"/> with the square root of <see cref="Root"/>: <paramref name="single"/> rounds it to a single first, as Theme Park Inc's walk takes it
+	/// (<see cref="WalkEdgeRules.ThemeParkInc"/>).
+	/// </summary>
+	public static int Length( int x, int y, bool single )
 	{
 		long ax = Math.Abs( (long)x ), ay = Math.Abs( (long)y );
 		var bits = ax | ay;
 		if ( (bits & ~0xfffL) == 0 )
-			return (int)Math.Sqrt( ax * ax + ay * ay );
+			return Root( (uint)(ax * ax + ay * ay), single );
 		if ( (bits & ~0x3fffffL) == 0 )
-			return (int)Math.Sqrt( (ax >> 8) * (ax >> 8) + (ay >> 8) * (ay >> 8) ) << 8;
-		return (int)Math.Sqrt( (ax >> 18) * (ax >> 18) + (ay >> 18) * (ay >> 18) ) << 18;
+			return Root( (uint)((ax >> 8) * (ax >> 8) + (ay >> 8) * (ay >> 8)), single ) << 8;
+		return Root( (uint)((ax >> 18) * (ax >> 18) + (ay >> 18) * (ay >> 18)), single ) << 18;
+	}
+
+	/// <summary>
+	/// The walk's integer square root, tp.exe <c>0x4D49A0</c> and Theme Park Inc's <c>0x5D2060</c> (the same code): <c>fild</c> of the unsigned dword, <c>fsqrt</c>, <c>_ftol</c>. At 64 bits
+	/// (<paramref name="single"/> false, Theme Park World's walk as its oracle X25 runs it) the floor of the root. With <paramref name="single"/> the root is first rounded to a single, as the
+	/// x87 rounds it at Theme Park Inc's game-thread control word 0x7F (<see cref="ThemeParkIncX87"/>): the root of k² − j can then come out as k (oracle <c>tpi-exe-walk-root</c>). The double
+	/// root of a 32-bit integer is never a single's midpoint, so rounding the correctly rounded double gives the x87's single.
+	/// </summary>
+	// [BIN:TPI-EXE:0x005D2060 integer square root] the dword with a zero high dword (fild qword), fsqrt, then _ftol 0x86FAB0 (truncation); the game thread's control word 0x7F rounds fsqrt to 24 bits ([EXT:hardware-d3d-path])
+	public static int Root( uint n, bool single ) => single ? (int)(float)Math.Sqrt( n ) : (int)Math.Sqrt( n );
+
+	/// <summary>
+	/// The unit vector of (<paramref name="x"/>, <paramref name="y"/>) in 16.16 as Theme Park Inc's <c>0x63E150</c> (tp.exe's twin <c>0x50F700</c>) computes it, the local x axis
+	/// the steering step writes: below 2^12 the root of (x² + y²) &lt;&lt; 6 and the factor 0x80000 / root times each component (a 32-bit product); below 2^22 the root of the
+	/// components &gt;&gt; 8 and the factor 0x1000000 / root, else &gt;&gt; 18 and 0x4000 / root, each component <see cref="PcMul"/>'ed by it. A zero vector gives (0, 0).
+	/// </summary>
+	// [BIN:TPI-EXE:0x0063E150 normalise] m = |x| | |y|; m & 0xFFFFF000 == 0: root 0x5D2060((y² + x²) << 6), f = root ? 0x80000 / root : 0 (idiv), out = (x × f, y × f) by imul; m & 0xFFC00000 == 0: root of (|x| >> 8)² + (|y| >> 8)² (sar), f = root ? 0x1000000 / root : 0, out = FixMul each; else >> 18 and 0x4000
+	public static (int X, int Y) Normalize( int x, int y, bool single )
+	{
+		unchecked
+		{
+			int ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+			var bits = ax | ay;
+			if ( (bits & (int)0xFFFFF000) == 0 )
+			{
+				var root = Root( (uint)((ay * ay + ax * ax) << 6), single );
+				var factor = root == 0 ? 0 : 0x80000 / root;
+				return (x * factor, y * factor);
+			}
+			var (shift, numerator) = (bits & (int)0xFFC00000) == 0 ? (8, 0x1000000) : (18, 0x4000);
+			int sx = ax >> shift, sy = ay >> shift;
+			var reduced = Root( (uint)(sy * sy + sx * sx), single );
+			var scale = reduced == 0 ? 0 : numerator / reduced;
+			return (PcMul( x, scale ), PcMul( y, scale ));
+		}
 	}
 
 	/// <summary>|dx| + |dy| − min / 2 (<c>0xfe778..0xfe7c8</c>, <c>0xff784..0xff7d8</c>).</summary>
@@ -63,9 +104,12 @@ public static class Fixed16
 
 	/// <summary>tp.exe's truncate <c>0x50F600</c>: <see cref="Truncate"/> with <see cref="PcDiv"/> and <see cref="PcMul"/>.</summary>
 	// [BIN:TPW-EXE:0x0050F600 vector truncate] the length of 0x4D49A0 (exact below 2^12, else in units of 2^8 or 2^18); unchanged when below the maximum, else each component FixMul(c, FixDiv(maximum, length))
-	public static (int X, int Y) PcTruncate( int x, int y, int maximum )
+	public static (int X, int Y) PcTruncate( int x, int y, int maximum ) => PcTruncate( x, y, maximum, single: false );
+
+	/// <summary><see cref="PcTruncate(int, int, int)"/> with the length of <see cref="Length(int, int, bool)"/>.</summary>
+	public static (int X, int Y) PcTruncate( int x, int y, int maximum, bool single )
 	{
-		var size = Length( x, y );
+		var size = Length( x, y, single );
 		if ( size < maximum )
 			return (x, y);
 		var scale = PcDiv( maximum, size );
@@ -163,6 +207,48 @@ public sealed class GuestNavigation
 	/// <summary><c>+0xAC</c>: the progress after the last step (<see cref="ProgressValue"/>).</summary>
 	public int Progress;
 
+	// ---- The navigator's other members (NV2, docs/reverse/TPI-NAVIGATOR.md): the 177-byte record holds them all ----------------------------------------------------
+
+	/// <summary><c>+0x00</c> mass: 0x10000 from the constructor (<c>0x63ED10</c>, tp.exe <c>0x50FFE0</c>) or the file; nothing reads it (the steering divides its force by the literal ONE).</summary>
+	public int Mass = Fixed16.One;
+	/// <summary>
+	/// <c>+0x04</c> radius: <see cref="Radius"/> from the constructor or the file. The original walk (avoid_walls, follow_path's arrival and waypoint tests, separation) reads this
+	/// member; it is the constant in every navigator the game makes.
+	/// </summary>
+	public int RadiusMember = Radius;
+	/// <summary><c>+0x18</c> max force, written by the speed setter (<see cref="GuestSpeed.Caps"/>, Theme Park Inc's <c>0x63EF90</c>); 0x6666 from the constructor.</summary>
+	public int MaxForce = ConstructorMaxForce;
+	/// <summary><c>+0x1C</c> max speed, written by the speed setter; 0x3333 from the constructor.</summary>
+	public int MaxSpeed = ConstructorMaxSpeed;
+	/// <summary>The constructor's speed caps (<c>0x63EDEA</c>, <c>0x63EDED</c>).</summary>
+	public const int ConstructorMaxSpeed = 0x3333, ConstructorMaxForce = 0x6666;
+	/// <summary>
+	/// <c>+0x20</c> and <c>+0x28</c>: the local x axis (the unit velocity) and the y axis (its perpendicular (−y, x)) the steering step writes after the commit (<see cref="Fixed16.Normalize"/>,
+	/// Theme Park Inc <c>0x63DEE2</c> / <c>0x63DF02</c>, tp.exe <c>0x50F57E</c> / <c>0x50F5A1</c>); 0 from the constructor. No reader outside the saver.
+	/// </summary>
+	public int LocalXAxisX, LocalXAxisY, LocalYAxisX, LocalYAxisY;
+	/// <summary>
+	/// <c>+0x38</c> formation_pos and <c>+0x40</c> force: no simulation writer in either game (research note NV0 §1); 0 from the constructor, the file's value after a load,
+	/// passed through to the next save. The steering's summed force is a local (<c>0x63DD40..0x63DDB5</c>), never this member.
+	/// </summary>
+	public int FormationPosX, FormationPosY, ForceX, ForceY;
+	/// <summary>
+	/// <c>+0x8C</c>: subpath_dist[5], the octile length between buffered waypoint i and i + 1, written by the set-up for i below <see cref="Count"/> − 1; the other slots keep what
+	/// they held (the constructor leaves them as the allocator's memory held them; OpenTPW starts them at 0). follow_path subtracts the passed waypoint's slot from <see cref="Ahead"/>
+	/// (<c>0x63D2F5</c>, tp.exe <c>0x50EFAC</c>), which on the last buffered waypoint is a stale slot the refill's set-up then overwrites.
+	/// </summary>
+	public readonly int[] SubpathDist = new int[BufferedWaypoints];
+	/// <summary>
+	/// The leading slots of <c>+0x64</c> (<see cref="Buffer"/>) a set-up or refill has written: the rest hold the constructor's zero (its element constructor <c>0x63D820</c>, tp.exe
+	/// <c>0x50F1F0</c>), not a cell centre. The record writes them as zero.
+	/// </summary>
+	public int BufferSlotsWritten;
+	/// <summary>
+	/// The walk runs Theme Park Inc's native navigator (<see cref="WalkEdgeRules.ThemeParkInc"/>, the hidden switch <c>--tpi-native-walk</c>): the members above join the digest and the
+	/// snapshots (<see cref="CaptureNative"/>), and the whole progress history word <see cref="History"/> is kept. Set when a walk on such a map is set up or stepped.
+	/// </summary>
+	public bool Native { get; internal set; }
+
 	/// <summary>Walking off the path grid (the staff's road legs, ECON-022): no walls and every position is accepted.</summary>
 	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): the staff's road legs outside the park, where the paths end, are walked off the path grid (no wall force, every position committed); no guest walks off the grid, the arrival chain being the original's walk over the cell map
 	public bool OffGrid;
@@ -236,6 +322,7 @@ public sealed class GuestNavigation
 		Count = Math.Min( BufferedWaypoints, Route.Length - Cursor );
 		for ( var index = 0; index < Count; index++ )
 			Buffer[index] = Route[Cursor + index];
+		BufferSlotsWritten = Math.Max( BufferSlotsWritten, Count );
 	}
 
 	/// <summary>Route setup mode 1 (the stuck reroute): the current cell, then the rest of the route from the current waypoint.</summary>
@@ -278,8 +365,9 @@ public sealed class GuestNavigation
 	// [BIN:STP-PPC:0x100FD5F4 separation callback] off = self +8 - other +8 (0xfcb8c); d = octile(off); add FixDiv(off, d) (0xfd704) to the sum at data 0xecd58 when d < self +4 + other +4 + ONE (data 0xecd84) and d != 0 (data 0xecd88)
 	public static (int X, int Y) Separation( GuestNavigation self, IEnumerable<GuestNavigation> scanOrder )
 	{
-		const int Range = 2 * Radius;
-		const int Limit = (Range >> 8) * (Range >> 8);
+		// the radius members (both are the constant in every navigator the game makes)
+		var range = 2 * self.RadiusMember;
+		var limit = (range >> 8) * (range >> 8);
 		int selfX = self.X >> 8, selfY = self.Y >> 8;
 		int sumX = 0, sumY = 0, visited = 0;
 		foreach ( var other in scanOrder )
@@ -289,12 +377,12 @@ public sealed class GuestNavigation
 			var dx = (other.X >> 8) - selfX;
 			var dy = (other.Y >> 8) - selfY;
 			var square = dx * dx + dy * dy;
-			if ( square == 0 || square >= Limit )
+			if ( square == 0 || square >= limit )
 				continue;
 			var offsetX = self.X - other.X;
 			var offsetY = self.Y - other.Y;
 			var distance = Fixed16.Octile( offsetX, offsetY );
-			if ( distance < Radius + Radius + Fixed16.One && distance != 0 )
+			if ( distance < self.RadiusMember + other.RadiusMember + Fixed16.One && distance != 0 )
 			{
 				sumX += Fixed16.Div( offsetX, distance );
 				sumY += Fixed16.Div( offsetY, distance );
@@ -478,6 +566,8 @@ public sealed class GuestNavigation
 	// [BIN:TPW-EXE:0x0050F8E0 walk set-up] start bytes = position >> 16, goal = target >> 16; 0x511420 with the mask +0xB4; on 0x70000000: +0x4C/+0x50 = target, +0x54, +0x58, +0xA0..+0xB0, +0x5C = 0, +0x60 = 1, +0xB8 = 1, return 0; mode 1 shifts the result one place and puts the position's cell first (count + 1 below 0xFC); +0x54 = count, +0x58 = min(count, 5); +0xA0 = octile(waypoint 0 − position) + every segment; +0x64.. the buffered centres (cell << 16 | 0x8000); +0x8C.. and +0xA4 the buffered segments; +0xA8 the segments beyond; +0xAC, +0xB0, +0x5C, +0x60, +0xB8 = 0; +0x48 = the stamp counter 0x4D8C50
 	private bool Setup( ParkCellMap map, int targetX, int targetY, bool reroute )
 	{
+		if ( map.EdgeRules == WalkEdgeRules.ThemeParkInc )
+			Native = true;
 		var path = searchPath ??= new List<(int X, int Y)>();
 		var start = CellByte( X, Y );
 		var goal = CellByte( targetX, targetY );
@@ -507,9 +597,13 @@ public sealed class GuestNavigation
 			Total += SegmentLength( path[index], path[index + 1] );
 		for ( var index = 0; index < Count; index++ )
 			Buffer[index] = path[index];
+		BufferSlotsWritten = Math.Max( BufferSlotsWritten, Count );
 		Ahead = 0;
 		for ( var index = 0; index + 1 < Count; index++ )
-			Ahead += SegmentLength( path[index], path[index + 1] );
+		{
+			SubpathDist[index] = SegmentLength( path[index], path[index + 1] );
+			Ahead += SubpathDist[index];
+		}
 		Beyond = 0;
 		for ( var index = Count - 1; index + 1 < PathCount; index++ )
 			Beyond += SegmentLength( path[index], path[index + 1] );
@@ -550,11 +644,12 @@ public sealed class GuestNavigation
 	// [BIN:TPW-EXE:0x0050E4A0 avoid_walls] probe 0x50F870 (position + FixMul(velocity, ONE)); cell 0x5104B0 of +8/+0xC; direction = velocity / length (0x50E080) unless the length is 0; edges +X (limit (cx + 1) << 16 − radius, probe above it), −X (cx << 16 + radius, probe below), +Y, −Y, the first pushing returns 2 × (limit − probe); corners by quadrant (+X+Y 0x50E75E, −X+Y 0x50E8B3, −X−Y 0x50EA07, +X−Y 0x50EB5E): the diagonal cell blocked towards the cell's row or column, both side cells open towards the cell, the ray 0x50CC20 hitting at t with 0 < t <= length gives FixDiv(position + FixMul(direction, t) − corner, radius)
 	public static (int X, int Y) AvoidWallsOriginal( ParkCellMap map, int x, int y, int velocityX, int velocityY, int mask, int radius )
 	{
+		var single = map.EdgeRules == WalkEdgeRules.ThemeParkInc;
 		var probeX = unchecked(x + Fixed16.PcMul( velocityX, Fixed16.One ));
 		var probeY = unchecked(y + Fixed16.PcMul( velocityY, Fixed16.One ));
 		int cx = x >> 16, cy = y >> 16;
 		int vx = unchecked(probeX - x), vy = unchecked(probeY - y);
-		var length = Fixed16.Length( vx, vy );
+		var length = Fixed16.Length( vx, vy, single );
 		int dx = vx, dy = vy;
 		if ( length != 0 )
 			(dx, dy) = (Fixed16.PcDiv( vx, length ), Fixed16.PcDiv( vy, length ));
@@ -591,7 +686,7 @@ public sealed class GuestNavigation
 				return null;
 			if ( Blocked( side1.X, side1.Y, toCell1 ) || Blocked( side2.X, side2.Y, toCell2 ) )
 				return null;
-			var t = Ray( x, y, dx, dy, cornerX, cornerY, radius );
+			var t = Ray( x, y, dx, dy, cornerX, cornerY, radius, single );
 			if ( t <= 0 || t > length )
 				return null;
 			var hitX = unchecked(x + Fixed16.PcMul( dx, t ));
@@ -616,7 +711,7 @@ public sealed class GuestNavigation
 	/// nearer root halved); <see cref="int.MinValue"/> when it misses.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0050CC20 ray test] m = position − corner; a = d·d, b = 2 (d·m), c = m·m − r·r (FixMul each); disc = FixMul(b, b) − 4 FixMul(a, c); disc <= 0 returns 0x80000000; s = isqrt(disc) (0x4D49A0); min(s − b, −(s + b)) >> 1
-	private static int Ray( int x, int y, int dx, int dy, int cornerX, int cornerY, int radius )
+	private static int Ray( int x, int y, int dx, int dy, int cornerX, int cornerY, int radius, bool single )
 	{
 		unchecked
 		{
@@ -627,7 +722,7 @@ public sealed class GuestNavigation
 			var discriminant = Fixed16.PcMul( b, b ) - Fixed16.PcMul( a, c ) * 4;
 			if ( discriminant <= 0 )
 				return int.MinValue;
-			var root = (int)Math.Sqrt( (uint)discriminant );
+			var root = Fixed16.Root( (uint)discriminant, single );
 			int near = root - b, far = -(root + b);
 			return (far <= near ? far : near) >> 1;
 		}
@@ -640,9 +735,10 @@ public sealed class GuestNavigation
 	/// new search once the five are used, and the pull towards the current waypoint's centre. Arrived (or no waypoints): −velocity.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0050ED10 follow_path] stamp 0x4D8CD0(x >> 20, y >> 20) above +0x48 sets up again in mode 1 (failure: +0xB8 = 1, "The ground changed under this peep"); unless arrived, a remaining measure short of ONE with the 0x50FD40 progress short of ONE counts the history bits 0..14, (bits << 32) / 0xF0000 above 0x6665 sets up in mode 1 (failure: +0xB8 = 1); with waypoints and not arrived: index == +0x54 − 1 aims at +0x4C/+0x50 and arrives at octile < FixMul(radius, 0x19999); else a waypoint centre within octile < FixMul(radius, 0x20000) is passed (+0xA4 −= its segment), and the index reaching +0x58 sets up in mode 0; below +0x54 − 1 the force is (aim − position) − velocity, else the ramp min(FixDiv(|aim − position|, 2.0), +0x1C) along it less the velocity; otherwise −velocity (0x50F1A0)
-	private (int X, int Y) FollowPathOriginal( ParkCellMap map, int maxSpeed )
+	private (int X, int Y) FollowPathOriginal( ParkCellMap map, int maxSpeed, bool single )
 	{
-		if ( Stamp < map.BlockStamp( X >> 20, Y >> 20 ) )
+		// an unsigned comparison (jbe, 0x63D0BF / tp.exe 0x50ED6F)
+		if ( (uint)Stamp < (uint)map.BlockStamp( X >> 20, Y >> 20 ) )
 		{
 			Reroutes++;
 			if ( !Setup( map, TargetX, TargetY, reroute: true ) )
@@ -664,15 +760,15 @@ public sealed class GuestNavigation
 		if ( Index == PathCount - 1 )
 		{
 			(goalX, goalY) = (TargetX, TargetY);
-			if ( Fixed16.Octile( goalX - X, goalY - Y ) < Fixed16.PcMul( Radius, ArrivalFactor ) )
+			if ( Fixed16.Octile( goalX - X, goalY - Y ) < Fixed16.PcMul( RadiusMember, ArrivalFactor ) )
 				Arrived = true;
 		}
 		else
 		{
 			(goalX, goalY) = Centre( Buffer[Index] );
-			if ( Fixed16.Octile( goalX - X, goalY - Y ) < Fixed16.PcMul( Radius, WaypointFactor ) )
+			if ( Fixed16.Octile( goalX - X, goalY - Y ) < Fixed16.PcMul( RadiusMember, WaypointFactor ) )
 			{
-				Ahead -= Index + 1 < Count ? SegmentLength( Buffer[Index], Buffer[Index + 1] ) : 0;
+				Ahead = unchecked(Ahead - SubpathDist[Index]);
 				Index++;
 				if ( Index == Count )
 					Setup( map, TargetX, TargetY, reroute: false );
@@ -683,7 +779,7 @@ public sealed class GuestNavigation
 		var offsetY = goalY - Y;
 		if ( Index < PathCount - 1 )
 			return (Fixed16.PcMul( offsetX, Fixed16.One ) - VelocityX, Fixed16.PcMul( offsetY, Fixed16.One ) - VelocityY);
-		var size = Fixed16.Length( offsetX, offsetY );
+		var size = Fixed16.Length( offsetX, offsetY, single );
 		if ( size == 0 )
 			return (0, 0);
 		var desired = Math.Min( Fixed16.PcDiv( size, RampDivisor ), maxSpeed );
@@ -700,25 +796,28 @@ public sealed class GuestNavigation
 	// [BIN:TPW-EXE:0x004FA2A0 walk step] the steering step, then 2 when +0x18C (walk +0xB8) is set, 0 when 0x50FD40 is ONE, else 1
 	private WalkResult StepOriginal( int maxSpeed, int maxForce, ParkCellMap map, Func<GuestNavigation, (int X, int Y)>? separation )
 	{
-		var (wallX, wallY) = AvoidWallsOriginal( map, X, Y, VelocityX, VelocityY, Mask, Radius );
-		var (pathX, pathY) = FollowPathOriginal( map, maxSpeed );
+		var single = map.EdgeRules == WalkEdgeRules.ThemeParkInc;
+		if ( single )
+			Native = true;
+		var (wallX, wallY) = AvoidWallsOriginal( map, X, Y, VelocityX, VelocityY, Mask, RadiusMember );
+		var (pathX, pathY) = FollowPathOriginal( map, maxSpeed, single );
 		// separation (0x50E0E0): off on the last waypoint (or once arrived) within ONE + radius of the current waypoint's centre.
 		int pushX = 0, pushY = 0;
 		if ( separation != null )
 		{
 			var (wx, wy) = Centre( Buffer[Math.Clamp( Index, 0, BufferedWaypoints - 1 )] );
-			var near = Fixed16.Octile( X - wx, Y - wy ) <= Fixed16.One + Radius;
+			var near = Fixed16.Octile( X - wx, Y - wy ) <= Fixed16.One + RadiusMember;
 			if ( !((Index == PathCount - 1 || Arrived) && near) )
 				(pushX, pushY) = separation( this );
 		}
-		var (ax, ay) = Fixed16.PcTruncate( wallX, wallY, maxForce );
-		var (fx, fy) = Fixed16.PcTruncate( pathX, pathY, maxForce );
-		var (sx, sy) = Fixed16.PcTruncate( pushX, pushY, maxForce );
+		var (ax, ay) = Fixed16.PcTruncate( wallX, wallY, maxForce, single );
+		var (fx, fy) = Fixed16.PcTruncate( pathX, pathY, maxForce, single );
+		var (sx, sy) = Fixed16.PcTruncate( pushX, pushY, maxForce, single );
 		var totalX = Fixed16.PcMul( ax, AvoidWallsWeight ) + Fixed16.PcMul( fx, FollowPathWeight ) + Fixed16.PcMul( sx, SeparationWeight );
 		var totalY = Fixed16.PcMul( ay, AvoidWallsWeight ) + Fixed16.PcMul( fy, FollowPathWeight ) + Fixed16.PcMul( sy, SeparationWeight );
-		var (forceX, forceY) = Fixed16.PcTruncate( totalX, totalY, maxForce );
+		var (forceX, forceY) = Fixed16.PcTruncate( totalX, totalY, maxForce, single );
 		(forceX, forceY) = (Fixed16.PcDiv( forceX, Fixed16.One ), Fixed16.PcDiv( forceY, Fixed16.One ));
-		(VelocityX, VelocityY) = Fixed16.PcTruncate( VelocityX + forceX, VelocityY + forceY, maxSpeed );
+		(VelocityX, VelocityY) = Fixed16.PcTruncate( VelocityX + forceX, VelocityY + forceY, maxSpeed, single );
 		var newX = unchecked(X + VelocityX);
 		var newY = unchecked(Y + VelocityY);
 		var from = ((int)((uint)X >> 16), (int)((uint)Y >> 16));
@@ -726,12 +825,16 @@ public sealed class GuestNavigation
 		// 0x510870: −1 for a cell outside the map (0..127; a smaller OpenTPW map ends at its own edge)
 		var fromCell = map.InBounds( from.Item1, from.Item2 ) ? from : (-1, -1);
 		(int X, int Y)? toCell = map.InBounds( to.Item1, to.Item2 ) ? to : null;
+		// the progress history keeps its whole word (shl, 0x63DEAE / 0x63DF1E); follow_path reads bits 0..14
 		if ( WalkEdges.Commit( map, fromCell, toCell, Mask ) )
 			(X, Y) = (newX, newY);
 		else
-			History = ((History << 1) | 1) & 0x7fff;
+			History = unchecked((History << 1) | 1);
+		// the local axes (0x63DECF..0x63DF02, tp.exe 0x50F576..0x50F5A9): the unit velocity and its perpendicular (−y, x)
+		(LocalXAxisX, LocalXAxisY) = Fixed16.Normalize( VelocityX, VelocityY, single );
+		(LocalYAxisX, LocalYAxisY) = (unchecked(-LocalXAxisY), LocalXAxisX);
 		var progress = ProgressValue();
-		History = ((History << 1) | (progress <= Progress ? 1 : 0)) & 0x7fff;
+		History = unchecked((History << 1) | (progress <= Progress ? 1 : 0));
 		Progress = progress;
 		if ( Stuck )
 			return WalkResult.Stuck;
@@ -759,7 +862,8 @@ public sealed class GuestNavigation
 		hash.Add( Index );
 		hash.Add( Count );
 		hash.Add( Cursor );
-		hash.Add( History );
+		// the window follow_path reads; a native walk adds the whole word below
+		hash.Add( History & 0x7fff );
 		hash.Add( PreviousRemaining );
 		hash.Add( OffGrid );
 		hash.Add( Route.Length );
@@ -782,6 +886,179 @@ public sealed class GuestNavigation
 		// Every slot: a failed set-up keeps the old ones and separation reads the first.
 		foreach ( var (x, y) in Buffer )
 			hash.Add( x * 4096L + y );
+		// Theme Park Inc's native navigator: its other members join the digest (every other park keeps its pins).
+		if ( !Native || !Original )
+			return;
+		hash.Add( 0x4E415632L );
+		hash.Add( History );
+		hash.Add( Mass );
+		hash.Add( RadiusMember );
+		hash.Add( MaxSpeed );
+		hash.Add( MaxForce );
+		hash.Add( LocalXAxisX );
+		hash.Add( LocalXAxisY );
+		hash.Add( LocalYAxisX );
+		hash.Add( LocalYAxisY );
+		hash.Add( FormationPosX );
+		hash.Add( FormationPosY );
+		hash.Add( ForceX );
+		hash.Add( ForceY );
+		foreach ( var distance in SubpathDist )
+			hash.Add( distance );
+		hash.Add( BufferSlotsWritten );
+	}
+
+	// ---- The 177-byte record (NV2) ---------------------------------------------------------------------------------------------------------------------------------
+
+	/// <summary>
+	/// The navigator as the serializer's save half writes it (Theme Park Inc <c>0x63AD30</c> mode 1, tp.exe <c>0x50D150</c>; <see cref="SaveNavigation"/> is the shared layout): every
+	/// member but the unnamed <c>+0x30</c>, in the members' alphabetical order. The buffered waypoints are their cell centres (cell &lt;&lt; 16 | 0x8000), the slots no set-up has written
+	/// zero; the finished flag is <see cref="Arrived"/>, the walk mask <see cref="Mask"/> and mCantReachDest <see cref="Stuck"/>.
+	/// </summary>
+	public SaveNavigation ToRecord()
+	{
+		static SaveFixedVector Vector( int x, int y ) => new( new SaveFixed( x ), new SaveFixed( y ) );
+		var subpaths = new SaveSubpath[BufferedWaypoints];
+		for ( var slot = 0; slot < subpaths.Length; slot++ )
+		{
+			var (cx, cy) = slot < BufferSlotsWritten ? Centre( Buffer[slot] ) : (0, 0);
+			subpaths[slot] = new SaveSubpath( Vector( cx, cy ), new SaveFixed( SubpathDist[slot] ) );
+		}
+		var record = new SaveNavigation( Vector( ForceX, ForceY ), Vector( FormationPosX, FormationPosY ), Vector( LocalXAxisX, LocalXAxisY ), Vector( LocalYAxisX, LocalYAxisY ),
+			new SaveFixed( Mass ), new SaveFixed( MaxForce ), new SaveFixed( MaxSpeed ), Stuck ? 1 : 0, Mask, Count, Index, (byte)(Arrived ? 1 : 0), new SaveFixed( Progress ),
+			new SaveFixed( History ), new SaveFixed( Ahead ), new SaveFixed( Beyond ), Vector( TargetX, TargetY ), Stamp, PathCount, new SaveFixed( Total ), Vector( X, Y ),
+			new SaveFixed( RadiusMember ), subpaths, Vector( VelocityX, VelocityY ), [] );
+		return record with { Raw = record.Write() };
+	}
+
+	/// <summary>
+	/// Why <paramref name="record"/> cannot be this object's navigator, or null: a buffered waypoint that is neither zero nor a cell centre, or a zero slot before a written one (the
+	/// set-ups write the slots from the first), a finished byte other than 0 or 1, or a count outside the buffer.
+	/// </summary>
+	public static string? RecordProblem( SaveNavigation record )
+	{
+		var written = 0;
+		for ( var slot = 0; slot < record.Subpaths.Count; slot++ )
+		{
+			var (x, y) = (record.Subpaths[slot].Buffer.X.Raw, record.Subpaths[slot].Buffer.Y.Raw);
+			if ( x == 0 && y == 0 )
+				continue;
+			if ( (x & 0xFFFF) != 0x8000 || (y & 0xFFFF) != 0x8000 || x < 0 || y < 0 )
+				return $"waypoint slot {slot} ({x:X}, {y:X}) is not a cell centre";
+			if ( written != slot )
+				return $"waypoint slot {slot} follows an unwritten slot";
+			written = slot + 1;
+		}
+		if ( record.PathFinished > 1 || record.CantReachDest is not (0 or 1) )
+			return $"the finished flag {record.PathFinished} or mCantReachDest {record.CantReachDest} is not 0 or 1";
+		if ( record.PathBufferCount is < 0 or > BufferedWaypoints || record.PathCount < 0 )
+			return $"the buffer count {record.PathBufferCount} or index {record.PathCount} is outside the buffer";
+		return null;
+	}
+
+	/// <summary>
+	/// The serializer's load half (Theme Park Inc <c>0x63B583..</c>, tp.exe's twin): every member from <paramref name="record"/>, the unnamed <c>+0x30</c> (not modelled) left as zero.
+	/// The walk becomes an original walk (no explicit route). <see cref="RecordProblem"/> must have accepted the record.
+	/// </summary>
+	public void LoadRecord( SaveNavigation record )
+	{
+		if ( RecordProblem( record ) is { } problem )
+			throw new InvalidDataException( $"The navigator record cannot be held: {problem}." );
+		(ForceX, ForceY) = (record.Force.X.Raw, record.Force.Y.Raw);
+		(FormationPosX, FormationPosY) = (record.FormationPos.X.Raw, record.FormationPos.Y.Raw);
+		(LocalXAxisX, LocalXAxisY) = (record.LocalXAxis.X.Raw, record.LocalXAxis.Y.Raw);
+		(LocalYAxisX, LocalYAxisY) = (record.LocalYAxis.X.Raw, record.LocalYAxis.Y.Raw);
+		Mass = record.Mass.Raw;
+		MaxForce = record.MaxForce.Raw;
+		MaxSpeed = record.MaxSpeed.Raw;
+		Stuck = record.CantReachDest != 0;
+		Mask = record.NavMode;
+		Count = record.PathBufferCount;
+		Index = record.PathCount;
+		Arrived = record.PathFinished != 0;
+		Progress = record.PathLastProgress.Raw;
+		History = record.PathStuckBuffer.Raw;
+		Ahead = record.PathSubpathDist.Raw;
+		Beyond = record.PathTailDist.Raw;
+		(TargetX, TargetY) = (record.PathTargetPos.X.Raw, record.PathTargetPos.Y.Raw);
+		Stamp = record.PathTimestamp;
+		PathCount = record.PathTotalCount;
+		Total = record.PathTotalDist.Raw;
+		(X, Y) = (record.Pos.X.Raw, record.Pos.Y.Raw);
+		RadiusMember = record.Radius.Raw;
+		BufferSlotsWritten = 0;
+		for ( var slot = 0; slot < BufferedWaypoints; slot++ )
+		{
+			var buffer = record.Subpaths[slot].Buffer;
+			Buffer[slot] = buffer.X.Raw == 0 && buffer.Y.Raw == 0 ? (0, 0) : (buffer.X.Raw >> 16, buffer.Y.Raw >> 16);
+			if ( buffer.X.Raw != 0 || buffer.Y.Raw != 0 )
+				BufferSlotsWritten = slot + 1;
+			SubpathDist[slot] = record.Subpaths[slot].Distance.Raw;
+		}
+		(VelocityX, VelocityY) = (record.Vel.X.Raw, record.Vel.Y.Raw);
+		Original = true;
+		Route = [];
+		Cursor = 0;
+		WalkCrossings = 0;
+		AlsoOpen = [];
+		PreviousRemaining = -1;
+		OffGrid = false;
+	}
+
+	/// <summary>
+	/// After a restore from OpenTPW's own snapshot, which carries the buffered cells but not their lengths: the set-up's subpath_dist slots of the buffered waypoints, which follow_path
+	/// reads (<see cref="SubpathDist"/>), and the written slots. A native walk then takes its whole record (<see cref="RestoreNative"/>).
+	/// </summary>
+	internal void RestoreSegments()
+	{
+		Array.Clear( SubpathDist );
+		for ( var index = 0; index + 1 < Count; index++ )
+			SubpathDist[index] = SegmentLength( Buffer[index], Buffer[index + 1] );
+		BufferSlotsWritten = Count;
+	}
+
+	/// <summary>The navigator's record for a snapshot of a native walk (<see cref="Native"/>), or null: the members OpenTPW's own snapshot fields do not carry.</summary>
+	internal byte[]? CaptureNative() => Native && Original ? ToRecord().Raw : null;
+
+	/// <summary>
+	/// Why the native record <paramref name="bytes"/> of a snapshot does not belong with the walk restored from the snapshot's own fields, or null: the record must say the same about
+	/// every member those fields carry (position, velocity, target, counts, index, flags, mask, the original walk's lengths and stamp, the history window, the written waypoints).
+	/// </summary>
+	internal string? NativeProblem( byte[] bytes )
+	{
+		if ( bytes.Length != SaveNavigation.Bytes )
+			return $"the native navigator record is {bytes.Length} bytes";
+		var record = SaveNavigation.Read( bytes );
+		if ( RecordProblem( record ) is { } problem )
+			return problem;
+		var shadow = new GuestNavigation();
+		shadow.LoadRecord( record );
+		var same = shadow.X == X && shadow.Y == Y && shadow.VelocityX == VelocityX && shadow.VelocityY == VelocityY && shadow.TargetX == TargetX && shadow.TargetY == TargetY
+			&& shadow.Arrived == Arrived && shadow.Index == Index && shadow.Count == Count && shadow.Mask == Mask && shadow.Stuck == Stuck && shadow.Stamp == Stamp
+			&& shadow.PathCount == PathCount && shadow.Total == Total && shadow.Ahead == Ahead && shadow.Beyond == Beyond && shadow.Progress == Progress
+			&& (shadow.History & 0x7fff) == (History & 0x7fff) && Original && shadow.BufferSlotsWritten <= BufferedWaypoints;
+		for ( var slot = 0; same && slot < shadow.BufferSlotsWritten; slot++ )
+			same = shadow.Buffer[slot] == Buffer[slot];
+		return same ? null : "the native navigator record does not match the walk's own fields";
+	}
+
+	/// <summary>Takes the members only the native record holds from <paramref name="bytes"/> (<see cref="NativeProblem"/> must have accepted it), and marks the walk native.</summary>
+	internal void RestoreNative( byte[] bytes )
+	{
+		var shadow = new GuestNavigation();
+		shadow.LoadRecord( SaveNavigation.Read( bytes ) );
+		History = shadow.History;
+		Mass = shadow.Mass;
+		RadiusMember = shadow.RadiusMember;
+		MaxSpeed = shadow.MaxSpeed;
+		MaxForce = shadow.MaxForce;
+		(LocalXAxisX, LocalXAxisY, LocalYAxisX, LocalYAxisY) = (shadow.LocalXAxisX, shadow.LocalXAxisY, shadow.LocalYAxisX, shadow.LocalYAxisY);
+		(FormationPosX, FormationPosY, ForceX, ForceY) = (shadow.FormationPosX, shadow.FormationPosY, shadow.ForceX, shadow.ForceY);
+		shadow.SubpathDist.AsSpan().CopyTo( SubpathDist );
+		BufferSlotsWritten = shadow.BufferSlotsWritten;
+		for ( var slot = BufferSlotsWritten; slot < BufferedWaypoints; slot++ )
+			Buffer[slot] = (0, 0);
+		Native = true;
 	}
 
 	/// <summary>The original walk's fields for a snapshot, or null for a route walk.</summary>

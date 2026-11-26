@@ -274,8 +274,12 @@ public sealed class ThemeParkIncStaffMember
 	public bool Placed => Navigation != null;
 	/// <summary>The turn of the member's last thing update (bookkeeping for the smoke test and the HUD; not saved).</summary>
 	internal long LastUpdateTurn { get; set; } = -1;
-	/// <summary>The walk's speed caps the pre-update set this update (not saved: every update sets them before its walk).</summary>
-	internal int MaxSpeed, MaxForce;
+	/// <summary>
+	/// The walk's speed caps the pre-update set this update: the walk object's members (<see cref="GuestNavigation.MaxSpeed"/>, <see cref="GuestNavigation.MaxForce"/>, nav <c>+0x1C</c>/<c>+0x18</c>).
+	/// Only a placed member updates; his own snapshot does not save them (every update sets them before its walk), the native record does.
+	/// </summary>
+	internal int MaxSpeed { get => Navigation?.MaxSpeed ?? 0; set => (Navigation ?? throw new InvalidOperationException( "An unplaced member has no walk." )).MaxSpeed = value; }
+	internal int MaxForce { get => Navigation?.MaxForce ?? 0; set => (Navigation ?? throw new InvalidOperationException( "An unplaced member has no walk." )).MaxForce = value; }
 	/// <summary>Presentation: the point the member is drawn at, in cells.</summary>
 	public float DrawX { get; internal set; }
 	public float DrawY { get; internal set; }

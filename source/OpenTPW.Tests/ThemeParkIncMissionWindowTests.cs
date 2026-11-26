@@ -335,6 +335,24 @@ public class ThemeParkIncMissionWindowTests
 	}
 
 	[TestMethod]
+	public void ARefreshThatFailsOnIncompleteDataStopsAfterTheFirstFailureInsteadOfThrowingEveryTick()
+	{
+		var (_, world, _, closed) = Window( 0, "" );
+		var session = new ThemeParkIncMissionWindowSession { RefreshArmed = true };
+		var window = new ThemeParkIncMissionWindow( new FakeTexts(), SyntheticStrings(), world, session, () => closed.Add( "close" ), () => { } );
+		var stack = new UiScreenStack();
+		stack.Push( window.Build() );
+		window.Tick( 0.1f );
+		// the current zone's record now names a zone past the name table: the refresh cannot read it, and the tick says so once and goes quiet instead of throwing every frame
+		world.Missions.Career.CurrentZone!.Data.ParkNumber = 99;
+		Assert.ThrowsException<InvalidOperationException>( () => window.Refresh() );
+		window.Tick( 0.1f );
+		window.Tick( 0.1f );
+		window.Tick( 0.1f );
+		Assert.AreEqual( 0, closed.Count, "the window stays open with its last texts" );
+	}
+
+	[TestMethod]
 	public void FourSecondsAfterOpeningEveryTickRefreshesAndOnlyCancelDisarmsIt()
 	{
 		var (_, world, _, closed) = Window( 1, "", "Completion.EndingTheme 1\n", "" );

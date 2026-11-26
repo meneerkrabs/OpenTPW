@@ -259,8 +259,22 @@ internal sealed class ThemeParkIncMissionWindow
 		// a refused rebuild (a lost park opens no window) keeps this window refreshing rather than frozen
 		if ( !session.StaffListBuilt && world.Missions.ObstacleState() == 2 && Rebuilt?.Invoke() == true )
 			return;
-		Refresh();
+		if ( refreshFailed )
+			return;
+		// the refresh throws on incomplete data (a current zone with no record, a mission naming a zone past the name table, an exit statistic past the table); the open already ran it once, so a failure here is data that
+		// changed under the window: log it once and keep the last texts instead of throwing every frame
+		try
+		{
+			Refresh();
+		}
+		catch ( Exception exception ) when ( exception is InvalidOperationException or InvalidDataException or ArgumentException )
+		{
+			refreshFailed = true;
+			Log.Warning( $"Theme Park Inc mission window: the refresh stopped: {exception.Message}" );
+		}
 	}
+
+	private bool refreshFailed;
 
 	/// <summary>Raised when the tick builds the window again (the HUD replaces the screen); false when the HUD refused to build it.</summary>
 	public Func<bool>? Rebuilt { get; set; }

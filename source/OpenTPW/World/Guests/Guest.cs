@@ -99,6 +99,11 @@ public sealed class Guest
 	public int Type { get; }
 	/// <summary>TPI's native prank code (including zero); null for TPW and legacy TPI births.</summary>
 	internal int? TpiPrankCode { get; set; }
+	/// <summary>
+	/// The Theme Park Inc state machine's own fields (docs/reverse/TPI-GUESTS.md): set on a Theme Park Inc guest built while <see cref="GuestSimulation.ThemeParkIncNativeGuests"/> is on, null on
+	/// every other guest. A guest with it runs Theme Park Inc's setter and dispatch, never Theme Park World's state handlers; <see cref="State"/> is then its projection.
+	/// </summary>
+	public ThemeParkIncGuestRecord? Tpi { get; internal set; }
 	public GuestState State { get; internal set; }
 	/// <summary>Persistent body presentation. Ordinary walker rendering still uses DrawDistanceWalked.</summary>
 	public VisitorSpriteState BodySprite { get; } = new();

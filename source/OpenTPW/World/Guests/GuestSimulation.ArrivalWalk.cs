@@ -86,6 +86,8 @@ public sealed partial class GuestSimulation
 	// [BIN:TPW-EXE:0x004FB201 arrival entrance] a guest whose cell is not a park cell (0x004FA990 false, every guest of the arrival vehicle) takes two draws after its reseed: R & 1 picks the crossing cell (0x004D8710) and the low byte of R is the sideways point in it (0x004FB21C), the y byte being 0xC8; 0x004FA5F0 asks for the walk there: a route makes state 0, none state 6 (0x004FB254); a level without arrival cells has no vehicle stop, and OpenTPW starts the guest on the park's first path cell
 	public Guest? SpawnArrival()
 	{
+		if ( NativeTpi is { } native )
+			return SpawnThemeParkIncArrival( native );
 		if ( !HasArrivalLane || ArrivalStopCell() is not { } stop )
 		{
 			var start = FindSpawnCell();

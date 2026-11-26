@@ -203,9 +203,13 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   request (as the letter's), clears the career's `+0x27` and resets the page to the briefing. It first sends message 5 to the HUD's registered window (`0x5013C0`,
   `0xA568BC`), so an open letter closes as its close button closes it (`0x52698F`; the bank's and the firing letter then lose the park) before the window is built. The Challenges tab closes the window and opens the challenges window
   (`0x529960`), which is not built: the text HUD's challenge panel stands in for it.
+- **Close branch.** `0x5013C0` has a second branch: when `[0xA5E890]` holds a window (the one the loss window closes) it closes that window instead (message 4, `0x5013CC`..`0x5013EC`) and sends
+  no message 5, so neither a letter nor a mission window closes. OpenTPW builds no window for that slot and always takes the message 5 branch (`ThemeParkIncHud.ShowLetter`, `OpenMissionWindow`).
+- **Game mode 3.** The Objectives key refuses when the game mode word `[0xC65B80]` is 3 (`0x42F04B`), the coaster-edit mode. OpenTPW never runs it: its Theme Park Inc slice is the single-player
+  career (mode 0; `ParkGameMode` has no other value), so the refusal is not ported.
 - **Openers.** The key table's Objectives row (`0x9A8A14`: O, no modifier, `0x42F020`, not in game mode 3), the HUD buttons (`0x54AC0F`, `0x54F7C1`), a click on the
-  `ObstacleOpened` thing (`0x5068C3`), the challenges window's Objectives tab (`0x52A60F`), a letter's go-to kind 0xC (`0x551461`) and, three flight updates after a
-  zone-arrival (mode 2) camera flight, the first briefing (`0x5D0369`). OpenTPW has the key, the text HUD's button and the arrival flight's countdown (`ThemeParkIncCutscene.MissionWindowRequests`, §5). The letter go-to is ported and
+  `ObstacleOpened` thing (`0x5068C3`), the challenges window's Objectives tab (`0x52A60F`), a letter's go-to kind 0xC (`0x551461`) and, on the update after a
+  zone-arrival (mode 2) camera flight ends, the first briefing (`0x5D0369`: the countdown `0xA9D258` is 1 at the end, 2 in the same update and 3 in the next, which builds the window). OpenTPW has the key, the text HUD's button and the arrival flight's countdown (`ThemeParkIncCutscene.MissionWindowRequests`, §5). The letter go-to is ported and
   reachable from the tag tube window's go-to button ([TPI-TAG-TUBE.md](TPI-TAG-TUBE.md) §3).
 - **Not ported:** the body's scroll text (`0x52C4C0`; the body shows from its top, as at every opening, and the slider does not move it), the interface sounds
   (`0x1B6`, `0x277`), the per-mission advisor panel (`0x5F16C0`, `0x93E3E0[counter]`) and the advisor panel `0x1FA` on closing.

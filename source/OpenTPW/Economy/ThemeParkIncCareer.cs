@@ -529,21 +529,30 @@ public sealed class ThemeParkIncCareer
 		new( ThemeParkIncSamKind.StructEnd, "ParkName" ), new( ThemeParkIncSamKind.End, "" )
 	};
 
-	// [BIN:TPI-EXE:0x7509C0 global.sam load] once per record: a new 0x1C object bound through 0x418F60 parses "data\levels\%s\global.sam" with 0x419B20(path, 0); a failure frees it and logs
-	// "...Loading the global sam went wrong"
+	// [BIN:TPI-EXE:0x7509C0 global.sam load] a new 0x1C object bound through 0x418F60 parses "data\levels\%s\global.sam" with 0x419B20(path, 0); a failure frees it and logs
+	// "...Loading the global sam went wrong". The file does not change during a run, so each zone's load (and its failure) is kept and not repeated: the mission window's refresh asks every frame.
+	private readonly Dictionary<string, ThemeParkIncSamObject?> globalSams = new( StringComparer.Ordinal );
+
 	private ThemeParkIncSamObject? GlobalSam( string name )
 	{
+		if ( globalSams.TryGetValue( name, out var cached ) )
+			return cached;
 		var global = new ThemeParkIncSamObject( GlobalSamSchema );
-		return global.Load( files.Read( $"/levels/{name}/global.sam" ), overlay: false ) ? global : null;
+		var loaded = global.Load( files.Read( $"/levels/{name}/global.sam" ), overlay: false ) ? global : null;
+		globalSams[name] = loaded;
+		return loaded;
 	}
 
 	private bool LoadsGlobalSam( string name )
 	{
 		if ( GlobalSam( name ) is not null )
 			return true;
-		Log?.Warning( $"Theme Park Inc career: loading the global sam of '{name}' went wrong." );
+		if ( globalSamFailuresLogged.Add( name ) )
+			Log?.Warning( $"Theme Park Inc career: loading the global sam of '{name}' went wrong." );
 		return false;
 	}
+
+	private readonly HashSet<string> globalSamFailuresLogged = new( StringComparer.Ordinal );
 
 	private static string ZoneName( int theme ) => theme >= 0 && theme < ZoneNames.Count
 		? ZoneNames[theme]

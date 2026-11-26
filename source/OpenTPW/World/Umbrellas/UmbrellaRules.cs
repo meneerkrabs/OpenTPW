@@ -230,6 +230,16 @@ public static class UmbrellaRules
 		if ( slowest <= 0 )
 			return 0;
 		var delay = (int)(Mix( (ulong)(uint)guestId << 32 ^ (ulong)parkTurn ) % (uint)slowest);
+		return StretchDelay( delay, holdsBalloon, balloonLife, discardPercent );
+	}
+
+	/// <summary>
+	/// The balloon's stretch of a reaction delay (<c>0x613F24..0x613F89</c>): with a balloon of life above 0 the delay grows by its share of life (life × 100 / 255) times
+	/// <paramref name="discardPercent"/> / 100 (skipped at 0), all unsigned.
+	/// </summary>
+	// [BIN:TPI-EXE:0x613F40 balloon stretch] +0x294 or +0x298 above 0, then +0x298 nonzero: k = +0x298 × 100 / [0x9D0610] (255); k nonzero: k = [0xA01B68] × k / 100 when [0xA01B68] is nonzero; delay += delay × k / 100
+	public static int StretchDelay( int delay, bool holdsBalloon, int balloonLife, int discardPercent = DiscardBalloonPctModifier )
+	{
 		if ( (holdsBalloon || balloonLife > 0) && balloonLife != 0 )
 		{
 			var share = (uint)balloonLife * 100u / BalloonLifeScale;

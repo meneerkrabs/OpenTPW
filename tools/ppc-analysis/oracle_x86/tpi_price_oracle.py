@@ -21,6 +21,10 @@ sys.path.insert(0, str(HERE))
 
 from x86_harness import Image, Sandbox, executable_path  # noqa: E402
 
+# the game thread's x87 control word after the Direct3D device started (x86_targets.TPI_X87_CONTROL_WORD, [EXT:hardware-d3d-path]); the routine's
+# arithmetic is integer, so the golden is the same at 0x27F
+CONTROL_WORD = 0x7F
+
 M = 0xFFFFFFFF
 ENTRY = 0x6120C0
 GAME_POINTER = 0xAA1484
@@ -92,7 +96,7 @@ def binary(sb: Sandbox, x: dict) -> tuple:
     st.thing = sb.object(0x200, {0x88: ('i', x['goods']), 0x90: ('B', x['win'] & 0xFF), 0x94: ('I', x['price'] & M), 0x130: ('I', st.stats), 0x16: ('H', 5)})
     st.guest = sb.object(0x400, {0x1BC: ('f', x['happiness']), 0x1C0: ('I', x['money'] & M), 0x1C8: ('f', x['thirst']), 0x1CC: ('f', x['hunger']), 0x1D4: ('f', x['illness']),
                                  0x2A8: ('B', x['preferred'] & 0xFF)})
-    sb.set_fpcw(0x27F)
+    sb.set_fpcw(CONTROL_WORD)
     r = sb.call(ENTRY, args=(st.thing,), this=st.guest)
     if r.esp_delta != 0:
         raise AssertionError(f'stack off by {r.esp_delta}')

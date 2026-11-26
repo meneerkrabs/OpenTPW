@@ -239,7 +239,8 @@ Ported as an economy model, without the world simulation, and checked against th
 - Payday and the day message: `ThemeParkIncStaff.PayMonth` (`0x6265DE`, salary debit then review) and `EndDay` (`0x628CA0`: experience, then the wage
   demand on its day of the month, at most one per 30 game days for all staff via `0xAA07F4`, type 0xA or 0xB), members in ascending handle order (`0x436E97`).
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
-- The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
+- The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21). The label was widened on 2026-11-22
+  (user decision) to the guests' four sites `0x613F18`, `0x615318`, `0x615328` and `0x61795E`; `rand() % N` is `world.Next(N)` there too (docs/reverse/TPI-GUESTS.md).
 
 Not ported yet: the guard's chase, carry and first aid (see "Entertainer and guard" below); the wage negotiation dialog (`0x559E00`). Slacking (`0x62D650`) and the low-motivation rest (`0x62D866`) are ported with the rest areas (§13). Training is ported since November 21, 2026 (§12.2).
 
@@ -468,11 +469,9 @@ last heading under `[EXT:tpi-twp-guest-rules]`, D1); the destructor's claim rele
 Inc pranks); the plant counts of the statistics (`0x5B4470`, `0x5B8960`); the handyman's bin finder's plant branch for ability 7 (`0x5D5FAC`, with the bins, whose fill is unported: `[EXT:tpi-no-maintenance-wear]`). No `rand()` call is reached:
 the gardener draws only the world generator, in the gate, the walking voice and the patrol.
 
-**Known divergence: x87 precision.** `0x5D2820` runs at the game thread's 24-bit control word (`0x007F`), but its search period goes through the handyman's shared helper
-`SearchPeriod`, which computes `trunc((1 − exp / MaxExperience) × 50)` at 53 bits, and so does the step `member.Step` (the moving step `0x62B3E0` and the working step `0x62B4D0`, which are identical). The two differ where the 53-bit product falls
-just below an integer: with `MaxExperience` 100000, experience 34000 gives 32 at 53 bits (32.99999999999999) and 33 at 24 bits (33.0), so the port searches every 32nd turn where the
-original searches every 33rd. The shared helpers stay at 53 bits here because the handyman's oracle pins them there; the planned 24-bit precision change, which re-checks every Theme
-Park Inc routine at control word `0x007F`, moves them together. No label covers this.
+**x87 precision.** `0x5D2820` runs at the game thread's 24-bit control word (`0x007F`, `[EXT:hardware-d3d-path]`), and so do the handyman's shared helper `SearchPeriod`, the idle
+term `IdleTerm` and the step `member.Step` (the moving step `0x62B3E0` and the working step `0x62B4D0`, which are identical) since November 22, 2026 (§12.4): each x87 step rounds to a
+single. With `MaxExperience` 100000, experience 34000 gives a search every 33rd turn (33.0); at 53 bits it would be 32 (32.99999999999999).
 
 ### Entertainer and guard (WP11, WP12, November 22, 2026)
 
@@ -525,7 +524,7 @@ Not ported, with the reason:
   amounts are unread) is not ported; only the row 0 cheer reaches the guests.
 - The effect's removal by the destructors (`0x4D4620`-like; staff cannot be fired or picked up yet), the dead routines `0x5D1BC0` and `0x5D18D0` (the "Ouch! You little git!" message; no reference anywhere in
   `Game.exe`), the duplicates `0x5D1C80` and `0x5D1CC0`, the voices' log lines, the advisor's message `0x3A` of the guard's constructor and the patrol area `0x6256A0` (WP15).
-- The shared 53-bit helpers (`SearchPeriod`, `IdleTerm`, `member.Step`) are used as for the gardener (see its known divergence); no new formula of the two roles has a float. No `rand()` call is reached
+- The shared helpers (`SearchPeriod`, `IdleTerm`, `member.Step`, at the game thread's 24 bits) are used as for the gardener; no new formula of the two roles has a float. No `rand()` call is reached
   (the ranges `0x5D1960..0x5D1F60`, `0x5D3B40..0x5D3FB0`, `0x5D3230..0x5D3340` and `0x62CA10` hold none): the roles draw only the world generator, including the guard's variant draw at his drop (the entertainer's drop draws none besides the person start's and his first search's).
 
 ## 12. Staff HQ obstacle slots, training and research (November 21, 2026)
@@ -624,6 +623,35 @@ World's effort split:
 - Not ported: the lab fill of a new zone (`0x61C9E0`, `rand() % 2 + 1` per project at `0x61FD50`): it waits for the user's decision at the zone package. Also not ported: the category efforts
   (computed, read by no tick), the lab-active messages 5/6 (advisor), the "project suspended" texts 300–304, and the per-object staff requirement lists of §12.1. Ride projects need a mechanic consultant, and mechanics are not hired in the slice yet.
 
+### 12.4 The game thread's x87 precision (November 22, 2026)
+
+Every Theme Park Inc routine that runs on the game thread is read at the x87 control word `0x007F` (24-bit significand, round to nearest even), as tp.exe's are
+(`[EXT:hardware-d3d-path]`); the earlier convention "`[BIN:TPI-EXE:0x5BCD60 precision]` 53 bits" is withdrawn. Static reading of `Game.exe`:
+
+- The CRT start-up (`0x8746EC` → `_cinit` `0x87043A`, the pointer `0x9F6F18` → `0x86F430` → `0x8759B5`: `_controlfp(_PC_53, _MCW_PC)`) leaves 53 bits; DirectDraw's
+  `SetCooperativeLevel` with `DDSCL_FPUSETUP` and without `DDSCL_FPUPRESERVE` (`0x851` at `0x6BF33F`, `0x808` at `0x6BF5A8`) lets the Direct3D device creation set `0x7F` and keep it.
+- Nothing on the game thread puts 53 bits back. `_fpreset` (`0x880B57`, the only `fninit`) and `_control87` (`0x880B0C`) have no caller but the start-up's `_controlfp`. The renderer's
+  pair `0x7071E0` (precision field cleared, the old word returned) and `0x707210` (the saved word back) brackets each frame (`0x6DD38B`/`0x6DD7FC`, `0x6DDB03`/`0x6DDF7A`); its
+  extended-precision restore `0x707230` runs only when bit 1 of the render state `0xBE2328` is set, and no writer sets it (initial value `0x3000141` at `0x6F2705`; the other writers
+  set or clear bits 0, 6, 8, 27, 28, 30 and 31, or put back a saved copy; the only pointer use, `0x702A2A`, writes the word to a debug log). This is tp.exe's arrangement
+  (`0x591220`, `0x591240`, `0x591250`, `0x8BD508`). The renderer's check-and-set `0x707160` (thunk `0x40B2DF`) has no caller. The Bullfrog screen library's guard `0x812560`
+  (`0x7D5A98`) changes only the exception masks, and its own `SetCooperativeLevel` (`0x7D5AAD`: `0x51` or `0x08`, with `0x800` only under a flag and never `FPUPRESERVE`; no direct
+  caller) creates no Direct3D device. `0x47AC30` sets rounding toward zero and restores the word at `0x47ADA2`; `0x86DF20` masks the exceptions (`0x3F`) and restores it at `0x86E364`;
+  `_ftol` (`0x86FAB0`), `0x86B720` and the C runtime's math helpers save the word and put it back. The other `fldcw`/`fldenv` hits (`0x6AB738`, `0x66D969`, `0x67DD75`) are data in jump tables.
+- Switched to single-precision steps (`ThemeParkIncX87`, which rounds an exact integer-and-single result once): the wage review `0x62CDA0`, the daily experience gain `0x629650`,
+  the step `0x62B3E0`/`0x62B4D0`, the rest `0x62A1C0`, the meter add `0x60D0D0`, the search period of `0x5D5000`/`0x5D2820` and the idle term `0x62CA10`
+  (`ThemeParkIncStaffMember`, `ThemeParkIncStaffWorld`), the shop cost of goods `0x5E6260` (`ThemeParkIncGoodsCost`), the arrival group `0x5BCD60` (`GuestSimulation`) and the
+  watering scrap percentage `0x5E7613` (`ParkEconomy.ThemeParkIncWateringPercent`). The guest base speed (`0x60C712`, #975), the research, the ride wear, the plants and the weather
+  were already single-precision.
+- Oracles at `0x7F` with `0x27F` beside: `tpi_staff_formula_oracle.py` (now also the idle term and the search period), `tpi_goods_cost_oracle.py`, `tpi_scrap_percent_oracle.py`
+  (new) and the x86 target `tpi-exe-arrival-group` (`TPI_X87_CONTROL_WORD`). The price test (`tpi_price_oracle.py`), the staff candidates, the weather roll, the performers
+  and the park points are precision-independent (their native answers are the same at both words).
+- What changes in a retail park: with the shipped `Arrival` words (80 + `NewParkBonus` 20 over `PointsPerVisitor` 25, or 480 + 20) a group is one guest larger without
+  weather and in rain and snow (100 × 0.01f rounds to 1.0); a plant at count 0 sells for 101 percent (3 × 33.333332f rounds to 100.0); the search period at experience 34000 of
+  100000 is 33. The staff meters move in their last bits only (the retail `Standard.sam` cases of `ThemeParkIncStaffTests` are unchanged).
+- Not switched: the loan offers `0x5BFB70` share tp.exe's `LoanMath` (the Mac's binary64 and `[EXT:deterministic-math]`'s `pow`); three of 506 random offer sets move by one at
+  `0x7F`, the shipped TPI offers do not (`test_loan_offers_shipped_instalments_at_every_control_word`), as for tp.exe (ORACLE.md X4).
+
 ## 13. Rest areas (November 22, 2026)
 
 The facilities folders (docs/THEME-PARK-INC.md, "Facilities") bring one staff room per zone (Science 1400, Water 2420, Arabian 3418) with `UsageInfo.ChillsYouOut` 1. The thing builder sets the thing
@@ -663,7 +691,7 @@ corrected):
   `0xA02270`..`0xA0227C`, `StaffSlackingEnergy 0xA02294`, `MinDistanceForSlacking 0xA02298`, `StaffRoomCapacity 0xA0229C` (retail `RestLevel` 1, `StaffSlackingEnergy` 50, `MinDistanceForSlacking` 10,
   `StaffRoomCapacity` 10).
 
-Open: the rest formula `ThemeParkIncStaffMember.Rest` keeps the x86 oracle's reading at the control word 0x27F (53-bit significand, `tpi_staff_formula_oracle.py`), while §12.3 reads the game thread at 0x7F
-(24-bit) after DDSCL_FPUSETUP; the moving step and the daily gain share that question. The removal's walk in state 0 and the debug notices (`0x4D15A0`, `0x4D15C0`) are as read; the notices are not shown.
+The rest formula `ThemeParkIncStaffMember.Rest`, the moving step and the daily gain run at the game thread's control word 0x7F (24-bit significand, §12.4, `tpi_staff_formula_oracle.py`). The removal's
+walk in state 0 and the debug notices (`0x4D15A0`, `0x4D15C0`) are as read; the notices are not shown.
 
 The finder `0x62BA20` walks the object list (park `+0x1EAB88`, `ParkEconomy.ThemeParkIncObjectList`), newest first, not the thing list; `ThemeParkIncRooms.RestAreas` and `First` walk the same list.

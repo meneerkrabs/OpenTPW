@@ -553,11 +553,14 @@ public sealed partial class GuestSimulation
 	/// <summary>A won play's gain: <c>_ftol(ln(prize / price) / ln 2 × medium)</c> with each x87 step rounded to a single; a result that is not finite gives 0, the low dword of the integer indefinite.</summary>
 	// [BIN:TPI-EXE:0x6133B7 won play gain] fild +0x88, fidiv +0x94, fldln2/fyl2x (ln), fldln2 with the double 2.0 (0x93B310)/fyl2x (ln 2), fdivp, fild the byte, fmulp, _ftol: at the control word 0x7F each
 	// result rounds to 24 bits; a price of 0 gives an infinity (or a NaN), whose _ftol is the low dword 0 of the integer indefinite
+	private const double Ln2 = 0.69314718055994530942;
+
 	internal static int ThemeParkIncPlayGain( int prize, int price, int medium )
 	{
 		var quotient = (float)((double)prize / price);
-		var logarithm = (float)Math.Log( quotient );
-		var ln2 = (float)Math.Log( 2.0 );
+		// ln x as log₂ x × ln 2 through the deterministic DetMath.Log2 (docs/DETERMINISM.md), each rounded to a single as the x87 at 24 bits rounds fyl2x's result
+		var logarithm = (float)(DetMath.Log2( quotient ) * Ln2);
+		var ln2 = (float)Ln2;
 		var product = (float)((float)(logarithm / ln2) * (float)medium);
 		return ThemeParkIncX87.Ftol( product );
 	}
@@ -619,7 +622,12 @@ public sealed partial class GuestSimulation
 		if ( view.Use.RideHandlesSprite )
 			tpi.Mode = 1;
 		if ( view.Use.RequiresTeleport )
+		{
+			// [BIN:TPI-EXE:0x61A70B placement] 0x60AE00(0) comes first: besides the drawing it raises the stamp counter (0x5D81F0 at 0x60AFFD) and clears the stranded mark +0x1B0 when the
+			// raised value is below it (0x60B002). The counter here counts the edits only (ParkCellMap.StampCounter), and a mark set under it is never above the next value, so the test
+			// cannot clear it; the raise and the test join here with Theme Park Inc's navigator and its counter of the simulation's calls (NV3, TPI-NAVIGATOR.md)
 			Beamed?.Invoke( guest );
+		}
 		if ( (tpi.HoldsBalloon || tpi.BalloonCountdown > 0) && view.Terms.AppearanceEffect != 1 )
 			tpi.HoldsBalloon = true;
 	}

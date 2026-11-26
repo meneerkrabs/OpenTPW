@@ -385,7 +385,10 @@ appear point and asked to walk to the cell beyond the exit (Theme Park World's E
     `HappyDiffForPoor` thought 6 and animation 10. The animation saves the state 20 and the exit's state 19 follows at once.
 
 **State 19 `0x618380`, being unloaded.** The entry `0x61A69D` gives the body back (mode 1 when a ride that draws it kept it), plays a teleporting ride's beam and gives a balloon kept through the
-ride back, unless a balloon shop has just given one. The handler walks; stuck, the target is cleared and the guest is idle. Arrived:
+ride back, unless a balloon shop has just given one. Before a teleporting ride's beam the entry calls the sprite placement `0x60AE00(0)` (`0x61A70B`), which also raises the stamp
+counter `0x5D81F0` and clears the stranded mark `+0x1B0` when the raised value is below it. On main the cell map counts the edits only (`ParkCellMap.StampCounter`), so that test cannot fire and
+nothing is counted at this place; the raise and the test join here when Theme Park Inc's navigator and its counter of the simulation's calls land (NV3, PR #1004:
+`ParkCellMap.NextStamp` under `--tpi-native-walk`). The handler walks; stuck, the target is cleared and the guest is idle. Arrived:
 - a photo booth word `+0x208`: the booth becomes the target (`+0x208` is kept, bug-compatible); a route to its back cell sends the guest there (13); a target that is not an attraction is cleared;
 - the old major destination `+0x206`: it becomes the target and `+0x206` is cleared; an umbrella shop for a guest with an umbrella or a balloon shop for one with a balloon is dropped ("trapped"); a
   route to its back cell sends the guest there (13), else the target is cleared;

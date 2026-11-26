@@ -694,11 +694,12 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( Level.Park!.Economy.TpiAdvisor!.Presentation is { Response: 645, ModelShown: true, HeadHidden: false }, "the presentation speaks the rain forecast with its head shown" );
 			return true;
 		}) );
-		steps.AddLast( ("the advisor goes", () =>
+		// the speech ends too before the plan goes on: a save made while it speaks loads silent (0x6A36DE), which the continuation's comparison with the uninterrupted park would see
+		steps.AddLast( ("the advisor goes and its speech ends", () =>
 		{
-			if ( flow.ThemeParkIncAdvisorView is { Image: not null } )
+			if ( flow.ThemeParkIncAdvisorView is { Image: not null } || Level.Park!.Economy.TpiAdvisor!.Presentation.Speaking )
 			{
-				Require( frame - advisorPostedAt < 1200, "the forecast's advisor goes within twenty seconds of its post" );
+				Require( frame - advisorPostedAt < 1200, "the forecast's advisor goes and its speech ends within twenty seconds of its post" );
 				return false;
 			}
 			return true;

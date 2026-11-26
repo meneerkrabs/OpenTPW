@@ -262,7 +262,13 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		} );
 		Do( "resume normal speed", () => flow.InjectedInput = UiInput.Key( UiKeys.Pause ) );
 		Wait( "speed applies", 2 );
-		Do( "note the resume frame", () => resumedAt = frame );
+		Do( "note the resume frame", () =>
+		{
+			resumedAt = frame;
+			// the hidden switch of Theme Park Inc's navigator rules (--tpi-native-walk, docs/reverse/TPI-NAVIGATOR.md) reaches the walks through the park's cell map
+			Require( Level.Guests!.Grid.Cells.EdgeRules == (GuestSimulation.ThemeParkIncNativeWalkRequested ? WalkEdgeRules.ThemeParkInc : WalkEdgeRules.ThemeParkWorld),
+				"the park's walks use the edge test the switch selects" );
+		} );
 		steps.AddLast( ("guests walk again", () =>
 		{
 			if ( Level.Guests!.Guests.Select( guest => (guest.Cell.X, guest.Cell.Y) ).SequenceEqual( pausedCells ) )

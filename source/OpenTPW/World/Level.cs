@@ -262,6 +262,12 @@ public partial class Level : IDisposable
 		&& ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, LevelName ) != null;
 	private bool? runsThemeParkIncNativeGuests;
 	/// <summary>
+	/// The edge test this level's walkers use (docs/reverse/TPI-NAVIGATOR.md): Theme Park Inc's in a Theme Park Inc level with the hidden switch <c>--tpi-native-walk</c>
+	/// (<see cref="GuestSimulation.ThemeParkIncNativeWalkRequested"/>, read once here, <see cref="WalkEdges.RulesForNewPark"/>), else Theme Park World's. It sets the cell map's <see cref="ParkCellMap.EdgeRules"/>.
+	/// </summary>
+	private WalkEdgeRules ParkEdgeRules => parkEdgeRules ??= WalkEdges.RulesForNewPark();
+	private WalkEdgeRules? parkEdgeRules;
+	/// <summary>
 	/// Set when this level shows a shared park read-only (docs/ONLINE.md): building, sandbox saves and
 	/// any economy writes must be refused while it is set.
 	/// </summary>
@@ -757,6 +763,9 @@ public partial class Level : IDisposable
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: new GuestPathGrid( OriginalCellMap( park, settings, land ) );
+		// every walk of the park's guests and staff (the arrival and the wander included) reads the map's edge test; the free walk is Theme Park World's only (Level.FreeWalk), and Theme Park
+		// Inc's own camera walk (0x468A9E: masks 0, then 1) is not ported
+		grid.Cells.EdgeRules = ParkEdgeRules;
 		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
 		// the demolition keeps the NoModify flag of a MAP initial path cell in front of an entrance (tp.exe's cell byte +0x26 bit 8, 0x527EE0)
 		grid.Cells.InitialPathSource = ( x, y ) => park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );

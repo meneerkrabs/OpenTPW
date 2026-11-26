@@ -527,6 +527,13 @@ public sealed record GuestSimulationSnapshot
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public bool ThemeParkIncNativeGuests { get; init; }
+	/// <summary>
+	/// Whether the park walked with Theme Park Inc's navigator rules (the hidden switch <c>--tpi-native-walk</c>, <see cref="ParkCellMap.EdgeRules"/>, docs/reverse/TPI-NAVIGATOR.md); absent (false)
+	/// otherwise and in saves made before it (an optional member, no schema bump). A restore refuses a save whose value differs from the running park's: a walk set up under one edge test cannot
+	/// continue under the other (a staff member stepped off the paths under Theme Park World's rules may stand on unowned land that Theme Park Inc's refuses, 0x5D7D0D).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public bool ThemeParkIncNativeWalk { get; init; }
 	/// <summary>The park's visitor count (<see cref="GuestSimulation.VisitorCount"/>). Absent before schema 9: 0.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public int VisitorCount { get; init; }

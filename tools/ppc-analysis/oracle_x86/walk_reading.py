@@ -6,13 +6,19 @@ the x86 walk targets (docs/reverse/ORACLE.md section 7, X25). Pure Python: no ex
 * `avoid_walls` 0x50e4a0 with the ray test 0x50cc20;
 * `Walk` the walk set-up 0x50f8e0 and the steering step 0x50f3b0 (follow_path 0x50ed10, progress 0x50fd40), separation without
   neighbours.
+
+A `Map` with `tpi` set reads Theme Park Inc's edge test 0x5d7b60 (WalkEdgeRules.ThemeParkInc): an obstacle's walkway cell (the obstacle
+flag, cell +0x24) is no walkway fast path, unowned land (flag 0x40) blocks after the path and walkway rules, and type 8 blocks. Only masks 0
+and 1 are read that way: no Theme Park Inc walk passes 2 or 3 (docs/reverse/TPI-NAVIGATOR.md). The commit and the search are the same.
 """
 D = [(0, -1), (1, 0), (0, 1), (-1, 0)]
 FAIL = 0x70000000
 
 class Map:
-    def __init__(self, types=None, links=None, qlinks=None, flags=None):
+    def __init__(self, types=None, links=None, qlinks=None, flags=None, obstacles=None, tpi=False):
         self.types = types or {}; self.links = links or {}; self.qlinks = qlinks or {}; self.flags = flags or {}
+        self.obstacles = obstacles or set(); self.tpi = tpi
+        self.records = {}  # cell -> (kind, flag nibble): the target structure record rule (tp.exe 0x4d89c3, TPI 0x5d7dfa); extensions are not modelled
     def t(self, x, y): return self.types.get((x, y), 0)
     def l(self, x, y): return self.links.get((x, y), 0)
     def q(self, x, y): return self.qlinks.get((x, y), 0)
@@ -33,7 +39,7 @@ def blocked(m, x, y, d, mask):
     if tt == 1 and not queue(ft): return 0
     if ft == 4 and tt == 4: return 0
     if tt == 4: return 1
-    if tt == 0x1e:
+    if tt == 0x1e and not (m.tpi and (tx, ty) in m.obstacles):  # 0x5363a0; TPI 0x67f6f0 also needs +0x24 == 0
         if mask != 2: return 0
         go871 = True
     else:
@@ -41,7 +47,8 @@ def blocked(m, x, y, d, mask):
     if go871:
         if m.f(tx, ty) & 0x400: return 0
         # type 9 thing-list check: not modelled (no things)
-    if tt in (5, 7, 2): return 1
+    if m.tpi and m.f(tx, ty) & 0x40: return 1  # TPI 0x5d7d0d: unowned
+    if tt in (5, 7, 2) or (m.tpi and tt == 8): return 1  # TPI 0x67f780 adds type 8
     if tt == 2: return 1
     if queue(tt):
         if ft == 1 or queue(ft):
@@ -53,7 +60,9 @@ def blocked(m, x, y, d, mask):
         links = m.l(tx, ty)
         back = {0: 0x10, 1: 0x40, 2: 0x01, 3: 0x04}[d]
         return 1 if (links & back) == 0 else 0
-    # objects (0x5363f0): none
+    # the target's structure record (0x5363f0 / TPI 0x67f890): a track kind with flag nibble 0 blocks (WalkEdges.TargetRecordBlocks)
+    record = m.records.get((tx, ty))
+    if record is not None and record[0] in (0xB, 0xD, 0x10, 0x12, 0x19) and record[1] & 0xF == 0: return 1
     if ft != 1 and not queue(ft): return 0
     if mask == 1 and ft == 1 and tt != 1 and not queue(tt) and tt != 4: return 0
     if mask == 2 and ft == 1 and tt == 0: return 0

@@ -4105,6 +4105,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Departed = Departed,
 			VisitorCount = VisitorCount,
 			ThemeParkIncNativeGuests = NativeTpi != null,
+			ThemeParkIncNativeWalk = Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc,
 			ArrivalTimerStart = arrivalTimerStart,
 			DeliveringArrivals = deliveringArrivals,
 			SpawnTimer = spawnTimer,
@@ -4307,6 +4308,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Error( snapshot.ThemeParkIncNativeGuests
 				? "The save was made with Theme Park Inc's native guest states on (--tpi-native-guests), which this park runs without."
 				: "The save was made without Theme Park Inc's native guest states, which this park runs (--tpi-native-guests)." );
+		// so must the walk's switch: the park's edge test is the save's (docs/reverse/TPI-NAVIGATOR.md)
+		if ( snapshot.ThemeParkIncNativeWalk != (Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc) )
+			Error( snapshot.ThemeParkIncNativeWalk
+				? "The save was made with Theme Park Inc's navigator rules on (--tpi-native-walk), which this park runs without."
+				: "The save was made without Theme Park Inc's navigator rules, which this park runs (--tpi-native-walk)." );
 		if ( snapshot.VisitorCount < 0 )
 			Error( $"VisitorCount {snapshot.VisitorCount} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )

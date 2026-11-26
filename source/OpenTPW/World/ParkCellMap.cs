@@ -164,7 +164,7 @@ public sealed partial class ParkCellMap
 
 	/// <summary>
 	/// [EXT:online-coop-undo] A disposable copy of <paramref name="source"/> for a take-back's prediction (C5, <see cref="CopyForPrediction"/>): every cell array, the residue's provenance, the
-	/// stamps and the track layer, copied; the pool bridges and the land shared, which an undo only reads; no hook, no re-evaluation.
+	/// stamps, the track layer and the edge test (EdgeRules), copied; the pool bridges and the land shared, which an undo only reads; no hook, no re-evaluation.
 	/// </summary>
 	private ParkCellMap( ParkCellMap source )
 	{
@@ -178,6 +178,7 @@ public sealed partial class ParkCellMap
 		queueLinks = (byte[])source.queueLinks.Clone();
 		owners = (ushort[])source.owners.Clone();
 		obstacleCells = (bool[]?)source.obstacleCells?.Clone();
+		EdgeRules = source.EdgeRules;
 		typeCounts = (int[])source.typeCounts.Clone();
 		BlocksX = source.BlocksX;
 		BlocksY = source.BlocksY;
@@ -907,10 +908,17 @@ public sealed partial class ParkCellMap
 	}
 
 	/// <summary>
-	/// Theme Park Inc's obstacle cell flag (map square <c>+0x24</c>): the cell belongs to an obstacle's footprint, so the pick and the cursor help follow its owner word to the obstacle. Always false
-	/// on a Theme Park World map. It blocks nothing; the obstacle's cell types do (docs/reverse/TPI-MISSIONS.md §6).
+	/// The edge test the walks over this map use (<see cref="WalkEdges.Blocked"/>): Theme Park World's unless the level sets Theme Park Inc's (the hidden switch <c>--tpi-native-walk</c>,
+	/// docs/reverse/TPI-NAVIGATOR.md). A property of the park, set once when its map is made; not part of the cells' state, the digest or the layout snapshot: the guests' snapshot records it (GuestSimulationSnapshot.ThemeParkIncNativeWalk) and a restore refuses a mismatch.
 	/// </summary>
-	// [BIN:TPI-EXE:0x647E01 obstacle cell flag] the placement writes +0x24 = 1 and the opening 0x5E8CB4 writes 0; the pick 0x666BE0 and the hover at 0x504A0C read it
+	public WalkEdgeRules EdgeRules { get; set; }
+
+	/// <summary>
+	/// Theme Park Inc's obstacle cell flag (map square <c>+0x24</c>): the cell belongs to an obstacle's footprint, so the pick and the cursor help follow its owner word to the obstacle. Always false
+	/// on a Theme Park World map. It blocks nothing by itself; the obstacle's cell types do (docs/reverse/TPI-MISSIONS.md §6), and Theme Park Inc's edge test denies a flagged walkway cell (type 0x1E)
+	/// the walkway fast path (<see cref="WalkEdgeRules.ThemeParkInc"/>).
+	/// </summary>
+	// [BIN:TPI-EXE:0x647E01 obstacle cell flag] the placement writes +0x24 = 1 and the opening 0x5E8CB4 writes 0; the pick 0x666BE0, the hover at 0x504A0C and the edge test's walkway and mask-2 tests 0x67F6F0 / 0x67F720 read it
 	public bool ObstacleFlagAt( int x, int y ) => obstacleCells != null && InBounds( x, y ) && obstacleCells[y * Width + x];
 
 	/// <summary>Whether any cell carries the obstacle flag (<see cref="ObstacleFlagAt"/>).</summary>

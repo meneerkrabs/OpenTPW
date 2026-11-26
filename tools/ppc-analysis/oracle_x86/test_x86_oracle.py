@@ -204,6 +204,15 @@ EXPECTED = {
     ('tpi-exe-coast-rating-final', 'plan'): (30, (50.0, 109.31599426269531, 50.0000038, 22.756824493408203)),
     ('tpi-exe-coast-rating-final', 'coast-plan-documented'): (271, (50.0, 77.47186279296875, 50.0, -13.047860145568848)),
     ('tpi-exe-coast-rating-final', 'routine-reading'): AGREE,
+    # X25's Theme Park Inc targets (the navigator port NV1, TPI-NAVIGATOR.md): Game.exe's edge test 0x5d7b60, step commit 0x63f5d0 and route search
+    # 0x640c50 agree with WalkEdges / WalkSearch under WalkEdgeRules.ThemeParkInc (walk_reading.py with `tpi`); tp.exe's rules on the same maps
+    # (no obstacle, unowned or hole rule) differ.
+    ('tpi-exe-walk-edge-test', 'plan'): AGREE,
+    ('tpi-exe-walk-edge-test', 'tpw-rules'): (130, (0, (120, 113, 8, 15))),
+    ('tpi-exe-walk-commit', 'plan'): AGREE,
+    ('tpi-exe-walk-commit', 'tpw-rules'): (107, (1, (0, 113, 24, 15))),
+    ('tpi-exe-walk-search', 'plan'): AGREE,
+    ('tpi-exe-walk-search', 'tpw-rules'): (90, (0, (104, 30, 24, 25))),
 }
 
 BASE = 0x400000
@@ -417,6 +426,8 @@ def check_pinned(case, comparison, key):
         if isinstance(first_input, tuple):
             if key[0] in ('tpw-exe-skirt-flags', 'tpw-exe-ground-conform', 'tpw-exe-base-height'):
                 first = targets.skirt_summary(key[0], first)
+            elif key[0].startswith('tpi-exe-walk-'):
+                first = (first['mask'], tuple(first['window']))
             else:
                 first = wander_summary(first) if key[0] == 'tpw-exe-wander-destination' else coast_summary(first)
         case.assertEqual(first, first_input, key)
@@ -1338,12 +1349,29 @@ class WalkReadingCoverage(unittest.TestCase):
         found = [targets.walk_search_plan(x)[0] for x in inputs]
         self.assertTrue(any(found) and not all(found))
 
+    def test_tpi_inputs_reach_every_rule_and_both_search_outcomes(self):
+        """The Theme Park Inc maps carry obstacle walkways, holes and unowned land, use masks 0 and 1 only, and their searches both
+        succeed and fail."""
+        target = targets.TPI_WALK_SEARCH_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        found = [targets.tpi_walk_search_plan(x)[0] for x in inputs]
+        self.assertTrue(any(found) and not all(found))
+        self.assertEqual({x['mask'] for x in inputs}, {0, 1})
+        self.assertTrue(any(x['obstacles'] for x in inputs))
+        self.assertTrue(any(t == 8 for x in inputs for _, _, t in x['types']))
+        self.assertTrue(any(f & 0x40 for x in inputs for _, _, f in x['flags']))
+        edge = targets.TPI_WALK_EDGE_TARGET
+        edges = edge.inputs(__import__('x86_harness').seeded('oracle-v1:' + edge.key), DEFAULT_COUNT)
+        self.assertEqual({x['mask'] for x in edges}, {0, 1})
+        self.assertGreater(sum(targets.tpi_walk_edge_plan(x) != targets.tpi_walk_edge_as_tpw(x) for x in edges), 0)
+
 
 @unittest.skipUnless(UNICORN, UNICORN_HINT)
 @unittest.skipUnless(TPI, NO_TPI)
 class OracleTpi(CoastTests, unittest.TestCase):
     """X2: the TPI Game.exe world RNG step (the image has a relocation directory and an .idata section); X7 to X10: the
-    TPI counterparts of the arrival, loan and park-points rules; X11 and X12: the coaster rating."""
+    TPI counterparts of the arrival, loan and park-points rules; X11 and X12: the coaster rating; X25's TPI targets: the navigator's
+    edge test, step commit and route search."""
     exe = 'tpi'
 
     @classmethod
@@ -1559,6 +1587,34 @@ class OracleTpi(CoastTests, unittest.TestCase):
         self.assertTrue(all(targets.run_binary(target, sandbox, x) == targets.world_rng_routine_reading(x)
                             for x in inputs))
         self.assertEqual((targets.TPI_WORLD_RNG, targets.WORLD_RNG), (0x1EAB3C, 0x1DA708))
+
+    # ------------------------------------------------------------------ X25 for Theme Park Inc: the navigator's edge rules
+    def test_walk_edge_test_commit_and_search_agree(self):
+        for key in ('tpi-exe-walk-edge-test', 'tpi-exe-walk-commit', 'tpi-exe-walk-search'):
+            self.check((key, 'plan'))
+            self.check((key, 'tpw-rules'))
+
+    def test_walk_structure_records_decide_some_edges_and_searches(self):
+        """The maps' second-layer records reach the record rule (0x5d7dfa): a reading without them differs from Game.exe on some edges and
+        searches, and the land flag 0xb1a94c is set in about half of them without changing the link byte read (class byte 0)."""
+        for target in (targets.TPI_WALK_EDGE_TARGET, targets.TPI_WALK_SEARCH_TARGET):
+            inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), 120)
+            sandbox = target.sandbox(self.image)
+            differ = sum(targets.run_binary(target, sandbox, x) != target.plan(dict(x, records=[])) for x in inputs)
+            self.assertGreater(differ, 0, target.key)
+            self.assertTrue(0 < sum(x.get('land_flag', 0) for x in inputs) < len(inputs), target.key)
+
+    def test_walk_edge_rules_in_order(self):
+        """The three rules on a path cell (10, 10) and its neighbours: an unowned path (10, 9) from the path is open (the path fast path
+        comes first), the obstacle's walkway (11, 10) is refused with mask 0 and open with mask 1, the hole (10, 11) is refused, and the
+        unowned empty (9, 10) is refused with mask 1, where tp.exe's rules open it."""
+        x = {'types': [[10, 10, 1], [11, 10, 0x1E], [10, 11, 8], [9, 10, 0], [10, 9, 1]], 'links': [[10, 10, 0x55], [10, 9, 0x55]],
+             'qlinks': [], 'flags': [[9, 10, 0x40], [10, 9, 0x40]], 'obstacles': [[11, 10]], 'window': (8, 8, 6, 6)}
+        for mask, expected in ((0, (0, 1, 1, 1)), (1, (0, 0, 1, 1))):
+            case = dict(x, mask=mask, edges=[(10, 10, d) for d in range(4)])
+            self.assertEqual(self.run_target(targets.TPI_WALK_EDGE_TARGET, case), expected, mask)
+            self.assertEqual(targets.tpi_walk_edge_plan(case), expected, mask)
+        self.assertEqual(targets.tpi_walk_edge_as_tpw(dict(x, mask=1, edges=[(10, 10, d) for d in range(4)])), (0, 0, 0, 0))
 
     def test_relocated_load_skips_the_fixups_past_the_image(self):
         image = Image.load(TPI, base=0x10000000)

@@ -682,12 +682,15 @@ public class ThemeParkIncEconomyTests
 	[TestMethod]
 	public void AnObjectThatRequiresWateringTakesItsScrapPercentFromItsScriptCondition()
 	{
-		// [BIN:TPI-EXE:0x5E75F9 scrap percentage] the thing-flag branch comes before the condemned test: 100, 67, 34, 0 for the counts 0 to 3, then 1 + ftol((3 - n) x 33.333332)
-		CollectionAssert.AreEqual( new[] { 100, 67, 34, 0, -32, -65 }, Enumerable.Range( 0, 6 ).Select( ParkEconomy.ThemeParkIncWateringPercent ).ToArray() );
+		// [BIN:TPI-EXE:0x5E75F9 scrap percentage] the thing-flag branch comes before the condemned test: 101, 67, 34, 0 for the counts 0 to 3, then 1 + ftol((3 - n) x 33.333332)
+		// [EXT:hardware-d3d-path] the native routine's answers at the game thread's control word 0x7F for the counts -3 to 8 (tpi_scrap_percent_oracle.py); a count of 0 gives 101 because
+		// 3 x 33.333332f rounds to the single 100.0, where 53 bits give 100 (as for -3: 201 against 200, and 6: -99 against -98)
+		CollectionAssert.AreEqual( new[] { 201, 167, 134, 101, 67, 34, 0, -32, -65, -99, -132, -165 }, Enumerable.Range( -3, 12 ).Select( ParkEconomy.ThemeParkIncWateringPercent ).ToArray() );
 		var plant = new EconomyObjectInfo( 1, "Plant", ParkObjectKind.Feature, ResearchCategory.Ride, 7, new List<UpgradeLevelInfo> { new( 0, 1000, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "/x", RequiresWatering: true );
 		var tpi = Economy( plant );
 		tpi.TryBuild( 1, out var item );
-		Assert.AreEqual( 100, tpi.ScrapPercent( item! ), "no script: the lookup answers 0, so 100 percent" );
+		Assert.AreEqual( 101, tpi.ScrapPercent( item! ), "no script: the lookup answers 0, so 101 percent" );
+		Assert.AreEqual( 1010L, tpi.ScrapValue( item! ), "a fresh plant sells for more than it cost" );
 		item!.ScriptCondition = 2;
 		Assert.AreEqual( 34, tpi.ScrapPercent( item ) );
 		Assert.AreEqual( 340L, tpi.ScrapValue( item ) );
@@ -695,7 +698,7 @@ public class ThemeParkIncEconomyTests
 		Assert.AreEqual( 0, tpi.ScrapPercent( item ), "a dead plant refunds nothing" );
 		item.ScriptCondition = 0;
 		item.StateWord.Set( RideObjectStates.Condemned );
-		Assert.AreEqual( 100, tpi.ScrapPercent( item ), "the flag branch precedes the condemned test" );
+		Assert.AreEqual( 101, tpi.ScrapPercent( item ), "the flag branch precedes the condemned test" );
 		var tpw = TpwEconomy( plant );
 		tpw.TryBuild( 1, out var same );
 		same!.ScriptCondition = 2;
@@ -758,7 +761,7 @@ public class ThemeParkIncEconomyTests
 		weather = 0;
 		settings.ArrivalPointsPerVisitor = 1;
 		points = 80;
-		Assert.AreEqual( 99, simulation.ArrivalGroupSize(), "0.01 is a single: (20 + 80) x 100 x 0.01f is 99.99999776 and truncates to 99" );
+		Assert.AreEqual( 100, simulation.ArrivalGroupSize(), "0.01 is a single, but 100 x 0.01f rounds to 1.0 at the game thread's 24 bits ([EXT:hardware-d3d-path]): 100, where 53 bits keep 99.99999776 and truncate to 99 (the native routine at 0x7F, ORACLE.md X7)" );
 		points = -20;
 		settings.ArrivalMinPeople = 3;
 		Assert.AreEqual( 3, simulation.ArrivalGroupSize(), "raised to MinPeople" );

@@ -367,6 +367,24 @@ public sealed class ThemeParkIncStaff
 		return messages;
 	}
 
+	/// <summary>Whether the role is on strike (<c>0x634210</c>: the record's active word, HQ <c>+0x160 + 12 × role</c>).</summary>
+	public bool OnStrike( ThemeParkIncStaffRole role ) => strikes[(int)role].Active;
+
+	/// <summary>The strike's end (<c>0x6342B0</c>): the role's record is no longer active (its level stays); unless <paramref name="quiet"/>, the strike-over message (kind 5).</summary>
+	// [BIN:TPI-EXE:0x6342B0 end strike] +0x160 + 12 × role = 0; the second argument 0 posts the type-0x17 message (role, 5, 0) through 0x436DD0 to the broadcaster 0xA09728
+	public StrikeMessage? EndStrike( ThemeParkIncStaffRole role, bool quiet )
+	{
+		strikes[(int)role] = strikes[(int)role] with { Active = false };
+		return quiet ? null : new StrikeMessage( role, 5, 0 );
+	}
+
+	/// <summary>The strike slot's clear (<c>0x634390</c>): the role is no longer on strike and its escalation level is 0.</summary>
+	// [BIN:TPI-EXE:0x634390 clear strike] +0x160 + 12 × role = 0 and +0x15C + 12 × role = 0; the turn word +0x164 stays; no message
+	public void ClearStrike( ThemeParkIncStaffRole role ) => strikes[(int)role] = strikes[(int)role] with { Level = 0, Active = false };
+
+	/// <summary>Takes a member off the staff (the role list's unlink of the class destroys, <c>0x64EE40</c> and its siblings).</summary>
+	internal bool Remove( ThemeParkIncStaffMember member ) => members.Remove( member );
+
 	/// <summary>A member's wage demand (the 0x5CEFB0 object, message type 0x19): 0xA when the role has a grievance in a park younger than MinMonthsForStrike months, else 0xB.</summary>
 	public readonly record struct WageDemand( ThemeParkIncStaffMember Member, int Type, int Shortfall );
 

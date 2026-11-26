@@ -199,6 +199,9 @@ public sealed partial class ParkEconomy
 		// 0x67F600, 0x67F620, 0x67F6D0) counts; with argument 4 every zone counts: Theme Park World's census (ParkGate.CountCensus)
 		public int GuestsInPark => economy.guestStatistics.GuestCensus;
 
+		// [BIN:TPI-EXE:0xA02168 shares issued] the Standard object's ShareInfo.CompanySharesIssued
+		public int CompanySharesIssued => economy.Settings.ThemeParkIncShares.CompanySharesIssued;
+
 		public ushort CurrentObstacle => economy.TpiMissionWorld?.CurrentObstacle ?? 0;
 
 		// [EXT:headless-economy] a headless economy has no world: no attraction things, no land and no camera

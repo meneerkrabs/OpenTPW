@@ -310,6 +310,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			PlanFacilities();
 		if ( flow.Level?.LevelName == "science" )
 			PlanChallenges();
+		if ( flow.Level?.LevelName == "science" )
+			PlanSpecialRide();
 		Do( "round-trip Science state", () =>
 		{
 			var live = Level;
@@ -403,6 +405,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		if ( !captureForRestart )
 		{
 			PlanTagTube();
+			PlanWages();
 			PlanLetter();
 		}
 		// The exit a player uses: the pause menu's Quit closes the window and ends the run.
@@ -508,6 +511,68 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "close the tag tube", () => Click( Hud.Stack.Top!, "ok" ) );
 		Wait( "the tag tube closes", 2 );
 		Do( "the tag tube is closed", () => Require( !Hud.TagTubeOpen, "Okay closes the tag tube window" ) );
+	}
+
+	/// <summary>
+	/// A wage demand: the day routine files it as an unread row of the tag tube; its go-to opens the wage demand window on the member, OK negotiates the offer (one step above the demand) and the
+	/// results dialog's OK raises the salary by it.
+	/// </summary>
+	private void PlanWages()
+	{
+		ThemeParkIncStaffMember? member = null;
+		var salary = 0;
+		Do( "a member demands a rise", () =>
+		{
+			var economy = Level.Park!.Economy;
+			member = economy.TpiStaff!.Members.FirstOrDefault( item => item.Placed );
+			Require( member != null, "the park has a placed member" );
+			salary = member!.Salary;
+			// what the day message does on the member's demand day (0x628CA0): the demand's row, filed as the type-0x19 letter
+			economy.FileThemeParkIncWageDemands( new[] { new ThemeParkIncStaff.WageDemand( member, ThemeParkIncTagLetter.WageDemandWithoutStrike, 20 ) } );
+			var row = economy.TpiTagTube!.Listed.First();
+			Require( row.Source == ThemeParkIncLetterSource.WageDemand && !row.Read && row.Key == member.ThingId && row.GotoArgument == 20, "the demand is the newest unread row (0x5CF3F0)" );
+			Require( !Hud.LetterOpen, "a kind-0xB letter opens no letter window (0x5CD060)" );
+		} );
+		Do( "open the tag tube for the demand", () => flow.InjectedInput = UiInput.Key( UiKeys.Messages ) );
+		Wait( "the tag tube opens", 2 );
+		Do( "select the demand", () =>
+		{
+			Require( Hud.TagTubeOpen, "the M key opens the tag tube" );
+			var window = Hud.TagTubeWindow!;
+			var index = window.ListedRows.ToList().FindIndex( row => row.Source == ThemeParkIncLetterSource.WageDemand );
+			Require( index >= 0, "the demand is listed" );
+			window.SelectRow( index );
+		} );
+		Wait( "the details show", 2 );
+		Do( "the demand's go-to shows", () =>
+		{
+			var window = Hud.TagTubeWindow!;
+			Require( window.GotoShown, "a demand row's go-to (+0xE10 = 0xE) shows" );
+			Require( window.Details.Subject == Hud.Texts!.Format( ThemeParkIncTable.TagSystem, 0xFB ), "the subject is TAG_SYSTEM 0xFB" );
+			Click( Hud.Stack.Top!, "goto" );
+		} );
+		Wait( "the wage window opens", 2 );
+		Do( "raise the offer and press OK", () =>
+		{
+			Require( Hud.WageDemandWindow is { Offer: 20 } && Hud.Stack.Top?.Name == ThemeParkIncWageDemandWindow.ScreenName, "the go-to opens the wage demand window on the demand (0x59ABB0)" );
+			Require( !Hud.TagTubeOpen, "the go-to closed the tag tube" );
+			Hud.WageDemandWindow!.Step( 1 );
+			Click( Hud.Stack.Top!, "ok" );
+		} );
+		Wait( "the negotiation opens", 2 );
+		Do( "the negotiation accepts the offer", () =>
+		{
+			Require( Hud.NegotiationWindow is { Offer: 21, Result: ThemeParkIncWageNegotiation.Accepted } && Hud.Stack.Top?.Name == ThemeParkIncWageNegotiationWindow.ScreenName,
+				"OK opens the results dialog on the offer (0x559C40), which meets the demand" );
+			Click( Hud.Stack.Top!, "ok" );
+		} );
+		Wait( "the dialog closes", 2 );
+		Do( "the salary rose and the demand left the tube", () =>
+		{
+			Require( Hud.NegotiationWindow == null && Hud.WageDemandWindow == null, "both windows are closed" );
+			Require( member!.Salary == Math.Max( salary + 21, Level.Park!.Economy.TpiStaff!.Settings.MinWage ), $"the salary is the old one plus the offer (0x62D160): {member.Salary}" );
+			Require( Level.Park.Economy.TpiTagTube!.Listed.All( row => row.Source != ThemeParkIncLetterSource.WageDemand || row.Key != member.ThingId ), "0x636C90 deleted the demand" );
+		} );
 	}
 
 	/// <summary>
@@ -844,6 +909,59 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Wait( "challenge panel closes", 2 );
 		Do( "the challenge panel is closed", () => Require( Hud.Screen.Find( "challengePanelList" ) is { Visible: false } && !Hud.MenuOpen, "Escape closes the challenge panel" ) );
 	}
+
+	/// <summary>
+	/// The prebuilt Water Ride awaits its activation: selected, it shows its staff slot and its golden ticket, and the Activate Ride button stays disabled; with a gardener in its slot and a ticket
+	/// in hand the button activates it. The prebuilt park saved it closed, and the activation does not open it: the ride window's open toggle is offered, enabled only while the ride's queue joins a path.
+	/// </summary>
+	private void PlanSpecialRide()
+	{
+		OriginalObject? water = null;
+		Do( "select the Water Ride", () =>
+		{
+			var specials = Level.Objects.Objects.Where( item => !item.IsDeleted && item.Entry.InfoId is 1110 or 1160 or 1170 or 1180 ).ToList();
+			Require( specials.Count == 4 && specials.All( item => Level.GetEconomyInstance( item ) is { } instance && Level.Park!.Economy.IsThemeParkIncSpecialRidePending( instance ) ),
+				"the prebuilt Science park's four special rides await their activation" );
+			Require( specials.All( item => !item.IsOpen ), "the prebuilt park's special rides keep their saved open word 0: closed" );
+			water = specials.Single( item => item.Entry.InfoId == 1160 );
+			Hud.SelectForSmoke( water );
+		} );
+		Wait( "the activation lines show", 2 );
+		Do( "the activation lines name the slot and the ticket", () =>
+		{
+			Require( Hud.Screen.Find( "specialRideLines" ) is { Visible: true } && Hud.Screen.Find( "specialRideActivate" ) is { Visible: true, Enabled: false } && Hud.Screen.Find( "rideDoor" ) is { Visible: false },
+				"the lines show, the button waits for the staff and the ticket, and a pending ride offers no open toggle" );
+			var lines = LabelText( "specialRideLines" );
+			Require( lines.StartsWith( Hud.Strings.Entry( ThemeParkIncHud.SpecialRideTitle ), StringComparison.Ordinal ) && lines.Contains( Hud.Strings.Ability( 10 ), StringComparison.Ordinal )
+				&& lines.Contains( Hud.Strings.Entry( ThemeParkIncHud.NameColumn ), StringComparison.Ordinal ), "the lines carry UITEXT 116, the window's heads and the Water/Drainage slot" );
+			var economy = Level.Park!.Economy;
+			var instance = Level.GetEconomyInstance( water! )!.Value;
+			economy.TpiSpecialRides!.Assign( new ThemeParkIncStaffMember( 900, ThemeParkIncStaffRole.Gardener, 0, 20000, 20, 0, 0 ) { ThingId = 900, Ability = 10 }, _ => false );
+			economy.TpiCareer!.AddGoldenTickets( 1 );
+			Require( economy.CanActivateThemeParkIncSpecialRide( instance ), "a gardener in the slot and a ticket enable the button" );
+		} );
+		Wait( "the button is enabled", 2 );
+		Do( "press Activate Ride", () => Click( Hud.Screen, "specialRideActivate" ) );
+		Wait( "the activation", 2 );
+		Do( "the Water Ride is activated and stays closed", () =>
+		{
+			var economy = Level.Park!.Economy;
+			var instance = Level.GetEconomyInstance( water! )!.Value;
+			Require( economy.TpiSpecialRides!.IsActivated( instance ) && !economy.IsThemeParkIncSpecialRidePending( instance ), "the button activated the ride" );
+			Require( Hud.Screen.Find( "specialRideLines" ) is { Visible: false }, "the lines are gone with the selection" );
+			Require( !water!.IsOpen, "the activation does not open the ride (0x5E8230 writes no open word)" );
+			Hud.SelectForSmoke( water );
+		} );
+		Wait( "the ride's open toggle shows", 2 );
+		Do( "the open toggle follows the open guard", () =>
+		{
+			var door = Level.ThemeParkIncDoorOf( water! );
+			var linked = water!.Runtime.Visitors is not RideVisitorBridge bridge || ParkGate.QueueConnected( Level.Guests!.Grid, bridge );
+			Require( door is { Shown: true, Open: false } && door.Enabled == linked && Hud.Screen.Find( "rideDoor" ) is UiButton { Visible: true } button && button.Enabled == linked,
+				$"the activated ride offers its open toggle, enabled only while its queue joins a path ({door}, queue linked {linked})" );
+		} );
+	}
+
 
 	private void PlanHandyman()
 	{

@@ -52,11 +52,14 @@ mission's tech level: for `TechLevel.Theme` 0 to 2 the zone record's `+0` rises 
 | 8 | guests in the park | same |
 
 `0x5B2060(4)` counts the guests on a cell of type 0, 1, 3, 9 or 10, Theme Park World's census. `0x5C1300` sums `(term − repaid) × instalment` over the bought
-loan records. OpenTPW measures types 1, 2, 3, 5 and 8 from its park. Type 4 sums the newest closed month of five analyser rings (`+0x20148` to `+0x20A88`, stride
+loan records. OpenTPW measures types 1, 2, 3, 5, 6, 7 and 8 from its park. Type 4 sums the newest closed month of five analyser rings (`+0x20148` to `+0x20A88`, stride
 `0x250`): the admission, shop, sideshow, ride and facility takings, so last month's revenue, not its profit (`research/tpi-campaign/r8-research-training-awards-shares.md`
 §5). The first three are Theme Park World's gate, shop and sideshow rows moved by `+0x268`, which OpenTPW's ledger keeps; but the ledger books ride and facility
-takings among the other income, without rows of their own, and a ring with no closed month adds `0x10(%esp)`, the pushed `ecx`, which is the analyser's own address. Type 6 reads awards that no ported code writes, type 7 the share system. Those three are never stored or decided
-(`[EXT:tpi-capability-gates]`), and a type-4 status is not started. Of the shipped missions only miss17 needs one (awards and shares), so it cannot be completed. No shipped mission sets a
+takings among the other income, without rows of their own, and a ring with no closed month adds `0x10(%esp)`, the pushed `ecx`, which is the analyser's own address. Type 4 is
+never stored or decided (`[EXT:tpi-capability-gates]`), and a type-4 status is not started; no shipped mission uses it. Type 6 counts the career's award bytes, which the park
+awards' checker writes, and type 7 the shares owned × 100 / `CompanySharesIssued` (`0x5EFF9F`: 0 shares give 0), from the shares game; both are ported
+([TPI-AWARDS-SHARES.md](TPI-AWARDS-SHARES.md)), so miss17's statistics (six awards and 51 % of the shares) are measured. Its 51 % needs all thirteen share-prize challenges
+won; OpenTPW offers none of them yet: their types (17, 46, 48, 50 to 53, 55 to 58) are not among the measured challenge types (2, 25 and 41, `ThemeParkIncChallenges.IsPorted`), so until those types are ported, 51 % is reachable only through the cheats extension's "Win the game...". No shipped mission sets a
 `TargetTime`, so no shipped mission can fail.
 
 ## 3. Requirements and completion
@@ -200,9 +203,13 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   request (as the letter's), clears the career's `+0x27` and resets the page to the briefing. It first sends message 5 to the HUD's registered window (`0x5013C0`,
   `0xA568BC`), so an open letter closes as its close button closes it (`0x52698F`; the bank's and the firing letter then lose the park) before the window is built. The Challenges tab closes the window and opens the challenges window
   (`0x529960`), which is not built: the text HUD's challenge panel stands in for it.
+- **Close branch.** `0x5013C0` has a second branch: when `[0xA5E890]` holds a window (the one the loss window closes) it closes that window instead (message 4, `0x5013CC`..`0x5013EC`) and sends
+  no message 5, so neither a letter nor a mission window closes. OpenTPW builds no window for that slot and always takes the message 5 branch (`ThemeParkIncHud.ShowLetter`, `OpenMissionWindow`).
+- **Game mode 3.** The Objectives key refuses when the game mode word `[0xC65B80]` is 3 (`0x42F04B`), the coaster-edit mode. OpenTPW never runs it: its Theme Park Inc slice is the single-player
+  career (mode 0; `ParkGameMode` has no other value), so the refusal is not ported.
 - **Openers.** The key table's Objectives row (`0x9A8A14`: O, no modifier, `0x42F020`, not in game mode 3), the HUD buttons (`0x54AC0F`, `0x54F7C1`), a click on the
-  `ObstacleOpened` thing (`0x5068C3`), the challenges window's Objectives tab (`0x52A60F`), a letter's go-to kind 0xC (`0x551461`) and, three flight updates after a
-  zone-arrival (mode 2) camera flight, the first briefing (`0x5D0369`). OpenTPW has the key, the text HUD's button and the arrival flight's countdown (`ThemeParkIncCutscene.MissionWindowRequests`, §5). The letter go-to is ported and
+  `ObstacleOpened` thing (`0x5068C3`), the challenges window's Objectives tab (`0x52A60F`), a letter's go-to kind 0xC (`0x551461`) and, on the update after a
+  zone-arrival (mode 2) camera flight ends, the first briefing (`0x5D0369`: the countdown `0xA9D258` is 1 at the end, 2 in the same update and 3 in the next, which builds the window). OpenTPW has the key, the text HUD's button and the arrival flight's countdown (`ThemeParkIncCutscene.MissionWindowRequests`, §5). The letter go-to is ported and
   reachable from the tag tube window's go-to button ([TPI-TAG-TUBE.md](TPI-TAG-TUBE.md) §3).
 - **Not ported:** the body's scroll text (`0x52C4C0`; the body shows from its top, as at every opening, and the slider does not move it), the interface sounds
   (`0x1B6`, `0x277`), the per-mission advisor panel (`0x5F16C0`, `0x93E3E0[counter]`) and the advisor panel `0x1FA` on closing.

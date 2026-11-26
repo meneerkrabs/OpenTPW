@@ -44,7 +44,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>The park's staff rooms; null in a world without them (tests without rooms).</summary>
 	public IThemeParkIncRooms? Rooms { get; set; }
 
-	/// <summary>The training notices since the HUD last took them (the advisor's lines 0x175 and 0x1C9 and the letters of kind 0xC and 0xD). Not saved; at most 32 are kept.</summary>
+	/// <summary>The training notices since the HUD last took them (the advisor's lines 0x175 and 0x1C9; the letters of kind 0xC and 0xD are tag tube rows). Not saved; at most 32 are kept.</summary>
 	public List<ThemeParkIncTrainingNotice> TrainingNotices { get; } = new();
 
 	private void Notice( ThemeParkIncTrainingNotice notice )
@@ -122,6 +122,9 @@ public sealed partial class ThemeParkIncStaffWorld
 					Rooms!.AddOccupancy( room.Thing, +1 );
 				SetState( economy, member, ThemeParkIncTraining.Training, turn );
 				economy.TpiStaff!.Hq.Release( economy.TpiStaff.Members, member );
+				// [BIN:TPI-EXE:0x634771 special ride release] the HQ's release 0x634730 calls 0x6241B0 for a member with an ability, after its trained-staff count and before its own slot; the special-ride
+				// table and the HQ's slots do not touch each other, so releasing the HQ's side first leaves the same state
+				economy.ThemeParkIncReleaseSpecialRides( member );
 				break;
 			case WalkResult.Stuck:
 				member.AddHappiness( -(float)settings.HappyHitRoomInaccessible );
@@ -150,6 +153,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	private void FinishTraining( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		economy.TpiStaff!.Hq.TrainingFinished( member );
+		economy.ThemeParkIncTrainingFinishedSpecialRides( member );
+		economy.FileThemeParkIncTrainingLetter( member, finished: true, member.Ability );
 		if ( TrainingRoom is { } room )
 			Rooms!.AddOccupancy( room.Thing, -1 );
 		ShowAgain( member );
@@ -181,6 +186,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( member.State == ThemeParkIncTraining.Training )
 			ShowAgain( member );
 		Notice( new ThemeParkIncTrainingNotice( member, false, ability ) );
+		economy.FileThemeParkIncTrainingLetter( member, finished: false, ability );
 		SetState( economy, member, Idle, turn );
 		LookForWork( economy, economy.TpiStaff!.Settings, member, turn );
 	}

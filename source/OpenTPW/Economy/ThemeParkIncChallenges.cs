@@ -175,6 +175,15 @@ public sealed class ThemeParkIncChallengeSlot
 	};
 }
 
+/// <summary>
+/// A challenge's target attraction as its availability and value read it: whether a thing of the type exists (<c>0x647850</c>), whether its type record's <c>Info.IsSpecial</c> (<c>+0x5C</c>) is
+/// above 0, whether it was activated (<c>+0x12C</c>) and its truncated state-of-repair byte (<c>+0x54</c>).
+/// </summary>
+public readonly record struct ThemeParkIncChallengeTarget( bool Exists, bool IsSpecial, bool Activated, int RepairByte )
+{
+	public static ThemeParkIncChallengeTarget None => default;
+}
+
 /// <summary>A challenge slot as a park save keeps it.</summary>
 public sealed record ThemeParkIncChallengeSlotSnapshot( int Type, int TargetTime, int TargetVal, int TargetVal2, ushort TargetObj, int CashPrize, int GTPrize, int SharePrize,
 	int SharePriceEffectIfWon, int SharePriceEffectIfLost, int FollowupType, bool CheckAtEndOnly, int GracePeriodLimit, int TriggerData, int MinDaysTilTrigger, int MaxDaysTilTrigger,
@@ -206,6 +215,19 @@ public interface IThemeParkIncChallengeHost
 	int MinStaffHappiness();
 	/// <summary><c>0x634240</c>: some staff role's strike is active.</summary>
 	bool AnyRoleOnStrike();
+	/// <summary>
+	/// The first attraction thing of <paramref name="type"/> as the availability and the value poll read it (<c>0x647850</c>, then the thing and its type record); <see cref="ThemeParkIncChallengeTarget.Exists"/>
+	/// false when there is none.
+	/// </summary>
+	ThemeParkIncChallengeTarget FindTarget( ushort type );
+	/// <summary><c>0x61E6A0</c> on the research lab (<c>0x64EB20</c>): <paramref name="type"/> is the object of lab slot 0's project, or of slot 1's when slot 0 holds none.</summary>
+	bool LabResearching( ushort type );
+	/// <summary>The park analyser's <c>mNumBreakdownsEver</c> (<c>+0x14</c>, <c>0x5B9A50</c>).</summary>
+	int BreakdownsEver { get; }
+	/// <summary><c>0x5B7D30</c>: the lowest truncated state-of-repair byte (<c>+0x54</c>) of the attraction things whose type has <c>Info.WhichUIType</c> 0, 100 when there is none.</summary>
+	int LeastRideRepair();
+	/// <summary><c>0x5B2060(4)</c>: the guests in the park, of every generation.</summary>
+	int GuestsInPark { get; }
 	/// <summary>A slot was offered (the offer's message 0x1B kind 0, which the original turns into the challenge mail).</summary>
 	void Offered( int index );
 	/// <summary>The won branch's park effects (<c>0x5C4250</c>): the cash prize through the bank and the golden tickets; the slot is already state 4.</summary>
@@ -253,8 +275,13 @@ public sealed class ThemeParkIncChallenges
 	/// </summary>
 	// [EXT:tpi-capability-gates] a type whose availability trigger or progress value reads park state OpenTPW does not model (docs/reverse/TPI-CHALLENGE-SYSTEM.md, "Port status") stays
 	// unoffered: its CalcAvailTime never latches. Ported: 2 (a fat shop exists, 0x5B9380; the sale counts of 0x5E5DE0), 25 (entertainer experience 0x5B32F0(6); the lowest staff happiness
-	// 0x5AFED0), 41 (the staff count 0x5B2F40; the strike flags 0x634240)
-	public static bool IsPorted( int type ) => type is 2 or 25 or 41;
+	// 0x5AFED0), 41 (the staff count 0x5B2F40; the strike flags 0x634240), 17 (the special ride's activation or the lab's project, 0x5C3828; the admissions of 0x61A867), 46 (the analyser's
+	// breakdown count 0x5C3927; the lowest ride repair 0x5B7D30), 52 (0x5C3828; the admissions of 0x61A87F and the target's repair 0x5C520C) and 58 (0x5C3828; the admissions of 0x61A897 and the
+	// guests in the park 0x5B2060(4)). Not ported: 48 and 56 (the attraction satisfaction 0x5E6D80 reads the mood rings of the visit outcome 0x612740, which the guests do not keep yet), 50 and 55
+	// (the guests' top three thoughts 0x5B0830, Theme Park Inc's thought pick 0x60FC60), 53 and 56's value (the rating byte's track-ride and coaster branches of 0x5E3DF0), 51 (its target, the
+	// Arabian palace coaster, is a special ride no OpenTPW world places, and the coaster count 0x5B70E0 needs the track record's +0x108), 57 (its second value counts the photo booths' users, an
+	// add-on OpenTPW cannot place)
+	public static bool IsPorted( int type ) => type is 2 or 17 or 25 or 41 or 46 or 52 or 58;
 
 	/// <summary>The clock at <paramref name="turn"/>: the base plus floor(turn × 15000 / 4) seconds in 100 ns units.</summary>
 	// [BIN:TPI-EXE:0x6089C0 clock now] the clock (world +0x428) returns its base plus world +0x1EAB40 (the turn) × rate (+0x1C, 15000) / 4 × 10 000 000 as 64-bit arithmetic
@@ -371,9 +398,16 @@ public sealed class ThemeParkIncChallenges
 		}
 	}
 
-	/// <summary><c>UpdateCurrentValue</c> (<c>0x5C4DD0</c>) for the ported types: 25 polls the lowest staff happiness, 41 the strike flags; type 2 counts sale events and polls nothing.</summary>
+	/// <summary>
+	/// <c>UpdateCurrentValue</c> (<c>0x5C4DD0</c>) for the ported types: 25 polls the lowest staff happiness, 41 the strike flags, 46 the lowest ride repair, 52 its target's repair (second value) and
+	/// 58 the guests in the park (second value); types 2 and 17 count events and poll nothing.
+	/// </summary>
 	// [BIN:TPI-EXE:0x5C50C6 staff happiness value] type 25 stores 0x5AFED0(&mThingInFocus) in mValue; [BIN:TPI-EXE:0x5C4F70 strike value] type 41 stores 0x634240() in mValue;
-	// [BIN:TPI-EXE:0x5C52C3 no poll] a type without a case (2, 17 and others) logs "Case missing from UpdateCurrentValue??" and leaves the values alone
+	// [BIN:TPI-EXE:0x5C4DE3 value target] before the dispatch (type - 9, byte table 0x5C5334, dword table 0x5C52DC) a nonzero mTargetObj finds its first attraction thing (0x647850); the cases that read
+	// it leave the values alone when there is none (cmpl %ebp, %edi; je 0x5C52D2)
+	// [BIN:TPI-EXE:0x5C50EC worst repair value] type 46 stores 0x5B7D30(&mThingInFocus) in mValue; [BIN:TPI-EXE:0x5C5176 target repair value] type 52 jumps to 0x5C520C: mValue2 = (u8)__ftol(thing
+	// +0x54); [BIN:TPI-EXE:0x5C51D3 guests value] type 58 stores 0x5B2060(4) in mValue2
+	// [BIN:TPI-EXE:0x5C52C3 no poll] a type without a case (2, 17 and others) logs "Case missing from UpdateCurrentValue??" and leaves the values alone; 57's case is the epilogue (0x5C52D2)
 	internal static void UpdateCurrentValue( ThemeParkIncChallengeSlot slot, IThemeParkIncChallengeHost host )
 	{
 		switch ( slot.Type )
@@ -383,6 +417,16 @@ public sealed class ThemeParkIncChallenges
 				break;
 			case 41:
 				slot.Value = host.AnyRoleOnStrike() ? 1 : 0;
+				break;
+			case 46:
+				slot.Value = host.LeastRideRepair();
+				break;
+			case 52:
+				if ( slot.TargetObj != 0 && host.FindTarget( slot.TargetObj ) is { Exists: true } target )
+					slot.Value2 = target.RepairByte;
+				break;
+			case 58:
+				slot.Value2 = host.GuestsInPark;
 				break;
 		}
 	}
@@ -408,16 +452,32 @@ public sealed class ThemeParkIncChallenges
 		slot.OfferTimeSet = true;
 	}
 
-	/// <summary>The availability trigger of a ported type.</summary>
+	/// <summary>The availability trigger of a ported type (and the shared special-ride trigger of the types still gated by <see cref="IsPorted"/>).</summary>
 	// [BIN:TPI-EXE:0x5C3727 hot-dog trigger] type 2: 0x5B9380(), TriggerData unread; [BIN:TPI-EXE:0x5C378A entertainer trigger] type 25: 0x5B32F0(6) >= TriggerData (signed, 0x5C3917 jl);
 	// [BIN:TPI-EXE:0x5C39B4 staff trigger] type 41: 0x5B2F40() >= TriggerData (signed jl)
-	private static bool Trigger( ThemeParkIncChallengeSlot slot, IThemeParkIncChallengeHost host ) => slot.Type switch
+	// [BIN:TPI-EXE:0x5C3C14 trigger dispatch] the byte table (type - 1) picks entry 9 (0x5C3828) for 17, 48, 50..53 and 55..58 and entry 0x15 (0x5C3927) for 46 of the dword table 0x5C3BB8
+	// [BIN:TPI-EXE:0x5C3927 breakdown trigger] type 46: the park analyser's (0x64EA90) 0x5B9A50, its +0x14 (mNumBreakdownsEver, the serializer's 0x5ADDA5), >= TriggerData (signed jl)
+	internal static bool Trigger( ThemeParkIncChallengeSlot slot, IThemeParkIncChallengeHost host ) => slot.Type switch
 	{
 		2 => host.HasFatShop(),
 		25 => host.MaxExperience( 6 ) >= slot.TriggerData,
 		41 => host.StaffCount() >= slot.TriggerData,
+		46 => host.BreakdownsEver >= slot.TriggerData,
+		17 or 48 or (>= 50 and <= 53) or (>= 55 and <= 58) => SpecialRideTrigger( slot.TargetObj, host ),
 		_ => false
 	};
+
+	/// <summary>
+	/// The special-ride trigger (<c>0x5C3828</c>): the target type's first attraction thing, when there is one, decides by its activated flag; with none, the research lab decides: the target is the
+	/// object of lab slot 0's project, or of slot 1's while slot 0 holds none (a slot-0 project of another type answers false).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5C3828 special ride trigger] 0x647850(mTargetObj): a thing found takes its type record (0x43C700); +0x5C (Info.IsSpecial) above 0 (signed setg) answers 0x5E8210 (+0x12C,
+	// mBeenActivated), else +0x12D (mHasBeenOpenedAtSomePoint); no thing: 0x61E6A0 on the lab 0x64EB20 (world +0x1EAB56): slot index +0x14 above -1 compares that project's word +0x88 + 0x24 × i
+	// with the type and answers, else the slot index +0x18 the same way, else false
+	// [EXT:tpi-capability-gates] the +0x12D branch (a target that is not a special ride) answers false: OpenTPW does not keep mHasBeenOpenedAtSomePoint, and every retail row of these types targets
+	// a special ride (Info.IsSpecial 1: 1110, 1160, 1170, 1180, 2102, 2103, 2194, 2195, 3109, 3140, 3150, 3180)
+	private static bool SpecialRideTrigger( ushort type, IThemeParkIncChallengeHost host ) =>
+		host.FindTarget( type ) is { Exists: true } target ? target.IsSpecial && target.Activated : host.LabResearching( type );
 
 	/// <summary>
 	/// The offer (<c>0x5C8140</c>): nothing while a slot is accepted or before <c>mNextChallengeDelayTime</c>; otherwise the lowest available idle slot whose offer time has passed is

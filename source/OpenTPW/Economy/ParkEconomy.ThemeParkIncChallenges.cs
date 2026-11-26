@@ -185,8 +185,8 @@ public sealed partial class ParkEconomy
 		// 0x74C450(rank): the rank and the firing line of FiringLineForRank; the promotion letter 0x5CF4D0 and the controller's panel 0x1A4 are presentation
 		// [BIN:TPI-EXE:0x5C4514 challenge count] every slot of the system empty (type 0) or won (state 4) sets the current zone record's +0xF4 (0x5C45A9); either way its +0xF0 rises by one
 		// (0x5C4594, 0x5C45FC), the record being 0x74F4B0(current zone +0x64)
-		// [EXT:tpi-capability-gates] the share prize and the share price effect (0x621CE0, 0x621D30; Theme Park Inc's share system is not ported) are left off; the won mail (message 0x1B kind 2)
-		// is the HUD's notice
+		// [BIN:TPI-EXE:0x5C4344 share prize] then the SharePrize (+0x20) through 0x621CE0, which adds it when above 0, and [BIN:TPI-EXE:0x5C4352 won price] the SharePriceEffectIfWon (+0x24) through
+		// 0x621D30, both on the shares game 0xAA0128 (ThemeParkIncSharesGame); the won mail (message 0x1B kind 2) is the HUD's notice
 		public void Won( int index, ThemeParkIncChallengeSlot slot )
 		{
 			var career = economy.TpiCareer!;
@@ -194,6 +194,8 @@ public sealed partial class ParkEconomy
 				economy.Post( LedgerCategory.OtherIncome, slot.CashPrize );
 			if ( slot.GTPrize > 0 )
 				career.AddGoldenTickets( slot.GTPrize );
+			career.Shares.AddShares( slot.SharePrize, economy.Settings.ThemeParkIncShares );
+			career.Shares.MovePrice( slot.SharePriceEffectIfWon );
 			economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Won ) );
 			if ( slot.PromoGiven != 0 )
 			{
@@ -212,9 +214,12 @@ public sealed partial class ParkEconomy
 		// [BIN:TPI-EXE:0x5C48B6 firing line post] after the count the lost branch posts the lost mail (message 0x1B kind 3, 0x5C49A3) while the career's firing line is above 0 (signed jg),
 		// else notification id 7, which the tag system turns into advice 0x1A3 and the firing letter (TAG_SYSTEM.str entry 167, ThemeParkIncAdviceMail.ChallengeLost), on the loss that
 		// exhausts the line and on every loss after it
-		// [EXT:tpi-capability-gates] the first loss's share price fall (0x621D30 with -SharePriceEffectIfLost) is left off: Theme Park Inc's share system is not ported
+		// [BIN:TPI-EXE:0x5C4867 lost price] the slot's first loss moves the share price by the negated SharePriceEffectIfLost (+0x28, negl at 0x5C485F) through 0x621D30, after the firing line
+		// step and before the post
 		public void Lost( int index, ThemeParkIncChallengeSlot slot, bool firstLoss )
 		{
+			if ( firstLoss )
+				economy.TpiCareer!.Shares.MovePrice( unchecked( -slot.SharePriceEffectIfLost ) );
 			if ( economy.TpiCareer!.FiringLine > 0 )
 				economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Lost ) );
 			else
@@ -222,6 +227,32 @@ public sealed partial class ParkEconomy
 		}
 
 		public void Offered( int index ) => economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Offered ) );
+
+		// [BIN:TPI-EXE:0x647850 find attraction] the first class-3 thing of the type in the attraction list; its type record's +0x5C and the thing's +0x12C and +0x54 (ParkEconomy.ThemeParkIncChallengeTargetOf)
+		public ThemeParkIncChallengeTarget FindTarget( ushort type ) => economy.ThemeParkIncChallengeTargetOf( type );
+
+		// [BIN:TPI-EXE:0x61E6A0 lab project] slot 0's project index (+0x14) above -1 answers whether its object (+0x88 + 0x24 × i, ThemeParkIncLabProject.ObjectId) is the type; only an empty slot 0 lets
+		// slot 1 (+0x18) answer; a park without a ported lab answers false
+		public bool LabResearching( ushort type )
+		{
+			if ( economy.TpiResearch is not { } research )
+				return false;
+			foreach ( var slot in research.SlotProjects )
+			{
+				if ( slot > -1 )
+					return slot < research.Projects.Count && research.Projects[slot].ObjectId == type;
+			}
+			return false;
+		}
+
+		// [BIN:TPI-EXE:0x5AC84D breakdown count] the analyser's constructor zeroes +0x14, and its only writer 0x5B9A70 (incl 0x14(%ecx), thunk 0x40AABA) has no caller and no address reference in the
+		// executable, so the count is the constructor's 0 in a new world and the park file's in a loaded one: the prebuilt Science park saves mNumBreakdownsEver 0 (ThemeParkIncShareChallengeTests)
+		public int BreakdownsEver => 0;
+
+		public int LeastRideRepair() => economy.ThemeParkIncLeastRideRepair();
+
+		// [BIN:TPI-EXE:0x5B2060 guests in park] argument 4 counts every class-1 thing whose square passes 0x60BE00, whatever its generation: Theme Park World's census (as the mission statistics read it)
+		public int GuestsInPark => economy.guestStatistics.GuestCensus;
 
 		private static ThemeParkIncStaffRole? RoleOfKind( int kind ) => kind switch
 		{

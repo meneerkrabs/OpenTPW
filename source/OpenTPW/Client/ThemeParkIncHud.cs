@@ -89,6 +89,7 @@ public sealed partial class ThemeParkIncHud
 		BuildWindow();
 		BuildStaffPanel();
 		BuildChallengePanel();
+		BuildSpecialRidePanel();
 		removeButton = ToolButton( "remove", () => T( OpenTpwText.TpiRemove ), T( OpenTpwText.TpiRemoveHelp ),
 			() => { level.IsRemovingObjects = !level.IsRemovingObjects; if ( level.IsRemovingObjects ) DisarmBuild(); }, 1 );
 		removeButton.Selected = () => level.IsRemovingObjects;
@@ -509,12 +510,19 @@ public sealed partial class ThemeParkIncHud
 	public bool Update( UiContext context, UiInput input )
 	{
 		if ( UpdateLossScene( context, input ) )
+		{
+			UpdateSpecialRidePanel( hidden: true );
 			return true;
+		}
 		if ( UpdateFlight( input ) )
+		{
+			UpdateSpecialRidePanel( hidden: true );
 			return true;
+		}
 		// The build window rides on the HUD screen, so a modal menu on top of it hides it (ModalOpen stops the camera keys).
 		SetBuildWindowVisible( buildOpen && !MenuOpen );
 		SetStaffPanelVisible( staffOpen && !MenuOpen );
+		UpdateSpecialRidePanel();
 		var overUi = Stack.Covers( context.Canvas, input.Mouse );
 		var consumed = Stack.Update( context, input );
 		// Successful load retired this HUD during its callback: leave the candidate camera and old tools alone.
@@ -542,15 +550,16 @@ public sealed partial class ThemeParkIncHud
 		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
-		ShowWageDemands();
 		ShowTrainingNotices();
 		ShowChallengeNotices();
+		ShowAwardNotices();
 		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );
 		// [BIN:TPW-EXE:0x4879D0 object click] the click selects the owner of the hovered cell, the cell of the cursor ray's nearest hit on the terrain or an object's model (0x45bf90, ObjectRayPick),
 		// as the Theme Park World park click does (ParkHud)
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsRemovingObjects && input.LeftReleased && !toolPress )
 			selectedObject = level.Objects.FindAt( cursorX, cursorY );
+		UpdateSpecialRidePanel();
 		if ( input.LeftReleased )
 		{
 			toolPress = false;
@@ -683,10 +692,12 @@ public sealed partial class ThemeParkIncHud
 	// [BIN:TPI-EXE:0x636217 letter window] the tag system opens the window on every accepted notification (ids 6 to 8, 0x5CD060)
 	// [BIN:TPI-EXE:0x526CF1 letter closes the HUD's window] the letter's builder 0x526CD0 calls 0x5013C0 first, which sends message 5 to the window registered at 0xA568BC: an open mission
 	// window closes, as a mission window opening closes a letter
+	// [BIN:TPI-EXE:0x59ABE6 wage windows registered] the wage demand window and the negotiation dialog (0x559C98) register at 0xA568BC too, so the letter closes them with message 5 as well
+	// [BIN:TPI-EXE:0x5013C0 close the HUD's window, second branch] with [0xA5E890] holding a window the call closes that window instead (message 4) and sends no message 5, so the letter would not close a mission window;
+	// OpenTPW builds no window for that slot (see OpenMissionWindow)
 	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
 	{
-		CloseMissionWindow();
-		CloseTagTube();
+		CloseHudWindow();
 		UiScreen? screen = null;
 		var closed = false;
 		Action close = null!;

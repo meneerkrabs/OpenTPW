@@ -354,6 +354,8 @@ public partial class Level
 				instances[thing] = instance;
 		var list = ThemeParkIncObjectListOf( world, instances );
 		economy.RestoreThemeParkIncObjectList( list );
+		ImportThemeParkIncSpecialRides( economy, world, instances );
+		ImportThemeParkIncOpenWords( world, instances );
 		// a thing of the list that no object of OpenTPW's is (the tool entry 1710 of the prebuilt) is still a thing of the original's park: its slot is held, so its id is not handed out again
 		// while the list names it
 		// [BIN:TPI-EXE:0x64D759 free list rebuild] after the thing list's ENOD the World loader rebuilds the free list from the slots no saved thing occupies (0xAA18C4 on, stride 20, the head
@@ -369,6 +371,17 @@ public partial class Level
 				throw new InvalidDataException( $"The Theme Park Inc save's object list names thing {-key}, which no object rebuilds and whose slot of the thing pool cannot be held." );
 		}
 	}
+
+	/// <summary>
+	/// A park built from a Theme Park Inc save takes its special-ride table, each record's ride by the economy instance of its saved thing and its slots as saved, and the activated flag of each imported
+	/// attraction.
+	/// </summary>
+	// [BIN:TPI-EXE:0x624701 special rides load] the World's tail brings the special-ride table after the things; [BIN:TPI-EXE:0x5DC430 attraction serializer] each attraction its mBeenActivated
+	internal static void ImportThemeParkIncSpecialRides( ParkEconomy economy, ThemeParkIncSaveWorld world, IReadOnlyDictionary<int, int> instances ) =>
+		economy.TpiSpecialRides?.Import(
+			world.SpecialRides.Select( ride => (ride.Id, (IReadOnlyList<ThemeParkIncSpecialRideStaffSlot>)ride.Entries.Select( slot =>
+				new ThemeParkIncSpecialRideStaffSlot( unchecked( (int)slot.Type ), unchecked( (int)slot.Ability ), slot.ThingId ) ).ToArray()) ).ToList(),
+			world.Attractions.Where( attraction => attraction.BeenActivated && instances.ContainsKey( attraction.Id ) ).Select( attraction => instances[attraction.Id] ).ToList(), instances );
 
 	/// <summary>
 	/// The saved object list of a Theme Park Inc World, newest first: the thing an imported object was built from as its economy instance (<paramref name="instances"/>, by saved thing id),
@@ -466,4 +479,28 @@ public partial class Level
 		}
 		return false;
 	}
+}
+
+public partial class Level
+{
+	/// <summary>
+	/// The person's and the thing's part of a dismissed Theme Park Inc member's destroy (<c>0x609130</c>, <c>0x6493B0</c>): his entry leaves its cell chain and his thing is queued for destruction at
+	/// the turn's end.
+	/// </summary>
+	// [BIN:TPI-EXE:0x609130 person destroy] 0x637FE0, the sprite source deleted (0x5D1050) and 0x638460; [BIN:TPI-EXE:0x6493B0 thing destroy] the handle goes onto the destroy list (0x650990), freed later
+	internal void DestroyTpiMemberThing( ThemeParkIncStaffMember member )
+	{
+		if ( member.ThingId == 0 )
+			return;
+		Guests?.StaffChain.Remove( member.ThingId );
+		if ( Things.IsUsed( member.ThingId ) )
+			Things.QueueDestroy( member.ThingId );
+	}
+
+	/// <summary>The dismissal of a Theme Park Inc member (<c>0x629040</c>): the economy's part, then his thing's.</summary>
+	public void DismissTpiMember( ThemeParkIncStaffMember member ) => Park?.Economy.DismissThemeParkIncMember( member, DestroyTpiMemberThing );
+
+	/// <summary>The end of a Theme Park Inc wage negotiation (the results dialog's close, <c>0x559860</c> message 0x14).</summary>
+	public void EndTpiNegotiation( ThemeParkIncStaffMember member, int result, int offer, int demand, ThemeParkIncWageNegotiation.Choice choice ) =>
+		Park?.Economy.EndThemeParkIncNegotiation( member, result, offer, demand, choice, DestroyTpiMemberThing );
 }

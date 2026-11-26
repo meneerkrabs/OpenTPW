@@ -153,14 +153,15 @@ EXPECTED = {
                                                 'pct': [[50, 30, 20, 10], [45, 25, 15, 8], [40, 20, 10, 5]], 'base': 587586201}),
     # X7 (arrival group size 0x5bcd60 vs the TPW / Mac rule, F9): a different rule. The factor is the weather percentage
     # (state 1 to 4: Heatwave, Rain, Storm, Snow words, else 100) instead of 0.8 / 1.2, the divide is floating (times the
-    # single-precision 0.01), and a mode object word of 3 gives no group. 216 of 532 inputs differ from the TPW rule; the
-    # routine reading agrees on all, and exact arithmetic differs on 30 (the 0.01f truncation, first: 80 + 20 points over 25).
-    ('tpi-exe-arrival-group', 'plan'): (216, {'world_mode': 0, 'mode': 3, 'guests': 0, 'points': 0, 'bonus': 20,
+    # single-precision 0.01), and a mode object word of 3 gives no group. At the game thread's control word 0x7F (24 bits),
+    # 213 of 532 inputs differ from the TPW rule; the routine reading agrees on all, and exact arithmetic differs on 2 (the
+    # rounding of a product just below a multiple, first: 480 + 20 points over 25 at the storm's 80 percent).
+    ('tpi-exe-arrival-group', 'plan'): (213, {'world_mode': 0, 'mode': 3, 'guests': 0, 'points': 0, 'bonus': 20,
                                               'per_visitor': 25, 'min_people': 1, 'weather': 0, 'pct': (90, 80, 75, 120),
                                               'limit_mode': 0}),
     ('tpi-exe-arrival-group', 'routine-reading'): AGREE,
-    ('tpi-exe-arrival-group', 'exact-arithmetic'): (30, {'world_mode': 0, 'mode': 0, 'guests': 0, 'points': 80, 'bonus': 20,
-                                                          'per_visitor': 25, 'min_people': 1, 'weather': 0,
+    ('tpi-exe-arrival-group', 'exact-arithmetic'): (2, {'world_mode': 0, 'mode': 0, 'guests': 0, 'points': 480, 'bonus': 20,
+                                                         'per_visitor': 25, 'min_people': 1, 'weather': 3,
                                                           'pct': (90, 80, 75, 120), 'limit_mode': 0}),
     # X8 (loan offer instalment 0x5bfb70 vs F12): the same formula and the same single mismatch as tp.exe (the out-of-range set).
     ('tpi-exe-loan-offers', 'plan'): (1, {'cash': 0, 'offers': [(100000, 20, 0, 0), (0, 20, 0, 1), (4000000000, 20, 36, 2),
@@ -1373,12 +1374,13 @@ class OracleTpi(CoastTests, unittest.TestCase):
     # ------------------------------------------------------------------ X7: arrival group size
     def test_arrival_factor_is_the_weather_percentage(self):
         """The weather thing's state 1 to 4 picks Heatwave, Rain, Storm, Snow (jump table); 0 and out-of-range states give 100.
-        Points 480 + bonus 20 over 25 (shipped settings): 100 % gives 19 (19.99999), 120 % 23, 90 % 17, 80 % 15, 75 % 14."""
+        Points 480 + bonus 20 over 25 (shipped settings) at the game thread's 24 bits: 100 % gives 20 (100 x 0.01f rounds to
+        1.0), 120 % 23, 90 % 18, 80 % 15 (15.999999), 75 % 15."""
         shipped = dict(world_mode=0, mode=0, guests=0, points=480, bonus=20, per_visitor=25, min_people=1, weather=0,
                        pct=targets.TPI_SHIPPED_PCT, limit_mode=0)
         target = targets.TPI_ARRIVAL_TARGET
         groups = {w: self.run_target(target, {**shipped, 'weather': w}) for w in (-1, 0, 1, 2, 3, 4, 5, 0x7FFFFFFF)}
-        self.assertEqual(groups, {-1: 19, 0: 19, 1: 23, 2: 17, 3: 15, 4: 14, 5: 19, 0x7FFFFFFF: 19})
+        self.assertEqual(groups, {-1: 20, 0: 20, 1: 23, 2: 18, 3: 15, 4: 15, 5: 20, 0x7FFFFFFF: 20})
         self.assertEqual(targets.TPI_SHIPPED_PCT, (90, 80, 75, 120))   # the shipped Rain, Storm, Snow, Heatwave words
         # the TPW rule on the same state: 1.2 without weather, 0.8 with (any positive word), a different group
         self.assertEqual([targets.tpi_arrival_tpw_plan({**shipped, 'weather': w}) for w in (0, 1, 4)], [24, 16, 16])
@@ -1388,23 +1390,24 @@ class OracleTpi(CoastTests, unittest.TestCase):
         x = dict(world_mode=0, mode=3, guests=0, points=480, bonus=20, per_visitor=25, min_people=1, weather=0,
                  pct=targets.TPI_SHIPPED_PCT, limit_mode=0)
         self.assertEqual(self.run_target(target, x), 0)
-        self.assertEqual(self.run_target(target, {**x, 'mode': 2}), 19)
+        self.assertEqual(self.run_target(target, {**x, 'mode': 2}), 20)
         self.assertEqual(self.run_target(target, {**x, 'mode': 3, 'world_mode': 4}), 0)
         self.assertEqual(targets.tpi_arrival_tpw_plan(x), 24)   # the TPW rule has no such exit
 
     def test_arrival_float_divide_truncates_below_exact_multiples(self):
-        """The factor is the integer percentage times the single-precision 0.01 (0.0099999998), so a total that is an exact
-        multiple of the divisor gives one group less: 80 points + 20 over 25 is 3, not 4. 30 of 532 inputs differ from the
-        exact arithmetic, all by one."""
+        """The factor is the integer percentage times the single-precision 0.01 (0.0099999998). At the game thread's 24 bits
+        the factor 100 x 0.01f rounds to 1.0, so 80 points + 20 over 25 is 4, as exact arithmetic gives; 53 bits keep
+        0.99999998 and give 3. At 24 bits 2 of 532 inputs differ from the exact arithmetic (30 at 53 bits), all by one."""
         shipped = dict(world_mode=0, mode=0, guests=0, points=80, bonus=20, per_visitor=25, min_people=1, weather=0,
                        pct=targets.TPI_SHIPPED_PCT, limit_mode=0)
         target = targets.TPI_ARRIVAL_TARGET
-        self.assertEqual((self.run_target(target, shipped), targets.tpi_arrival_exact_reading(shipped)), (3, 4))
+        self.assertEqual((self.run_target(target, shipped), targets.tpi_arrival_exact_reading(shipped)), (4, 4))
+        self.assertEqual(self.run_target(target, shipped, fpcw=0x27F), 3)
         inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
         sandbox = target.sandbox(self.image)
         deltas = [targets.tpi_arrival_exact_reading(x) - targets.run_binary(target, sandbox, x) for x in inputs]
         self.assertEqual({d for d in deltas if d}, {1})
-        self.assertEqual(sum(1 for d in deltas if d), 30)
+        self.assertEqual(sum(1 for d in deltas if d), 2)
 
     def test_arrival_follows_the_control_word(self):
         """Each x87 precision agrees with the reading at that precision; 53 and 64 bits give the same groups on these

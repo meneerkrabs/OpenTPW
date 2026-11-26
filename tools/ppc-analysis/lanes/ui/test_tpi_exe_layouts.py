@@ -17,6 +17,8 @@ class TpiLayoutTests(unittest.TestCase):
         self.assertEqual((0x9BE808, 0xCEC52), names['MissionWindow'])
         self.assertEqual((0x9B54CC, 0xC11FB), names['ChallengesWindow'])
         self.assertEqual((0x9BBC84, 0xBB8), names['TagTube'])
+        self.assertEqual((0x9C9F64, 0xCA181), names['WageDemand'])
+        self.assertEqual((0x9BE518, 0xB284), names['WageNegotiation'])
         for name in names:
             self.assertIn(name, tpi.REQUIRED_MODELS)
             self.assertIn(name, tpi.REQUIRED_IDS)
@@ -35,6 +37,21 @@ class TpiLayoutTests(unittest.TestCase):
         self.assertIn('[BIN:TPI-EXE:0x9b18bc] layout table QuitConfirm.', text)
         self.assertIn('new( 2, 0x1u, 0xEA62u, 1259, 680, 1362, 782, 0, -1, "b_okay", null, null,', text)
         self.assertIn(tpi.TPI_SHA, text)
+
+    def test_command_19_is_a_value_field_node_without_a_stream(self):
+        class Image:
+            def __init__(self, data):
+                self.data = data
+
+            def read(self, address, size):
+                return self.data[address:address + size]
+
+        import struct
+        words = [0, 12, 1, 0, 0xCA185 & 0xFFFF, 0xCA185 >> 16, 544, 818, 953, 998, 19, 630, 856, 866, 900, 5, 5]
+        roots, after = base.parse_layout(Image(struct.pack('<' + 'H' * len(words), *words)), 0)
+        self.assertEqual(len(words) * 2, after)
+        field = roots[0]['children'][0]
+        self.assertEqual((5, 0x101, 3, [630, 856, 866, 900], []), (field['type'], field['attributes'], field['id'], field['rect'], field['children']))
 
     def test_an_unresolved_model_hash_is_an_error(self):
         with self.assertRaises(ValueError):

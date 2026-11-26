@@ -63,9 +63,12 @@ public sealed class ThemeParkIncStaffMember
 	public static ThemeParkIncStaffMember Hire( ThemeParkIncHireCandidate candidate, int id ) =>
 		new( id, candidate.Role, candidate.NameIndex, candidate.Experience, candidate.Wage, candidate.Agency, candidate.SpriteDraw );
 
-	/// <summary>A meter after adding <paramref name="value"/>: above 100 it is 100, below 0 it is 0 (the x87 sum stored as a single).</summary>
-	// [BIN:TPI-EXE:0x62CED1 meter clamp] fcom 100.0 (0x93AC24) with C0|C3 clear stores 100.0, fcom 0.0 (0x93A038) with C0 set stores 0, else the sum is stored as a single
-	private static float Clamp( double sum ) => sum > 100.0 ? 100f : sum < 0.0 ? 0f : (float)sum;
+	/// <summary>A meter after adding a delta, the x87 sum already rounded to a single at the game thread's 24 bits: above 100 it is 100, below 0 or a NaN it is 0, else the sum.</summary>
+	// [BIN:TPI-EXE:0x62CED1 meter clamp] fcom 100.0 (0x93AC24) with C0|C3 clear stores 100.0, fcom 0.0 (0x93A038) with C0 set stores 0, else the sum is stored as a single; a NaN compares unordered
+	// (C0, C2 and C3 set), so it fails the first test and passes the second: 0 (0x62CEE8..0x62CEF7, 0x60D0EE..0x60D0FD, 0x62A2AB..0x62A2BA)
+	// [BIN:TPI-EXE:0x6BF33F control word] [EXT:hardware-d3d-path] the staff routines run on the game thread at the control word 0x7F the Direct3D device set (ThemeParkIncX87): each fadd, fmul and
+	// fdiv rounds to a single, so the clamps compare the rounded sums
+	private static float ClampSingle( float sum ) => sum > 100f ? 100f : sum >= 0f ? sum : 0f;
 
 	/// <summary>
 	/// The wage review after each payday and salary change: a salary below the expected wage costs motivation and happiness and records the shortfall (and, at low
@@ -86,8 +89,9 @@ public sealed class ThemeParkIncStaffMember
 			var x = settings.UnhappyWageValue;
 			if ( agency is { MotivationLossModifier: not 0 } && x != 0 )
 				x = unchecked( x * (agency.MotivationLossModifier + 1) );
-			Motivation = Clamp( (double)-(x / 2) + Motivation );
-			Happiness = Clamp( (double)x * -0.25f + Happiness );
+			// fildl -(x / 2), fadds motivation; fildl x, fmuls -0.25f, fadds happiness: each step one rounding to a single
+			Motivation = ClampSingle( ThemeParkIncX87.Sum( -(x / 2), Motivation ) );
+			Happiness = ClampSingle( ThemeParkIncX87.Product( x, -0.25f ) + Happiness );
 			WageShortfall = unchecked( expected - Salary );
 		}
 		else
@@ -97,8 +101,9 @@ public sealed class ThemeParkIncStaffMember
 			var y = settings.HappyWageValue;
 			if ( agency is { MotivationGainModifier: not 0 } && y != 0 )
 				y = unchecked( (agency.MotivationGainModifier + 1) * y );
-			Motivation = Clamp( (double)y + Motivation );
-			Happiness = Clamp( (double)y + Happiness );
+			// fildl y, then fadds motivation and fadds happiness on the exact y
+			Motivation = ClampSingle( ThemeParkIncX87.Sum( y, Motivation ) );
+			Happiness = ClampSingle( ThemeParkIncX87.Sum( y, Happiness ) );
 		}
 		if ( WageShortfall != 0 && ((int)Motivation & 0xFF) <= settings.LowestWageHappiness )
 			WageDemandDay = (int)world.Next( 27u ) + 1;
@@ -137,21 +142,22 @@ public sealed class ThemeParkIncStaffMember
 	private const int UncountedDisplayState = 6;
 
 	/// <summary>The daily experience gain from the share of the day spent working or researching, then the day's counters start again.</summary>
-	// [BIN:TPI-EXE:0x629650 experience gain] f = (working + researching) / (all seven counters), rounded to a single (NaN for an empty day gives 0); gain = trunc(ExperiencePerMonth[0] × f)
-	// (the gardener takes the handyman's); with the agency's ExperienceGainModifier and a gain both nonzero, gain = trunc(modifier × f + gain); experience += gain and an unsigned
+	// [BIN:TPI-EXE:0x629650 experience gain] f = (working + researching) / (all seven counters) (fildll, fildll, fdivrp, fstps; NaN for an empty day gives 0); gain = trunc(ExperiencePerMonth[0] × f)
+	// (fildl, fmuls; the gardener takes the handyman's); with the agency's ExperienceGainModifier and a gain both nonzero, gain = trunc(modifier × f + gain) (fildl, fmuls, fiaddl); experience += gain and an unsigned
 	// experience at or above MaxExperience becomes MaxExperience - 1; [BIN:TPI-EXE:0x62D1A0 day reset] the next call of the day handler stores the counters' history rings and
 	// clears the seven (the history rings, kept for the staff graphs, are not ported)
-	// [BIN:TPI-EXE:0x5BCD60 precision] the x87 sums are read at 53 bits, as the economy's other Theme Park Inc routines
+	// [EXT:hardware-d3d-path] each division, product and sum rounds once to a single at the game thread's 24 bits (ThemeParkIncX87)
 	public void EndDay( ThemeParkIncStaffSettings settings )
 	{
 		var working = unchecked( dayCounters[(int)DisplayState.Working] + dayCounters[(int)DisplayState.Researching] );
 		var all = unchecked( dayCounters[(int)DisplayState.OnStrike] + dayCounters[(int)DisplayState.Training] + dayCounters[(int)DisplayState.Idle]
 			+ dayCounters[(int)DisplayState.Resting] + dayCounters[(int)DisplayState.LookingForWork] + working );
-		var share = all == 0 ? float.NaN : (float)((double)working / all);
-		var gain = float.IsNaN( share ) ? 0 : (int)(settings.Roles[Role].ExperiencePerMonth * (double)share);
+		// fildll loads both sums zero-extended (the high dwords 0, 0x62966C and 0x62969F): the unsigned words as they are
+		var share = all == 0 ? float.NaN : ThemeParkIncX87.Quotient( (long)working, (long)all );
+		var gain = float.IsNaN( share ) ? 0 : (int)ThemeParkIncX87.Product( settings.Roles[Role].ExperiencePerMonth, share );
 		var modifier = Agency >= 0 && Agency < settings.Agencies.Count ? settings.Agencies[Agency].ExperienceGainModifier : 0;
 		if ( modifier != 0 && gain != 0 )
-			gain = (int)(modifier * (double)share + gain);
+			gain = (int)ThemeParkIncX87.Sum( gain, ThemeParkIncX87.Product( modifier, share ) );
 		Experience = unchecked( Experience + gain );
 		if ( (uint)Experience >= (uint)settings.MaxExperience )
 			Experience = settings.MaxExperience - 1;
@@ -159,46 +165,52 @@ public sealed class ThemeParkIncStaffMember
 	}
 
 	/// <summary>The meters' cost of a step walked or worked: less with more experience.</summary>
-	// [BIN:TPI-EXE:0x62B3E0 staff step] moving and working (0x62B4D0) are identical: d = 1 - experience (unsigned) / MaxExperience; energy += d × -0.1f, happiness += d × -0.05f, each
-	// clamped to 0..100 (strict) and stored as a single; no agency modifier applies
+	// [BIN:TPI-EXE:0x62B3E0 staff step] moving and working (0x62B4D0) are identical: d = 1 - experience (unsigned) / MaxExperience (fildll, fidivl, fsubrl 1.0); energy += d × -0.1f, happiness +=
+	// d × -0.05f (fmuls, fadds), each clamped to 0..100 (strict) and stored as a single; no agency modifier applies
+	// [EXT:hardware-d3d-path] every step rounds to a single at the game thread's 24 bits (ThemeParkIncX87), the research step's arithmetic (ResearchStep)
 	public void Step( ThemeParkIncStaffSettings settings )
 	{
-		var d = 1.0 - (double)(uint)Experience / settings.MaxExperience;
-		Energy = Clamp( d * -0.1f + Energy );
-		Happiness = Clamp( d * -0.05f + Happiness );
+		var d = SingleOneMinusRatio( (uint)Experience, settings.MaxExperience );
+		var energyDelta = (float)(d * -0.1f);
+		Energy = ClampSingle( (float)(energyDelta + Energy) );
+		var happinessDelta = (float)(d * -0.05f);
+		Happiness = ClampSingle( (float)(happinessDelta + Happiness) );
 	}
 
 	/// <summary>One update of rest: energy, and happiness and motivation alike, recover faster with more experience; true when energy is full and the rest ends.</summary>
-	// [BIN:TPI-EXE:0x62A1C0 rest] f = experience (unsigned) / MaxExperience; e = MinRecuperationRate + f, kept as a single, plus e × RecuperationModifier × 0.01f when both are nonzero,
-	// at most MaxRecuperationRate (the unrounded sum compared, strict); h = f × 10.0f × MinHappinessRecuperationRate plus h × HappinessRecuperationModifier × 0.01f, at most
+	// [BIN:TPI-EXE:0x62A1C0 rest] f = experience (unsigned) / MaxExperience (fildll, fidivl); e = MinRecuperationRate + f (flds, fadd, fsts), plus RecuperationModifier × e × 0.01f (fildl, fmul, fmuls,
+	// faddp) when both are nonzero, at most MaxRecuperationRate (fcomps, strict); h = f × 10.0f × MinHappinessRecuperationRate plus HappinessRecuperationModifier × h × 0.01f, at most
 	// MaxHappinessRecuperationRate; energy += e, happiness and motivation += h, clamped; the rest ends (0x62C230) when the energy byte is 100
+	// [EXT:hardware-d3d-path] every step rounds to a single at the game thread's 24 bits (ThemeParkIncX87), so the comparisons see the rounded values
 	public bool Rest( ThemeParkIncStaffSettings settings )
 	{
 		var agency = Agency >= 0 && Agency < settings.Agencies.Count ? settings.Agencies[Agency] : null;
-		var f = (double)(uint)Experience / settings.MaxExperience;
-		var e = settings.MinRecuperationRate + f;
-		var single = (float)e;
-		if ( agency is { RecuperationModifier: not 0 } && e != 0.0 )
+		var f = SingleQuotient( (uint)Experience, settings.MaxExperience );
+		var e = (float)(settings.MinRecuperationRate + f);
+		if ( agency is { RecuperationModifier: not 0 } && e != 0f )
 		{
-			e += agency.RecuperationModifier * e * 0.01f;
-			single = (float)e;
+			var term = (float)(ThemeParkIncX87.Product( agency.RecuperationModifier, e ) * 0.01f);
+			e = (float)(e + term);
 		}
 		if ( e > settings.MaxRecuperationRate )
-			single = settings.MaxRecuperationRate;
-		var h = f * 10.0f * settings.MinHappinessRecuperationRate;
-		if ( agency is { HappinessRecuperationModifier: not 0 } && h != 0.0 )
-			h += agency.HappinessRecuperationModifier * h * 0.01f;
+			e = settings.MaxRecuperationRate;
+		var h = (float)((float)(f * 10f) * settings.MinHappinessRecuperationRate);
+		if ( agency is { HappinessRecuperationModifier: not 0 } && h != 0f )
+		{
+			var term = (float)(ThemeParkIncX87.Product( agency.HappinessRecuperationModifier, h ) * 0.01f);
+			h = (float)(h + term);
+		}
 		if ( h > settings.MaxHappinessRecuperationRate )
 			h = settings.MaxHappinessRecuperationRate;
-		Energy = Clamp( (double)single + Energy );
-		Happiness = Clamp( h + Happiness );
-		Motivation = Clamp( h + Motivation );
+		Energy = ClampSingle( (float)(e + Energy) );
+		Happiness = ClampSingle( (float)(h + Happiness) );
+		Motivation = ClampSingle( (float)(h + Motivation) );
 		return ((int)Energy & 0xFF) == 100;
 	}
 
 	/// <summary>Adds <paramref name="delta"/> to happiness, clamped to 0..100.</summary>
-	// [BIN:TPI-EXE:0x60D0D0 meter add] field = clamp(field + delta, 0, 100), the x87 sum compared and stored as a single
-	internal void AddHappiness( float delta ) => Happiness = Clamp( (double)delta + Happiness );
+	// [BIN:TPI-EXE:0x60D0D0 meter add] field = clamp(field + delta, 0, 100) (flds the delta, fadds the field), the sum rounded to a single at the game thread's 24 bits, compared and stored
+	internal void AddHappiness( float delta ) => Happiness = ClampSingle( (float)(delta + Happiness) );
 
 	/// <summary>One update of research in a room: energy and happiness fall by the step x = 1 − experience / MaxExperience, every x87 operation rounded to a single.</summary>
 	// [BIN:TPI-EXE:0x6289BD research step] fildll the experience (+0x210, unsigned, zero-extended), fidivl MaxExperience (0xA02260), fsubrl 1.0, fstps x; flds x, fmuls -0.1f, fstps the argument of
@@ -206,40 +218,13 @@ public sealed class ThemeParkIncStaffMember
 	// clamp and store
 	// [BIN:TPI-EXE:0x6BF33F control word] the game thread's x87 runs at 0x7F (24-bit significand) after DDSCL_FPUSETUP (0x851 at 0x6BF33F, 0x808 at 0x6BF5A8; docs/DETERMINISM.md), so the fidivl, fsubrl,
 	// fmuls and fadds each round to a single and the clamps compare the rounded sums
-	internal void ResearchStep( ThemeParkIncStaffSettings settings )
-	{
-		var x = SingleOneMinusRatio( (uint)Experience, settings.MaxExperience );
-		var energyDelta = (float)(x * -0.1f);
-		Energy = ClampSingle( (float)(energyDelta + Energy) );
-		var happinessDelta = (float)(x * -0.05f);
-		Happiness = ClampSingle( (float)(happinessDelta + Happiness) );
-	}
+	internal void ResearchStep( ThemeParkIncStaffSettings settings ) => Step( settings );
 
 	/// <summary><c>fildll</c> <paramref name="numerator"/>, <c>fidivl</c> <paramref name="denominator"/>, <c>fsubrl</c> 1.0 at the 24-bit control word: each operation rounded to a single.</summary>
 	internal static float SingleOneMinusRatio( uint numerator, int denominator ) => (float)(1f - SingleQuotient( numerator, denominator ));
 
 	/// <summary>The quotient of two integers rounded once to a single (round to nearest, ties to even), as <c>fidivl</c> leaves it at the 24-bit control word.</summary>
-	internal static float SingleQuotient( uint numerator, int denominator )
-	{
-		if ( numerator == 0 || denominator == 0 )
-			return (float)numerator / denominator;
-		var divisor = (ulong)Math.Abs( (long)denominator );
-		// the quotient scaled by 2^64 has at least 33 bits, so its 24 leading bits and the rest decide the rounding exactly
-		var scaled = (UInt128)numerator << 64;
-		var quotient = scaled / divisor;
-		var rest = scaled % divisor;
-		var shift = 128 - (int)UInt128.LeadingZeroCount( quotient ) - 24;
-		var mantissa = quotient >> shift;
-		var dropped = quotient & ((UInt128.One << shift) - 1);
-		var half = UInt128.One << (shift - 1);
-		if ( dropped > half || dropped == half && (rest != 0 || (mantissa & 1) != 0) )
-			mantissa++;
-		var value = (float)Math.ScaleB( (double)mantissa, shift - 64 );
-		return denominator < 0 ? -value : value;
-	}
-
-	/// <summary>The meter clamp of <c>0x60D0D0</c> on a sum already rounded to a single: above 100 gives 100, below 0 gives 0.</summary>
-	private static float ClampSingle( float sum ) => sum > 100f ? 100f : sum < 0f ? 0f : sum;
+	internal static float SingleQuotient( uint numerator, int denominator ) => ThemeParkIncX87.Quotient( numerator, denominator );
 
 	/// <summary>Whether the member is too tired to go on: its energy byte below RestLevel.</summary>
 	// [BIN:TPI-EXE:0x62B3B0 tired] (u8)trunc(energy) < RestLevel, signed
@@ -325,12 +310,13 @@ public sealed class ThemeParkIncStaffMember
 	/// <summary>
 	/// The states <see cref="ThemeParkIncStaffWorld"/> runs for a role: a handyman's 0, 1, 0x0F and 0x10, a mechanic's 0, 1, 21 and 22 and a gardener's 0, 1, 0x1F and 0x20, each with the training
 	/// states 7, 8, 0x25 and 0x26 (the common handler 0x6287A0); a researcher's 0, 1, 24 and 25; an entertainer's 0, 1 and 0x17; a guard's 0 and 1 with the training states; and for all six the rest
-	/// states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area).
+	/// states 2 (to a rest area), 3 (resting) and 0x23 (looking for a rest area) and the strike states 4 (to the strike area) and 5 (striking).
 	/// </summary>
 	internal static bool IsPortedState( ThemeParkIncStaffRole role, int state ) => role switch
 	{
 		ThemeParkIncStaffRole.Handyman or ThemeParkIncStaffRole.Mechanic or ThemeParkIncStaffRole.Researcher or ThemeParkIncStaffRole.Gardener or ThemeParkIncStaffRole.Entertainer
-			or ThemeParkIncStaffRole.Guard when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch => true,
+			or ThemeParkIncStaffRole.Guard when state is ThemeParkIncStaffWorld.ToRestArea or ThemeParkIncStaffWorld.Resting or ThemeParkIncStaffWorld.RestSearch
+				or ThemeParkIncStaffWorld.ToStrike or ThemeParkIncStaffWorld.Striking => true,
 		ThemeParkIncStaffRole.Handyman => state is 0 or 1 or 0x0F or 0x10 || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Mechanic => state is 0 or 1 or ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing || IsTrainingState( state ),
 		ThemeParkIncStaffRole.Gardener => state is 0 or 1 or ThemeParkIncStaffWorld.ToPlant or ThemeParkIncStaffWorld.Watering || IsTrainingState( state ),
@@ -355,15 +341,15 @@ public sealed class ThemeParkIncStaffMember
 		&& role switch
 		{
 			ThemeParkIncStaffRole.Mechanic => world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.EffectCell == null && world.EffectRadius == null
-				&& world.Template is 1 or 3 or 0xF or 0x1A && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			ThemeParkIncStaffRole.Gardener => world.PlantId is >= 0 && world.RideId == null && world.JobTimer == null && world.LitterCell == 0 && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 3 or 0xF or 0x19
+				&& world.Template is 1 or 3 or 0xF or 0x1A or ThemeParkIncStaffWorld.StrikeTemplate && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
+			ThemeParkIncStaffRole.Gardener => world.PlantId is >= 0 && world.RideId == null && world.JobTimer == null && world.LitterCell == 0 && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 3 or 0xF or 0x19 or ThemeParkIncStaffWorld.StrikeTemplate
 				&& area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
 			// an entertainer or a guard keeps his cell effect (0x609E20's cell word and the radius it went down with); the entertainer's performing template is 0x13..0x16, no other role has an effect
-			ThemeParkIncStaffRole.Entertainer => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or (>= 0x13 and <= 0x16)
+			ThemeParkIncStaffRole.Entertainer => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.Template is 1 or 3 or 0xF or (>= 0x13 and <= 0x16) or ThemeParkIncStaffWorld.StrikeTemplate
 				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			ThemeParkIncStaffRole.Guard => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 2 or 3 or 0xF
+			ThemeParkIncStaffRole.Guard => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.Template is 1 or 2 or 3 or 0xF or ThemeParkIncStaffWorld.StrikeTemplate
 				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
-			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 2 or 3 or 0xF or 0x19
+			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 2 or 3 or 0xF or 0x19 or ThemeParkIncStaffWorld.StrikeTemplate
 		};
 
 	/// <summary>An entertainer's or a guard's cell effect: a cell word of the map and a radius that is the writer's 16-bit argument.</summary>

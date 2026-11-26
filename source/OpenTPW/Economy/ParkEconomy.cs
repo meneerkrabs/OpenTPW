@@ -79,6 +79,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
 			// [BIN:TPI-EXE:0x6482E3 staff HQ thing] the new-world init builds the staff HQ, whose constructor fills its slot table from the career's mission (0x632270 -> 0x634600)
 			TpiStaff.Hq.BuildSlots( TpiCareer.Mission );
+			TpiSpecialRides = new ThemeParkIncSpecialRides();
 		}
 		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
 		CreateThemeParkIncChallenges();
@@ -135,12 +136,6 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>Theme Park Inc's staff: the hiring pool, the members and their strikes (null in Theme Park World and where the staff keys are missing).</summary>
 	public ThemeParkIncStaff? TpiStaff { get; private set; }
 
-	/// <summary>
-	/// The Theme Park Inc wage demands of the last day message (0x628CA0's type-0x19 message). The salary negotiation that answers them is not ported yet: the HUD takes them every frame
-	/// and shows them as notes. Each day message clears the list before it adds its own demands, so a run without the HUD (headless, the smoke) holds at most one day's demands instead of
-	/// a list that grows for ever. Not saved (a notice, like the original's message bar).
-	/// </summary>
-	internal List<ThemeParkIncStaff.WageDemand> TpiWageDemands { get; } = new();
 
 	/// <summary>
 	/// A Theme Park Inc staff name's identity for the pool's name test, which compares the texts of the per-language <c>*_NAMES.str</c> tables. No retail language holds a
@@ -442,8 +437,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// Queues a cheat for the start of the next park turn (<see cref="ParkCheats"/>). False when the park cannot cheat (a Theme Park Inc economy: only Theme Park World's cheats are traced), the action is not
 	/// valid or the queue is full. The caller refuses read-only visits and online sessions.
 	/// </summary>
-	// [EXT:cheats-extension] a Theme Park World park takes tp.exe's cheats (docs/CHEATS.md); a Theme Park Inc park only its executable's two debug-dialog buttons, Skip Mission and Get Promoted
-	// (user decision 2026-11-21), with the extension on
+	// [EXT:cheats-extension] a Theme Park World park takes tp.exe's cheats (docs/CHEATS.md); a Theme Park Inc park only its executable's debug buttons, the debug dialog's Skip Mission and Get Promoted
+	// and the debug menu's Win the game... (user decisions 2026-11-21), with the extension on
 	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
 	// [EXT:cheats-ride-vehicles] a ride's vehicle limit only for a ride the level can raise now
 	public bool QueueCheat( CheatAction action ) => (Rules.ThemeParkInc
@@ -491,6 +486,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 				return SkipThemeParkIncMission();
 			case CheatKind.GetPromoted:
 				return PromoteThemeParkIncCareer();
+			case CheatKind.WinTheGame:
+				return WinThemeParkIncGame();
 			default:
 				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
 		}
@@ -538,11 +535,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [BIN:TPI-EXE:0x626624 staff day] the day message (0x0B, broadcast by the calendar 0x6084FA after the thing loop and the pool update) runs every member's daily routine 0x628CA0 (the experience
 		// gain and a wage demand on its day of the month) and then 0x62D1A0 (the day's counters cleared); it takes no draw, and the staff hear it in ascending handle order
 		if ( changes.HasFlag( CalendarChange.Day ) && TpiStaff != null )
-		{
-			// one day's demands at most: the HUD drains them every frame, a headless run never does
-			TpiWageDemands.Clear();
-			TpiWageDemands.AddRange( TpiStaff.EndDay( turn, stored.Day ) );
-		}
+			FileThemeParkIncWageDemands( TpiStaff.EndDay( turn, stored.Day ) );
 		if ( changes.HasFlag( CalendarChange.Month ) )
 		{
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
@@ -553,6 +546,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 		}
 		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
+		// [BIN:TPI-EXE:0x6086DE annual report] at the year change the calendar sends the shares game the annual report 0x621300(the stored year, the viewed zone, 12), then 0x6231D0 on 0xAA0180
+		// [EXT:tpi-capability-gates] the annual report is not run: its record reads the analyser's money-in, money-out and park-value rings (+0x1FEF8, +0x1F808, +0x1F368) and the ring of 0x6226D0,
+		// which OpenTPW does not keep as Theme Park Inc's analyser; its score and price step are ported (ThemeParkIncSharesGame.AnnualScore, ApplyAnnualScore) and the saved report slots are kept
+		// [BIN:TPI-EXE:0x5D6600 award gate] then the park awards' check of the tick (ParkEconomy.CheckThemeParkIncAwards)
+		CheckThemeParkIncAwards( turn );
 		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
 		if ( Features.GoldenTickets && RunsGoldenTicketCheck( turn, Mode ) )
 			CheckGoldenTickets();
@@ -1570,7 +1568,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		// [BIN:TPI-EXE:0x5AF220 analyser month] Theme Park Inc's month message reaches its listeners in ascending thing-id order (the id-keyed tree walked in order by 0x436DD0).
 		// The analyser is id 5 and the bank 9, so its close and sample precede the batch credit, the instalments and the objects — whose entries therefore fall in the month that opens.
-		// A Theme Park Inc park runs no staff work (EconomyRules.ThemeParkIncMoney has Staff false), so nothing else moves
+		// Theme Park World's staff work (Rules.Staff) is off in a Theme Park Inc park; its own staff (TpiStaff) hear the month as things of the same order: the HQ first, the members' paydays after the bank
+		// [BIN:TPI-EXE:0x632C20 strike month] the staff HQ (thing 1) hears it first: the strike consideration reads the meters before the members' paydays review their wages
+		if ( Rules.ThemeParkInc )
+			ConsiderThemeParkIncStrikes();
 		var analyserClosed = Rules.ThemeParkInc ? CloseAnalyserMonth( nextMonthIndex ) : null;
 
 		// [BIN:TPW-EXE:0x004D0370 bank month] the month message first pays the batch word (+0x10, an unsigned credit below 1,000,000 by the routine's own assertion) into the balance, the money-in total (+0x1FC90) and the year's profit (+0x124), then zeroes it (0x4D0393..0x4D03DB), before any instalment
@@ -1836,13 +1837,16 @@ public sealed partial class ParkEconomy : IParkEconomy
 		return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;
 	}
 
-	/// <summary>The scrap percentage of an object that requires watering (<c>0x5E75F0</c> first branch): 100, 67, 34 and 0 for a count of 0 to 3, negative above.</summary>
-	// [BIN:TPI-EXE:0x5E7613 watering percentage] fild n; fsubr 3.0 (0x93AD54); times 33.33333206176758 (0x93B818, a single) in the x87's extended precision; the product is truncated toward zero (0x86FAB0); 3 - n compared with 0.0 (0x93A038): equal returns the truncated product, else 1 + it
+	/// <summary>The scrap percentage of an object that requires watering (<c>0x5E75F0</c> first branch): 101, 67, 34 and 0 for a count of 0 to 3, negative above.</summary>
+	// [BIN:TPI-EXE:0x5E7613 watering percentage] fild n; fsubrs 3.0 (0x93AD54); fmuls 33.33333206176758 (0x93B818, a single); the product is truncated toward zero (0x86FAB0); 3 - n compared with 0.0
+	// (0x93A038): equal returns the truncated product, else 1 + it
+	// [EXT:hardware-d3d-path] the sale runs on the game thread at the control word 0x7F the Direct3D device set (ThemeParkIncX87): 3 × 33.333332f is 99.999996185302734375 exactly, the midpoint
+	// between the singles 99.99999237 and 100.0, which rounds to the even 100.0, so a count of 0 refunds 101 percent (53 bits keep 99.99999618 and give 100)
 	public static int ThemeParkIncWateringPercent( int count )
 	{
-		var remaining = 3.0 - count;
-		var truncated = (int)(remaining * 33.33333206176758);
-		return remaining == 0.0 ? truncated : 1 + truncated;
+		var remaining = ThemeParkIncX87.Sum( -(long)count, 3f );
+		var truncated = ThemeParkIncX87.Ftol( (float)(remaining * 33.333332f) );
+		return remaining == 0f ? truncated : 1 + truncated;
 	}
 
 	/// <summary>
@@ -1857,7 +1861,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
-		// [BIN:TPI-EXE:0x005E75F9 scrap percentage] the routine tests the thing flag +0x43 bit 0x10 first (set for a type with UsageInfo.RequiresWatering, 0x5DB654): the script variable 0 of the thing's script (0x6B0740 finds it by the thing id +0x2C, 0x6B0C90 reads variable 0; no script reads 0) is the count n, and the answer is ftol((3 - n) x 33.333332) plus 1 unless 3 - n is exactly 0: 100, 67, 34, 0 for n = 0..3, then -32, -65 and so on (0x5E7613..0x5E764F); the condemned test follows only for the other objects
+		// [BIN:TPI-EXE:0x005E75F9 scrap percentage] the routine tests the thing flag +0x43 bit 0x10 first (set for a type with UsageInfo.RequiresWatering, 0x5DB654): the script variable 0 of the thing's script (0x6B0740 finds it by the thing id +0x2C, 0x6B0C90 reads variable 0; no script reads 0) is the count n, and the answer is ftol((3 - n) x 33.333332) plus 1 unless 3 - n is exactly 0: 101, 67, 34, 0 for n = 0..3 at the game thread's 24 bits (ThemeParkIncWateringPercent), then -32, -65 and so on (0x5E7613..0x5E764F); the condemned test follows only for the other objects
 		if ( Rules.ThemeParkInc && info.RequiresWatering )
 			return ThemeParkIncWateringPercent( item.ScriptCondition );
 		// [BIN:TPI-EXE:0x005E765B scrap percentage] Theme Park Inc's percentage routine 0x005E75F0 refuses a condemned object (state +0xA0 = 4) any refund before it reaches the year rule it shares with tp.exe 0x004E2290
@@ -2352,6 +2356,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		objects.Add( item.Id, item );
 		// [BIN:TPI-EXE:0x64F3E0 object list] a new Theme Park Inc object enters the object list at its head
 		tpiObjectList?.Insert( 0, item.Id );
+		AddThemeParkIncSpecialRide( item, info );
 		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it

@@ -36,6 +36,14 @@ public class ThemeParkIncChallengeTests
 		public void Offered( int index ) => Offers.Add( index );
 		public void Won( int index, ThemeParkIncChallengeSlot slot ) => Wins.Add( index );
 		public void Lost( int index, ThemeParkIncChallengeSlot slot, bool firstLoss ) => Losses.Add( (index, firstLoss) );
+		public Dictionary<ushort, ThemeParkIncChallengeTarget> Targets { get; } = new();
+		public HashSet<ushort> Researching { get; } = new();
+		public ThemeParkIncChallengeTarget FindTarget( ushort type ) => Targets.TryGetValue( type, out var target ) ? target : ThemeParkIncChallengeTarget.None;
+		public bool LabResearching( ushort type ) => Researching.Contains( type );
+		public int BreakdownsEver { get; set; }
+		public int LeastRepair { get; set; } = 100;
+		public int LeastRideRepair() => LeastRepair;
+		public int GuestsInPark { get; set; }
 	}
 
 	private static ThemeParkIncChallengeRow Row( int type, int targetTime = 30, int targetVal = 10, int targetVal2 = 0, int targetObj = 0, int cash = 0, int tickets = 0,
@@ -112,7 +120,8 @@ public class ThemeParkIncChallengeTests
 		CollectionAssert.AreEqual( new[] { 2, 2, 2, 2, 2, 2, 4, 0, 3, 0 }, system.Slots.Select( slot => slot.MissionNeeded ).ToArray(),
 			"with a new career's mission counter of 0 only the two ride rows pass the mission gate" );
 		Assert.AreEqual( (ushort)1160, system.Slots[7].TargetObj );
-		Assert.IsTrue( system.Slots.Count( slot => ThemeParkIncChallenges.IsPorted( slot.Type ) ) == 3, "types 2, 25 and 41 are measured" );
+		CollectionAssert.AreEqual( new[] { 2, 25, 46, 41, 17, 17 }, system.Slots.Where( slot => ThemeParkIncChallenges.IsPorted( slot.Type ) ).Select( slot => slot.Type ).ToArray(),
+			"types 2, 25, 41, 46 and 17 are measured; 35, 36, 48 and 56 are not" );
 	}
 
 	// ---- switch, availability and offers -------------------------------------------------------
@@ -172,13 +181,15 @@ public class ThemeParkIncChallengeTests
 	[TestMethod]
 	public void ATypeOpenTpwCannotMeasureIsNeverMadeAvailable()
 	{
-		// [EXT:tpi-capability-gates] type 17's trigger reads the target ride's activation flags, which OpenTPW does not model: even MaxDaysTilTrigger does not make it available
-		var slot = ThemeParkIncChallengeSlot.FromRow( Row( 17, max: 1, targetObj: 1160 ) );
-		ThemeParkIncChallenges.CalcAvailTime( slot, TurnAtDays( 500 ), new Host { FatShop = true, Staff = 99, EntertainerExperience = 99 } );
+		// [EXT:tpi-capability-gates] type 48's value reads the attraction satisfaction's mood rings, which the guests do not keep yet: even an activated target and MaxDaysTilTrigger do not make it available
+		var slot = ThemeParkIncChallengeSlot.FromRow( Row( 48, max: 1, targetObj: 1110 ) );
+		var host = new Host { FatShop = true, Staff = 99, EntertainerExperience = 99 };
+		host.Targets[1110] = new ThemeParkIncChallengeTarget( true, true, true, 100 );
+		ThemeParkIncChallenges.CalcAvailTime( slot, TurnAtDays( 500 ), host );
 		Assert.IsFalse( slot.OfferTimeSet );
-		foreach ( var type in new[] { 35, 46, 36, 56, 17, 48 } )
+		foreach ( var type in new[] { 35, 36, 48, 50, 51, 53, 55, 56, 57 } )
 			Assert.IsFalse( ThemeParkIncChallenges.IsPorted( type ), $"type {type}" );
-		foreach ( var type in new[] { 2, 25, 41 } )
+		foreach ( var type in new[] { 2, 17, 25, 41, 46, 52, 58 } )
 			Assert.IsTrue( ThemeParkIncChallenges.IsPorted( type ), $"type {type}" );
 	}
 
@@ -492,10 +503,10 @@ public class ThemeParkIncChallengeTests
 		Assert.IsFalse( ParkSaveFile.Serialize( TpwEconomy() ).Contains( "TpiChallenges", StringComparison.Ordinal ), "a Theme Park World save writes no Theme Park Inc challenges" );
 		var saved = economy.TpiChallenges.Capture();
 		Assert.IsTrue( ThemeParkIncChallenges.IsValid( saved ) );
-		var unmeasured = saved with { Slots = saved.Slots.Select( ( item, index ) => index == 0 ? item with { Type = 17 } : item ).ToArray() };
+		var unmeasured = saved with { Slots = saved.Slots.Select( ( item, index ) => index == 0 ? item with { Type = 48 } : item ).ToArray() };
 		Assert.IsFalse( ThemeParkIncChallenges.IsValid( unmeasured ), "a running challenge of a type OpenTPW cannot measure is refused" );
 		Assert.IsFalse( ThemeParkIncChallenges.IsValid( saved with { Slots = saved.Slots.Take( 9 ).ToArray() } ), "ten slots" );
-		var latched = saved with { Slots = saved.Slots.Select( ( item, index ) => index == 1 ? item with { Type = 17, Status = ThemeParkIncChallengeStatus.Idle, OfferTimeSet = true } : item ).ToArray() };
+		var latched = saved with { Slots = saved.Slots.Select( ( item, index ) => index == 1 ? item with { Type = 48, Status = ThemeParkIncChallengeStatus.Idle, OfferTimeSet = true } : item ).ToArray() };
 		Assert.IsFalse( ThemeParkIncChallenges.IsValid( latched ), "an idle slot of an unmeasured type latched as due would be offered" );
 		Assert.IsTrue( ThemeParkIncChallenges.IsValid( latched with { Slots = latched.Slots.Select( ( item, index ) => index == 1 ? item with { OfferTimeSet = false } : item ).ToArray() } ),
 			"unlatched, it waits" );

@@ -61,7 +61,7 @@ def f32(value: float) -> float:
 
 
 def x87_single_product(factor: float, integer: int) -> float:
-    """GuestSimulation.X87SingleProduct: the exact product rounded once to a 24-bit significand (nearest even)."""
+    """ThemeParkIncX87.Product: the exact product rounded once to a 24-bit significand (nearest even)."""
     from fractions import Fraction
     exact = Fraction(factor) * integer
     if exact == 0:

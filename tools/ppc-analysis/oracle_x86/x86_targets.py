@@ -2169,6 +2169,9 @@ TPI_WEATHER_STATE = 0x70           # weather thing word: 1 to 4 pick the percent
 TPI_WEATHER_SLOT = (3, 0, 1, 2)    # jump table: state 1 -> the word at 0xa02250 (Heatwave), 2 -> 0xa02244 (Rain), 3 -> Storm, 4 -> Snow
 TPI_ARRIVAL_STATE = type('TpiArrivalState', (), {})()
 TPI_FACTOR_SINGLE = struct.unpack('<f', struct.pack('<f', 0.01))[0]   # the single-precision constant at 0x93ad04
+# The game thread's x87 control word once the Direct3D device has started: DDSCL_FPUSETUP at 0x6bf33f / 0x6bf5a8 lets the device
+# creation set 0x7F (24-bit significand) and nothing on that thread restores 53 bits (ORACLE.md X7; [EXT:hardware-d3d-path]).
+TPI_X87_CONTROL_WORD = 0x7F
 
 
 def tpi_arrival_stubs(target: Target) -> dict:
@@ -2213,7 +2216,7 @@ def tpi_arrival_binary(sb: Sandbox, x: dict, log, fpcw: int | None = None) -> in
     sb.write(TPI_ARRIVAL_MODE_OBJECT + 0x14, 'i', x['mode'])
     sb.write(TPI_ARRIVAL_LIMIT_MODE, 'i', x['limit_mode'])
     sb.write(TPI_ARRIVAL_LIMIT_GUARD, 'B', 1)
-    sb.set_fpcw(X87_CONTROL_WORD if fpcw is None else fpcw)
+    sb.set_fpcw(TPI_X87_CONTROL_WORD if fpcw is None else fpcw)
     return s32(sb.call(TPI_ARRIVAL_ENTRY, this=state.park).eax)
 
 
@@ -2225,11 +2228,11 @@ def tpi_arrival_percentage(x: dict) -> int:
     return x['pct'][TPI_WEATHER_SLOT[state]] if state <= 3 else 100
 
 
-def tpi_arrival_reading(x: dict, precision: int = 53) -> int:
+def tpi_arrival_reading(x: dict, precision: int = 24) -> int:
     """What 0x5bcd60 does, with the x87 arithmetic: no group in world mode 4 or when the mode object's +0x14 word is 3; the
     divisor is PointsPerVisitor, 1 unless above 1 (signed); total = points + NewParkBonus (32-bit wrap, `fild` signed); the
     factor percentage (integer) is multiplied by the single-precision 0.01, then the exact integer total, then divided by the
-    divisor, each step rounded to a `precision`-bit significand (53 under the control word 0x27F), and the quotient is
+    divisor, each step rounded to a `precision`-bit significand (24 under the game thread's control word 0x7F, 53 under 0x27F), and the quotient is
     truncated by fistp with only the low word kept (no integer divide); at least MinPeople (signed); then the online cut
     (mode word 1: 500, unsigned compare) or the 1500 cut, both without a floor."""
     if x['world_mode'] == 4 or x['mode'] == 3:

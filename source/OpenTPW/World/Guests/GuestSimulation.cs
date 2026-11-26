@@ -1025,14 +1025,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		int count;
 		if ( Settings.ArrivalWeatherPercentages is { } percentages )
 		{
-			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
+			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (fild or flds the percentage, fild the total, fmuls 0.01f, fmulp, fidivl, _ftol 0x86FAB0: the low dword); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
+			// [EXT:hardware-d3d-path] the arrival runs on the game thread at the control word 0x7F the Direct3D device set (ThemeParkIncX87): each step rounds to a single (the oracle's X7 agrees on 532 of
+			// 532 inputs read at 24 bits); 100 x 0.01f is then 1.0, so the shipped 80 points and NewParkBonus 20 over PointsPerVisitor 25 give 4, where 53 bits keep 0.99999998 and give 3
 			// [BIN:TPI-EXE:0x5BCD7A mode exit] the theme object (0xA06558, +0x14) answering 3, the Intro World, gives no group (IntroWorld, above); -1 becomes 3 at start-up (0x6A32D7), the default when no theme was chosen
 			// [APPROX:ARRIVAL-008] TPI reads the spell kind for arrivals, not the drop count. The economy steps the count separately without RNG (0x642230); rendering, precipitation audio, lightning, thunder and the TPI sky remain separate work.
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
-			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
+			var factor = state is >= 1 and <= 4 ? ThemeParkIncX87.Product( percentages[WeatherStateIndex[state - 1]], 0.01f ) : (float)(100f * 0.01f);
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );
-			var scaled = (double)points * (percent * (double)0.01f) / perVisitor;
-			count = Math.Abs( scaled ) < 2147483648.0 ? (int)scaled : int.MinValue;
+			count = ThemeParkIncX87.Ftol( ThemeParkIncX87.Divide( ThemeParkIncX87.Product( points, factor ), perVisitor ) );
 		}
 		else
 		{

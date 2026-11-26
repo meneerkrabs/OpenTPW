@@ -265,6 +265,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "note the resume frame", () =>
 		{
 			resumedAt = frame;
+			// the hidden switch of Theme Park Inc's navigator rules (--tpi-native-walk, docs/reverse/TPI-NAVIGATOR.md) reaches the walks through the park's cell map
+			Require( Level.Guests!.Grid.Cells.EdgeRules == (GuestSimulation.ThemeParkIncNativeWalkRequested ? WalkEdgeRules.ThemeParkInc : WalkEdgeRules.ThemeParkWorld),
+				"the park's walks use the edge test the switch selects" );
 			// with Theme Park Inc's native guest states on (--tpi-native-guests, docs/reverse/TPI-GUESTS.md) an idle guest runs only phase P1's leave gate and stands; an exit counter of 0
 			// sends it walking to the bus stop, so the walk check runs on the native leaving path
 			// TODO(tpi-guests P2): remove this once state 6 (0x614A40) is ported in full: idle guests then wander by themselves

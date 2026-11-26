@@ -3085,6 +3085,220 @@ WALK_STEERING_TARGET = Target(
            'walk field the step reads is compared after each set-up and step, with the walk step\'s result (0x4fa2a0).'],
     budget=2_000_000_000)
 
+# ============================================================================== Game.exe guest and staff walk (TPI navigator NV1, X25's TPI targets)
+# Theme Park Inc's edge test 0x5d7b60 differs from tp.exe's for persons (masks 0 and 1) in three rules: an obstacle's walkway cell (+0x24) is
+# no walkway fast path (0x67f6f0), unowned land (+0xe bit 0x40, 0x67eca0) blocks, type 8 blocks (0x67f780). The step commit 0x63f5d0 and the
+# route search 0x640c50 are tp.exe's code over that test. Masks 2 and 3 reach the test from no TPI walk (docs/reverse/TPI-NAVIGATOR.md), so the
+# inputs use masks 0 and 1 only.
+TPI_WALK_MAP = 0xAA131C          # global: the map object; [map] + 0x418 + id * 72 is cell id = y * 128 + x + 1 (type +8, links +0xc, queue link +0xd, flags +0xe, obstacle +0x24)
+TPI_WALK_RECORDS = 0xADE6B4      # global read by the structure record lookup 0x5c17b0 (+0x11ffd8 + 40 * cell word +0; word 0 = record 0, empty)
+TPI_WALK_CELL = 72
+TPI_WALK_CELLS_AT = 0x418
+TPI_WALK_EDGE = 0x5D7B60         # cdecl (x, y, direction, mask) -> blocked
+TPI_WALK_COMMIT = 0x63F5D0       # cdecl (from id, to id, mask) -> accepted
+TPI_WALK_SEARCH = 0x640C50       # cdecl (buffer, mask): count +0, start +2, goal +4, waypoints +6; 0x70000000 on failure
+# the incremental-link thunks the routines call through (each a 5-byte jmp)
+TPI_WALK_THUNKS = [(a, a + 5) for a in (
+    0x40609B, 0x4086A2, 0x403143, 0x4040CF, 0x403873, 0x40C086, 0x40CC1B, 0x408B2A, 0x40B109, 0x40A1AA, 0x4076B2, 0x40A344,
+    0x404F7F, 0x401839, 0x401190, 0x407D5B, 0x402AD6, 0x408779, 0x406CC1, 0x40B05F,                  # the edge test's
+    0x40A358,                                                                                        # the commit's
+    0x4049FD, 0x40C220, 0x402766, 0x403747, 0x401843, 0x40B77B, 0x4039A9)]                           # the search's
+TPI_WALK_CELL_RANGES = [(0x5D7B60, 0x5D7F1C), (0x67F590, 0x67F960), (0x67ECA0, 0x67ECB3), (0x65CB00, 0x65CB17), (0x65CC40, 0x65CC44),
+                        (0x5C17B0, 0x5C17D4), (0x685760, 0x685776), (0x6856D0, 0x6856F5), (0x6855E0, 0x6855EF), (0x63F5D0, 0x63F8D7)]
+TPI_WALK_SEARCH_RANGES = TPI_WALK_CELL_RANGES + TPI_WALK_THUNKS + [(0x63FA50, 0x640CA0), (0x640CC0, 0x641320), (0x871140, 0x8714C0)]
+
+
+def tpi_walk_stubs(target: Target) -> dict:
+    return {}
+
+
+def tpi_walk_map_binary(sb: Sandbox, x: dict) -> int:
+    """Writes the input's cells into a synthetic 128 x 128 Theme Park Inc map (72-byte cells); returns the cell array's base."""
+    sb.set_fpcw(TPI_X87_CONTROL_WORD)
+    holder = sb.object(16)
+    base = sb.object(TPI_WALK_CELLS_AT + (128 * 128 + 2) * TPI_WALK_CELL)
+    sb.write(holder, 'I', base)
+    sb.write(TPI_WALK_MAP, 'I', holder)
+    sb.write(TPI_WALK_RECORDS, 'I', sb.object(0x11FFD8 + 64))
+    cell = lambda cx, cy: base + TPI_WALK_CELLS_AT + (cy * 128 + cx + 1) * TPI_WALK_CELL
+    for key, offset, fmt in (('types', 8, 'I'), ('links', 0xC, 'B'), ('qlinks', 0xD, 'B'), ('flags', 0xE, 'H')):
+        for cx, cy, value in x[key]:
+            sb.write(cell(cx, cy) + offset, fmt, value)
+    for cx, cy in x['obstacles']:
+        sb.write(cell(cx, cy) + 0x24, 'I', 1)
+    return base
+
+
+def tpi_walk_map_reading(x: dict) -> 'walk_reading.Map':
+    m = walk_map_reading(x)
+    m.obstacles = {(cx, cy) for cx, cy in x['obstacles']}
+    m.tpi = True
+    return m
+
+
+def tpi_walk_cells(rng: random.Random) -> dict:
+    """walk_random_cells with Theme Park Inc's cells added: type 8 holes and more walkway cells, the obstacle flag on some walkway and other cells,
+    the unowned flag on scattered cells and on whole rows or columns of the window (the park's edge)."""
+    x = walk_random_cells(rng)
+    ox, oy, w, h = x['window']
+    types = {(a, b): t for a, b, t in x['types']}
+    for _ in range(rng.randint(0, w * h // 10)):
+        c = (rng.randrange(ox, ox + w), rng.randrange(oy, oy + h))
+        types[c] = rng.choice([8, 8, 0x1E, 0x1E, 0x20, 2, 4])
+    flags = {(a, b): f for a, b, f in x['flags']}
+    for c in types:
+        if rng.random() < 0.12:
+            flags[c] = flags.get(c, 0) | 0x40
+    if rng.random() < 0.6:
+        if rng.random() < 0.5:
+            row = rng.randrange(oy, oy + h)
+            band = [(cx, row + k) for cx in range(ox, ox + w) for k in range(rng.randint(1, 3)) if row + k < 128]
+        else:
+            col = rng.randrange(ox, ox + w)
+            band = [(col + k, cy) for cy in range(oy, oy + h) for k in range(rng.randint(1, 3)) if col + k < 128]
+        for c in band:
+            flags[c] = flags.get(c, 0) | 0x40
+    x['types'] = [[a, b, t] for (a, b), t in sorted(types.items())]
+    x['links'] = [[a, b, v] for a, b, v in x['links'] if types.get((a, b)) in (1, 3, 9, 10)]
+    x['qlinks'] = [[a, b, v] for a, b, v in x['qlinks'] if types.get((a, b)) in (3, 9, 10)]
+    x['flags'] = [[a, b, f] for (a, b), f in sorted(flags.items())]
+    x['obstacles'] = sorted({c for c, t in types.items() if rng.random() < (0.5 if t == 0x1E else 0.08)})
+    x['paths'] = sorted(c for c, t in types.items() if t == 1) or x['paths']
+    return x
+
+
+def tpi_walk_edge_binary(sb: Sandbox, x: dict, log) -> tuple:
+    tpi_walk_map_binary(sb, x)
+    return tuple(sb.call(TPI_WALK_EDGE, args=(cx, cy, d, x['mask'])).eax & 0xFF for cx, cy, d in x['edges'])
+
+
+def tpi_walk_edge_plan(x: dict) -> tuple:
+    m = tpi_walk_map_reading(x)
+    return tuple(walk_reading.blocked(m, cx, cy, d, x['mask']) for cx, cy, d in x['edges'])
+
+
+def tpi_walk_edge_as_tpw(x: dict) -> tuple:
+    """The same cells under tp.exe's rules: no obstacle, unowned or hole rule."""
+    m = walk_map_reading(x)
+    return tuple(walk_reading.blocked(m, cx, cy, d, x['mask']) for cx, cy, d in x['edges'])
+
+
+def tpi_walk_commit_binary(sb: Sandbox, x: dict, log) -> tuple:
+    tpi_walk_map_binary(sb, x)
+    return tuple(sb.call(TPI_WALK_COMMIT, args=(fy * 128 + fx + 1, ty * 128 + tx + 1, x['mask'])).eax for fx, fy, tx, ty in x['steps'])
+
+
+def tpi_walk_commit_plan(x: dict) -> tuple:
+    m = tpi_walk_map_reading(x)
+    return tuple(walk_reading.commit(m, (fx, fy), (tx, ty), x['mask']) for fx, fy, tx, ty in x['steps'])
+
+
+def tpi_walk_commit_as_tpw(x: dict) -> tuple:
+    m = walk_map_reading(x)
+    return tuple(walk_reading.commit(m, (fx, fy), (tx, ty), x['mask']) for fx, fy, tx, ty in x['steps'])
+
+
+def tpi_walk_cell_inputs(rng: random.Random, n: int, kind: str) -> list:
+    out = []
+    for _ in range(n):
+        x = tpi_walk_cells(rng)
+        x['mask'] = rng.choice([0, 0, 1])
+        ox, oy, w, h = x['window']
+
+        def cell():
+            # most edges start on or next to a cell the TPI rules read: an obstacle, a hole, unowned land
+            if x['obstacles'] and rng.random() < 0.3:
+                cx, cy = rng.choice(x['obstacles'])
+                return min(127, max(0, cx + rng.randint(-1, 1))), min(127, max(0, cy + rng.randint(-1, 1)))
+            return rng.randrange(max(0, ox - 1), min(128, ox + w + 1)), rng.randrange(max(0, oy - 1), min(128, oy + h + 1))
+        if kind == 'edge':
+            x['edges'] = [cell() + (rng.randrange(4),) for _ in range(12)]
+        else:
+            steps = []
+            while len(steps) < 12:
+                fx, fy = cell()
+                tx, ty = fx + rng.choice([-1, 0, 1, 1, -2]), fy + rng.choice([-1, 0, 1, -1, 2])
+                if 0 <= tx < 128 and 0 <= ty < 128:
+                    steps.append((fx, fy, tx, ty))
+            x['steps'] = steps
+        del x['paths']
+        out.append(x)
+    # the map edges, and one of each TPI rule beside a path (masks 0 and 1)
+    edge = {'types': [[0, 0, 1], [127, 127, 1], [1, 0, 1], [0, 1, 1]], 'links': [], 'qlinks': [], 'flags': [], 'obstacles': [],
+            'window': (0, 0, 128, 128), 'mask': 0}
+    rules = {'types': [[10, 10, 1], [11, 10, 0x1E], [10, 11, 8], [9, 10, 0], [10, 9, 1], [12, 10, 0x1E], [9, 9, 3]],
+             'links': [[10, 10, 0x55], [10, 9, 0x55], [9, 9, 0x55]], 'qlinks': [], 'flags': [[9, 10, 0x40], [10, 9, 0x40], [12, 10, 0x40]],
+             'obstacles': [[11, 10]], 'window': (8, 8, 6, 6)}
+    if kind == 'edge':
+        out.append(dict(edge, edges=[(0, 0, d) for d in range(4)] + [(127, 127, d) for d in range(4)]))
+        for mask in (0, 1):
+            out.append(dict(rules, mask=mask, edges=[(10, 10, d) for d in range(4)] + [(11, 10, d) for d in range(4)] + [(9, 9, d) for d in range(4)]))
+    else:
+        out.append(dict(edge, steps=[(0, 0, 1, 1), (0, 0, 1, 0), (1, 0, 0, 1), (127, 127, 126, 126)]))
+        for mask in (0, 1):
+            out.append(dict(rules, mask=mask, steps=[(10, 10, 11, 10), (10, 10, 11, 11), (10, 10, 9, 11), (10, 10, 9, 9), (9, 9, 10, 9), (10, 9, 11, 10),
+                                                     (11, 10, 12, 10), (11, 10, 10, 11), (9, 10, 10, 10), (10, 10, 9, 10), (10, 10, 10, 9), (12, 10, 11, 11)]))
+    return out
+
+
+def tpi_walk_search_binary(sb: Sandbox, x: dict, log) -> tuple:
+    tpi_walk_map_binary(sb, x)
+    buf = sb.object(0x200)
+    (sx, sy), (gx, gy) = x['start'], x['goal']
+    for offset, value in ((2, sx), (3, sy), (4, gx), (5, gy)):
+        sb.write(buf + offset, 'B', value)
+    result = sb.call(TPI_WALK_SEARCH, args=(buf, x['mask'])).eax
+    if result == walk_reading.FAIL:
+        return (False,)
+    return (True,) + tuple((sb.read(buf + 6 + 2 * i, 'B'), sb.read(buf + 7 + 2 * i, 'B')) for i in range(sb.read(buf, 'B')))
+
+
+def tpi_walk_search_plan(x: dict) -> tuple:
+    result, path = walk_reading.find(tpi_walk_map_reading(x), tuple(x['start']), tuple(x['goal']), x['mask'])
+    return (False,) if result == walk_reading.FAIL else (True,) + tuple(path)
+
+
+def tpi_walk_search_as_tpw(x: dict) -> tuple:
+    result, path = walk_reading.find(walk_map_reading(x), tuple(x['start']), tuple(x['goal']), x['mask'])
+    return (False,) if result == walk_reading.FAIL else (True,) + tuple(path)
+
+
+def tpi_walk_search_inputs(rng: random.Random, n: int) -> list:
+    out = []
+    for _ in range(n):
+        x = tpi_walk_cells(rng)
+        ox, oy, w, h = x['window']
+        x['mask'] = rng.choice([0, 0, 1])
+        x['start'] = rng.choice(x['paths'])
+        x['goal'] = rng.choice(x['paths']) if rng.random() < 0.7 else (rng.randrange(ox, min(128, ox + w)), rng.randrange(oy, min(128, oy + h)))
+        del x['paths']
+        out.append(x)
+    return out
+
+
+TPI_WALK_EDGE_TARGET = Target(
+    'tpi-exe-walk-edge-test', 'tpi', 'Game.exe walk edge test 0x5d7b60', 'WalkEdges.Blocked with WalkEdgeRules.ThemeParkInc (TPI-NAVIGATOR.md)',
+    TPI_WALK_EDGE, TPI_WALK_SEARCH_RANGES, tpi_walk_stubs, tpi_walk_edge_binary, tpi_walk_edge_plan, lambda rng, n: tpi_walk_cell_inputs(rng, n, 'edge'),
+    alternatives={'tpw-rules': tpi_walk_edge_as_tpw},
+    notes=['A synthetic 128 x 128 map at [0xaa131c] (cells 72 bytes from +0x418, id = y * 128 + x + 1; type +8, links +0xc, queue link +0xd, '
+           'flags +0xe, obstacle flag +0x24); empty structure records at [0xade6b4] + 0x11ffd8, so 0x67f890 is false. Twelve edges per map, '
+           'masks 0 and 1 (the only ones a TPI walk passes); the ride test 0x4666e0 (mask 2) is not allowed. Run at the control word 0x7f.'],
+    budget=2_000_000)
+TPI_WALK_COMMIT_TARGET = Target(
+    'tpi-exe-walk-commit', 'tpi', 'Game.exe walk step commit 0x63f5d0', 'WalkEdges.Commit with WalkEdgeRules.ThemeParkInc (TPI-NAVIGATOR.md)',
+    TPI_WALK_COMMIT, TPI_WALK_SEARCH_RANGES, tpi_walk_stubs, tpi_walk_commit_binary, tpi_walk_commit_plan, lambda rng, n: tpi_walk_cell_inputs(rng, n, 'commit'),
+    alternatives={'tpw-rules': tpi_walk_commit_as_tpw},
+    notes=['The same synthetic maps; twelve steps of up to two cells per map. The commit has no asserts in TPI; its latch 0xaa0f44 is written '
+           'on a refused long step.'], budget=2_000_000)
+TPI_WALK_SEARCH_TARGET = Target(
+    'tpi-exe-walk-search', 'tpi', 'Game.exe walk route search 0x640c50', 'WalkSearch.Find with WalkEdgeRules.ThemeParkInc (TPI-NAVIGATOR.md)',
+    TPI_WALK_SEARCH, TPI_WALK_SEARCH_RANGES, tpi_walk_stubs, tpi_walk_search_binary, tpi_walk_search_plan, tpi_walk_search_inputs,
+    alternatives={'tpw-rules': tpi_walk_search_as_tpw},
+    notes=['The line search 0x640cc0 with its tracer 0x63fb80 and head-on test 0x6400a0, the shortcuts 0x6401c0 / 0x63fe80, the refinement '
+           '0x640320, the line setup 0x63fa50 and the library memmove 0x871140; the result buffer passes through 0xaa0f70. The waypoint list '
+           'is compared, or the failure.'], budget=400_000_000)
+TPI_WALK_TARGETS = [TPI_WALK_EDGE_TARGET, TPI_WALK_COMMIT_TARGET, TPI_WALK_SEARCH_TARGET]
+
 # ============================================================================== (t) tp.exe TQI movie matrix 0x6710c0 and transform pass 0x67673c
 TQI_MATRIX = 0x6710C0          # cdecl (int *matrix, int quantiser): fills 64 dwords
 TQI_PASS = 0x67673C            # register call: esi = 8 input dwords, edi = output (8 dwords, stride 0x24); no shift
@@ -4666,4 +4880,4 @@ WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_A
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_COMPOSE_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, SKIRT_MASK_TARGET, SKIRT_UV_TARGET, SKIRT_FLAGS_TARGET, CONFORM_TARGET, BASE_HEIGHT_TARGET, DRAPE_TARGET, PLACEMENT_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_COMPOSE_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, SKIRT_MASK_TARGET, SKIRT_UV_TARGET, SKIRT_FLAGS_TARGET, CONFORM_TARGET, BASE_HEIGHT_TARGET, DRAPE_TARGET, PLACEMENT_TARGET] + COAST_TARGETS + WALK_TARGETS + TPI_WALK_TARGETS

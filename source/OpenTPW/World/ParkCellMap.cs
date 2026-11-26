@@ -907,10 +907,17 @@ public sealed partial class ParkCellMap
 	}
 
 	/// <summary>
-	/// Theme Park Inc's obstacle cell flag (map square <c>+0x24</c>): the cell belongs to an obstacle's footprint, so the pick and the cursor help follow its owner word to the obstacle. Always false
-	/// on a Theme Park World map. It blocks nothing; the obstacle's cell types do (docs/reverse/TPI-MISSIONS.md §6).
+	/// The edge test the walks over this map use (<see cref="WalkEdges.Blocked"/>): Theme Park World's unless the level sets Theme Park Inc's (the hidden switch <c>--tpi-native-walk</c>,
+	/// docs/reverse/TPI-NAVIGATOR.md). A property of the park, set once when its map is made; not part of the cells' state, the digest or a snapshot.
 	/// </summary>
-	// [BIN:TPI-EXE:0x647E01 obstacle cell flag] the placement writes +0x24 = 1 and the opening 0x5E8CB4 writes 0; the pick 0x666BE0 and the hover at 0x504A0C read it
+	public WalkEdgeRules EdgeRules { get; set; }
+
+	/// <summary>
+	/// Theme Park Inc's obstacle cell flag (map square <c>+0x24</c>): the cell belongs to an obstacle's footprint, so the pick and the cursor help follow its owner word to the obstacle. Always false
+	/// on a Theme Park World map. It blocks nothing by itself; the obstacle's cell types do (docs/reverse/TPI-MISSIONS.md §6), and Theme Park Inc's edge test denies a flagged walkway cell (type 0x1E)
+	/// the walkway fast path (<see cref="WalkEdgeRules.ThemeParkInc"/>).
+	/// </summary>
+	// [BIN:TPI-EXE:0x647E01 obstacle cell flag] the placement writes +0x24 = 1 and the opening 0x5E8CB4 writes 0; the pick 0x666BE0, the hover at 0x504A0C and the edge test's walkway and mask-2 tests 0x67F6F0 / 0x67F720 read it
 	public bool ObstacleFlagAt( int x, int y ) => obstacleCells != null && InBounds( x, y ) && obstacleCells[y * Width + x];
 
 	/// <summary>Whether any cell carries the obstacle flag (<see cref="ObstacleFlagAt"/>).</summary>

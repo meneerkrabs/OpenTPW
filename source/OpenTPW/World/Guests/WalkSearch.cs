@@ -1,6 +1,18 @@
 namespace OpenTPW;
 
 /// <summary>
+/// The variant of the walk's edge test a park's walkers use (<see cref="ParkCellMap.EdgeRules"/>): Theme Park World's <c>0x4D8750</c>, or Theme Park Inc's <c>0x5D7B60</c>, which adds three
+/// rules for persons (docs/reverse/TPI-NAVIGATOR.md). The rest of the walk (the step commit, the route search, avoid_walls, the steering) is the same code in both games.
+/// </summary>
+public enum WalkEdgeRules : byte
+{
+	/// <summary>Theme Park World's edge test <c>0x4D8750</c> (every Theme Park World park, and Theme Park Inc parks while the hidden switch <c>--tpi-native-walk</c> is off).</summary>
+	ThemeParkWorld = 0,
+	/// <summary>Theme Park Inc's edge test <c>0x5D7B60</c>: an obstacle's walkway cell is no fast path, unowned land blocks, and terrain holes (type 8) block.</summary>
+	ThemeParkInc = 1,
+}
+
+/// <summary>
 /// The original walk's cell rules over the <see cref="ParkCellMap"/> (tp.exe): the edge test <c>0x4D8750</c> that tells
 /// whether a walker with mask <c>m</c> (walk <c>+0xB4</c>, guest <c>+0x188</c>) may cross from a cell to one of its four
 /// neighbours, and the step commit <c>0x510510</c> built on it. Directions are <see cref="GuestPathGrid.Directions"/>
@@ -72,6 +84,12 @@ public static class WalkEdges
 			return false;
 		if ( to == 4 )
 			return true;
+		// [BIN:TPI-EXE:0x5D7B60 edge test] Theme Park Inc's edge test is Theme Park World's with three changes that persons meet (masks 0 and 1, the only values TPI writes to the walk's +0xB4): a 0x1E
+		// target is the walkway fast path only without the obstacle flag (0x67F6F0: +0x24 == 0), an unowned target (flag word +0xE bit 0x40, 0x67ECA0) blocks after the path, type 4 and walkway rules, and
+		// the blocking types are {5, 7, 2, 8} (0x67F780; type 8 is an obstacle's 'H' hole). Its mask-3 rule (0x67F750), its mask-2 flag test with the obstacle flag (0x67F720) and ride test through the
+		// from cell (0x4666E0), and the absence of Theme Park World's mask-2 "path to type 0" rule are not ported: no TPI person, staff member, camera or queue walk passes mask 2 or 3
+		// (docs/reverse/TPI-NAVIGATOR.md)
+		var tpi = map.EdgeRules == WalkEdgeRules.ThemeParkInc;
 		if ( mask == 2 )
 		{
 			// [BIN:TPW-EXE:0x004D8871 mask-2 target] the target's flag 0x400 opens it; a type-9 target whose owner cell lists an object (the first thing of type 3, 0x004D88BC..0x004D88F3) is open when the object can be ridden (0x0042A440) and its type has CannotRide 0 (0x004DD4E0 +0x118), else blocked (0x004D8B00..0x004D8B28); without such a thing the test goes on. The only callers with mask 2 are the camera's (0x0042C093, 0x0042C290): no guest or staff member of OpenTPW walks with it
@@ -80,9 +98,14 @@ public static class WalkEdges
 			if ( to == 9 && map.EntranceRideOpens?.Invoke( tx, ty ) is { } open )
 				return !open;
 		}
-		else if ( to == 0x1E )
+		// [BIN:TPI-EXE:0x5D7C55 walkway target] TPI's walkway test 0x67F6F0 also needs the target's obstacle flag (+0x24) clear; an obstacle's walkway cell goes on to the rules below
+		else if ( to == 0x1E && !(tpi && map.ObstacleFlagAt( tx, ty )) )
 			return false;
-		if ( to is 5 or 7 or 2 )
+		// [BIN:TPI-EXE:0x5D7D0D unowned target] 0x67ECA0(0x40) on the target's flag word: unowned land blocks, after the path fast path (an unowned path from a non-queue cell stays open) and the walkway rule
+		if ( tpi && (map.FlagsAt( tx, ty ) & ParkCellFlags.Unowned) != 0 )
+			return true;
+		// [BIN:TPI-EXE:0x67F780 blocking types] TPI blocks type 8 (an obstacle's terrain hole, ThemeParkIncObstacleTypes 'H') besides 5, 7 and 2
+		if ( to is 5 or 7 or 2 || (tpi && to == 8) )
 			return true;
 		if ( IsQueue( to ) )
 		{

@@ -13,6 +13,13 @@ public sealed partial class GuestSimulation
 	public static bool ThemeParkIncNativeGuestsRequested { get; set; }
 
 	/// <summary>
+	/// Whether the next Theme Park Inc park a level builds walks its guests and staff with Theme Park Inc's own navigator rules (the hidden <c>--tpi-native-walk</c> option,
+	/// <c>ThemeParkIncNativeWalk</c> of docs/reverse/TPI-NAVIGATOR.md); off by default, so the Theme Park Inc determinism pins move once, when the port's last phase turns it on. A level reads it once,
+	/// when it builds its cell map (<see cref="ParkCellMap.EdgeRules"/>). So far it selects Theme Park Inc's edge test.
+	/// </summary>
+	public static bool ThemeParkIncNativeWalkRequested { get; set; }
+
+	/// <summary>
 	/// Whether the Theme Park Inc guests this simulation builds run Theme Park Inc's own state machine (<see cref="Guest.Tpi"/>, docs/reverse/TPI-GUESTS.md) instead of Theme Park World's
 	/// update under <c>[EXT:tpi-twp-guest-rules]</c>. Off by default; it takes effect only with Theme Park Inc's guest settings (<see cref="GuestSettings.TpiGuestStart"/> and
 	/// <see cref="GuestSettings.TpiNative"/>). Set before the first guest is built.

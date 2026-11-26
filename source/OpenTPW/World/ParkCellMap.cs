@@ -179,6 +179,7 @@ public sealed partial class ParkCellMap
 		owners = (ushort[])source.owners.Clone();
 		obstacleCells = (bool[]?)source.obstacleCells?.Clone();
 		EdgeRules = source.EdgeRules;
+		countsSimulationCalls = source.countsSimulationCalls;
 		typeCounts = (int[])source.typeCounts.Clone();
 		BlocksX = source.BlocksX;
 		BlocksY = source.BlocksY;
@@ -242,7 +243,11 @@ public sealed partial class ParkCellMap
 	// [EXT:tpi-stamp-counter-sim-only] (user-approved 2026-11-25, decision N-5) the sprite placement 0x60AE00 also raises the counter once per person per rendered frame (the render pass 0x64E270 from
 	// the frame loops 0x6A52DE / 0x6A5CD1), which makes the original's stored stamps depend on the frame rate; only its simulation calls (the guest constructor 0x60CAC9, the mode setter 0x61A70B)
 	// count here. The advisor's condition scan (0x722A90 -> 0x5B7860 -> 0x60BA30, once per person examined) is not ported, so nothing raises the counter there (decision N-2)
-	public bool CountsSimulationCalls => EdgeRules == WalkEdgeRules.ThemeParkInc;
+	public bool CountsSimulationCalls => countsSimulationCalls ?? EdgeRules == WalkEdgeRules.ThemeParkInc;
+	private bool? countsSimulationCalls;
+
+	/// <summary>Counts the simulation's calls whatever the edge test (a test's replay of a Theme Park World run under both counting modes); null follows <see cref="EdgeRules"/>.</summary>
+	internal void CountSimulationCalls( bool? value ) => countsSimulationCalls = value;
 
 	/// <summary>
 	/// The counter routine as a simulation caller takes it (a route request's or the wander's stranded gate, a stranded mark): with <see cref="CountsSimulationCalls"/> the counter is raised and

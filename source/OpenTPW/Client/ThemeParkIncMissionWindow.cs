@@ -139,9 +139,10 @@ internal sealed class ThemeParkIncMissionWindow
 		var career = Career;
 		// [BIN:TPI-EXE:0x55A860 career flag] the builder clears the career's byte +0x27
 		career.ClearMissionWindowFlag();
-		// [BIN:TPI-EXE:0x55A879 mission panel] then 0x5F16C0 on the mission controller (0x64EBA0): 0x71A930(0x93E3E0[career +0x105C], locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820;
-		// then 0x503AD0(0x277), the delayed help, before the window is created
-		Advice?.Post( PanelAdvice( career.MissionCounter ) );
+		// [BIN:TPI-EXE:0x55A879 mission panel] then 0x5F16C0 on the mission controller (0x64EBA0): 0x71A930(0x93E3E0[career +0x105C], locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820.
+		// [EXT:tpi-capability-gates] that advice is not posted: its responses (880 to 897) speak the presenter's voices 1000 to 1017 (0x54D3E0 group 0), whose speech path (0x54D4D0, the presenter
+		// windows 0xA65008 and 0xA5EB30) the presentation does not port (ThemeParkIncAdvisorPresentation refuses them); the destroy's cancel of it (Close) finds nothing
+		// [BIN:TPI-EXE:0x55A87E mission delayed help] then 0x503AD0(0x277), the delayed help, before the window is created
 		Advice?.DelayedHelp( DelayedHelpMessage );
 		Page = 0;
 		screen = new UiScreen( ScreenName ) { Back = Close };

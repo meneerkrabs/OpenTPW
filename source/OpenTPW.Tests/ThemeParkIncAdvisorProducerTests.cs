@@ -20,11 +20,11 @@ public sealed class ThemeParkIncAdvisorProducerTests
 	private static readonly string[] Kinds = { "scan", "scan-zero", "event", "help", "unused" };
 
 	/// <summary>
-	/// The messages OpenTPW posts: the forecasts and the letters (P1), the unread mail, the window help of the tag tube, mission and wage windows, the mission controller's and the mission window's
-	/// advice and the lost challenge's second post (P4).
+	/// The messages OpenTPW posts: the forecasts and the letters (P1), the unread mail, the window help of the tag tube, mission and wage windows, the mission controller's advice, the mission
+	/// window's close advice and the lost challenge's second post (P4).
 	/// </summary>
-	private static readonly int[] Wired = new[] { 0x154, 0x157, 0x15A, 0x15B, 0x1A2, 0x1A3, 0x198, 0x15D, 0x1AF, 0x1B0, 0x1B1, 0x1B6, 0x277, 0x1FA, 0x19B, 0x172, 0x1EB, 0x1EC,
-		0x1ED, 0x1EE, 0x173, 0x21D, 0x1A4, 0x26C, 0 }.Concat( Enumerable.Range( 0x223, 18 ) ).ToArray();
+	private static readonly int[] Wired = { 0x154, 0x157, 0x15A, 0x15B, 0x1A2, 0x1A3, 0x198, 0x15D, 0x1AF, 0x1B0, 0x1B1, 0x1B6, 0x277, 0x1FA, 0x19B, 0x172, 0x1EB, 0x1EC,
+		0x1ED, 0x1EE, 0x173, 0x21D, 0x1A4, 0x26C };
 
 	private static readonly Regex MessageRow = new(
 		@"^\s*\{ message = 0x([0-9a-f]+), kind = ""([^""]*)"", status = ""([^""]*)"", evidence = ""([^""]*)"", producer = ""([^""]*)"" \},?\s*$", RegexOptions.CultureInvariant );
@@ -126,12 +126,13 @@ public sealed class ThemeParkIncAdvisorProducerTests
 			{
 				var response = ThemeParkIncAdviceResponse.For( row.Response + variant );
 				Assert.IsNotNull( response, $"message 0x{message:X} response {row.Response + variant}" );
-				// the speech refuses the level bank and the presenter's voices; only message 0 (the mission panel at counters 18 and 19, which no career reaches) has one
-				Assert.AreEqual( message == 0, response.Value.LevelBank || ThemeParkIncAdviceResponse.PresenterGroup( response.Value.Voice ) >= 0, $"message 0x{message:X}" );
+				// the speech refuses the level bank and the presenter's voices (the mission panel's 0x223 to 0x234 have them, so they stay gated)
+				Assert.IsFalse( response.Value.LevelBank || ThemeParkIncAdviceResponse.PresenterGroup( response.Value.Voice ) >= 0, $"message 0x{message:X}" );
 			}
 		}
 		Assert.AreEqual( "help", inventory[0x1AF].Kind );
 		Assert.AreEqual( "gated", inventory[0x211].Status, "the go-to hint waits for the first-hour clock (P7)" );
+		Assert.IsTrue( Enumerable.Range( 0x223, 18 ).All( panel => inventory[panel].Status == "gated" ), "the mission panel's presenter advice is gated" );
 		Assert.IsTrue( new[] { 0xBF, 0x13A, 0x13B, 0x13C, 0x13D, 0x13E, 0xC0, 0xC1, 0xC3, 0x142, 0x143, 0x144, 0x145, 0x146, 0xC4, 0xC5 }
 			.All( award => inventory[award].Kind == "event" && inventory[award].Status == "gated" ), "the award advice is gated (D-7)" );
 	}

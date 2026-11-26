@@ -106,7 +106,7 @@ public class ThemeParkIncMissionWindowTests
 		var advice = new ThemeParkIncAdvisorSenderTests.RecordingAdvice();
 		window.Advice = advice;
 		var screen = window.Build();
-		CollectionAssert.AreEqual( new[] { "post 225", "delayed 277" }, advice.Calls, "0x55A879: the mission panel 0x93E3E0[2], then 0x503AD0(0x277)" );
+		CollectionAssert.AreEqual( new[] { "delayed 277" }, advice.Calls, "0x55A87E: 0x503AD0(0x277); the mission panel's presenter advice 0x93E3E0[2] is gated" );
 		((UiButton)screen.Find( "help" )!).Clicked!();
 		Assert.AreEqual( "help 1B6", advice.Calls[^1], "0x55BEAD: the help button" );
 		advice.Calls.Clear();

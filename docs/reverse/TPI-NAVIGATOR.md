@@ -186,7 +186,7 @@ ported in the staff phase) refuses the entrance cells (0x2F, 0x11) and (0x30, 0x
 (type 0), else 0, and calls `0x60B8E0`; a staff member's mark is never set. The patrol still bypasses it (gap 7 of the plan): the staff's wander is NV4.
 
 **The stamp counter `0x5D81F0`** [R, O]. One process-wide dword (`0xA9D2E8`), raised and returned by each call, never reset and not saved. A park with Theme Park Inc's navigator
-counts every simulation call (`ParkCellMap.CountsSimulationCalls`; `NextStamp` for a gate or a mark, `SetupStamp` for a set-up's success), in the original's order:
+counts every simulation call of its native routes (`ParkCellMap.CountsSimulationCalls`; `NextStamp` for a gate or a mark, `SetupStamp` for a set-up's success), in the original's order. Theme Park World-rule walkers in such a park (`[EXT:tpi-twp-guest-rules]`, until NV4) route through Theme Park World's requests, which raise nothing:
 
 | Caller | Address | OpenTPW |
 | --- | --- | --- |

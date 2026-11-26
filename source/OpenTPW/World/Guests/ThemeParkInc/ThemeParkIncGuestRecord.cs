@@ -84,6 +84,11 @@ public sealed class ThemeParkIncGuestRecord
 	public int[] Words1EC { get; } = new int[Words1ECCount];
 	/// <summary>The counter <c>+0xE0</c> (state 26's entry sets 10).</summary>
 	public int Word0E0 { get; internal set; }
+	/// <summary>
+	/// The wander flag <c>+0xE8</c>: set by the wander destination <c>0x609F70</c> when it sets a walk (<c>0x60A5D2</c>, <c>0x60A8C1</c>) and never cleared after the person constructor
+	/// (<c>0x608F7D</c>); state 7's entry asks for the walk to the target words again while it is set (<c>0x61A9C7</c>). The person save keeps it (<c>0x6095A0</c>).
+	/// </summary>
+	public bool Wandered { get; internal set; }
 
 	/// <summary>The number of words at <c>+0x2D0</c>..<c>+0x2E0</c>.</summary>
 	public const int Words2D0Count = 5;

@@ -721,6 +721,7 @@ public partial class Level : IDisposable
 				SetupThemeParkIncStaff();
 				SetupThemeParkIncRideEvents();
 				SeedThemeParkIncObjectList();
+				AttachThemeParkIncGuestWorld();
 				SeedThemeParkIncCurrentObstacle();
 				SeedThemeParkIncHqAndLab();
 				AttachThemeParkIncMissionWorld();
@@ -819,6 +820,7 @@ public partial class Level : IDisposable
 			var legacyKids = gameKidCount = banks[0].Count;
 			var simulation = Guests;
 			simulation.TpiSpriteBankCounts = counts;
+			simulation.TpiSpriteBankFemale = banks.Select( group => group.Select( pair => pair.Body.Animations.FlagB != 0 ).ToArray() ).ToArray();
 			sprites = banks.SelectMany( group => group.Select( pair => pair.Body ) ).ToList();
 			headSprites = banks.SelectMany( group => group.Select( pair => pair.Head ) ).ToList();
 			tpiAtlas = guest => guest.TpiPrankCode.HasValue ? NativeAtlas( guest ) : GuestAppearance.KidSet( guest, legacyKids );

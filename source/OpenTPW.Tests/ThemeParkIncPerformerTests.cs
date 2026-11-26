@@ -472,4 +472,55 @@ public class ThemeParkIncPerformerTests
 		var refusal = Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() ) ) );
 		Assert.AreEqual( ParkSaveFile.ThemeParkIncPerformersMissing, refusal.Message );
 	}
+
+	/// <summary>The native guests' view of the staff world: its entertainers (ThemeParkIncStaffWorld.Entertainers) and nothing else.</summary>
+	private sealed class EntertainersOnly( ThemeParkIncStaffWorld world, ParkEconomy economy ) : IThemeParkIncGuestWorld
+	{
+		public IReadOnlyList<ThemeParkIncThingView> Bins() => [];
+		public IReadOnlyList<ThemeParkIncThingView> Shows() => [];
+		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => world.Entertainers( economy );
+		public ThemeParkIncThingView? Thing( ushort thingId ) => null;
+		public void RecordCustomer( ushort thingId ) { }
+	}
+
+	/// <summary>
+	/// The guests' reaction to a performing entertainer (0x614D41, docs/reverse/TPI-GUESTS.md phase P2) against a hired and placed Theme Park Inc entertainer: a native idle guest beside him turns to him
+	/// and sets +0x1B8 while he performs (+0x1B4 == 0x17), and goes on to its decision when he does not.
+	/// </summary>
+	[TestMethod]
+	public void ANativeGuestBesideAPerformingEntertainerTurnsToHim()
+	{
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		world.GuestFinder = ( _, _ ) => false;
+		var member = Hire( economy, world, ThemeParkIncStaffRole.Entertainer, (3, 5) );
+		var grid = new GuestPathGrid( 16, 16 );
+		for ( var x = 0; x < 12; x++ )
+			grid.SetPath( x, 5, true );
+		var settings = new GuestSettings
+		{
+			TpiGuestStart = new( Enumerable.Range( 0, 24 ).Select( i => new ThemeParkIncGuestType( 90 - i, 300 + 20 * i, 40 + i, i / 8 ) ).ToArray(), 400, 30, 15, 70, 20, 10, 10 ),
+			TpiNative = ThemeParkIncNativeGuestTests.NativeSettings()
+		};
+		var guests = new GuestSimulation( grid, settings, 7 ) { ThemeParkIncNativeGuests = true, ArrivalsEnabled = false, ThemeParkIncWorld = new EntertainersOnly( world, economy ) };
+		var guest = guests.SpawnInPark( 4, 5 );
+		var tpi = guest.Tpi!;
+		(guest.Happiness, guest.ExitLevel, guest.TpiPrankCode) = (50, 1000, 0);
+		var cell = member.Navigation!.Cell;
+
+		member.State = ThemeParkIncStaffWorld.Performing;
+		CollectionAssert.AreEqual( new[] { new ThemeParkIncEntertainerView( (ushort)member.ThingId, cell, true ) }, world.Entertainers( economy ).ToArray() );
+		guests.World.Reseed( 1 );
+		guests.UpdateTpiIdle( guest, tpi );
+		Assert.AreEqual( (ThemeParkIncGuestStates.Idle, HeadingAngle.Of( -(cell.X - 4), cell.Y - 5 ), 1), (tpi.State, tpi.Heading, tpi.Word1B8), "0x614E2E and 0x614E31" );
+		var probe = new WorldRng( 1 );
+		probe.NextWord();
+		Assert.AreEqual( probe.State, guests.World.State, "draw A only: the update ends at the turn" );
+
+		member.State = ThemeParkIncStaffWorld.Idle;
+		tpi.Heading = 0;
+		guests.World.Reseed( 1 );
+		guests.UpdateTpiIdle( guest, tpi );
+		Assert.AreEqual( (0, 0), (tpi.Heading, tpi.Word1B8), "+0x1B4 != 0x17 goes on to the prank gate (0x614DA2)" );
+	}
 }

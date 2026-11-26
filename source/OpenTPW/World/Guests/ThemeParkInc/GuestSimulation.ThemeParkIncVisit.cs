@@ -551,14 +551,15 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>A won play's gain: <c>_ftol(ln(prize / price) / ln 2 × medium)</c> with each x87 step rounded to a single; a result that is not finite gives 0, the low dword of the integer indefinite.</summary>
-	// [BIN:TPI-EXE:0x6133B7 won play gain] fild +0x88, fidiv +0x94, fldln2/fyl2x (ln), fldln2 with the double 2.0 (0x93B310)/fyl2x (ln 2), fdivp, fild the byte, fmulp, _ftol: at the control word 0x7F each
-	// result rounds to 24 bits; a price of 0 gives an infinity (or a NaN), whose _ftol is the low dword 0 of the integer indefinite
+	// [BIN:TPI-EXE:0x6133B7 won play gain] fild +0x88, fidiv +0x94, fldln2/fyl2x (ln), fldln2 with the double 2.0 (0x93B310)/fyl2x (ln 2), fdivp, fild the byte, fmulp, _ftol: the control word 0x7F
+	// rounds the divisions and the product to 24 bits, while fyl2x itself runs at full precision; a price of 0 gives an infinity (or a NaN), whose _ftol is the low dword 0 of the integer indefinite
 	private const double Ln2 = 0.69314718055994530942;
 
 	internal static int ThemeParkIncPlayGain( int prize, int price, int medium )
 	{
 		var quotient = (float)((double)prize / price);
-		// ln x as log₂ x × ln 2 through the deterministic DetMath.Log2 (docs/DETERMINISM.md), each rounded to a single as the x87 at 24 bits rounds fyl2x's result
+		// ln x as log₂ x × ln 2 through the deterministic DetMath.Log2 (docs/DETERMINISM.md); the logarithms are kept as singles here, where the original keeps fyl2x's full result: an
+		// exhaustive comparison over prizes 1..60, prices 1..40 and medium 1..60, 100, 128, 200 and 255 found no case where the ratio's single or the gain differs
 		var logarithm = (float)(DetMath.Log2( quotient ) * Ln2);
 		var ln2 = (float)Ln2;
 		var product = (float)((float)(logarithm / ln2) * (float)medium);

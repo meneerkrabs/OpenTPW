@@ -294,8 +294,8 @@ public sealed partial class GuestSimulation
 			return;
 		}
 		tpi.Word234 = BitConverter.SingleToInt32Bits( guest.Happiness );
-		// [BIN:TPI-EXE:0x6119A6 join happiness] the use routine's fare term reads +0x234 (byte(+0x1BC) − byte(+0x234)) × 3, as tp.exe's does from its own copy: the bridged boarding's FinishUse reads
-		// the shared record's QueueJoinHappiness, so the join mirrors +0x234 there
+		// [BIN:TPI-EXE:0x6119A6 join happiness] the use routine's fare term reads +0x234 (byte(+0x1BC) − byte(+0x234)) × 3, as tp.exe's does from its own copy; the native use routine reads Word234,
+		// and the shared record's QueueJoinHappiness keeps the same value
 		guest.QueueJoinHappiness = guest.Happiness;
 		guest.AttractionId = ride.AttractionId;
 		guest.QueueJoinTurn = ParkTurn;

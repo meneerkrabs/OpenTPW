@@ -24,7 +24,7 @@ public sealed class ThemeParkIncNativeQueueTests
 		public IReadOnlyList<ThemeParkIncEntertainerView> Entertainers() => [];
 		public ThemeParkIncThingView? Thing( ushort thingId ) => null;
 		public void RecordCustomer( ushort thingId ) { }
-		public IReadOnlyList<ThemeParkIncAttractionView> Attractions() => [new ThemeParkIncAttractionView( ThemeParkIncNativeQueueTests.Thing, (2, 6), ride, Terms, false )];
+		public IReadOnlyList<ThemeParkIncAttractionView> Attractions() => [new ThemeParkIncAttractionView( ThemeParkIncNativeQueueTests.Thing, (2, 6), ride, Terms )];
 	}
 
 	/// <summary>Score words that keep every generation's score (100 percent) and no weather change.</summary>
@@ -101,7 +101,7 @@ public sealed class ThemeParkIncNativeQueueTests
 		Assert.AreEqual( 0u, Score( input with { UsedHistory = [0, 40, 0, 0], TemporaryHistory = [40, 0, 0, 40] } ), "21 / 4, then / 5 and / 2" );
 		Assert.AreEqual( 7u, Score( input with { BackX = 30, BackY = 30 } ), "out of the queue's reach, the distance match far" );
 		Assert.AreEqual( 0u, Score( input with { Terms = Plain with { GenderSpecific = 2 } } ), "a type for women only (GenderSpecific 2) refuses a male bank" );
-		Assert.AreEqual( 0u, Score( input with { Special = true } ), "a special ride (0x6242F0) scores 0" );
+		Assert.AreEqual( 0u, Score( input with { Special = true } ), "a special ride awaiting its activation (0x6242F0, 0x6101FD) scores 0" );
 		Assert.AreEqual( 0u, Score( input with { Terms = Plain with { AppearanceEffect = 3 } } ), "an umbrella shop scores 0 without rain, storm or snow" );
 		Assert.AreEqual( 0u, Score( input with { Terms = Plain with { AppearanceEffect = 1 }, UmbrellaState = UmbrellaRules.StateOpen } ), "a balloon shop scores 0 under an open umbrella" );
 	}
@@ -321,6 +321,43 @@ public sealed class ThemeParkIncNativeQueueTests
 		var seen = false;
 		RunUntil( rig, () => seen |= tpi.State is ThemeParkIncGuestStates.WalkingToMajor or ThemeParkIncGuestStates.TakingQueueStep or ThemeParkIncGuestStates.StandingInQueue, 300 );
 		Assert.IsTrue( seen, "state 6's decision on A & 3 of 0 or 2 runs the major decision (0x610080) and walks to the ride (state 13)" );
+	}
+
+	/// <summary>The economy's special-ride state for the test: the ride awaits its activation while <see cref="Pending"/> holds.</summary>
+	private sealed class SpecialRidePayments : IGuestPayments
+	{
+		public bool Pending = true;
+		public int AdmissionFee => 0;
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return true; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
+		public bool AwaitsActivation( IRideVisitorBridge attraction ) => Pending;
+	}
+
+	/// <summary>
+	/// A special ride awaiting its activation (<c>0x6242F0</c> does not free it) scores 0 in the native score (<c>0x6101FD</c>), so no native guest chooses it, idle or walking, and the Theme Park World
+	/// rules' HostScore refuses it from the same economy state; once activated it is chosen.
+	/// </summary>
+	[TestMethod]
+	public void ANativeGuestNeverChoosesASpecialRideAwaitingActivation()
+	{
+		var (rig, _) = Rig();
+		var payments = new SpecialRidePayments();
+		rig.Simulation.Payments = payments;
+		var (guest, tpi) = Native( rig );
+		rig.Simulation.ThemeParkIncMajorDecision( guest, tpi, rig.Simulation.Settings.TpiNative! );
+		Assert.AreEqual( 0, tpi.Target, "the major decision refuses the pending special ride" );
+		Assert.AreEqual( 0u, rig.Simulation.HostScore( guest, rig.Ride, 100 ), "the Theme Park World rules' score refuses it too (the same economy state)" );
+		var chose = false;
+		RunUntil( rig, () =>
+		{
+			chose |= tpi.Target != 0 || tpi.State is ThemeParkIncGuestStates.WalkingToMajor or ThemeParkIncGuestStates.TakingQueueStep or ThemeParkIncGuestStates.StandingInQueue;
+			return false;
+		}, 300 );
+		Assert.IsFalse( chose, "300 turns of idle decisions never choose it" );
+		Assert.AreEqual( 0, rig.Ride.QueueLength );
+		payments.Pending = false;
+		rig.Simulation.ThemeParkIncMajorDecision( guest, tpi, rig.Simulation.Settings.TpiNative! );
+		Assert.AreEqual( Thing, tpi.Target, "once activated it is chosen" );
 	}
 
 	[TestMethod]

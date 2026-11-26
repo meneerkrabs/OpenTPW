@@ -251,7 +251,8 @@ takes an argument: 0 plays the sound 0x80 for one thing id in eight and costs `M
 every queue exit of state 14 and on state 13's refusal of a long queue, where Theme Park World calls it only for a refused price.
 
 **The score `0x6101E0`** is Theme Park World's (`0x004FCC30`, `AttractionScore`) with these differences (`ThemeParkIncAttractionScore`):
-- gates that score 0: a special ride (the save's table `0xAA0420`, `0x6242F0`); `Info.GenderSpecific` 1 or 2 against the sprite bank's gender; an umbrella shop (`AppearanceEffect` 3)
+- gates that score 0: a special ride awaiting its activation (`0x6101FD`: a thing `0x6242F0` does not free), read from the economy's special-ride table
+  (`ParkEconomy.IsThemeParkIncSpecialRidePending` through `IGuestPayments.AwaitsActivation`), the same state the Theme Park World rules' HostScore and candidate test read; `Info.GenderSpecific` 1 or 2 against the sprite bank's gender; an umbrella shop (`AppearanceEffect` 3)
   for a guest with an umbrella or in weather other than rain, storm and snow; a balloon shop (1) for a guest with a balloon or an umbrella state 3 or 4; the same type as used-history slot 0
   (`0x61035F..0x61036E`: the type word `+0x16` of whatever live thing the slot `0xAA18B0` holds for that id, read through `IThemeParkIncGuestWorld.ThingTypeId`, the level's live objects);
 - the weights are `PeepInfo.DecisionVar*Weight` (`0xA01AC4..0xA01ADC`); the queue's weight is read whole, the others' low 16 bits;
@@ -316,6 +317,9 @@ nothing. After that the bridged boarding's world draws are known to differ from 
 - a won sideshow's tail takes one more draw whose value nothing reads (tp.exe `0x004FE8D9`);
 - Theme Park World's small-portion tests (one draw each, tp.exe `0x004FE44E`) stand in for Theme Park Inc's hunger and thirst draws `0x612AEC` and `0x612BCF`, which are taken at a
   different moment of the use.
+
+A balloon bought in the bridged boarding is Theme Park World's (`Guest.BalloonLife`); Theme Park Inc's balloon words `+0x294`/`+0x298`, which the score's balloon-shop gate and the
+pre-update's countdown read, stay clear until phase P3b ports the use routine, so a native guest with such a balloon can be offered a balloon shop again.
 
 The used history is the original's: the end of a bridged use pushes the thing id into `+0x20A` with the bug-compatible shift (`0x6118E9`..`0x611906`), not Theme Park World's
 attraction id, and Theme Park World's decision hook does not run for a native guest. The fare's happiness term reads the happiness at the join (`+0x234`, `0x6119A6`), which the

@@ -60,7 +60,10 @@ public sealed partial class GuestSimulation
 		var last = guest.UsedHistory[0];
 		// [BIN:TPI-EXE:0x61035F same type] the last used thing's slot in 0xAA18B0, whatever kind of thing it holds, and its type word +0x16 against the candidate's
 		var sameType = last != 0 && ThemeParkIncWorld?.ThingTypeId( (ushort)last ) is { } lastType && lastType == ride.TypeId;
-		var input = new ThemeParkIncAttractionScoreInput( view.Special, ThemeParkIncSpriteIsFemale( guest ), sameType, view.Terms, guest.UmbrellaState,
+		// [BIN:TPI-EXE:0x6101FD awaiting activation] the score's first test: a thing 0x6242F0 does not free (a special ride whose record still names it) scores 0; the economy's special-ride table
+		// (ParkEconomy.IsThemeParkIncSpecialRidePending through IGuestPayments.AwaitsActivation) is the one the Theme Park World rules' HostScore and candidate test read, so both choices refuse the same rides
+		var special = Payments?.AwaitsActivation( ride ) == true;
+		var input = new ThemeParkIncAttractionScoreInput( special, ThemeParkIncSpriteIsFemale( guest ), sameType, view.Terms, guest.UmbrellaState,
 			ArrivalWeatherState?.Invoke() ?? UmbrellaRules.WeatherNone, tpi.HoldsBalloon, tpi.BalloonCountdown, gx, gy, bx, by, Litter?.Environment.At( bx, by ).Attraction ?? 0,
 			TpiQueuePosition( ride, 0 ), ride.QueueSizeInCells, ride.LiveExcitement & 0xFF, (ride.StaticExcitementLevel & 0xFF) != 0, tpi.PreferredExcitement & 0xFF, guest.Thirst, guest.Hunger,
 			guest.Toilet, guest.Nausea, ride.ThirstEffect, ride.HungerEffect, ride.ProvidesRelief, ride.AgeDays, ride.GoldenTicketCost, ride.UpgradeCost, tpi.Generation,

@@ -12,7 +12,7 @@ public readonly record struct ThemeParkIncScoreTerms( int GenderSpecific, int Ap
 /// Everything Theme Park Inc's attraction score <c>0x6101E0</c> reads, in the game's own units. The guest's cell and the back-of-queue cell are cell bytes; the meters are the guest's floats; the
 /// weights and decision variables are the <c>PeepInfo</c> words (<c>0xA01AA4..0xA01ADC</c>).
 /// </summary>
-/// <param name="Special">The thing is a special ride (the table <c>0xAA0420</c>, <c>0x6242F0</c>): the score is 0.</param>
+/// <param name="Special">The thing is a special ride awaiting its activation (<c>0x6242F0</c> does not free it, the test at <c>0x6101FD</c>): the score is 0.</param>
 /// <param name="Female">The guest's sprite bank is female (<c>0x68E7B0</c>): a <c>GenderSpecific</c> type of 2 takes women only, 1 men only.</param>
 /// <param name="SameTypeAsLastUsed">The thing in used-history slot 0 (<c>+0x20A</c>) exists and has this thing's type (<c>+0x16</c>): the score is 0.</param>
 /// <param name="UmbrellaState">The guest's umbrella state <c>+0x238</c>.</param>

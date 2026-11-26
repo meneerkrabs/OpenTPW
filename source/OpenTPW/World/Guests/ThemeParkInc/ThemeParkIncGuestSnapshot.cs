@@ -87,7 +87,8 @@ public sealed record ThemeParkIncGuestSnapshot
 			yield return $"Guest {guestId} Theme Park Inc state {State} ({ThemeParkIncGuestStates.Names[State]}) is not ported in this build.";
 		if ( State == ThemeParkIncGuestStates.SpotAnimation && (uint)Saved < ThemeParkIncGuestStates.Count && !ThemeParkIncGuestStates.RunsInThisBuild( Saved ) )
 			yield return $"Guest {guestId} Theme Park Inc spot animation returns to state {Saved} ({ThemeParkIncGuestStates.Names[Saved]}), which is not ported in this build.";
-		// no native guest can hold a balloon before phase P3 (no shop serves one yet); state 6's victim search (prank case 5) and the balloon's litter rely on that
+		// no native guest can hold Theme Park Inc's balloon before phase P3b (the bridged boarding's balloon shop gives Theme Park World's, Guest.BalloonLife); state 6's victim search (prank case 5)
+		// and the balloon's litter rely on that
 		if ( HoldsBalloon || BalloonCountdown != 0 )
 			yield return $"Guest {guestId} Theme Park Inc balloon (held {HoldsBalloon}, countdown {BalloonCountdown}) cannot be held in this build.";
 		if ( (uint)Generation > 2 )

@@ -25,9 +25,10 @@ public readonly record struct ThemeParkIncEntertainerView( ushort ThingId, (int 
 
 /// <summary>
 /// An attraction thing as Theme Park Inc's ride choice and queues read it (phase P3a): its thing id, its thing cell (<c>+5</c>, <c>+7</c>, the cell whose thing chain the minor decision walks), the
-/// ride bridge that holds its queue list, its open word and its admission (<see cref="IRideVisitorBridge"/>), its type's score words and whether the park's special-ride table names it (<c>0x6242F0</c>).
+/// ride bridge that holds its queue list, its open word and its admission (<see cref="IRideVisitorBridge"/>) and its type's score words. Whether it is a special ride awaiting its activation
+/// (<c>0x6242F0</c>) is the economy's live state (<see cref="IGuestPayments.AwaitsActivation"/>), read when it is scored.
 /// </summary>
-public readonly record struct ThemeParkIncAttractionView( ushort ThingId, (int X, int Y) Cell, RideVisitorBridge Ride, ThemeParkIncScoreTerms Terms, bool Special );
+public readonly record struct ThemeParkIncAttractionView( ushort ThingId, (int X, int Y) Cell, RideVisitorBridge Ride, ThemeParkIncScoreTerms Terms );
 
 /// <summary>
 /// What Theme Park Inc's native guests read of the park outside the guest simulation (phase P2 of the guest states, docs/reverse/TPI-GUESTS.md): the object list's litter bins and shows, a thing by

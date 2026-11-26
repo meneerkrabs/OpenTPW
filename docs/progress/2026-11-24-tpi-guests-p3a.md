@@ -4,7 +4,7 @@ The guests of Theme Park Inc's own state machine (the hidden switch `--tpi-nativ
 queue, move up and are called to the stand point as Theme Park Inc's guests do. With the switch off, Theme Park Inc and Theme Park World behave exactly as before.
 [TPI-GUESTS.md](../reverse/TPI-GUESTS.md) has the details.
 
-- **The ride choice.** The attraction score `0x6101E0` is ported with its gates (special rides, a gender, the balloon and umbrella shops), Theme Park Inc's weights and new-ride words,
+- **The ride choice.** The attraction score `0x6101E0` is ported with its gates (a special ride awaiting its activation, read from the economy's special-ride table as the Theme Park World rules do; a gender; the balloon and umbrella shops), Theme Park Inc's weights and new-ride words,
   the golden-ticket and upgrade scales at the game thread's 24-bit precision, the weather and generation percentages and the history divisions. The major decision `0x610080` uses it,
   so state 6's ride scan, gated in phase P2, now runs; the minor decision `0x6114B0` runs while the guest walks.
 - **The walk to a ride (state 13, `0x616AC0`)**, **the queue (state 14, `0x6176C0`)** and **the queue step (state 15, `0x61A1DB`)** run, with the full branch tree of state 14: the
@@ -37,7 +37,8 @@ Verified with these checks:
   states 13 and 14, state 15 and the earlier phases' routines; a separate run of 5000 scores agreed too.
 - New tests (`ThemeParkIncNativeQueueTests`) for the score, the limit, a guest that chooses, queues, boards and comes back idle, the links and places, the refusals, the needs bands,
   the head's turn, the umbrella shop's weather draw, the removal message and saves of a queued guest and of a guest mid-ride; a Science play test where native guests queue and ride
-  the prebuilt rides, and one for the level's attraction view (choosable, hosted, the special-ride table).
+  the prebuilt rides, and one for the level's attraction view (choosable and hosted); a native guest never chooses a special ride
+  awaiting its activation.
 - The Theme Park Inc, save, resume and guest filters pass with the retail data, the Theme Park World filters pass with its data, and the determinism pins do not move.
 - The silent, offscreen Science smoke passes with the switch off and with it on.
 

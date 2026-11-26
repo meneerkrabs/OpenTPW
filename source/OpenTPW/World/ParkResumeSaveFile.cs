@@ -999,6 +999,9 @@ internal static class ParkResumeSaveFile
 			if ( guest.TpiPrankCode is { } tpiPrank )
 				Require( snapshot.Economy!.Edition == GameEdition.ThemeParkInc && guest.Type < ThemeParkIncGuestStartSettings.TypeCount
 					&& ThemeParkIncGuestStart.ValidPrankCode( tpiPrank ) && guest.PrankFlag == 0, $"guest {guest.Id} has an invalid Theme Park Inc birth profile" );
+			if ( guest.Tpi is { } native )
+				Require( guest.TpiPrankCode.HasValue && guests.ThemeParkIncNativeGuests && !native.Problems( guest.Id ).Any(),
+					$"guest {guest.Id} has an invalid Theme Park Inc native block" );
 			Require( double.IsFinite( guest.ExitLevel ) && Math.Truncate( guest.ExitLevel ) is >= int.MinValue and <= int.MaxValue,
 				$"guest {guest.Id} exit counter {guest.ExitLevel} does not fit the truncated counter" );
 			Require( guests.SchemaVersion == 1 || Math.Truncate( guest.ExitLevel ) == guest.ExitLevel,

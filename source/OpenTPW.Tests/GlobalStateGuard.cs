@@ -51,6 +51,7 @@ public sealed class GlobalStateGuard : TestMethodAttribute
 	public override TestResult[] Execute( ITestMethod testMethod )
 	{
 		var before = Array.ConvertAll( watched, global => global.Read() );
+		var nativeGuests = GuestSimulation.ThemeParkIncNativeGuestsRequested;
 		var outer = Running;
 		Running = testMethod;
 		TestResult[] results;
@@ -64,6 +65,12 @@ public sealed class GlobalStateGuard : TestMethodAttribute
 			Running = outer;
 			// also when the runner throws: MSTest reports that as a failure, and the leak must still not reach the tests after it
 			leaks = PutBack( before );
+			// the hidden switch of Theme Park Inc's native guest states is read by every level a later test builds
+			if ( GuestSimulation.ThemeParkIncNativeGuestsRequested != nativeGuests )
+			{
+				leaks = [.. leaks, $"{nameof( GuestSimulation.ThemeParkIncNativeGuestsRequested )} was {nativeGuests} and is now {GuestSimulation.ThemeParkIncNativeGuestsRequested}"];
+				GuestSimulation.ThemeParkIncNativeGuestsRequested = nativeGuests;
+			}
 			// the pause object's static state (paused word, advisor flag, focus latch) belongs to no file system: a test that pauses the sound must not hand it on
 			GamePauseSound.Reset();
 		}

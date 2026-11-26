@@ -24,8 +24,12 @@ internal sealed class TestCareerFiles : IThemeParkIncCareerFiles
 
 	public bool HasCdkRegistrations => false;
 
+	/// <summary>How many times each path was read.</summary>
+	public Dictionary<string, int> Reads { get; } = new( StringComparer.OrdinalIgnoreCase );
+
 	public byte[]? Read( string path )
 	{
+		Reads[path] = Reads.GetValueOrDefault( path ) + 1;
 		if ( files.TryGetValue( path, out var bytes ) )
 			return bytes;
 		if ( root == null )
@@ -189,6 +193,21 @@ public class ThemeParkIncMissionTests
 [TestClass]
 public class ThemeParkIncCareerTests
 {
+	[TestMethod]
+	public void AZonesGlobalSamIsLoadedOnceNotOnEveryRecordLookup()
+	{
+		// the mission window's refresh asks for the zone record every frame; the original loads a record's global.sam once (0x7509C0)
+		var files = new TestCareerFiles()
+			.With( "/levels/arabian/global.sam", "ParkInfo.AvailableFromStart 0\n" )
+			.With( "/levels/science/global.sam", "ParkInfo.AvailableFromStart 1\n" )
+			.With( "/levels/water/global.sam", "ParkInfo.AvailableFromStart 0\n" );
+		var career = new ThemeParkIncCareer( files, TestCareerFiles.ShippedFiringLines );
+		career.ChangeTheme( "science" );
+		for ( var index = 0; index < 50; index++ )
+			Assert.IsNotNull( career.ZoneRecord( 1 ) );
+		Assert.AreEqual( 1, files.Reads["/levels/science/global.sam"] );
+	}
+
 	private static TestCareerFiles Synthetic() => new TestCareerFiles()
 		.With( "/missions/Miss00.sam", "Info.Number 0\nExitStatistic[0].Type 8\nExitStatistic[0].InTheme 1\nExitStatistic[0].TargetValue 40\nObstacle.GoldenTickets 2\n" )
 		.With( "/missions/Miss01.sam", "Info.Number 1\nObstacleStaff[0].Ability 3\nObstacleStaff[0].Number 1\nObstacleStaff[1].Ability 4\nCompletion.ThemeOpened 1\nCompletion.ThemeNumber 2\n" )

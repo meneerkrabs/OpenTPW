@@ -176,8 +176,8 @@ public sealed class ThemeParkIncResearch
 	/// <summary>One scientist's term of the lab tick at the 24-bit control word: <c>fild</c> the work, <c>fimul</c> the workload, <c>fmuls</c> SpeedScaleDown, <c>fadds</c> the sum, each rounded to a single.</summary>
 	internal static float ScientistPoints( int work, int workLoad, float speedScaleDown, float sum )
 	{
-		// the integer product is exact in a double (|work × workLoad| < 2^53), so its conversion is the fimul's one rounding
-		var product = (float)((double)work * workLoad);
+		// fimul: the exact 64-bit product of the two integers converted to a single, the instruction's one rounding
+		var product = (float)((long)work * workLoad);
 		var scaled = (float)(product * speedScaleDown);
 		return (float)(scaled + sum);
 	}
@@ -201,8 +201,8 @@ public sealed class ThemeParkIncResearch
 			points = project.Cost - project.Done;
 		var done = points + project.Done;
 		projects[index] = project with { Done = done };
-		// fildl CashPerBrainPoint, fmuls points: one product rounded to a single at the control word 0x7F (Tick), then _ftol; the product of a small integer and a single is exact in a double
-		debit( unchecked( (int)(long)(float)((double)project.CashPerBrainPoint * points) ) );
+		// fildl CashPerBrainPoint, fmuls points: one product rounded to a single at the control word 0x7F (Tick), then _ftol (the low dword)
+		debit( ThemeParkIncX87.Ftol( ThemeParkIncX87.Product( project.CashPerBrainPoint, points ) ) );
 		if ( done >= project.Cost )
 		{
 			MarkResearched( project.ObjectId, project.Level );
@@ -285,6 +285,34 @@ public sealed class ThemeParkIncResearch
 			? members.FirstOrDefault( member => member.Ability == project.StaffSA )
 			: role == (int)ThemeParkIncStaffRole.Researcher ? null : members.FirstOrDefault( member => (int)member.Role == role );
 		return found is { } consultant ? (ushort)consultant.ThingId : (ushort)0;
+	}
+
+	/// <summary>
+	/// Message 0x21 for a staff member's thing destroyed (<c>0x61DAD0</c>): a researcher leaves both teams; a member of another role who is a slot's consultant is replaced by the consultant the slot's
+	/// project picks now from <paramref name="members"/>, the staff as the message finds them (the leaver still among them: the class's unlink comes after the message).
+	/// </summary>
+	// [BIN:TPI-EXE:0x61DAD0 lab staff removed] kind 8: each of the 20 words of both teams (+0x24, +0x4C) equal to the handle is cleared (the researcher's +0x274 is not touched); any other kind: each slot
+	// whose consultant word (+0x1C) is the handle takes 0x61D970(slot, the slot's project +0x14, handle), whose staff walk does not skip the leaver
+	public void StaffRemoved( ThemeParkIncStaffMember member, IEnumerable<ThemeParkIncStaffMember> members )
+	{
+		var handle = (ushort)member.ThingId;
+		if ( member.Role == ThemeParkIncStaffRole.Researcher )
+		{
+			foreach ( var team in teams )
+				for ( var index = 0; index < TeamSize; index++ )
+					if ( team[index] == handle )
+						team[index] = 0;
+			return;
+		}
+		for ( var slot = 0; slot < Slots; slot++ )
+		{
+			if ( consultants[slot] != handle )
+				continue;
+			// a consultant is set with the slot's project (the panel's commit) and cleared with it (0x61F560), so the slot holds a project here; the original would index the project table by -1
+			if ( slotProjects[slot] < 0 )
+				throw new InvalidOperationException( "A Theme Park Inc research slot holds a consultant without a project." );
+			consultants[slot] = PickConsultant( projects[slotProjects[slot]], members );
+		}
 	}
 
 	/// <summary>
@@ -423,7 +451,7 @@ public sealed class ThemeParkIncResearch
 		{
 			if ( info.CostOfResearch[level] > 0 )
 			{
-				return projects[Count] with { Level = (byte)level, Group = 0, Category = 4, Cost = (float)((double)info.CostOfResearch[level] * CostScaleUp),
+				return projects[Count] with { Level = (byte)level, Group = 0, Category = 4, Cost = ThemeParkIncX87.Product( info.CostOfResearch[level], CostScaleUp ),
 					CashPerBrainPoint = info.CashPerBrainPoint[level] == 0 ? 1 : info.CashPerBrainPoint[level], ObjectId = (ushort)info.Id, Done = 0f, StaffRqd = 0, StaffSA = 0 };
 			}
 			controls[control] = controls[control] with { Level = level };

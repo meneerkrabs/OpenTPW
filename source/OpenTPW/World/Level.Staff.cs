@@ -480,3 +480,27 @@ public partial class Level
 		return false;
 	}
 }
+
+public partial class Level
+{
+	/// <summary>
+	/// The person's and the thing's part of a dismissed Theme Park Inc member's destroy (<c>0x609130</c>, <c>0x6493B0</c>): his entry leaves its cell chain and his thing is queued for destruction at
+	/// the turn's end.
+	/// </summary>
+	// [BIN:TPI-EXE:0x609130 person destroy] 0x637FE0, the sprite source deleted (0x5D1050) and 0x638460; [BIN:TPI-EXE:0x6493B0 thing destroy] the handle goes onto the destroy list (0x650990), freed later
+	internal void DestroyTpiMemberThing( ThemeParkIncStaffMember member )
+	{
+		if ( member.ThingId == 0 )
+			return;
+		Guests?.StaffChain.Remove( member.ThingId );
+		if ( Things.IsUsed( member.ThingId ) )
+			Things.QueueDestroy( member.ThingId );
+	}
+
+	/// <summary>The dismissal of a Theme Park Inc member (<c>0x629040</c>): the economy's part, then his thing's.</summary>
+	public void DismissTpiMember( ThemeParkIncStaffMember member ) => Park?.Economy.DismissThemeParkIncMember( member, DestroyTpiMemberThing );
+
+	/// <summary>The end of a Theme Park Inc wage negotiation (the results dialog's close, <c>0x559860</c> message 0x14).</summary>
+	public void EndTpiNegotiation( ThemeParkIncStaffMember member, int result, int offer, int demand, ThemeParkIncWageNegotiation.Choice choice ) =>
+		Park?.Economy.EndThemeParkIncNegotiation( member, result, offer, demand, choice, DestroyTpiMemberThing );
+}

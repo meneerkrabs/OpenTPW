@@ -168,6 +168,12 @@ public sealed record GuestSnapshot
 	/// <summary>Native TPI birth code, including zero. An absent code retains the legacy guest profile.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? TpiPrankCode { get; init; }
+	/// <summary>
+	/// The fields of a guest running Theme Park Inc's own state machine (<see cref="Guest.Tpi"/>); absent on every other guest and in saves made before it, whose guests run the Theme Park World
+	/// rules (<c>[EXT:tpi-twp-guest-rules]</c>). An optional member needs no schema bump: a build without it refuses a save that carries it (unmapped members are disallowed).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public ThemeParkIncGuestSnapshot? Tpi { get; init; }
 	/// <summary>The way out a guard's set-down drew (<see cref="Guest.ExitSide"/>); absent for every other guest and in older saves.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? ExitSide { get; init; }
@@ -514,6 +520,13 @@ public sealed record GuestSimulationSnapshot
 	public ThingPoolSnapshot? Things { get; init; }
 	public required long Admissions { get; init; }
 	public required int Departed { get; init; }
+	/// <summary>
+	/// Whether the simulation ran Theme Park Inc's native guest states (<see cref="GuestSimulation.ThemeParkIncNativeGuests"/> with the park's settings); absent (false) otherwise and in
+	/// saves made before it (an optional member, no schema bump). A restore refuses a save whose value differs from the running simulation's: native guest blocks need the native machine, and a native park cannot continue guests of the
+	/// Theme Park World rules.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public bool ThemeParkIncNativeGuests { get; init; }
 	/// <summary>The park's visitor count (<see cref="GuestSimulation.VisitorCount"/>). Absent before schema 9: 0.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public int VisitorCount { get; init; }

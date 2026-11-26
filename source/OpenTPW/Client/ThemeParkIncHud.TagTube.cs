@@ -28,13 +28,11 @@ public sealed partial class ThemeParkIncHud
 	{
 		if ( Lost || TagTubeOpen || level.Park?.Economy is not { TpiTagTube: not null } economy )
 			return false;
-		if ( LetterOpen )
-			closeOpenLetter?.Invoke();
-		CloseMissionWindow();
+		CloseHudWindow();
 		ThemeParkIncTagTubeWindow? window = null;
 		var addressee = strings.Entry( ThemeParkIncText.NewPlayer );
-		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee ),
-			() => RemoveTagTube( window ), RunLetterGoto );
+		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee, MemberName ),
+			() => RemoveTagTube( window ), RunTubeGoto );
 		TagTubeWindow = window;
 		Stack.Push( window.Build() );
 		return true;

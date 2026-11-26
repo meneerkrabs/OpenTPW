@@ -262,7 +262,16 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		} );
 		Do( "resume normal speed", () => flow.InjectedInput = UiInput.Key( UiKeys.Pause ) );
 		Wait( "speed applies", 2 );
-		Do( "note the resume frame", () => resumedAt = frame );
+		Do( "note the resume frame", () =>
+		{
+			resumedAt = frame;
+			// with Theme Park Inc's native guest states on (--tpi-native-guests, docs/reverse/TPI-GUESTS.md) an idle guest runs only phase P1's leave gate and stands; an exit counter of 0
+			// sends it walking to the bus stop, so the walk check runs on the native leaving path
+			// TODO(tpi-guests P2): remove this once state 6 (0x614A40) is ported in full: idle guests then wander by themselves
+			if ( Level.Guests is { ThemeParkIncNativeGuests: true } native )
+				foreach ( var guest in native.Guests )
+					guest.ExitLevel = 0;
+		} );
 		steps.AddLast( ("guests walk again", () =>
 		{
 			if ( Level.Guests!.Guests.Select( guest => (guest.Cell.X, guest.Cell.Y) ).SequenceEqual( pausedCells ) )
@@ -405,6 +414,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		if ( !captureForRestart )
 		{
 			PlanTagTube();
+			PlanWages();
 			PlanLetter();
 		}
 		// The exit a player uses: the pause menu's Quit closes the window and ends the run.
@@ -510,6 +520,68 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "close the tag tube", () => Click( Hud.Stack.Top!, "ok" ) );
 		Wait( "the tag tube closes", 2 );
 		Do( "the tag tube is closed", () => Require( !Hud.TagTubeOpen, "Okay closes the tag tube window" ) );
+	}
+
+	/// <summary>
+	/// A wage demand: the day routine files it as an unread row of the tag tube; its go-to opens the wage demand window on the member, OK negotiates the offer (one step above the demand) and the
+	/// results dialog's OK raises the salary by it.
+	/// </summary>
+	private void PlanWages()
+	{
+		ThemeParkIncStaffMember? member = null;
+		var salary = 0;
+		Do( "a member demands a rise", () =>
+		{
+			var economy = Level.Park!.Economy;
+			member = economy.TpiStaff!.Members.FirstOrDefault( item => item.Placed );
+			Require( member != null, "the park has a placed member" );
+			salary = member!.Salary;
+			// what the day message does on the member's demand day (0x628CA0): the demand's row, filed as the type-0x19 letter
+			economy.FileThemeParkIncWageDemands( new[] { new ThemeParkIncStaff.WageDemand( member, ThemeParkIncTagLetter.WageDemandWithoutStrike, 20 ) } );
+			var row = economy.TpiTagTube!.Listed.First();
+			Require( row.Source == ThemeParkIncLetterSource.WageDemand && !row.Read && row.Key == member.ThingId && row.GotoArgument == 20, "the demand is the newest unread row (0x5CF3F0)" );
+			Require( !Hud.LetterOpen, "a kind-0xB letter opens no letter window (0x5CD060)" );
+		} );
+		Do( "open the tag tube for the demand", () => flow.InjectedInput = UiInput.Key( UiKeys.Messages ) );
+		Wait( "the tag tube opens", 2 );
+		Do( "select the demand", () =>
+		{
+			Require( Hud.TagTubeOpen, "the M key opens the tag tube" );
+			var window = Hud.TagTubeWindow!;
+			var index = window.ListedRows.ToList().FindIndex( row => row.Source == ThemeParkIncLetterSource.WageDemand );
+			Require( index >= 0, "the demand is listed" );
+			window.SelectRow( index );
+		} );
+		Wait( "the details show", 2 );
+		Do( "the demand's go-to shows", () =>
+		{
+			var window = Hud.TagTubeWindow!;
+			Require( window.GotoShown, "a demand row's go-to (+0xE10 = 0xE) shows" );
+			Require( window.Details.Subject == Hud.Texts!.Format( ThemeParkIncTable.TagSystem, 0xFB ), "the subject is TAG_SYSTEM 0xFB" );
+			Click( Hud.Stack.Top!, "goto" );
+		} );
+		Wait( "the wage window opens", 2 );
+		Do( "raise the offer and press OK", () =>
+		{
+			Require( Hud.WageDemandWindow is { Offer: 20 } && Hud.Stack.Top?.Name == ThemeParkIncWageDemandWindow.ScreenName, "the go-to opens the wage demand window on the demand (0x59ABB0)" );
+			Require( !Hud.TagTubeOpen, "the go-to closed the tag tube" );
+			Hud.WageDemandWindow!.Step( 1 );
+			Click( Hud.Stack.Top!, "ok" );
+		} );
+		Wait( "the negotiation opens", 2 );
+		Do( "the negotiation accepts the offer", () =>
+		{
+			Require( Hud.NegotiationWindow is { Offer: 21, Result: ThemeParkIncWageNegotiation.Accepted } && Hud.Stack.Top?.Name == ThemeParkIncWageNegotiationWindow.ScreenName,
+				"OK opens the results dialog on the offer (0x559C40), which meets the demand" );
+			Click( Hud.Stack.Top!, "ok" );
+		} );
+		Wait( "the dialog closes", 2 );
+		Do( "the salary rose and the demand left the tube", () =>
+		{
+			Require( Hud.NegotiationWindow == null && Hud.WageDemandWindow == null, "both windows are closed" );
+			Require( member!.Salary == Math.Max( salary + 21, Level.Park!.Economy.TpiStaff!.Settings.MinWage ), $"the salary is the old one plus the offer (0x62D160): {member.Salary}" );
+			Require( Level.Park.Economy.TpiTagTube!.Listed.All( row => row.Source != ThemeParkIncLetterSource.WageDemand || row.Key != member.ThingId ), "0x636C90 deleted the demand" );
+		} );
 	}
 
 	/// <summary>

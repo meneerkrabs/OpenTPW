@@ -252,6 +252,15 @@ public partial class Level : IDisposable
 
 	/// <summary>Level directory name, e.g. <c>jungle</c>.</summary>
 	public string LevelName { get; }
+
+	/// <summary>
+	/// Whether this level runs Theme Park Inc's native guest states (docs/reverse/TPI-GUESTS.md): a Theme Park Inc level with the hidden switch <c>--tpi-native-guests</c>
+	/// (<see cref="GuestSimulation.ThemeParkIncNativeGuestsRequested"/>, read once here) whose Standard object loads. The objects (no Bus at setup), the guest settings and the guest simulation
+	/// all take it from here, so they agree (<see cref="GuestSimulation.RunsThemeParkIncNativeGuests"/>).
+	/// </summary>
+	private bool RunsThemeParkIncNativeGuests => runsThemeParkIncNativeGuests ??= GameEditions.IsThemeParkInc && GuestSimulation.ThemeParkIncNativeGuestsRequested
+		&& ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, LevelName ) != null;
+	private bool? runsThemeParkIncNativeGuests;
 	/// <summary>
 	/// Set when this level shows a shared park read-only (docs/ONLINE.md): building, sandbox saves and
 	/// any economy writes must be refused while it is set.
@@ -737,7 +746,7 @@ public partial class Level : IDisposable
 	/// <summary>The guests and their renderers; each value is a point where a frame may end (docs/BROWSER-PERFORMANCE.md, "Build steps").</summary>
 	private IEnumerable<bool> SetupGuestsSteps( OriginalPark park )
 	{
-		var settings = GuestSettings.Load( park.LevelName );
+		var settings = GuestSettings.Load( park.LevelName, RunsThemeParkIncNativeGuests );
 		var land = LandSetup( park, settings );
 		// A version 2 visit walks the shared park's own cell map (the owner's built paths and queues), not the shipped import.
 		// A resumed save from before land existed gets the level's land as a new park (or the imported save's) would.
@@ -753,7 +762,10 @@ public partial class Level : IDisposable
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) ) { PostSelected = NoteFenceSelection }
 			: null;
-		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null, UntypedHarnessWorld = false };
+		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null, UntypedHarnessWorld = false,
+			ThemeParkIncNativeGuests = RunsThemeParkIncNativeGuests };
+		if ( Guests.RunsThemeParkIncNativeGuests != RunsThemeParkIncNativeGuests )
+			throw new InvalidOperationException( "The guest settings and the level disagree on Theme Park Inc's native guest states." );
 		BindGuestThoughtPresentation( Guests );
 		// a visit has no economy, whose turn an own park's arrivals read (ParkEconomyRuntime.AttachGuests): its arrivals read the turn of the save it is built on
 		if ( Visit != null )

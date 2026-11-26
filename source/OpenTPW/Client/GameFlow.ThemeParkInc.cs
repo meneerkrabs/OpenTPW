@@ -122,6 +122,12 @@ internal sealed partial class GameFlow
 			// response rows and the speech choice are not read, so the message is noted and not said
 			foreach ( var advice in tpiEconomy.TakeThemeParkIncTubeAdvice() )
 				Log.Trace( $"Theme Park Inc unread mail advice {advice:X} is not said: the advisor's message path is not ported." );
+			// [BIN:TPI-EXE:0x628D93 wage demand advice] the daily routine posts advisor message 0x1C8 with each wage demand; [BIN:TPI-EXE:0x7176E0 strike messages] the HQ's and the strikers' type-0x17
+			// messages reach only the advisor's listener. [EXT:tpi-capability-gates] neither is said (the advisor plays only the forecasts): they are noted
+			foreach ( var advice in tpiEconomy.TakeThemeParkIncStaffAdvice() )
+				Log.Trace( $"Theme Park Inc staff advice {advice:X} is not said: the advisor's message path is not ported." );
+			foreach ( var message in tpiEconomy.TakeThemeParkIncStrikeMessages() )
+				Log.Trace( $"Theme Park Inc strike message (role {message.Role}, kind {message.Kind}, reason {message.Reason}) is not said: the advisor's message path is not ported." );
 			if ( tpiEconomy.TpiForecast is { } forecast )
 				PresentThemeParkIncForecast( level, hud, tpiEconomy, forecast );
 		}

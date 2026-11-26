@@ -46,14 +46,15 @@ public sealed partial class ThemeParkIncHud
 	// [BIN:TPI-EXE:0x50AFC0 loss window] a lost park's key tables are disabled (0x431230), so the key opens nothing then
 	// [BIN:TPI-EXE:0x5013C0 close the HUD's window] message 5 to the window registered at 0xA568BC, which is also the letter window's (0x526D27): the letter's procedure takes it as its close
 	// (0x52698F: destroyed, and categories 0x5D to 0x5F run their action, 0x649E60 for the bank's and the firing letter); the window is then built whatever that did
+	// [BIN:TPI-EXE:0x5013C0 close the HUD's window, second branch] when [0xA5E890] holds a window (the one the loss window closes; not identified further) 0x5013C0 closes that window instead (message 4, 0x5013CC..0x5013EC)
+	// and sends no message 5, so no letter or mission window closes then; OpenTPW builds no window for that slot, so the call always takes the message 5 branch here
+	// [BIN:TPI-EXE:0x42F04B objectives key game mode] the Objectives row refuses in game mode 3 ([0xC65B80] == 3, the coaster-edit mode); OpenTPW's Theme Park Inc slice runs the career only (mode 0, single player;
+	// ParkGameMode has no other value, ThemeParkIncChallenges notes the same), never mode 3, so the key has no refusal to port
 	public bool OpenMissionWindow()
 	{
 		if ( Lost || level.Park?.Economy is not { TpiCareer.CurrentZone: not null } economy || economy.TpiMissionWindowWorld( strings.Entry( ThemeParkIncText.NewPlayer ) ) is not { } world )
 			return false;
-		if ( LetterOpen )
-			closeOpenLetter?.Invoke();
-		CloseTagTube();
-		CloseMissionWindow();
+		CloseHudWindow();
 		ThemeParkIncMissionWindow? window = null;
 		window = new ThemeParkIncMissionWindow( TextsOrLanguage, strings, world, missionSession, () => CloseMissionWindow( window ), OpenChallengePanel );
 		var screen = window.Build();
@@ -116,10 +117,15 @@ public sealed partial class ThemeParkIncHud
 				OpenChallengePanel();
 				break;
 			case ThemeParkIncObjectiveLetter.GotoThingOfType:
-				// the obstacles are not things of OpenTPW's world yet (TPI-MISSIONS §6), so 0x647850 finds none and the go-to does nothing, as the original's does for a type it does not find;
-				// the camera move 0x5033C0 is not ported
+				// the obstacles are things of OpenTPW's world (TPI-MISSIONS §6): 0x647850 finds the thing of the type, and the go-to only logs it, as the camera move 0x5033C0 is not ported
 				if ( level.Park?.Economy.TpiMissionWorld?.FindAttraction( argument ) is { } thing and not 0 )
 					Log.Trace( $"Theme Park Inc letter go-to: thing {thing} of type {argument}; the camera move 0x5033C0 is not ported." );
+				break;
+			case ThemeParkIncTagLetter.TrainingGoto:
+				// [BIN:TPI-EXE:0x55137B training go-to] kind 5: the staff window 0x58C6C0 (0xA6BF40) on the thing of +0xE14; [EXT:tpi-text-hud] the text HUD's staff panel stands in for that window, which
+				// is not built, so the go-to opens the panel
+				if ( !staffOpen )
+					ToggleStaffPanel();
 				break;
 			default:
 				// kind 0x12's object 0xA59CC0 and its 0x521C90 are not read

@@ -18,7 +18,9 @@ phases (NV1 to NV5) behind one hidden switch, so that Theme Park Inc's determini
 
 - `--tpi-native-walk` (`GuestSimulation.ThemeParkIncNativeWalkRequested`), off by default. A Theme Park Inc level reads it once when it builds its cell map and
   sets `ParkCellMap.EdgeRules`. Without it the Theme Park Inc walkers keep Theme Park World's rules under `[EXT:tpi-twp-guest-rules]`, as before; Theme Park World
-  parks never read it. Saves do not record it yet.
+  parks never read it. A Science save records it (the guest snapshot's optional member `ThemeParkIncNativeWalk`, written only when the switch is on) and a save
+  whose setting differs from the running game's is refused in both directions: a walk set up under one edge test cannot continue under the other (a staff member
+  who stepped off the paths with mask 1 under Theme Park World's rules may stand on unowned land that `0x5D7D0D` refuses).
 
 ## The edge test `0x5D7B60` (NV1)
 
@@ -38,6 +40,7 @@ The rules in the order the routine tests them [R, O]:
 | R6 | `0x5D7C8B` | mask 2: the target's flag `0x400` **and no obstacle flag** (`0x67F720`) → open; a type 9 target: the first class-3 thing on the cell named by the **from** cell's `+0x10` decides through `0x4666E0` | flag `0x400` only; the target's owner cell, `0x42A440` |
 | R7 | `0x5D7D0D` | an **unowned** target (flag word `+0xE` bit `0x40`, `0x67ECA0`) → blocked | absent |
 | R8 | `0x5D7D1E` | a target of type 5, 7, 2 **or 8** (`0x67F780`) → blocked | 5, 7, 2 |
+| R9 | `0x5D7D2D` | a target of type 2 (`0x67F590`) → blocked; R8 already refused it | the same test at `0x4D8914` (`0x536300`) |
 | R10, R11 | `0x5D7D3C`, `0x5D7D97` | queue boundaries read the target's link back | same |
 | R12 | `0x5D7DFA` | a target structure record of a track kind whose flag nibble is 0 → blocked | same |
 | R13 | `0x5D7E4D` | from a cell that is neither path nor queue → open | same |
@@ -59,15 +62,19 @@ For a person this means:
 `0x62EBBC` (1) and `0x5D4688`, `0x618667`, `0x62854D`, `0x628872`, `0x62A03D`, `0x62A494`, `0x62EBD9` (0), the constructor `0x63EDCF` (0) and the loader (the file's
 value). Every caller of the edge test passes the walk's mask, the search's (the same), the literal 0 (the queue code `0x5E0998`), or the camera's 0 then 1 (`0x468A9E`,
 `0x468CBD`, `0x468AAF`, `0x468CCE`; tp.exe's camera passes 2). So R5, R6's TPI form and the missing mask-2 rule never decide a Theme Park Inc walk, and OpenTPW does not
-port them: `WalkEdges.Blocked` keeps tp.exe's mask-2 branch, which only OpenTPW's own free-walk camera (`Level.FreeWalk`, mask 2) reaches.
+port them: `WalkEdges.Blocked` keeps tp.exe's mask-2 branch. Its only OpenTPW caller with mask 2, the free walk (`Level.FreeWalk`, tp.exe's camera walk), runs in
+Theme Park World parks alone (`EnterFreeWalk` refuses every other edition), so no walk with Theme Park Inc's rules reaches it. Theme Park Inc's own camera walk
+(`0x468A9E`, masks 0 then 1) is not ported.
 
 **OpenTPW.** `WalkEdgeRules.ThemeParkInc` on the park's `ParkCellMap` selects R4's obstacle test, R7 and R8's type 8 inside `WalkEdges.Blocked`; one field read per
 test, no delegate and no allocation, so the search's inner loop stays as it was for the browser's AOT build. The commit and the search call the same test, so they
 follow. With `WalkEdgeRules.ThemeParkWorld` (every Theme Park World park and the default) the test is tp.exe's, bit for bit.
 
 **Verified.** The dev-only x86 oracle runs `0x5D7B60`, `0x63F5D0` and `0x640C50` on synthetic park maps with holes, obstacle walkways and unowned land, masks 0 and 1
-(`tpi-exe-walk-edge-test`, `tpi-exe-walk-commit`, `tpi-exe-walk-search`, ORACLE.md section 7.19): all agree with the port on every input (503, 503, 500), and tp.exe's
-rules on the same maps differ on 140, 107 and 82. `ThemeParkIncWalkEdgeTests` holds Game.exe's results on one map for every edge, masks 0 and 1, and six searches.
+(`tpi-exe-walk-edge-test`, `tpi-exe-walk-commit`, `tpi-exe-walk-search`, ORACLE.md section 7.19): all agree on every input (503, 503, 500) with `walk_reading.py`, the Python statement of the port, and tp.exe's rules on the same maps differ on 130, 107 and 90.
+The maps also carry second-layer structure records (R12) and set the land flag `0xB1A94C` in half of them. The C# meets Game.exe directly in
+`ThemeParkIncWalkEdgeTests`, which holds Game.exe's results on one map for every edge, masks 0 and 1, and six searches (its Theme Park World strings come from
+the Python reading of tp.exe, which X25 verified, not from a run of tp.exe).
 
 ## Separation and the gardener (NV1)
 

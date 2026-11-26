@@ -208,11 +208,11 @@ EXPECTED = {
     # 0x640c50 agree with WalkEdges / WalkSearch under WalkEdgeRules.ThemeParkInc (walk_reading.py with `tpi`); tp.exe's rules on the same maps
     # (no obstacle, unowned or hole rule) differ.
     ('tpi-exe-walk-edge-test', 'plan'): AGREE,
-    ('tpi-exe-walk-edge-test', 'tpw-rules'): (140, (0, (0, 30, 8, 25))),
+    ('tpi-exe-walk-edge-test', 'tpw-rules'): (130, (0, (120, 113, 8, 15))),
     ('tpi-exe-walk-commit', 'plan'): AGREE,
-    ('tpi-exe-walk-commit', 'tpw-rules'): (107, (1, (0, 0, 41, 15))),
+    ('tpi-exe-walk-commit', 'tpw-rules'): (107, (1, (0, 113, 24, 15))),
     ('tpi-exe-walk-search', 'plan'): AGREE,
-    ('tpi-exe-walk-search', 'tpw-rules'): (82, (1, (30, 103, 41, 25))),
+    ('tpi-exe-walk-search', 'tpw-rules'): (90, (0, (104, 30, 24, 25))),
 }
 
 BASE = 0x400000
@@ -1593,6 +1593,16 @@ class OracleTpi(CoastTests, unittest.TestCase):
         for key in ('tpi-exe-walk-edge-test', 'tpi-exe-walk-commit', 'tpi-exe-walk-search'):
             self.check((key, 'plan'))
             self.check((key, 'tpw-rules'))
+
+    def test_walk_structure_records_decide_some_edges_and_searches(self):
+        """The maps' second-layer records reach the record rule (0x5d7dfa): a reading without them differs from Game.exe on some edges and
+        searches, and the land flag 0xb1a94c is set in about half of them without changing the link byte read (class byte 0)."""
+        for target in (targets.TPI_WALK_EDGE_TARGET, targets.TPI_WALK_SEARCH_TARGET):
+            inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), 120)
+            sandbox = target.sandbox(self.image)
+            differ = sum(targets.run_binary(target, sandbox, x) != target.plan(dict(x, records=[])) for x in inputs)
+            self.assertGreater(differ, 0, target.key)
+            self.assertTrue(0 < sum(x.get('land_flag', 0) for x in inputs) < len(inputs), target.key)
 
     def test_walk_edge_rules_in_order(self):
         """The three rules on a path cell (10, 10) and its neighbours: an unowned path (10, 9) from the path is open (the path fast path

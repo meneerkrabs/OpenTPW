@@ -3091,7 +3091,9 @@ WALK_STEERING_TARGET = Target(
 # route search 0x640c50 are tp.exe's code over that test. Masks 2 and 3 reach the test from no TPI walk (docs/reverse/TPI-NAVIGATOR.md), so the
 # inputs use masks 0 and 1 only.
 TPI_WALK_MAP = 0xAA131C          # global: the map object; [map] + 0x418 + id * 72 is cell id = y * 128 + x + 1 (type +8, links +0xc, queue link +0xd, flags +0xe, obstacle +0x24)
-TPI_WALK_RECORDS = 0xADE6B4      # global read by the structure record lookup 0x5c17b0 (+0x11ffd8 + 40 * cell word +0; word 0 = record 0, empty)
+TPI_WALK_RECORDS = 0xADE6B4      # global read by the structure record lookup 0x5c17b0 (+0x11ffd8 + 40 * cell word +0), the map + 0x460: the edge test reads the flag nibble at map + 0x120438 + 40 * word
+TPI_WALK_LAND_FLAG = 0xB1A94C    # the land tools' flag: with it set, 0x65cb00 reads the link byte +0x22 of a cell whose class byte +2 is 2 (the oracle's cells have class 0)
+TPI_WALK_RECORD_BASE = 0x120438
 TPI_WALK_CELL = 72
 TPI_WALK_CELLS_AT = 0x418
 TPI_WALK_EDGE = 0x5D7B60         # cdecl (x, y, direction, mask) -> blocked
@@ -3116,11 +3118,21 @@ def tpi_walk_map_binary(sb: Sandbox, x: dict) -> int:
     """Writes the input's cells into a synthetic 128 x 128 Theme Park Inc map (72-byte cells); returns the cell array's base."""
     sb.set_fpcw(TPI_X87_CONTROL_WORD)
     holder = sb.object(16)
-    base = sb.object(TPI_WALK_CELLS_AT + (128 * 128 + 2) * TPI_WALK_CELL)
+    records = x.get('records', [])
+    base = sb.object(max(TPI_WALK_CELLS_AT + (128 * 128 + 2) * TPI_WALK_CELL, TPI_WALK_RECORD_BASE + 40 * (len(records) + 2)))
     sb.write(holder, 'I', base)
     sb.write(TPI_WALK_MAP, 'I', holder)
-    sb.write(TPI_WALK_RECORDS, 'I', sb.object(0x11FFD8 + 64))
+    sb.write(TPI_WALK_RECORDS, 'I', base + TPI_WALK_RECORD_BASE - 0x11FFD8)
+    sb.write(TPI_WALK_LAND_FLAG, 'B', x.get('land_flag', 0))
     cell = lambda cx, cy: base + TPI_WALK_CELLS_AT + (cy * 128 + cx + 1) * TPI_WALK_CELL
+    # records 1.. (word 0 names none): the kind +8 and the flag word +0xe; the cell's word +0 names its record
+    for index, (cx, cy, kind, nibble) in enumerate(records, 1):
+        record = base + TPI_WALK_RECORD_BASE + 40 * index
+        sb.write(record + 8, 'I', kind)
+        sb.write(record + 0xE, 'H', nibble)
+        sb.write(cell(cx, cy), 'H', index)
+    for cx, cy, value in x.get('underground', []):
+        sb.write(cell(cx, cy) + 0x22, 'B', value)
     for key, offset, fmt in (('types', 8, 'I'), ('links', 0xC, 'B'), ('qlinks', 0xD, 'B'), ('flags', 0xE, 'H')):
         for cx, cy, value in x[key]:
             sb.write(cell(cx, cy) + offset, fmt, value)
@@ -3130,9 +3142,15 @@ def tpi_walk_map_binary(sb: Sandbox, x: dict) -> int:
 
 
 def tpi_walk_map_reading(x: dict) -> 'walk_reading.Map':
-    m = walk_map_reading(x)
+    m = tpi_walk_map_reading_as_tpw(x)
     m.obstacles = {(cx, cy) for cx, cy in x['obstacles']}
     m.tpi = True
+    return m
+
+
+def tpi_walk_map_reading_as_tpw(x: dict) -> 'walk_reading.Map':
+    m = walk_map_reading(x)
+    m.records = {(cx, cy): (kind, nibble) for cx, cy, kind, nibble in x.get('records', [])}
     return m
 
 
@@ -3163,6 +3181,12 @@ def tpi_walk_cells(rng: random.Random) -> dict:
     x['qlinks'] = [[a, b, v] for a, b, v in x['qlinks'] if types.get((a, b)) in (3, 9, 10)]
     x['flags'] = [[a, b, f] for (a, b), f in sorted(flags.items())]
     x['obstacles'] = sorted({c for c, t in types.items() if rng.random() < (0.5 if t == 0x1E else 0.08)})
+    # structure records of the second layer: track kinds with and without a flag nibble, an extension without a parent, other kinds
+    cells = [(rng.randrange(ox, ox + w), rng.randrange(oy, oy + h)) for _ in range(rng.randint(0, w * h // 15))]
+    x['records'] = [[cx, cy, rng.choice([0xB, 0xD, 0x10, 0x12, 0x19, 0xC, 3, 0]), rng.choice([0, 0, 1, 4, 8, 0x30])] for cx, cy in sorted(set(cells))]
+    # the land tools' flag set in half the maps, with a different underground link byte (+0x22) on the linked cells: class byte 0 keeps +0xc
+    x['land_flag'] = rng.choice([0, 1])
+    x['underground'] = [[a, b, v ^ 0xFF] for a, b, v in x['links']]
     x['paths'] = sorted(c for c, t in types.items() if t == 1) or x['paths']
     return x
 
@@ -3179,7 +3203,7 @@ def tpi_walk_edge_plan(x: dict) -> tuple:
 
 def tpi_walk_edge_as_tpw(x: dict) -> tuple:
     """The same cells under tp.exe's rules: no obstacle, unowned or hole rule."""
-    m = walk_map_reading(x)
+    m = tpi_walk_map_reading_as_tpw(x)
     return tuple(walk_reading.blocked(m, cx, cy, d, x['mask']) for cx, cy, d in x['edges'])
 
 
@@ -3194,7 +3218,7 @@ def tpi_walk_commit_plan(x: dict) -> tuple:
 
 
 def tpi_walk_commit_as_tpw(x: dict) -> tuple:
-    m = walk_map_reading(x)
+    m = tpi_walk_map_reading_as_tpw(x)
     return tuple(walk_reading.commit(m, (fx, fy), (tx, ty), x['mask']) for fx, fy, tx, ty in x['steps'])
 
 
@@ -3259,7 +3283,7 @@ def tpi_walk_search_plan(x: dict) -> tuple:
 
 
 def tpi_walk_search_as_tpw(x: dict) -> tuple:
-    result, path = walk_reading.find(walk_map_reading(x), tuple(x['start']), tuple(x['goal']), x['mask'])
+    result, path = walk_reading.find(tpi_walk_map_reading_as_tpw(x), tuple(x['start']), tuple(x['goal']), x['mask'])
     return (False,) if result == walk_reading.FAIL else (True,) + tuple(path)
 
 
@@ -3281,8 +3305,9 @@ TPI_WALK_EDGE_TARGET = Target(
     TPI_WALK_EDGE, TPI_WALK_SEARCH_RANGES, tpi_walk_stubs, tpi_walk_edge_binary, tpi_walk_edge_plan, lambda rng, n: tpi_walk_cell_inputs(rng, n, 'edge'),
     alternatives={'tpw-rules': tpi_walk_edge_as_tpw},
     notes=['A synthetic 128 x 128 map at [0xaa131c] (cells 72 bytes from +0x418, id = y * 128 + x + 1; type +8, links +0xc, queue link +0xd, '
-           'flags +0xe, obstacle flag +0x24); empty structure records at [0xade6b4] + 0x11ffd8, so 0x67f890 is false. Twelve edges per map, '
-           'masks 0 and 1 (the only ones a TPI walk passes); the ride test 0x4666e0 (mask 2) is not allowed. Run at the control word 0x7f.'],
+           'flags +0xe, obstacle flag +0x24, record word +0); structure records at map + 0x120438 (= [0xade6b4] + 0x11ffd8; kind +8, flag '
+           'nibble +0xe; extensions without a parent only); the land flag 0xb1a94c set in half the maps over cells of class 0. Twelve edges '
+           'per map, masks 0 and 1 (the only ones a TPI walk passes); the ride test 0x4666e0 (mask 2) is not allowed. Run at the control word 0x7f.'],
     budget=2_000_000)
 TPI_WALK_COMMIT_TARGET = Target(
     'tpi-exe-walk-commit', 'tpi', 'Game.exe walk step commit 0x63f5d0', 'WalkEdges.Commit with WalkEdgeRules.ThemeParkInc (TPI-NAVIGATOR.md)',

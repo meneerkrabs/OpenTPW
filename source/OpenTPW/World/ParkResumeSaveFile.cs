@@ -912,6 +912,8 @@ internal static class ParkResumeSaveFile
 		Require( GuestSimulationSnapshot.AcceptedSchemaVersions.Contains( guests.SchemaVersion ),
 			$"the guest snapshot's schema version {guests.SchemaVersion} is not one of {string.Join( ", ", GuestSimulationSnapshot.AcceptedSchemaVersions )}" );
 		Require( guests.Guests != null, "the guest snapshot has no guest list" );
+		// Theme Park Inc's navigator rules (--tpi-native-walk, docs/reverse/TPI-NAVIGATOR.md) exist only in a Theme Park Inc park; the restore refuses a save whose switch differs from the park's
+		Require( !guests.ThemeParkIncNativeWalk || snapshot.Economy?.Edition == GameEdition.ThemeParkInc, "only a Theme Park Inc park walks with Theme Park Inc's navigator rules" );
 		Require( guests.Attractions != null, "the guest snapshot has no attraction list" );
 		Require( guests.SeenQueueEdits != null, "the guest snapshot has no seen-queue-edit list" );
 		Require( guests.TickCount >= 0, $"the guest clock's tick count {guests.TickCount} is negative" );

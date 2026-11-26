@@ -164,7 +164,7 @@ public sealed partial class ParkCellMap
 
 	/// <summary>
 	/// [EXT:online-coop-undo] A disposable copy of <paramref name="source"/> for a take-back's prediction (C5, <see cref="CopyForPrediction"/>): every cell array, the residue's provenance, the
-	/// stamps and the track layer, copied; the pool bridges and the land shared, which an undo only reads; no hook, no re-evaluation.
+	/// stamps, the track layer and the edge test (EdgeRules), copied; the pool bridges and the land shared, which an undo only reads; no hook, no re-evaluation.
 	/// </summary>
 	private ParkCellMap( ParkCellMap source )
 	{
@@ -178,6 +178,7 @@ public sealed partial class ParkCellMap
 		queueLinks = (byte[])source.queueLinks.Clone();
 		owners = (ushort[])source.owners.Clone();
 		obstacleCells = (bool[]?)source.obstacleCells?.Clone();
+		EdgeRules = source.EdgeRules;
 		typeCounts = (int[])source.typeCounts.Clone();
 		BlocksX = source.BlocksX;
 		BlocksY = source.BlocksY;
@@ -908,7 +909,7 @@ public sealed partial class ParkCellMap
 
 	/// <summary>
 	/// The edge test the walks over this map use (<see cref="WalkEdges.Blocked"/>): Theme Park World's unless the level sets Theme Park Inc's (the hidden switch <c>--tpi-native-walk</c>,
-	/// docs/reverse/TPI-NAVIGATOR.md). A property of the park, set once when its map is made; not part of the cells' state, the digest or a snapshot.
+	/// docs/reverse/TPI-NAVIGATOR.md). A property of the park, set once when its map is made; not part of the cells' state, the digest or the layout snapshot: the guests' snapshot records it (GuestSimulationSnapshot.ThemeParkIncNativeWalk) and a restore refuses a mismatch.
 	/// </summary>
 	public WalkEdgeRules EdgeRules { get; set; }
 

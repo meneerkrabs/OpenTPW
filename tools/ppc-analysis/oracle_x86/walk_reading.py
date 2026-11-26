@@ -18,6 +18,7 @@ class Map:
     def __init__(self, types=None, links=None, qlinks=None, flags=None, obstacles=None, tpi=False):
         self.types = types or {}; self.links = links or {}; self.qlinks = qlinks or {}; self.flags = flags or {}
         self.obstacles = obstacles or set(); self.tpi = tpi
+        self.records = {}  # cell -> (kind, flag nibble): the target structure record rule (tp.exe 0x4d89c3, TPI 0x5d7dfa); extensions are not modelled
     def t(self, x, y): return self.types.get((x, y), 0)
     def l(self, x, y): return self.links.get((x, y), 0)
     def q(self, x, y): return self.qlinks.get((x, y), 0)
@@ -59,7 +60,9 @@ def blocked(m, x, y, d, mask):
         links = m.l(tx, ty)
         back = {0: 0x10, 1: 0x40, 2: 0x01, 3: 0x04}[d]
         return 1 if (links & back) == 0 else 0
-    # objects (0x5363f0): none
+    # the target's structure record (0x5363f0 / TPI 0x67f890): a track kind with flag nibble 0 blocks (WalkEdges.TargetRecordBlocks)
+    record = m.records.get((tx, ty))
+    if record is not None and record[0] in (0xB, 0xD, 0x10, 0x12, 0x19) and record[1] & 0xF == 0: return 1
     if ft != 1 and not queue(ft): return 0
     if mask == 1 and ft == 1 and tt != 1 and not queue(tt) and tt != 4: return 0
     if mask == 2 and ft == 1 and tt == 0: return 0

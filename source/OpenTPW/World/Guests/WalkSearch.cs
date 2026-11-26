@@ -23,6 +23,13 @@ public enum WalkEdgeRules : byte
 // [BIN:TPW-EXE:0x00536300 cell type tests] 0x536300 type 2, 0x536310 type 1 (path), 0x536320 type 3 or 9 (queue), 0x536340 9, 0x536350 10, 0x536380 4, 0x536390 0, 0x5363A0 0x1E, 0x5363B0 flag 0x400, 0x5363C0 type 5, 7 or 2; 0x522770 the link byte +0x0C (+0x22 underground, not modelled), 0x522850 the queue link +0x0D
 public static class WalkEdges
 {
+	/// <summary>
+	/// The edge test a park built now walks with: Theme Park Inc's when Theme Park Inc is the edition and the hidden switch <c>--tpi-native-walk</c> is on
+	/// (<see cref="GuestSimulation.ThemeParkIncNativeWalkRequested"/>), else Theme Park World's. A Theme Park World park ignores the switch.
+	/// </summary>
+	public static WalkEdgeRules RulesForNewPark() =>
+		GameEditions.IsThemeParkInc && GuestSimulation.ThemeParkIncNativeWalkRequested ? WalkEdgeRules.ThemeParkInc : WalkEdgeRules.ThemeParkWorld;
+
 	/// <summary>The original map's last cell coordinate (the edge test's hard-coded 0x7F).</summary>
 	public const int LastCell = 127;
 
@@ -88,7 +95,8 @@ public static class WalkEdges
 		// target is the walkway fast path only without the obstacle flag (0x67F6F0: +0x24 == 0), an unowned target (flag word +0xE bit 0x40, 0x67ECA0) blocks after the path, type 4 and walkway rules, and
 		// the blocking types are {5, 7, 2, 8} (0x67F780; type 8 is an obstacle's 'H' hole). Its mask-3 rule (0x67F750), its mask-2 flag test with the obstacle flag (0x67F720) and ride test through the
 		// from cell (0x4666E0), and the absence of Theme Park World's mask-2 "path to type 0" rule are not ported: no TPI person, staff member, camera or queue walk passes mask 2 or 3
-		// (docs/reverse/TPI-NAVIGATOR.md)
+		// (docs/reverse/TPI-NAVIGATOR.md); the only mask-2 walker OpenTPW has, the free walk, runs in Theme Park World parks alone
+		// [BIN:TPI-EXE:0x5D7D2D type 2 target] a second type-2 test (0x67F590) after the blocking types repeats one of them (tp.exe's 0x536300 at 0x4D8914): no code
 		var tpi = map.EdgeRules == WalkEdgeRules.ThemeParkInc;
 		if ( mask == 2 )
 		{

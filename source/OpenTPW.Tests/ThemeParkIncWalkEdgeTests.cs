@@ -55,7 +55,8 @@ public class ThemeParkIncWalkEdgeTests
 	// Game.exe 0x5D7B60 on these cells (masks 0 and 1, the only ones a Theme Park Inc walk passes)
 	private const string Mask0 = "00000000000000000000000000000000000000000000100110001000101010000010000000000000000000010100010000000101001000010000000000000001100001000000010110001101000000000000001100100010100000001000001011100000010000000111000001010110010000100000000000001100000011110000100001110000000100000000000010000000000000000000100000000000";
 	private const string Mask1 = "00000000000000000000000000000000000000000000000000000000000000000010000000000000000000000100000000000100001000010000000000000000100000000000010010000001000000000000001000000010000000001000000000000000010000000111000001010110000000100000000000001100000010010000100001000000000100000000000010000000000000000000100000000000";
-	// tp.exe's rules on the same cells (X25): no obstacle, unowned or hole rule
+	// tp.exe's rules on the same cells: no obstacle, unowned or hole rule. These two come from walk_reading.py's statement of tp.exe's edge test (X25 verified it against tp.exe on random
+	// maps), not from a run of tp.exe on this map
 	private const string WorldMask0 = "00000000000000000000000000000000000000000000100110001000100010000000000000000000000000010000000000000100001000000000000000000001100001000000010100001101000000000000001100000010100000001000001011100000000000000000000001000010010000100000000000000000000011110000100001110000000100000000000000000000000000000000100000000000";
 	private const string WorldMask1 = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000100000000000010000000001000000000000000000000000000000001000000000000000000000000000000001000010000000100000000000000000000000000000100001000000000100000000000000000000000000000000100000000000";
 
@@ -168,5 +169,83 @@ public class ThemeParkIncWalkEdgeTests
 		}
 		Assert.IsFalse( visited[WalkEdgeRules.ThemeParkInc].Any( cell => cell.X == 3 && cell.Y > 0 ), "Theme Park Inc's walker crosses the unowned column only on the path" );
 		Assert.IsTrue( visited[WalkEdgeRules.ThemeParkWorld].Any( cell => cell.X == 3 && cell.Y > 0 ), "Theme Park World's walker cuts across it" );
+	}
+
+	private static GuestSimulation Park( WalkEdgeRules rules )
+	{
+		var grid = GuestTests.CreateCross();
+		grid.Cells.EdgeRules = rules;
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var cell = Enumerable.Range( 0, grid.CountY ).SelectMany( y => Enumerable.Range( 0, grid.CountX ).Select( x => (X: x, Y: y) ) ).First( c => grid.IsWalkable( c.X, c.Y ) );
+		simulation.SpawnInPark( cell.X, cell.Y );
+		return simulation;
+	}
+
+	private static GuestSimulationSnapshot SaveOf( GuestSimulation simulation ) =>
+		ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( simulation.CaptureSnapshot() ) )!;
+
+	[TestMethod]
+	public void ASaveRecordsTheSwitchAndARestoreRefusesTheOtherSetting()
+	{
+		var walkSave = SaveOf( Park( WalkEdgeRules.ThemeParkInc ) );
+		Assert.IsTrue( walkSave.ThemeParkIncNativeWalk, "the save records the switch" );
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkWorld ).RestoreSnapshot( walkSave ) ).Message,
+			"navigator rules on (--tpi-native-walk)" );
+		Park( WalkEdgeRules.ThemeParkInc ).RestoreSnapshot( walkSave );
+
+		var plainSave = SaveOf( Park( WalkEdgeRules.ThemeParkWorld ) );
+		Assert.IsFalse( plainSave.ThemeParkIncNativeWalk );
+		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( plainSave ) ).Contains( nameof( GuestSimulationSnapshot.ThemeParkIncNativeWalk ) ),
+			"a switch-off save does not write the member: its bytes are unchanged" );
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkInc ).RestoreSnapshot( plainSave ) ).Message,
+			"without Theme Park Inc's navigator rules" );
+		Park( WalkEdgeRules.ThemeParkWorld ).RestoreSnapshot( plainSave );
+	}
+
+	[TestMethod]
+	public void AThemeParkWorldResumeFileCannotCarryTheSwitch()
+	{
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		ParkResumeSaveFile.ValidateShape( snapshot );
+		var marked = snapshot with { Guests = snapshot.Guests! with { ThemeParkIncNativeWalk = true } };
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( marked ) ).Message,
+			"only a Theme Park Inc park walks with Theme Park Inc's navigator rules" );
+	}
+
+	[TestMethod]
+	public void AMapCopiedForAPredictionKeepsItsEdgeTest()
+	{
+		var map = Build( WalkEdgeRules.ThemeParkInc );
+		Assert.AreEqual( WalkEdgeRules.ThemeParkInc, map.CopyForPrediction().EdgeRules );
+		Assert.AreEqual( Mask0, Edges( map.CopyForPrediction(), 0 ) );
+	}
+}
+
+/// <summary>The hidden switch <c>--tpi-native-walk</c> reaches a new park's edge test in Theme Park Inc and nowhere else (<see cref="WalkEdges.RulesForNewPark"/>).</summary>
+[TestClass]
+[DoNotParallelize]
+public class ThemeParkIncWalkSwitchTests
+{
+	[TestMethod]
+	public void TheSwitchSelectsTheIncEdgeTestInAThemeParkIncParkOnly()
+	{
+		var edition = GameEditions.Current;
+		var requested = GuestSimulation.ThemeParkIncNativeWalkRequested;
+		try
+		{
+			GameEditions.Select( GameEdition.ThemeParkInc );
+			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
+			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, WalkEdges.RulesForNewPark() );
+			GuestSimulation.ThemeParkIncNativeWalkRequested = false;
+			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, WalkEdges.RulesForNewPark(), "off by default: Theme Park Inc keeps Theme Park World's walk" );
+			GameEditions.Select( GameEdition.ThemeParkWorld );
+			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
+			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, WalkEdges.RulesForNewPark(), "a Theme Park World park ignores the switch" );
+		}
+		finally
+		{
+			GameEditions.Select( edition );
+			GuestSimulation.ThemeParkIncNativeWalkRequested = requested;
+		}
 	}
 }

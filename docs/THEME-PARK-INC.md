@@ -73,7 +73,8 @@ The hidden developer switch `--tpi-native-guests` (off by default) runs Theme Pa
 
 A second hidden developer switch, `--tpi-native-walk` (off by default), walks the guests and staff with the parts of Theme Park Inc's own navigator ported so far
 ([TPI-NAVIGATOR.md](reverse/TPI-NAVIGATOR.md)): so far its edge test, under which walkers keep off unowned land (an unowned path or walkway excepted), terrain holes and an obstacle's walkway cells.
-Without it they walk with Theme Park World's navigator (`[EXT:tpi-twp-guest-rules]`).
+Without it they walk with Theme Park World's navigator (`[EXT:tpi-twp-guest-rules]`). As with the guest switch, saves made with and without it cannot be continued
+with the other setting ([PARK-SAVES.md](PARK-SAVES.md#experimental-science-continuation-on-desktop)).
 
 The browser setup also offers the same experimental route with an explicit Arabian,
 Science or Water choice and the player's own extracted `Data` folder (the Personnel File start screen is not offered in the browser yet: phase 1 keeps this up-front

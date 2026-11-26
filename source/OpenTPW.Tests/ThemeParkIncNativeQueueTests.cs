@@ -109,11 +109,11 @@ public sealed class ThemeParkIncNativeQueueTests
 	[TestMethod]
 	public void TheX87ProductRoundsOnce()
 	{
-		Assert.AreEqual( 0.4f, ThemeParkIncX87Single.Multiply( 4, 0.1 ) );
-		Assert.AreEqual( (float)(3 * 0.1), ThemeParkIncX87Single.Multiply( 3, 0.1 ) );
-		Assert.AreEqual( -16777217f, ThemeParkIncX87Single.Multiply( -16777217, 1.0 ), "the exact product rounds to nearest even" );
-		Assert.AreEqual( 0, ThemeParkIncX87Single.Truncate( 0.99 ) );
-		Assert.AreEqual( -1, ThemeParkIncX87Single.Truncate( -1.5 ) );
+		Assert.AreEqual( 0.4f, ThemeParkIncX87.ProductOfDouble( 4, 0.1 ) );
+		Assert.AreEqual( (float)(3 * 0.1), ThemeParkIncX87.ProductOfDouble( 3, 0.1 ) );
+		Assert.AreEqual( -16777217f, ThemeParkIncX87.ProductOfDouble( -16777217, 1.0 ), "the exact product rounds to nearest even" );
+		Assert.AreEqual( 0, ThemeParkIncX87.Ftol( 0.99 ) );
+		Assert.AreEqual( -1, ThemeParkIncX87.Ftol( -1.5 ) );
 	}
 
 	[TestMethod]

@@ -242,7 +242,7 @@ public sealed partial class GuestSimulation
 	// [BIN:TPI-EXE:0x6118D0 use routine] 0x6118EC..0x611906 the history push; type +0x600 (Info.WhichUIType) 0, 1, 2 raise +0x1EC, +0x1F0, +0x1F4; 0x6126D0; 0x5E5DA0; 0x60D0D0(+0x1DC, −type +0x198
 	// FatigueEffect); type +0xC0 (Info.RideTypeStringIndex) 0x17: +0x21B = the byte of VAR 11; +0x21B nonzero: 0x612740, then the record 3 × (byte(+0x1BC) − byte(+0x234)) + 50 by kind (a shop: 0xB..0xE by
 	// +0x218, then 0x10..0x12 by +0x21C; a sideshow 0x14) through 0x5AEDE0, 0x5E61D0, and a sideshow's thought 5; zero: 0x611B0B "lost", −MediumHappinessChange, +0x2E4 = 0, +0x2DC −= 35, a sideshow's thought 6
-	private void ThemeParkIncUseRoutine( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncAttractionView view )
+	internal void ThemeParkIncUseRoutine( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncAttractionView view )
 	{
 		var settings = NativeTpi!;
 		var ride = view.Ride;
@@ -394,11 +394,11 @@ public sealed partial class GuestSimulation
 
 	/// <summary>
 	/// The excitement match <c>0x611DA0</c>: a rating of 0 gives 0; else the bands of the difference between the guest's preferred excitement and the rating give PerfectRide, GoodRide or OKRide (and raise
-	/// <c>+0x2E0</c> by it), and the illness rises by <c>((100 − hunger) / 10) × (rating / RideVomitDivisor)</c>, a rise that also lowers <c>+0x2E0</c>. Returns the gain.
+	/// <c>+0x2E0</c> by it), and the illness rises by <c>((100 − hunger) / 20) × (rating / RideVomitDivisor)</c>, a rise that also lowers <c>+0x2E0</c>. Returns the gain.
 	/// </summary>
 	// [BIN:TPI-EXE:0x611DA0 match step] 0x5E41D0(ride, 0) (the rating byte) 0 returns 0; d = |byte +0x2A8 − rating| (cdq/xor/sub); d < PerfectExcitementMatch: +0x2E0 += PerfectRide, g = PerfectRide;
-	// d < GoodExcitementMatch: GoodRide; d < OKExcitementMatch: OKRide, and +0x2A8 below the rating raises the declined ring +0x4C8; else 0; then b0 = byte(illness), illness += (100 − byte(hunger)) / 10
-	// (signed) × (rating / [0xA01A84]) (idiv), b1 = byte(illness), b1 above b0 lowers +0x2E0 by b1 − b0
+	// d < GoodExcitementMatch: GoodRide; d < OKExcitementMatch: OKRide, and +0x2A8 below the rating raises the declined ring +0x4C8; else 0; then b0 = byte(illness), illness += (100 − byte(hunger)) / 20
+	// (the magic 0x66666667 with sar 3, signed) × (rating / [0xA01A84]) (idiv), b1 = byte(illness), b1 above b0 lowers +0x2E0 by b1 − b0
 	private int ThemeParkIncMatchStep( Guest guest, ThemeParkIncGuestRecord tpi, RideVisitorBridge ride, ThemeParkIncGuestSettings settings )
 	{
 		var rating = ride.LiveExcitement & 0xFF;
@@ -418,7 +418,7 @@ public sealed partial class GuestSimulation
 		if ( difference >= settings.GoodExcitementMatch && difference < settings.OkExcitementMatch && preferred < rating )
 			Payments?.PriceVerdict( ride, false, false, true );
 		var before = MeterMath.Byte( guest.Nausea );
-		guest.Nausea = MeterMath.Add( guest.Nausea, (100 - MeterMath.Byte( guest.Hunger )) / 10 * (rating / settings.RideVomitDivisor) );
+		guest.Nausea = MeterMath.Add( guest.Nausea, (100 - MeterMath.Byte( guest.Hunger )) / 20 * (rating / settings.RideVomitDivisor) );
 		var after = MeterMath.Byte( guest.Nausea );
 		if ( after > before )
 			SetTpiWord( tpi, 4, MeterMath.Add( TpiWord( tpi, 4 ), -(float)(after - before) ) );

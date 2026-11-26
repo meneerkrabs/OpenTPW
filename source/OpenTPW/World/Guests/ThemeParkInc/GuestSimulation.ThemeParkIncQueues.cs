@@ -77,7 +77,7 @@ public sealed partial class GuestSimulation
 		value = (float)((double)value / (parameters.Duration & 0xFF));
 		if ( !(value > 4f) )
 			value = 4f;
-		return unchecked( (uint)ThemeParkIncX87Single.Truncate( value ) );
+		return unchecked( (uint)ThemeParkIncX87.Ftol( value ) );
 	}
 
 	/// <summary>The queue is too long (<c>0x5DFF10</c>): its length at least the limit.</summary>

@@ -544,6 +544,7 @@ public sealed partial class ThemeParkIncHud
 			cursorX = cursorY = -1;
 		ShowTrainingNotices();
 		ShowChallengeNotices();
+		ShowAwardNotices();
 		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );
 		// [BIN:TPW-EXE:0x4879D0 object click] the click selects the owner of the hovered cell, the cell of the cursor ray's nearest hit on the terrain or an object's model (0x45bf90, ObjectRayPick),

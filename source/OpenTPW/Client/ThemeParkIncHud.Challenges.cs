@@ -40,6 +40,16 @@ public sealed partial class ThemeParkIncHud
 			Bounds = new UiRect( 244, 340, 1560, 50 ),
 			Anchor = UiAnchor.TopLeft
 		} );
+		hud.Add( new UiLabel
+		{
+			Id = "challengePanelShares",
+			Text = SharesAndAwardsText,
+			Font = fonts => fonts.Small,
+			Color = UiColors.Text,
+			Visible = false,
+			Bounds = new UiRect( 244, 392, 1560, 50 ),
+			Anchor = UiAnchor.TopLeft
+		} );
 		hud.Add( new UiScrollList
 		{
 			Id = "challengePanelList",
@@ -48,7 +58,7 @@ public sealed partial class ThemeParkIncHud
 			RowActivated = ActivateChallengeRow,
 			ClicksOnActivate = true,
 			Visible = false,
-			Bounds = new UiRect( 244, 400, 1560, 980 ),
+			Bounds = new UiRect( 244, 450, 1560, 930 ),
 			Anchor = UiAnchor.TopLeft
 		} );
 		hud.Add( new UiButton
@@ -58,7 +68,7 @@ public sealed partial class ThemeParkIncHud
 			Font = fonts => fonts.Menu,
 			Visible = false,
 			Clicked = () => QueueTpiCheat( CheatKind.SkipMission ),
-			Bounds = new UiRect( 244, 1390, 600, 80 ),
+			Bounds = new UiRect( 244, 1390, 500, 80 ),
 			Anchor = UiAnchor.TopLeft
 		} );
 		hud.Add( new UiButton
@@ -68,7 +78,17 @@ public sealed partial class ThemeParkIncHud
 			Font = fonts => fonts.Menu,
 			Visible = false,
 			Clicked = () => QueueTpiCheat( CheatKind.GetPromoted ),
-			Bounds = new UiRect( 864, 1390, 600, 80 ),
+			Bounds = new UiRect( 764, 1390, 500, 80 ),
+			Anchor = UiAnchor.TopLeft
+		} );
+		hud.Add( new UiButton
+		{
+			Id = "challengePanelCheatWinTheGame",
+			Text = () => WinTheGameLabel,
+			Font = fonts => fonts.Menu,
+			Visible = false,
+			Clicked = () => QueueTpiCheat( CheatKind.WinTheGame ),
+			Bounds = new UiRect( 1284, 1390, 500, 80 ),
 			Anchor = UiAnchor.TopLeft
 		} );
 		hud.Add( new UiButton
@@ -190,20 +210,24 @@ public sealed partial class ThemeParkIncHud
 		}
 	}
 
-	/// <summary>The debug dialog's button texts, as the executable holds them (UTF-16 at <c>0x9B79C8</c> and <c>0x9B79A8</c>; the original's dialog is English in every language).</summary>
+	/// <summary>
+	/// The debug buttons' texts, as the executable holds them (UTF-16 at <c>0x9B79C8</c> and <c>0x9B79A8</c> for the debug dialog, <c>0x9B81F4</c> for the debug menu; the original's debug windows are
+	/// English in every language).
+	/// </summary>
 	internal const string SkipMissionLabel = "Skip Mission";
 	internal const string GetPromotedLabel = "Get Promoted";
+	internal const string WinTheGameLabel = "Win the game...";
 
-	/// <summary>Whether the two Theme Park Inc cheats are offered: the cheats extension is on and the park is a writable one with a career.</summary>
+	/// <summary>Whether the Theme Park Inc cheats are offered: the cheats extension is on and the park is a writable one with a career.</summary>
 	// [EXT:cheats-extension] Theme Park Inc's debug buttons are offered only with opentpw.cheats on (user decision 2026-11-21); the original's dialog 0x532A40 is a developer build's
 	internal bool TpiCheatsAvailable => FeatureGates.Cheats && level is { IsReadOnlyVisit: false } && level.Park?.Economy.TpiCareer != null;
 
-	/// <summary>Queues one of the two cheats for the next park turn and says so.</summary>
+	/// <summary>Queues one of the cheats for the next park turn and says so.</summary>
 	internal void QueueTpiCheat( CheatKind kind )
 	{
 		if ( !TpiCheatsAvailable || level.Park?.Economy is not { } economy )
 			return;
 		if ( economy.QueueCheat( new CheatAction( kind ) ) )
-			PostMessage( kind == CheatKind.SkipMission ? SkipMissionLabel : GetPromotedLabel );
+			PostMessage( kind switch { CheatKind.SkipMission => SkipMissionLabel, CheatKind.GetPromoted => GetPromotedLabel, _ => WinTheGameLabel } );
 	}
 }

@@ -70,8 +70,11 @@ public sealed partial class GuestSimulation
 		guest.BodySprite.QueueInterval( BodyIntervalForStep( beforeX, beforeY, guest.Navigation.X, guest.Navigation.Y, run ) );
 	}
 
-	/// <summary>Original integer displacement arithmetic; existing host movement and ToiletBonus decisions are observed without changing them.</summary>
-	// [BIN:TPW-EXE:0x004FA3F8 guest walk interval] int32 squared displacement, sqrt times the float speed constant, rounded to float before doubling unless +0xC2 > 0 unsigned
+	/// <summary>
+	/// Original integer displacement arithmetic; existing host movement and ToiletBonus decisions are observed without changing them. The root and the quotient are taken in double precision
+	/// here, which is tp.exe at the harness's control word 0x37F, not at the game thread's 0x7F (see the comment below); the interval is presentation (the body sprite's pacing), in no digest.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA3F8 guest walk interval] int32 squared displacement, fild, fsqrt, fmul by the float speed constant 0x7006E8, fstp to a float, doubled (fadd, fstp) unless +0xC2 > 0 unsigned
 	internal static int BodyIntervalForStep( int beforeX, int beforeY, int afterX, int afterY, bool run )
 	{
 		var dx = unchecked( afterX - beforeX );
@@ -81,7 +84,10 @@ public sealed partial class GuestSimulation
 			speed += speed;
 		if ( !float.IsFinite( speed ) || speed <= 0 )
 			return 0;
-		// 0x4D41D6 divides on x87 and calls ftol directly: do not round the quotient to float before truncation.
+		// [BIN:TPW-EXE:0x004D41D0 interval] fld 62.0 (0x7003A0), fdiv by the float speed, then _ftol (0x67A830) with no store between: the quotient keeps the precision the control word gives
+		// fdiv. At 0x37F (64-bit significand) that is the double kept here; at the game thread's control word 0x7F ([EXT:hardware-d3d-path]) fdiv and the fsqrt at 0x004FA422 round to a single's
+		// 24 bits, as Game.exe's twin does for Theme Park Inc (ThemeParkIncWalkStep.Interval, oracle tpi-exe-walk-step). Theme Park World keeps the double until its walk is read at 0x7F
+		// (docs/reverse/TPI-NAVIGATOR.md, "The square root"; a Theme Park World follow-up with its own pin check), so no Theme Park World result moves here.
 		var interval = (int)((double)SpritePlayer.IntervalNumerator / speed);
 		return Math.Clamp( interval, 0, SpritePlayer.LongestInterval );
 	}

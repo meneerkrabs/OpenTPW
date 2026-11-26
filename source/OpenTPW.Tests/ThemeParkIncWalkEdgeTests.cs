@@ -213,6 +213,16 @@ public class ThemeParkIncWalkEdgeTests
 			"only a Theme Park Inc park walks with Theme Park Inc's navigator rules" );
 	}
 
+	/// <summary>A Theme Park World resume file whose layout counter counts the simulation's calls is refused (the lead's NV3 review: it is Theme Park Inc's navigator's alone).</summary>
+	[TestMethod]
+	public void AThemeParkWorldResumeFileCannotCarryASimulationCounter()
+	{
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		var counted = snapshot with { Layout = snapshot.Layout! with { Cells = snapshot.Layout.Cells! with { SimulationStampCounter = true, StampCounter = 12 } } };
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( counted ) ).Message,
+			"counts the simulation's calls in a park without Theme Park Inc's navigator" );
+	}
+
 	[TestMethod]
 	public void AMapCopiedForAPredictionKeepsItsEdgeTest()
 	{

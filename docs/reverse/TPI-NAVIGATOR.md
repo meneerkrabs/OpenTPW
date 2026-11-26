@@ -171,6 +171,11 @@ In a Theme Park Inc park the guests (`GuestSimulation.StepThemeParkInc`, so a na
    interval `0x5D10F0` and 1. The interval runs at the game thread's 24 bits: the root of the 32-bit squared step and its product with `0x93E5B4` are singles, doubled without the run,
    62.0 / speed rounded to a single, `_ftol`, clamped to 0..0xFA; a step that did not move gives 0, which queues no interval.
 
+tp.exe's interval (`0x4FA3F8` → `0x4D41D0`) is the same code: the root, its product (stored as a float) and the quotient 62.0 / speed handed to `_ftol` without a store, so at the game thread's
+control word 0x7F the root and the quotient round to singles there too. OpenTPW's Theme Park World interval (`GuestSimulation.BodyIntervalForStep`) keeps them in double precision, which is
+tp.exe at the harness's 0x37F; the interval only paces the body sprite and is in no digest, and it follows the Theme Park World walk's own 0x7F reading (navigator plan, "Follow-ups"), so no
+Theme Park World result moves now.
+
 A native guest stores the heading in its record's `Heading` (saved since P1); every walker's presentation vector is the word's (`ThemeParkIncWalkStep.Vector`). A staff member keeps the
 word in `SpriteAngle`, not saved yet (NV5 stores the person words). The guard's carry (`0x5D3B20`: state 0x1C) needs the guard's chase, which is not ported (`[EXT:tpi-capability-gates]`).
 The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the rigs of `ThemeParkIncNativeGuestTests` and `ThemeParkIncNativeIdleTests` walk with
@@ -228,13 +233,60 @@ The re-route after a save and after a load (`0x609B55`, decision N-1) raises the
 **Verified.** `tpi-exe-walk-step`, `tpi-exe-speed-step`, `tpi-exe-route-request` and `tpi-exe-staff-route` (ORACLE.md section 7.19) agree with `walk_reading.py`; the C# meets Game.exe's
 walk steps directly (`ThemeParkIncWalkStepTests`), and the navigator tests now compare path_timestamp too.
 
+## The wander and patrol destination (NV4)
+
+`0x609F70` (thiscall person → 1 when a walk is set) is tp.exe's `0x4F9490` with four differences, all of them the staff's [R, O]. Its order:
+
+1. **The gate** (`0x609FBE`): the stamp counter raised; a counter below the mark `+0x1B0` clears it; a mark still set and held (`0x60BB50`) asks for the thought 0x11 (`0x638960`) and
+   answers 0 before any draw; else the mark is cleared (`0x60A004`).
+2. **The step count** `R % 5` (`0x60A010`, the world generator `0x6493E0`), before anything else draws.
+3. **The patrol rectangle.** A staff member (the kinds 4, 5, 6, 8, 7 and, **W1**, the gardener 0x14) whose start cell's word fails the rectangle test `0x62C610` tries the fallback `0x62C720`:
+   success answers 1 (without the wander flag `+0xE8`); failure clears the rectangle out of the walk (the flag `[esp+0x2C]`).
+4. **The off-path search** for a start cell without links (`0x65CBF0` below 1, `0x60A5EF`): the eight patterns at distances 0 to 3, a path cell inside the map each through the gate (the counter
+   raised at `0x60A6FB`), the mark cleared (`0x60B9A0(0)`) and SetDest to its centre; then five tries of `R % 11 − 5` in x and y (`0x60A7A5`, `0x60A7BE`; no type test), each through the gate
+   (`0x60A83F`); none answers 0 without a mark. The same for a guest and a staff member: no staff route here.
+5. **The steps.** tp.exe's random walk over the cell links (`GuestWander`): every link bit in the order +Y, +X, −Y, −X less the four removals, a counter of them, the first candidate when it
+   is below two, else the first from `R & 3` (`0x60A34C`) that is neither empty nor the way back; one more step each time a step ends on the start with the count at 0. Removal 1 is the
+   rectangle: a staff member with the flag clear drops each candidate whose word fails `0x62C610`, and the drop that leaves the counter at 0 calls `0x62C720` at once (`0x60A401`).
+   A step with no candidate left: a staff member calls `0x62C720` (`0x60A472`), a guest asks for the thought 0x11 and sets the mark to the raised counter (`0x60A4A5`, not through
+   `0x60B9A0`) and answers 0.
+6. **The point**: two draws `R & 0x7F` clamped to 5..123 (`0x60A3DA`, `0x60A3EA`), the sub-cell bytes of the last cell.
+7. **The final route.** A staff member takes the staff route `0x62EB10` to (x << 8 | bx, y << 8 | by) (**W2**: its walk mask from the type-0 test, the closed park's refusal of the entrance cells,
+   the counter raised inside `0x60B8E0`); tp.exe's staff take a guest's route. A guest goes through the gate (`0x60A55F`), the mark is cleared and SetDest runs with the words << 8.
+   A walk set raises the wander flag `+0xE8` (`0x60A5D2`), which only a guest's state 7 reads.
+
+**The rectangle test `0x62C610`** (**W3**): the word's cell ((w − 1) & 0x7F, (w − 1) >> 7) against the four dwords `+0x24C`, `+0x250`, `+0x254`, `+0x258` (x0, y0, x1, y1), each pair ordered
+first, inclusive, signed. tp.exe's `0x506ED0` reads two corner words and orders nothing. The setter `0x62C3C0` stores the two corners as given, so reversed corners occur in the original.
+
+**The fallback `0x62C720`** (**W4**): the corner words of (x0, y0) and (x1, y1) (`0x4A63F0`), width = x1 − x0 + 1 and height = y1 − y0 + 1 from their cells, **not ordered**; up to 30 tries of
+x = `R % width` + x0 and y = `R % height` + y0 with **unsigned** divisions (`div`), a cell inside the map (`0x5D7260`, signed) of type 1 and the staff route to its centre; after 30 the thought
+0x1E and 0 (tp.exe's `0x506F30` routes to the cell through `0x4FA530` and asks for 0x16). Reversed corners give a negative width, an unsigned divisor of 2^32 less it, which is above every draw
+(at most 2^31), so x = R + x0 and nearly every try leaves the map: a member with reversed corners walks into his rectangle only by the walk. OpenTPW ports this as written
+(`ThemeParkIncPatrol.Fallback`). Corners one cell apart and reversed make the width or height **zero**, a divide error at `0x62C7CF` or `0x62C7DC`: a crash in the original. No OpenTPW setter writes
+such a rectangle (Theme Park Inc's patrol tool is not ported; a member's rectangle is the whole map unless restored), and a restore refuses it (`ThemeParkIncStaffMember.IsValidWorld`).
+
+**OpenTPW.** `ThemeParkIncPatrol.Destination` is the staff's `0x609F70`, with `GuestWander.PickAfterCount` for the steps (the step count drawn before the rectangle, as `0x60A010` does) and
+`GuestWander.OffPath` for the off-path search; `GuestSimulation.Wander` is a guest's, the calls and draws of tp.exe's `0x4F9490`. `ThemeParkIncStaffWorld.Patrol` runs the first for every
+role's patrol. The thoughts are presentation: a staff member's thought object is not modelled, and a guest's goes through Theme Park World's bubbles (`[EXT:tpi-twp-guest-rules]`, the thought
+timing). OpenTPW's candidate walk drops a link that leaves the map or crosses a pool bridge (`[EXT:pools-cell-type]`); no park cell links out of the map.
+
+Draw order: the gate draws nothing; `R % 5`; the fallback's two draws per try (when the start is outside the rectangle); the off-path tries' two draws each, or `R & 3` per step with two or
+more candidates; the two byte draws; the fallback's draws again when the walk runs out of candidates. Theme Park World's staff (`StaffWorldSimulation.Patrol`) draw `R % 5` after their
+`0x506F30` instead of before it; that is a Theme Park World follow-up (its oracle `tpw-exe-wander-destination` runs guests only), untouched here.
+
+**Verified.** The oracle target `tpi-exe-wander` (ORACLE.md section 7.19) runs `0x609F70` with the world generator, the counter, the stranded test, the mark setter, the rectangle test, the
+fallback, the staff route and the route search on 200 persons (guests and every staff kind, the gardener included; held and stale marks, starts without links, rectangles around and away
+from the start, reversed, one cell; the park open and closed): all agree with `walk_reading.py`'s `Wanderer`, and tp.exe's rules on the same persons differ on 86. `ThemeParkIncWanderTests` holds
+Game.exe's results on the navigator tests' map for 14 wanders (`GuestSimulation.Wander` and `ThemeParkIncPatrol.Destination`: the answer, the generator's state, the counter, the mark, the mask
+and the whole record) and for 7 sets of route requests (`RequestRoute`, `RouteToTpiPoint`, `ThemeParkIncPatrol.StaffRoute`), from `tools/ppc-analysis/oracle_x86/tpi_wander_golden.py`.
+
 ## Random numbers
 
 No world draw and no C runtime `rand()` (`0x870D38`) is reached from the edge test, the commit, the search or the neighbour query [R], nor from the constructor, the set-up, the
 steering step, the speed setter or the serializer [R, O: the oracle allows none of them], nor from the walk step, the speed step, the route requests, the stranded test or the staff
-route [R, O: the NV3 targets allow neither routine].
+route [R, O: the NV3 targets allow neither routine]. The wander and the fallback draw the world generator `0x6493E0` only (the draws above) and never `rand()` [R, O: `tpi-exe-wander` runs
+the generator and allows no `rand()`].
 
 ## Later phases
 
-- NV4: the wander and patrol destination `0x609F70`; the switch turns on and the walk scope of `[EXT:tpi-twp-guest-rules]` retires.
 - NV5: the native walk storage and load semantics.

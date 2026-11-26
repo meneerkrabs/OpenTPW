@@ -858,10 +858,8 @@ public sealed class GuestNavigation
 	/// The walk step for a guest: an <see cref="Original"/> walk steps on <paramref name="map"/>; any other (an explicit route) steps as
 	/// <see cref="Step(int, int, Func{int, int, bool}, Func{GuestNavigation, (int X, int Y)}?)"/> with <paramref name="isOpen"/>.
 	/// </summary>
-	// [BIN:TPI-EXE:0x63DD20 steering step] Theme Park Inc's walker has one steering step: a walk to the walker's own point (SetDestination: standing, placed) steps as the navigator it is, so every walk on a map with
-	// Theme Park Inc's rules takes StepOriginal (navigator phase NV5: a restored walk is the native record alone, which does not tell a route walk from another)
 	public WalkResult Step( int maxSpeed, int maxForce, ParkCellMap map, Func<int, int, bool> isOpen, Func<GuestNavigation, (int X, int Y)>? separation = null ) =>
-		Original || map.EdgeRules == WalkEdgeRules.ThemeParkInc ? StepOriginal( maxSpeed, maxForce, map, separation )
+		Original ? StepOriginal( maxSpeed, maxForce, map, separation )
 			: Step( maxSpeed, maxForce, isOpen, separation ) ? WalkResult.Arrived : WalkResult.Walking;
 
 	/// <summary>Every field the next step reads, for <see cref="WorldStateHash"/>.</summary>
@@ -1083,11 +1081,15 @@ public sealed class GuestNavigation
 
 	/// <summary>
 	/// The walk restored from its native record alone (navigator phase NV5, <see cref="ThemeParkIncPersonWalkSnapshot"/>): every member from the serializer's load half (<see cref="LoadRecord"/>), and OpenTPW's own
-	/// bookkeeping derived: no route, cursor 0, no crossings or extra open cells, the remaining distance −1, on the grid, no reroutes counted; the walk is native. <see cref="RecordProblem"/> must have accepted it.
+	/// bookkeeping derived: no route, cursor 0, no crossings or extra open cells, the remaining distance −1, on the grid, no reroutes counted, and the walk's kind (<see cref="Original"/>) from the record; the walk
+	/// is native. <see cref="RecordProblem"/> must have accepted it.
 	/// </summary>
 	internal void RestoreNativeRecord( byte[] bytes )
 	{
 		LoadRecord( SaveNavigation.Read( bytes ) );
+		// the walk's kind follows from the record: every set-up buffers at least one waypoint or, failing, leaves the walk stuck, so a walk with no waypoint that is not stuck was never set up (the
+		// constructor's) or stands at the walker's own point (SetDestination with no route), which OpenTPW steps as a walk along its route of no cells
+		Original = !(Count == 0 && !Stuck);
 		Reroutes = 0;
 		Native = true;
 	}

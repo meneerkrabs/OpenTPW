@@ -357,9 +357,9 @@ public sealed partial class ThemeParkIncStaffWorld
 		member.Boost = 0;
 		member.SmoothedSpeed = 0;
 		// [BIN:TPI-EXE:0x63ED10 navigator constructor] the person's navigator as its constructor leaves it (finished, no waypoints, the target 0, the constructor's caps), the position the cell's centre (0x63EE50 with a
-		// zero velocity); Theme Park Inc's walk is the navigator's own from the start (one steering step, a native record: navigator phase NV5), and the person's words +0x28, +0x2C, +0x1A8/+0x1AC, +0xE8 and
-		// +0x1B0 start as the constructor writes or leaves them (0x608F00: mPreviousX/Y = the position, 0x60906B; +0xE8, +0x1B0 = 0)
-		var navigation = new GuestNavigation { X = (cell.X << 16) + 0x8000, Y = (cell.Y << 16) + 0x8000, Original = true, Native = true };
+		// zero velocity), native from the start (a native record: navigator phase NV5; no set-up yet, so the walk step stands, Walk); the person's words +0x28, +0x2C, +0x1A8/+0x1AC, +0xE8 and +0x1B0 start as
+		// the constructor writes or leaves them (0x608F00: mPreviousX/Y = the position, 0x60906B; +0xE8, +0x1B0 = 0)
+		var navigation = new GuestNavigation { X = (cell.X << 16) + 0x8000, Y = (cell.Y << 16) + 0x8000, Native = true };
 		member.Navigation = navigation;
 		(member.AccurateDestX, member.AccurateDestY, member.SpriteAngle, member.Wandered, member.StrandedTime) = (0, 0, 0, false, 0);
 		(member.HeadingX, member.HeadingY) = ThemeParkIncWalkStep.Vector( 0 );

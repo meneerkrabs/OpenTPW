@@ -396,9 +396,9 @@ internal static class ParkResumeSaveFile
 	internal static void RequireThemeParkIncLand( ParkLayoutSnapshot.Data? layout ) =>
 		Require( layout?.Cells?.TpiUnowned != null, ThemeParkIncLandMissing );
 
-	/// <summary>Whether the staff of <paramref name="economy"/> may carry native navigator records: only in a save made with Theme Park Inc's navigator rules (<paramref name="nativeWalk"/>).</summary>
+	/// <summary>Whether the staff of <paramref name="economy"/> may carry native navigator records or the native walk storage: only in a save made with Theme Park Inc's navigator rules (<paramref name="nativeWalk"/>).</summary>
 	internal static bool StaffNativeRecordsAllowed( ParkSaveFile.Data? economy, bool nativeWalk ) =>
-		nativeWalk || economy?.TpiStaff?.Members.All( member => member?.World?.Navigation?.NativeRecord == null ) != false;
+		nativeWalk || economy?.TpiStaff?.Members.All( member => member?.World is not { } world || world.Navigation?.NativeRecord == null && world.Walk == null ) != false;
 
 	/// <summary>
 	/// The envelope's own consistency, with no catalog or settings: header bounds, the embedded economy's format

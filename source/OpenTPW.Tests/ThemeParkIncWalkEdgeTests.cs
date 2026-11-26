@@ -189,6 +189,7 @@ public class ThemeParkIncWalkEdgeTests
 	{
 		var walkSave = SaveOf( Park( WalkEdgeRules.ThemeParkInc ) );
 		Assert.IsTrue( walkSave.ThemeParkIncNativeWalk, "the save records the navigator's rules" );
+		Assert.AreEqual( GuestSimulationSnapshot.CurrentThemeParkIncWalkStorage, walkSave.ThemeParkIncWalkStorage, "and the native walk storage (NV5)" );
 		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkWorld ).RestoreSnapshot( walkSave ) ).Message,
 			"made with Theme Park Inc's navigator rules" );
 		Park( WalkEdgeRules.ThemeParkInc ).RestoreSnapshot( walkSave );
@@ -197,9 +198,14 @@ public class ThemeParkIncWalkEdgeTests
 		Assert.IsFalse( plainSave.ThemeParkIncNativeWalk );
 		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( plainSave ) ).Contains( nameof( GuestSimulationSnapshot.ThemeParkIncNativeWalk ) ),
 			"a Theme Park World save does not write the member: its bytes are unchanged" );
-		// a Theme Park Inc save made before NV4 (the switch off) is refused by every Theme Park Inc park now
+		// a Theme Park Inc save made before NV4 (the switch off) is refused by every Theme Park Inc park now, with the refusal NV5 shares (one for both)
 		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkInc ).RestoreSnapshot( plainSave ) ).Message,
-			"made before Theme Park Inc's own navigator" );
+			ParkSaveFile.NativeWalkStorageMissing );
+		// and so is one made after NV4 but before NV5's walk storage
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkInc ).RestoreSnapshot( walkSave with { ThemeParkIncWalkStorage = null } ) ).Message,
+			ParkSaveFile.NativeWalkStorageMissing );
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkWorld ).RestoreSnapshot( plainSave with { ThemeParkIncWalkStorage = 1 } ) ).Message,
+			"walk storage" );
 		Park( WalkEdgeRules.ThemeParkWorld ).RestoreSnapshot( plainSave );
 	}
 

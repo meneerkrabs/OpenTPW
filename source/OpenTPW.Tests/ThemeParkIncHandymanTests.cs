@@ -365,8 +365,8 @@ public class ThemeParkIncHandymanTests
 	}
 
 	/// <summary>
-	/// With Theme Park Inc's navigator rules (--tpi-native-walk) a placed member's walk is native: his save carries the navigator's record (GuestNavigation.NativeRecord), the restored
-	/// member has every navigator member back, and both go on alike. The member's first walk is SetDestination's stand-still walk, so the record covers that kind of walk too.
+	/// A placed member's walk is native: his save carries the native walk storage (navigator phase NV5: the person words and the navigator's record, ThemeParkIncStaffWorldSnapshot.Walk) and nothing of
+	/// OpenTPW's own walk, the restored member has every navigator member back, and both go on alike.
 	/// </summary>
 	[TestMethod]
 	public void ANativeHandymanSurvivesASaveWithHisNavigatorRecord()
@@ -382,7 +382,9 @@ public class ThemeParkIncHandymanTests
 			world.Update( economy, member, ++turn );
 		Assert.IsTrue( member.Navigation!.Native, "the walk on Theme Park Inc's rules is native" );
 		var json = ParkSaveFile.Serialize( economy );
-		StringAssert.Contains( json, "\"NativeRecord\"", "the save carries the record" );
+		StringAssert.Contains( json, "\"Walk\"", "the save carries the native walk storage" );
+		StringAssert.Contains( json, "\"Navigator\"", "with the navigator's record" );
+		Assert.IsFalse( json.Contains( "\"Navigation\"" ), "and no walk of OpenTPW's own" );
 		var data = ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) );
 		Assert.IsFalse( ParkResumeSaveFile.StaffNativeRecordsAllowed( data, nativeWalk: false ), "a resume file without the switch refuses the staff record" );
 		Assert.IsTrue( ParkResumeSaveFile.StaffNativeRecordsAllowed( data, nativeWalk: true ) );

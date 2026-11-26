@@ -141,7 +141,8 @@ internal static class ThemeParkIncAdvisorTimeline
 	/// number (0 for a clip it lacks, which ends at once); <paramref name="ended"/> is when the speech ended, after its start, or null while it speaks.
 	/// </summary>
 	// [BIN:TPI-EXE:0x717067 next clip] while the speech is active (0xBEF074) and the sequence's next word is a clip, the frame asks the model's channel (0x4E09F0) and starts the next clip only when
-	// it reads the idle set 12 (0x4DF610: AnimID 5, the clip less 1, flags 0), the end of the clip before; the speech's end (0x716F83, before this step in the same frame) stops the sequence.
+	// it reads the idle set 12 (0x4DF610: AnimID 5, the clip less 1, flags 0), the end of the clip before. [BIN:TPI-EXE:0x716F7B speech end] the frame that ends the speech clears 0xBEF074 and
+	// falls through 0x716F99 to this step, which tests 0xBEF098 and the next clip word only, so that frame still starts a clip whose predecessor has ended; later frames (0x716F44) start none.
 	// [BIN:TPI-EXE:0x4E09F0 animation sampler] the engine is Theme Park World's: a clip runs to its own length (trailer word 2 × 1000 / 30) and the advisor model (load flags 0x50120,
 	// 0x464F4A) is hidden at the end of a clip with nothing after it (Advisor.DrawnSpanMilliseconds). [EXT:tpi-advisor-tick-clock] the next clip starts at the end of the one before, as an
 	// ideal frame pacing has it, where the original starts it at its first frame after that end
@@ -153,8 +154,8 @@ internal static class ThemeParkIncAdvisorTimeline
 		var start = 0uL;
 		for ( var index = 0; index < clips.Count; index++ )
 		{
-			// a later clip starts only from a frame of the speech, which has ended by the end of the clip before
-			if ( index > 0 && ended is { } end && start >= end )
+			// a later clip starts only from a frame of the speech or the frame that ends it, so not when the clip before ended after the speech
+			if ( index > 0 && ended is { } end && start > end )
 				return null;
 			var clip = clips[index];
 			var length = clip >= 0 && clip < lengths.Count ? lengths[clip] : 0u;

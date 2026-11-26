@@ -119,6 +119,7 @@ public sealed class ThemeParkIncAdvisorViewTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( 5, At( 1200, ended: 1100 )!.Value.Clip, "a clip that started plays to its end" );
 		Assert.IsNull( At( 1300, ended: 1100 ), "no frame starts a clip once the speech has ended" );
 		Assert.AreEqual( 15, At( 1300, ended: 1301 )!.Value.Clip );
+		Assert.AreEqual( 15, At( 1300, ended: 1300 )!.Value.Clip, "the frame that ends the speech still starts the next clip (0x716F99 falls through to 0x717028)" );
 	}
 
 	[TestMethod]

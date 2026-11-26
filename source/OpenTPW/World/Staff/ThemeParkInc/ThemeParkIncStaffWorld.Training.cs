@@ -89,9 +89,8 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( !StaffRoute( economy, member, room.Entrance, GuestWander.CentreByte, GuestWander.CentreByte ) )
 		{
 			member.Navigation!.Mask = 1;
-			// 0x60B828: the cell steer raises the counter first (ParkCellMap.NextStamp)
-			grid.Cells.NextStamp();
-			Route( member, room.Entrance, GuestWander.CentreByte, GuestWander.CentreByte );
+			// 0x60B828: the cell steer raises the counter first, tests the mark, stores the words and sets the walk (0x60B7F0, the body of 0x60B8E0)
+			ThemeParkIncNativeWalk.RouteToPoint( grid, member, (room.Entrance.X << 8) | GuestWander.CentreByte, (room.Entrance.Y << 8) | GuestWander.CentreByte );
 		}
 		member.SpeedBonus = BonusTable[1];
 		RequestTemplate( member, 1 );

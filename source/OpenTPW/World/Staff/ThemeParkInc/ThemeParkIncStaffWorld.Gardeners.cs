@@ -6,9 +6,9 @@ namespace OpenTPW;
 /// watering's end (ParkEconomy.FinishThemeParkIncWatering).
 /// </summary>
 /// <remarks>
-/// A tired gardener rests as the other roles do (the states 2, 3 and 0x23, ThemeParkIncStaffWorld.Rest.cs). The facing the watering state asks for (<c>0x609E60</c>: the heading word +0x2C from the
-/// queue link byte of the gardener's cell, 1000, 1500, 500 or 2000 in the 2048 units of <c>0x91E074</c>) only turns the sprite, and the heading word is neither saved nor hashed yet (the native
-/// person words are the navigator plan's NV5), so it is not ported: the gardener keeps the heading his walk step wrote (D1). The destructor's claim release (<c>0x5D2430</c> → <c>0x5E37B0</c>) waits for the firing of Theme Park Inc staff, which is not ported.
+/// A tired gardener rests as the other roles do (the states 2, 3 and 0x23, ThemeParkIncStaffWorld.Rest.cs). While he waters, the facing <c>0x609E60</c> sets his heading word +0x2C from the
+/// queue link byte of his cell (<see cref="Facing"/>): it turns his sprite, and the word is a saved person word since the navigator's NV5. The destructor's claim release (<c>0x5D2430</c> → <c>0x5E37B0</c>)
+/// waits for the firing of Theme Park Inc staff, which is not ported.
 /// </remarks>
 public sealed partial class ThemeParkIncStaffWorld
 {
@@ -115,12 +115,15 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>
 	/// State 0x20: the working step; once the work duration has passed since the watering began, the plant's watering ends (it is watered, its claim and request clear) and he goes idle.
 	/// </summary>
-	// [BIN:TPI-EXE:0x5D2ACE watering] the working step 0x62B4D0, the facing 0x609E60 (presentation), the work duration 0x62E4C0 (kind 0x14: Gardener.MinWorkDuration and MaxWorkDuration, 0xA022D0 and
+	// [BIN:TPI-EXE:0x5D2ACE watering] the working step 0x62B4D0, the facing 0x609E60 (the heading word), the work duration 0x62E4C0 (kind 0x14: Gardener.MinWorkDuration and MaxWorkDuration, 0xA022D0 and
 	// 0xA022D4); a turn at most +0x5D4 + the duration (unsigned jbe) waters on; else 0x5E31B0 on table[+0x5D8], template 3 (0x5D0F90) and 0x628180(0). No tiredness test: a watering runs to its end
 	// unless the plant goes (the removal message). The duplicate body 0x5D2D40 is reached only through the thunk 0x403A62, which nothing calls
 	private void UpdateWatering( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		member.Step( settings );
+		var (cellX, cellY) = member.Navigation!.Cell;
+		member.SpriteAngle = Facing( grid.Cells.QueueLinkAt( cellX, cellY ) );
+		(member.HeadingX, member.HeadingY) = ThemeParkIncWalkStep.Vector( member.SpriteAngle );
 		var duration = settings.WorkDuration( ThemeParkIncStaffRole.Gardener, member.Experience, member.Motivation, member.Salary );
 		if ( unchecked( (uint)turn ) <= unchecked( (uint)(member.WorkStamp + duration) ) )
 			return;
@@ -130,6 +133,21 @@ public sealed partial class ThemeParkIncStaffWorld
 		RequestTemplate( member, IdleTemplate );
 		SetState( economy, member, Idle, turn );
 	}
+
+	/// <summary>
+	/// The facing <c>0x609E60</c>: the heading word for the queue link byte (<c>+0xD</c>) of the person's cell, in the 2048 units of <c>0x91E074</c>: 0x01 gives 2000, 0x04 1500, 0x10 1000, 0x40 500, any other
+	/// 2000. The handyman's bin states (0x14, <c>0x5D57F9</c>) take it too; OpenTPW's handymen do not enter them.
+	/// </summary>
+	// [BIN:TPI-EXE:0x609E60 facing] the cell word of +5/+7 (y << 7 + x + 1), its record [0xADE6B4] + 72 × word − 0x48, the byte +0xD (0x65CC40); byte − 1 above 0x3F takes 0x7D0 (0x609EC3); else the
+	// byte table 0x609EE4 into the jump table 0x609ED0: entries 0 (byte 1) and 4 (every other byte up to 0x40) 0x7D0, 1 (byte 4) 0x5DC, 2 (byte 0x10) 0x3E8, 3 (byte 0x40) 0x1F4; mov [esi + 0x2C], eax. Callers: the
+	// gardener's watering 0x5D2AD7 (and its unreferenced twin 0x5D2D4A), the handyman's state 0x14 0x5D5802 (and 0x5D5E5A)
+	internal static int Facing( byte queueLink ) => queueLink switch
+	{
+		0x04 => 0x5DC,
+		0x10 => 0x3E8,
+		0x40 => 0x1F4,
+		_ => 0x7D0
+	};
 
 	/// <summary>
 	/// The gardener's search (0x5D28C0): the strike and rest gate; unless too tired, the plant the chooser takes (which claimed it and set his walk), which asks for maintenance unless it did, and he

@@ -85,7 +85,7 @@ public enum GuestThought : byte
 }
 
 /// <summary>One park visitor. Positions are in game cells (cell (x, y) spans [x, x+1) × [y, y+1)).</summary>
-public sealed class Guest
+public sealed class Guest : IThemeParkIncWalker
 {
 	internal Guest( int id, int type )
 	{
@@ -319,6 +319,12 @@ public sealed class Guest
 	public ulong BirthId { get; internal set; }
 	/// <summary>The stranded mark (tp.exe <c>+0x198</c>): the cell map's stamp counter raised by one when the wander found no way on, 0 for none; the guest does not search again until a cell edit near it stamps a block above it.</summary>
 	public int StrandedMark { get; internal set; }
+	/// <summary>
+	/// The accurate destination words (Theme Park Inc person <c>+0x28</c>/<c>+0x2A</c>, <c>mAccurateDestX/Y</c>): the point (cell &lt;&lt; 8 | sub-cell byte) of the last route request that was not
+	/// refused by the stranded test, which the re-route after a save and after a load (<c>0x609B55</c>, <see cref="ThemeParkIncNativeWalk"/>) walks to again. Written by every route request and the wander;
+	/// stored natively for Theme Park Inc's own guests (navigator phase NV5). 0 until the first request (the person constructor <c>0x608F00</c> does not write it).
+	/// </summary>
+	internal int AccurateDestX, AccurateDestY;
 	public int LastAttractionId { get; internal set; }
 	/// <summary>The attractions the guest used last, newest first (guest <c>+480..+486</c>); the score divides by 5, 4, 3 or 2 for the first match. 0 = empty slot.</summary>
 	public int[] UsedHistory { get; } = new int[HistorySlots];
@@ -402,4 +408,32 @@ public sealed class Guest
 	internal long LastQueueUpdateTurn = -1;
 
 	public (int X, int Y) Cell => (CellX, CellY);
+
+	// ---- The person words of a Theme Park Inc walker (ThemeParkIncNativeWalk): a native guest's (Tpi) heading word and wander flag are its record's; the rest are the shared guest's ----------------
+
+	GuestNavigation IThemeParkIncWalker.Walk => Navigation;
+	int IThemeParkIncWalker.AccurateDestX { get => AccurateDestX; set => AccurateDestX = value; }
+	int IThemeParkIncWalker.AccurateDestY { get => AccurateDestY; set => AccurateDestY = value; }
+	int IThemeParkIncWalker.StrandedTime { get => StrandedMark; set => StrandedMark = value; }
+	/// <summary>mPreviousX/Y: <see cref="StepFromX"/>/<see cref="StepFromY"/> in 16.16 cells (a position below 2^24 converts exactly both ways).</summary>
+	int IThemeParkIncWalker.PreviousX { get => (int)(StepFromX * Fixed16.One); set => StepFromX = value / (float)Fixed16.One; }
+	int IThemeParkIncWalker.PreviousY { get => (int)(StepFromY * Fixed16.One); set => StepFromY = value / (float)Fixed16.One; }
+	int IThemeParkIncWalker.BaseSpeedWord { get => BaseSpeed; set => BaseSpeed = value; }
+	int IThemeParkIncWalker.PurposeSpeed { get => ToiletBonus; set => ToiletBonus = value; }
+	ushort IThemeParkIncWalker.AdjustorSpeed { get => Boost; set => Boost = value; }
+	float IThemeParkIncWalker.PreviousSpeed { get => SmoothedSpeed; set => SmoothedSpeed = value; }
+	int IThemeParkIncWalker.SpriteAngle
+	{
+		get => Tpi?.Heading ?? 0;
+		set
+		{
+			(Tpi ?? throw new InvalidOperationException( "Only a native Theme Park Inc guest keeps the heading word." )).Heading = value;
+			(HeadingX, HeadingY) = ThemeParkIncWalkStep.Vector( value );
+		}
+	}
+	bool IThemeParkIncWalker.SetDestSuccessfully
+	{
+		get => Tpi?.Wandered ?? false;
+		set => (Tpi ?? throw new InvalidOperationException( "Only a native Theme Park Inc guest keeps the wander flag." )).Wandered = value;
+	}
 }

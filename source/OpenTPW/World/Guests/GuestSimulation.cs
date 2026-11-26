@@ -538,7 +538,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:TPI-EXE:0x0063ED10 navigator constructor] Theme Park Inc's native walk (every Theme Park Inc park) starts the person's navigator (+0xEC, called at 0x608F83) with the constructor's caps
 		// 0x3333 and 0x6666; the speed step sets them before the first walk step
 		if ( Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc )
+		{
 			(guest.MaxSpeed, guest.MaxForce) = (GuestNavigation.ConstructorMaxSpeed, GuestNavigation.ConstructorMaxForce);
+			// the navigator is native from its constructor on (its members join the digest before its first set-up), as a restored one is (navigator phase NV5)
+			guest.Navigation.Native = true;
+		}
 		return guest;
 	}
 
@@ -607,7 +611,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>A stable offset inside a cell (±0.25 of a cell each way) from the guest id alone: the start point of a guest that was not made by the arrival constructor.</summary>
-	private static (float X, float Y) PlacementJitter( int id )
+	internal static (float X, float Y) PlacementJitter( int id )
 	{
 		var z = (ulong)(uint)id * 0x9E3779B97F4A7C15UL + 0x9E3779B97F4A7C15UL;
 		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
@@ -1533,6 +1537,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
 			return false;
 		guest.StrandedMark = 0;
+		// [BIN:TPI-EXE:0x60B85E accurate destination] +0x2A, +0x28 = the cell's centre words ((cell << 8) | 0x80) before SetDest (0x60B880, 0x60B884): Theme Park Inc's person words (NV5)
+		(guest.AccurateDestX, guest.AccurateDestY) = ((cell.X << 8) | GuestWander.CentreByte, (cell.Y << 8) | GuestWander.CentreByte);
 		var (x, y) = GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte );
 		var found = route == null ? navigation.Navigate( Grid.Cells, x, y ) : SetDestination( guest, (x, y), route );
 		guest.HasWaypoint = true;
@@ -2468,6 +2474,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPI-EXE:0x60A6FB off-path gates] each candidate that reaches SetDest raises the counter first (0x60A6FB, 0x60A83F; tp.exe 0x4F9983, 0x4F9B2E); the mark, cleared above, holds nothing
 			cells.NextStamp();
 			var path = Grid.FindPath( start.X, start.Y, cell.X, cell.Y );
+			// [BIN:TPI-EXE:0x60A73A off-path destination] +0x28, +0x2A = the candidate's centre words before SetDest (0x60A756; the random tries 0x60A86F, 0x60A891); a walk set raises the wander flag +0xE8
+			// (0x60A8C1), which a native guest keeps in its record (ThemeParkIncGuestRecord.Wandered)
+			(guest.AccurateDestX, guest.AccurateDestY) = ((cell.X << 8) | GuestWander.CentreByte, (cell.Y << 8) | GuestWander.CentreByte);
 			SetDestination( guest, GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte ), path );
 			if ( !guest.Navigation.Stuck )
 				return true;
@@ -2503,6 +2512,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
 		// [BIN:TPI-EXE:0x60A55F final gate] a guest's final route raises the counter before SetDest (tp.exe 0x4F9CB5); the mark, cleared above, holds nothing
 		cells.NextStamp();
+		// [BIN:TPI-EXE:0x60A597 final destination] +0x28, +0x2A = the point's words (cell << 8 | byte) before SetDest (0x60A5B3)
+		(guest.AccurateDestX, guest.AccurateDestY) = ((destination.Cell.X << 8) | destination.ByteX, (destination.Cell.Y << 8) | destination.ByteY);
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
 		if ( guest.Navigation.Stuck )
 		{
@@ -2514,30 +2525,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>Whether the stranded guest stays stranded: no block of the nine cells around its cell, or around its queue's tail, carries a stamp at or above its mark (<c>0x004FA770</c>).</summary>
 	// [BIN:TPW-EXE:0x004FA770 stranded test] the reference is the guest's cell, or for a queue cell (0x00536320) the cell reached by following the predecessor links (0x004DE670) to the end; the nine cell offsets (−1..1, −1..1) of the table 0x007CED88 give block stamps (0x004D8CA0) and the guest stays stranded while their largest is below the mark
-	private bool StrandedHolds( Guest guest, (int X, int Y) start )
-	{
-		var cell = start;
-		if ( Grid.IsQueue( cell.X, cell.Y ) )
-		{
-			for ( var guard = 0; guard < 1024; guard++ )
-			{
-				if ( RideVisitorBridge.NextQueueCell( Grid, cell ) is not { } behind )
-					break;
-				cell = behind;
-			}
-		}
-		var id = (ushort)(cell.Y * 128 + cell.X + 1);
-		var largest = 0u;
-		for ( var dy = -1; dy <= 1; dy++ )
-		{
-			for ( var dx = -1; dx <= 1; dx++ )
-			{
-				var offset = (uint)(ushort)(id + dy * 128 + dx) - 1;
-				largest = Math.Max( largest, unchecked( (uint)Grid.Cells.BlockStamp( (int)((offset & 0x7F) >> 4), (int)(offset >> 11) ) ) );
-			}
-		}
-		return largest < unchecked( (uint)guest.StrandedMark );
-	}
+	private bool StrandedHolds( Guest guest, (int X, int Y) start ) => ThemeParkIncNativeWalk.StrandedHolds( Grid, start, guest.StrandedMark );
 
 	/// <summary>Presentation-only gate, absent for standalone simulations. It neither changes thoughts nor clears existing bubbles and is never saved or hashed.</summary>
 	internal Func<bool>? ThoughtBubblesAllowed { get; set; }
@@ -4140,7 +4128,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		var guestSnapshots = new GuestSnapshot[guests.Count];
 		for ( var index = 0; index < guests.Count; index++ )
-			guestSnapshots[index] = CaptureGuest( guests[index] );
+			guestSnapshots[index] = CaptureGuest( guests[index], WalksThemeParkInc );
 		return new GuestSimulationSnapshot
 		{
 			SchemaVersion = GuestSimulationSnapshot.CurrentSchemaVersion,
@@ -4159,6 +4147,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			VisitorCount = VisitorCount,
 			ThemeParkIncNativeGuests = NativeTpi != null,
 			ThemeParkIncNativeWalk = Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc,
+			ThemeParkIncWalkStorage = WalksThemeParkInc ? GuestSimulationSnapshot.CurrentThemeParkIncWalkStorage : null,
 			ArrivalTimerStart = arrivalTimerStart,
 			DeliveringArrivals = deliveringArrivals,
 			SpawnTimer = spawnTimer,
@@ -4173,7 +4162,26 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		};
 	}
 
-	private static GuestSnapshot CaptureGuest( Guest guest )
+	/// <summary>
+	/// The guest's snapshot. A guest of Theme Park Inc's own state machine in a park with Theme Park Inc's navigator (<paramref name="themeParkIncWalk"/>) takes the native walk storage (navigator phase NV5):
+	/// the person words and the navigator's record (<see cref="GuestSnapshot.PersonWalk"/>), without the walk fields of OpenTPW's own kind, which a restore derives (<see cref="GuestSnapshot.ExpandNativeWalk"/>).
+	/// </summary>
+	private static GuestSnapshot CaptureGuest( Guest guest, bool themeParkIncWalk )
+	{
+		var snapshot = CaptureGuestFields( guest );
+		if ( !themeParkIncWalk || guest.Tpi is not { } tpi )
+			return snapshot;
+		return snapshot with
+		{
+			PersonWalk = ThemeParkIncPersonWalkSnapshot.Capture( guest ),
+			// [EXT:tpi-twp-guest-rules] the bridged boarding's own walk fields (Theme Park World's boarding reads them) until phase P3b
+			BridgedWalk = tpi.State == ThemeParkIncGuestStates.BeingLoaded ? new ThemeParkIncBridgedWalkSnapshot( guest.CellX, guest.CellY, guest.PreviousCellX, guest.PreviousCellY, guest.HasWaypoint ) : null,
+			Navigation = null, HeadingX = null, HeadingY = null, StepFromX = null, StepFromY = null, MaxSpeed = null, MaxForce = null, CellX = null, CellY = null, PreviousCellX = null,
+			PreviousCellY = null, OnGrid = null, OffsetX = null, OffsetY = null, HasWaypoint = null
+		};
+	}
+
+	private static GuestSnapshot CaptureGuestFields( Guest guest )
 	{
 		var navigation = guest.Navigation;
 		return new GuestSnapshot
@@ -4364,10 +4372,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				: "The save was made without Theme Park Inc's native guest states, which this park runs (--tpi-native-guests)." );
 		// so must the walk's rules: the park's edge test is the save's (docs/reverse/TPI-NAVIGATOR.md). Every Theme Park Inc park walks with Theme Park Inc's navigator since phase NV4, so a Theme Park Inc
 		// save made before it (the walk of Theme Park World's rules, [EXT:tpi-twp-guest-rules]'s retired walk scope) is refused, as is the navigator's flag in a Theme Park World park
-		if ( snapshot.ThemeParkIncNativeWalk != (Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc) )
-			Error( snapshot.ThemeParkIncNativeWalk
-				? "The save was made with Theme Park Inc's navigator rules, which this park runs without."
-				: "The save was made before Theme Park Inc's own navigator (its guests and staff walked by Theme Park World's rules); this version cannot continue it." );
+		// and so must the walk storage (navigator phase NV5): a Theme Park Inc save made before it keeps OpenTPW's own walk fields. NV4 and NV5 are released together, so a player sees one refusal: both say
+		// so with ParkSaveFile.NativeWalkStorageMissing
+		if ( snapshot.ThemeParkIncNativeWalk != WalksThemeParkInc )
+			Error( snapshot.ThemeParkIncNativeWalk ? "The save was made with Theme Park Inc's navigator rules, which this park runs without." : ParkSaveFile.NativeWalkStorageMissing );
+		else if ( (snapshot.ThemeParkIncWalkStorage != null) != WalksThemeParkInc )
+			Error( WalksThemeParkInc ? ParkSaveFile.NativeWalkStorageMissing : "The save holds Theme Park Inc's walk storage, which this park does not keep." );
+		else if ( snapshot.ThemeParkIncWalkStorage is { } storage && storage != GuestSimulationSnapshot.CurrentThemeParkIncWalkStorage )
+			Error( $"The save's Theme Park Inc walk storage {storage} is not the one this version reads ({GuestSimulationSnapshot.CurrentThemeParkIncWalkStorage})." );
 		if ( snapshot.VisitorCount < 0 )
 			Error( $"VisitorCount {snapshot.VisitorCount} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
@@ -4499,6 +4511,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( guest == null )
 			{
 				Error( $"Guests[{index}] is missing." );
+				continue;
+			}
+			// the native walk storage (navigator phase NV5): exactly the native guests of a park with Theme Park Inc's navigator hold it, without any walk field of OpenTPW's own; the rest is read derived
+			foreach ( var problem in NativeWalkStorageProblems( guest, WalksThemeParkInc, Grid.CountX, Grid.CountY ) )
+				Error( problem );
+			guest = guest.ExpandNativeWalk();
+			if ( !guest.HasOwnWalkFields )
+			{
+				Error( $"Guests[{index}] (guest {guest.Id}) has no walk fields." );
 				continue;
 			}
 			if ( (guest.BodySprite != null) != (snapshot.BodySpriteClockMilliseconds != null) )
@@ -4673,17 +4694,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} BoothWait {guest.BoothWait} is outside 0..{GateWaitMaximum}." );
 			if ( guest.VisitorNumber < 0 )
 				Error( $"Guest {guest.Id} VisitorNumber {guest.VisitorNumber} is negative." );
-			Finite( guest.Id, guest.HeadingX, nameof( guest.HeadingX ) );
-			Finite( guest.Id, guest.HeadingY, nameof( guest.HeadingY ) );
+			Finite( guest.Id, guest.HeadingX!.Value, nameof( guest.HeadingX ) );
+			Finite( guest.Id, guest.HeadingY!.Value, nameof( guest.HeadingY ) );
 			Finite( guest.Id, guest.DistanceWalked, nameof( guest.DistanceWalked ) );
 			Finite( guest.Id, guest.DrawX, nameof( guest.DrawX ) );
 			Finite( guest.Id, guest.DrawY, nameof( guest.DrawY ) );
 			Finite( guest.Id, guest.DrawDistanceWalked, nameof( guest.DrawDistanceWalked ) );
-			Finite( guest.Id, guest.StepFromX, nameof( guest.StepFromX ) );
-			Finite( guest.Id, guest.StepFromY, nameof( guest.StepFromY ) );
+			Finite( guest.Id, guest.StepFromX!.Value, nameof( guest.StepFromX ) );
+			Finite( guest.Id, guest.StepFromY!.Value, nameof( guest.StepFromY ) );
 			Finite( guest.Id, guest.StepFromDistance, nameof( guest.StepFromDistance ) );
-			Finite( guest.Id, guest.OffsetX, nameof( guest.OffsetX ) );
-			Finite( guest.Id, guest.OffsetY, nameof( guest.OffsetY ) );
+			Finite( guest.Id, guest.OffsetX!.Value, nameof( guest.OffsetX ) );
+			Finite( guest.Id, guest.OffsetY!.Value, nameof( guest.OffsetY ) );
 			Finite( guest.Id, guest.QueueTargetX, nameof( guest.QueueTargetX ) );
 			Finite( guest.Id, guest.QueueTargetY, nameof( guest.QueueTargetY ) );
 			Finite( guest.Id, guest.StateTimer, nameof( guest.StateTimer ) );
@@ -4795,7 +4816,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				error( $"Guest {guest.Id} is in state {guest.State} with an arrival lane of fewer than two cells." );
 			else if ( (uint)guest.LaneIndex >= (uint)guest.Lane.Length )
 				error( $"Guest {guest.Id} lane index {guest.LaneIndex} is outside its {guest.Lane.Length}-cell lane." );
-			if ( guest.OnGrid || !guest.Navigation.OffGrid )
+			if ( guest.OnGrid == true || !guest.Navigation!.OffGrid )
 				error( $"Guest {guest.Id} walks a lane but is marked on the path grid." );
 			for ( var cell = 0; cell < guest.Lane.Length; cell++ )
 			{
@@ -4804,13 +4825,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					error( $"Guest {guest.Id} lane cell {cell} ({x}, {y}) is outside the map." );
 			}
 		}
-		else if ( !guest.OnGrid || guest.Navigation.OffGrid )
+		else if ( guest.OnGrid != true || guest.Navigation!.OffGrid )
 			error( $"Guest {guest.Id} is in state {guest.State} but is not on the path grid." );
-		if ( !Grid.InBounds( guest.CellX, guest.CellY ) )
+		if ( !Grid.InBounds( guest.CellX!.Value, guest.CellY!.Value ) )
 			error( $"Guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the map." );
-		if ( (guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0) && !Grid.InBounds( guest.PreviousCellX, guest.PreviousCellY ) )
+		if ( (guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0) && !Grid.InBounds( guest.PreviousCellX!.Value, guest.PreviousCellY!.Value ) )
 			error( $"Guest {guest.Id} previous cell ({guest.PreviousCellX}, {guest.PreviousCellY}) is outside the map." );
-		var navigation = guest.Navigation;
+		var navigation = guest.Navigation!;
 		if ( !Grid.InBounds( navigation.X >> 16, navigation.Y >> 16 ) )
 			error( $"Guest {guest.Id} navigation position ({navigation.X >> 16}, {navigation.Y >> 16}) is outside the map." );
 		if ( !Grid.InBounds( navigation.TargetX >> 16, navigation.TargetY >> 16 ) )
@@ -4943,16 +4964,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>Copies a validated guest snapshot into a fresh <see cref="Guest"/> (route, lane and buffer arrays are copied again).</summary>
 	private static void ApplyGuestSnapshot( Guest guest, GuestSnapshot snapshot, int schemaVersion )
 	{
+		// the native walk storage (NV5) restores verbatim: the walk fields of OpenTPW's own kind are derived from it (ExpandNativeWalk), the accurate destination is its own
+		if ( snapshot.PersonWalk is { } personWalk )
+			(guest.AccurateDestX, guest.AccurateDestY) = (personWalk.AccurateDestX, personWalk.AccurateDestY);
+		snapshot = snapshot.ExpandNativeWalk();
 		guest.State = snapshot.State;
-		guest.HeadingX = snapshot.HeadingX;
-		guest.HeadingY = snapshot.HeadingY;
+		guest.HeadingX = snapshot.HeadingX!.Value;
+		guest.HeadingY = snapshot.HeadingY!.Value;
 		guest.IsMoving = snapshot.IsMoving;
 		guest.DistanceWalked = snapshot.DistanceWalked;
 		guest.DrawX = snapshot.DrawX;
 		guest.DrawY = snapshot.DrawY;
 		guest.DrawDistanceWalked = snapshot.DrawDistanceWalked;
-		guest.StepFromX = snapshot.StepFromX;
-		guest.StepFromY = snapshot.StepFromY;
+		guest.StepFromX = snapshot.StepFromX!.Value;
+		guest.StepFromY = snapshot.StepFromY!.Value;
 		guest.StepFromDistance = snapshot.StepFromDistance;
 		guest.StepTick = snapshot.StepTick;
 		if ( snapshot.BodySprite is { } body )
@@ -5045,22 +5070,22 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.ToiletBonus = snapshot.ToiletBonus;
 		guest.Boost = snapshot.Boost;
 		guest.SmoothedSpeed = snapshot.SmoothedSpeed;
-		guest.MaxSpeed = snapshot.MaxSpeed;
-		guest.MaxForce = snapshot.MaxForce;
-		guest.CellX = snapshot.CellX;
-		guest.CellY = snapshot.CellY;
-		guest.PreviousCellX = snapshot.PreviousCellX;
-		guest.PreviousCellY = snapshot.PreviousCellY;
-		guest.OnGrid = snapshot.OnGrid;
-		guest.OffsetX = snapshot.OffsetX;
-		guest.OffsetY = snapshot.OffsetY;
-		guest.HasWaypoint = snapshot.HasWaypoint;
+		guest.MaxSpeed = snapshot.MaxSpeed!.Value;
+		guest.MaxForce = snapshot.MaxForce!.Value;
+		guest.CellX = snapshot.CellX!.Value;
+		guest.CellY = snapshot.CellY!.Value;
+		guest.PreviousCellX = snapshot.PreviousCellX!.Value;
+		guest.PreviousCellY = snapshot.PreviousCellY!.Value;
+		guest.OnGrid = snapshot.OnGrid!.Value;
+		guest.OffsetX = snapshot.OffsetX!.Value;
+		guest.OffsetY = snapshot.OffsetY!.Value;
+		guest.HasWaypoint = snapshot.HasWaypoint!.Value;
 		guest.Lane = snapshot.Lane?.ToArray();
 		guest.LaneIndex = snapshot.LaneIndex;
 		guest.LaneReversed = snapshot.LaneReversed;
 		guest.StateTimer = snapshot.StateTimer;
 		var navigation = guest.Navigation;
-		var navigationSnapshot = snapshot.Navigation;
+		var navigationSnapshot = snapshot.Navigation!;
 		navigation.X = navigationSnapshot.X;
 		navigation.Y = navigationSnapshot.Y;
 		navigation.VelocityX = navigationSnapshot.VelocityX;
@@ -5089,6 +5114,34 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		navigation.RestoreSegments();
 		if ( navigationSnapshot.NativeRecord is { } native )
 			navigation.RestoreNative( native );
+	}
+
+	/// <summary>
+	/// Why <paramref name="guest"/> does not hold the native walk storage as a guest of a park with (<paramref name="themeParkIncWalk"/>) or without Theme Park Inc's navigator must (navigator phase NV5): exactly a
+	/// native guest (<see cref="GuestSnapshot.Tpi"/>) of such a park holds it, a valid one on the <paramref name="width"/> × <paramref name="height"/> map, without any walk field of OpenTPW's own, and with the
+	/// bridged boarding's fields exactly in state 16.
+	/// </summary>
+	internal static IEnumerable<string> NativeWalkStorageProblems( GuestSnapshot guest, bool themeParkIncWalk, int width, int height )
+	{
+		var expected = themeParkIncWalk && guest.Tpi != null;
+		if ( guest.PersonWalk is not { } walk )
+		{
+			if ( expected )
+				yield return $"Guest {guest.Id} runs Theme Park Inc's own states without the native walk storage.";
+			if ( guest.BridgedWalk != null )
+				yield return $"Guest {guest.Id} holds the bridged boarding's walk fields without the native walk storage.";
+			yield break;
+		}
+		if ( !expected )
+			yield return $"Guest {guest.Id} holds Theme Park Inc's native walk storage, which only a guest of Theme Park Inc's own states keeps in a park with Theme Park Inc's navigator.";
+		if ( walk.Problem( width, height ) is { } problem )
+			yield return $"Guest {guest.Id}'s native walk storage is invalid: {problem}.";
+		if ( guest.HasAnyOwnWalkField )
+			yield return $"Guest {guest.Id} holds the native walk storage and walk fields of OpenTPW's own kind.";
+		if ( (guest.Tpi?.State == ThemeParkIncGuestStates.BeingLoaded) != (guest.BridgedWalk != null) )
+			yield return $"Guest {guest.Id} holds the bridged boarding's walk fields {(guest.BridgedWalk != null ? "outside" : "not in")} the bridged boarding.";
+		if ( guest.BridgedWalk is { } bridged && ((uint)bridged.CellX >= (uint)width || (uint)bridged.CellY >= (uint)height) )
+			yield return $"Guest {guest.Id}'s bridged cell ({bridged.CellX}, {bridged.CellY}) is outside the map.";
 	}
 
 	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: gameplay fields, in id order.
@@ -5132,9 +5185,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( (int)guest.State );
 			hash.Add( guest.X );
 			hash.Add( guest.Y );
-			hash.Add( guest.HeadingX );
-			hash.Add( guest.HeadingY );
-			hash.Add( guest.IsMoving );
+			// a guest of the native walk storage (navigator phase NV5): its heading vector, moving flag, walking flag (outside the bridged boarding) and previous cell are presentation or written only, and a
+			// restore derives them; its accurate destination joins instead
+			var nativeWalk = WalksThemeParkInc && guest.Tpi != null;
+			var bridged = nativeWalk && guest.Tpi!.State == ThemeParkIncGuestStates.BeingLoaded;
+			if ( nativeWalk )
+				hash.Add( 0x4E563541L + ((long)guest.AccurateDestX << 16) + guest.AccurateDestY );
+			else
+			{
+				hash.Add( guest.HeadingX );
+				hash.Add( guest.HeadingY );
+				hash.Add( guest.IsMoving );
+			}
 			hash.Add( guest.DistanceWalked );
 			hash.Add( guest.Hunger );
 			hash.Add( guest.Thirst );
@@ -5161,12 +5223,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				hash.Add( id );
 			hash.Add( guest.CellX );
 			hash.Add( guest.CellY );
-			hash.Add( guest.PreviousCellX );
-			hash.Add( guest.PreviousCellY );
+			if ( !nativeWalk || bridged )
+			{
+				hash.Add( guest.PreviousCellX );
+				hash.Add( guest.PreviousCellY );
+			}
 			hash.Add( guest.OnGrid );
 			hash.Add( guest.OffsetX );
 			hash.Add( guest.OffsetY );
-			hash.Add( guest.HasWaypoint );
+			if ( !nativeWalk || bridged )
+				hash.Add( guest.HasWaypoint );
 			hash.Add( guest.BaseSpeed );
 			hash.Add( guest.ToiletBonus );
 			hash.Add( (int)guest.Boost );

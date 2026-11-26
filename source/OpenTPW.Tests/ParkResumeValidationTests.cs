@@ -125,8 +125,8 @@ public class ParkResumeValidationTests
 			{
 				Navigation = guest.Navigation with
 				{
-					Count = 1, Index = 0, Route = [guest.Navigation.Route.FirstOrDefault( (guest.CellX, guest.CellY) )], Cursor = 0,
-					Waypoints = Enumerable.Repeat( (guest.CellX, guest.CellY), GuestNavigation.BufferedWaypoints ).ToArray(),
+					Count = 1, Index = 0, Route = [guest.Navigation.Route.FirstOrDefault( (guest.CellX!.Value, guest.CellY!.Value) )], Cursor = 0,
+					Waypoints = Enumerable.Repeat( (guest.CellX!.Value, guest.CellY!.Value), GuestNavigation.BufferedWaypoints ).ToArray(),
 					OriginalWalk = new OriginalWalkSnapshot { Stuck = false, Stamp = stamp, PathCount = 1, Total = 0, Ahead = 0, Beyond = 0, Progress = 0 }
 				}
 			} ).ToArray()
@@ -177,7 +177,7 @@ public class ParkResumeValidationTests
 			"names attraction 77" );
 
 		// Queue membership must agree with state both ways, whatever the states happen to be.
-		var onGrid = snapshot.Guests.Guests.First( guest => guest.OnGrid && guest.State == GuestState.GoingToRide );
+		var onGrid = snapshot.Guests.Guests.First( guest => guest.OnGrid == true && guest.State == GuestState.GoingToRide );
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Select( guest => guest == onGrid ? guest with { State = GuestState.Queueing } : guest ).ToArray() } },
 			"is in state Queueing but no attraction's queue holds it" );
 		var planted = snapshot.Guests.Attractions[0] with { Queue = snapshot.Guests.Attractions[0].Queue.Append( onGrid.Id ).ToArray() };

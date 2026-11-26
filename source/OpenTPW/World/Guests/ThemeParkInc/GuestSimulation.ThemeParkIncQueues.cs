@@ -576,6 +576,10 @@ public sealed partial class GuestSimulation
 	/// <summary>The bridged boarding hands the guest back to Theme Park Inc's states: still in the list (refused at the stand point, walking back to its place) state 15, else idle with no target.</summary>
 	private void EndTpiBridgedBoarding( Guest guest, ThemeParkIncGuestRecord tpi )
 	{
+		// back in Theme Park Inc's states the guest's cell is the position's again (SyncTpiCell)
+		var cell = guest.Navigation.Cell;
+		if ( cell != (guest.CellX, guest.CellY) )
+			(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);
 		if ( guest.State is GuestState.MovingUpQueue or GuestState.Queueing && FindAttraction( guest.AttractionId ) is RideVisitorBridge ride && TpiQueuePosition( ride, guest.Id ) >= 0 )
 		{
 			tpi.Byte21B = guest.QueuePosition & 0xFF;

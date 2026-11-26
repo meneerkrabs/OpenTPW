@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// </summary>
 // [BIN:TPI-EXE:0x626190 staff hire] the member constructor copies the candidate's salary to +0x214, its experience to +0x210 and its agency to +0x244 (0x6261DA..0x626205); both
 // constructors end in 0x626390, which sets the meters +0x230 (happiness), +0x234 (motivation) and +0x238 (energy) to 100.0 (0x6263D6..0x6263E7)
-public sealed class ThemeParkIncStaffMember
+public sealed class ThemeParkIncStaffMember : IThemeParkIncWalker
 {
 	public ThemeParkIncStaffMember( int id, ThemeParkIncStaffRole role, int nameIndex, int experience, int salary, int agency, uint spriteDraw )
 	{
@@ -287,10 +287,46 @@ public sealed class ThemeParkIncStaffMember
 	public float HeadingX { get; internal set; }
 	public float HeadingY { get; internal set; } = 1f;
 	/// <summary>
-	/// The heading word <c>+0x2C</c> the walk step writes with Theme Park Inc's navigator (<see cref="ThemeParkIncWalkStep.Heading"/>, every Theme Park Inc park); <see cref="HeadingX"/>
-	/// and <see cref="HeadingY"/> are then its vector. Not saved or hashed yet: the native walk storage (navigator plan NV5) stores it with the person words.
+	/// The heading word <c>+0x2C</c> (<c>mSpriteAngle</c>) the walk step writes with Theme Park Inc's navigator (<see cref="ThemeParkIncWalkStep.Heading"/>) and the gardener's facing <c>0x609E60</c> while he
+	/// waters; <see cref="HeadingX"/> and <see cref="HeadingY"/> are its vector (presentation). Saved and hashed with the person words since navigator phase NV5.
 	/// </summary>
 	internal int SpriteAngle { get; set; }
+	/// <summary>
+	/// The accurate destination words <c>+0x28</c>/<c>+0x2A</c> (<c>mAccurateDestX/Y</c>): the point of the last route request (the staff route <c>0x62EB10</c> through <c>0x60B8E0</c>, the cell steer
+	/// <c>0x60B7F0</c>, the wander's off-path tries), which the handyman's arrival on litter stands on (<c>0x60BD80</c>) and the re-route after a save and a load walks to (<see cref="ThemeParkIncNativeWalk"/>).
+	/// </summary>
+	internal int AccurateDestX, AccurateDestY;
+	/// <summary>
+	/// The wander flag <c>+0xE8</c> (<c>mSetDestSuccessfully</c>): set by the wander destination <c>0x609F70</c> when its final staff route or an off-path try sets a walk (<c>0x60A5D2</c>, <c>0x60A8C1</c>), never
+	/// cleared after the person constructor. No staff routine reads it (only a guest's state 7 does, <c>0x61A9C7</c>); the person serializer saves it (<c>0x6095A0</c>), so OpenTPW keeps it (NV5).
+	/// </summary>
+	internal bool Wandered { get; set; }
+	/// <summary>
+	/// The stranded mark <c>+0x1B0</c>: no staff routine sets it (its only setter with a stamp, <c>0x60A4AE</c>, is the guests'), and the walk step clears it (<c>0x60B4CA</c>); a native park file may carry
+	/// another value, which the re-route on load tests as for a guest (<see cref="ThemeParkIncNativeWalk.RouteToPoint"/>).
+	/// </summary>
+	internal int StrandedTime { get; set; }
+
+	GuestNavigation IThemeParkIncWalker.Walk => Navigation ?? throw new InvalidOperationException( "An unplaced member has no walk." );
+	int IThemeParkIncWalker.AccurateDestX { get => AccurateDestX; set => AccurateDestX = value; }
+	int IThemeParkIncWalker.AccurateDestY { get => AccurateDestY; set => AccurateDestY = value; }
+	int IThemeParkIncWalker.StrandedTime { get => StrandedTime; set => StrandedTime = value; }
+	int IThemeParkIncWalker.PreviousX { get => TurnFromX; set => TurnFromX = value; }
+	int IThemeParkIncWalker.PreviousY { get => TurnFromY; set => TurnFromY = value; }
+	int IThemeParkIncWalker.BaseSpeedWord { get => BaseSpeed; set => BaseSpeed = value; }
+	int IThemeParkIncWalker.PurposeSpeed { get => SpeedBonus; set => SpeedBonus = value; }
+	ushort IThemeParkIncWalker.AdjustorSpeed { get => Boost; set => Boost = value; }
+	float IThemeParkIncWalker.PreviousSpeed { get => SmoothedSpeed; set => SmoothedSpeed = value; }
+	int IThemeParkIncWalker.SpriteAngle
+	{
+		get => SpriteAngle;
+		set
+		{
+			SpriteAngle = value;
+			(HeadingX, HeadingY) = ThemeParkIncWalkStep.Vector( value );
+		}
+	}
+	bool IThemeParkIncWalker.SetDestSuccessfully { get => Wandered; set => Wandered = value; }
 	/// <summary>
 	/// Presentation: the walk position at the start of the member's last update and the tick it was taken, for the draw point's interpolation over the turn. It is <c>mPreviousX/Y</c>
 	/// (<c>+0x1A8</c>/<c>+0x1AC</c>), the copy the speed step <c>0x60BC90</c> takes before the walk step.
@@ -304,17 +340,22 @@ public sealed class ThemeParkIncStaffMember
 	public StaffSpriteState Sprite { get; } = new();
 
 	/// <summary>The member's thing for a save; null before it is placed.</summary>
-	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld() => Navigation is not { } navigation ? null : Role switch
+	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld()
 	{
-		ThemeParkIncStaffRole.Mechanic => new( ThingId, State, IdleStamp, 0, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 },
-			Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, RideId, JobTimer ),
-		ThemeParkIncStaffRole.Gardener => new( ThingId, State, IdleStamp, WorkStamp, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 },
-			Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, PlantId: PlantId ),
-		ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard => new( ThingId, State, IdleStamp, WorkStamp, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed,
-			new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template, ParkSaveFile.NavigationData.Capture( navigation ), CellSerial, EffectCell: EffectCell, EffectRadius: EffectRadius ),
-		_ => new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 }, Template,
-			ParkSaveFile.NavigationData.Capture( navigation ), CellSerial )
-	};
+		if ( Navigation == null )
+			return null;
+		var area = new[] { PatrolArea.X0, PatrolArea.Y0, PatrolArea.X1, PatrolArea.Y1 };
+		var world = Role switch
+		{
+			ThemeParkIncStaffRole.Mechanic => new ThemeParkIncStaffWorldSnapshot( ThingId, State, IdleStamp, 0, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, area, Template, null, CellSerial, RideId, JobTimer ),
+			ThemeParkIncStaffRole.Gardener => new( ThingId, State, IdleStamp, WorkStamp, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, area, Template, null, CellSerial, PlantId: PlantId ),
+			ThemeParkIncStaffRole.Entertainer or ThemeParkIncStaffRole.Guard => new( ThingId, State, IdleStamp, WorkStamp, 0, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, area, Template, null, CellSerial,
+				EffectCell: EffectCell, EffectRadius: EffectRadius ),
+			_ => new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost, SmoothedSpeed, area, Template, null, CellSerial )
+		};
+		// the native walk storage (NV5): the person words and the navigator's record, nothing of OpenTPW's own walk
+		return world with { Walk = ThemeParkIncPersonWalkSnapshot.Capture( this ), SpriteAngle = SpriteAngle, Wandered = Wandered, StrandedTime = StrandedTime };
+	}
 
 	/// <summary>The roles <see cref="ThemeParkIncStaffWorld"/> places in the park: every role.</summary>
 	public static bool IsPlacedRole( ThemeParkIncStaffRole role ) => Enum.IsDefined( role );
@@ -349,7 +390,9 @@ public sealed class ThemeParkIncStaffMember
 	internal static bool IsValidWorld( ThemeParkIncStaffRole role, ThemeParkIncStaffWorldSnapshot? world ) => world == null || IsPortedState( role, world.State )
 		&& world.ThingId is >= 1 and <= ThingPool.Capacity && world.LitterCell is >= 0 and <= ParkLitter.MapSize * ParkLitter.MapSize && world.BaseSpeed is >= 0 and <= ushort.MaxValue
 		&& world.SpeedBonus is >= 0 and <= ushort.MaxValue && world.Boost is >= 0 and <= ushort.MaxValue && float.IsFinite( world.SmoothedSpeed ) && world.IdleStamp >= 0 && world.WorkStamp >= 0
-		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && IsWalkableRectangle( area ) && world.CellSerial >= 0 && world.Navigation is { IsValid: true }
+		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && IsWalkableRectangle( area ) && world.CellSerial >= 0
+		// the native walk storage (NV5) and nothing of OpenTPW's own walk: a save with the latter is refused before this test (ParkSaveFile's edition check)
+		&& world.Navigation == null && world.Walk?.Problem( ParkLitter.MapSize, ParkLitter.MapSize ) == null && world.Walk != null && world.SpriteAngle is >= 0 and <= ushort.MaxValue
 		&& role switch
 		{
 			ThemeParkIncStaffRole.Mechanic => world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.EffectCell == null && world.EffectRadius == null
@@ -395,7 +438,16 @@ public sealed class ThemeParkIncStaffMember
 		SmoothedSpeed = world.SmoothedSpeed;
 		PatrolArea = (world.PatrolArea[0], world.PatrolArea[1], world.PatrolArea[2], world.PatrolArea[3]);
 		Template = world.Template;
-		Navigation = world.Navigation!.Restore();
+		// the walk from its native storage alone (NV5): the navigator verbatim, the person words; OpenTPW's own fields derived (no route, the heading vector of the word, the drawn point the position)
+		var walk = world.Walk!;
+		Navigation = new GuestNavigation();
+		Navigation.RestoreNativeRecord( walk.Navigator );
+		(AccurateDestX, AccurateDestY) = (walk.AccurateDestX, walk.AccurateDestY);
+		(TurnFromX, TurnFromY) = (walk.PreviousX, walk.PreviousY);
+		SpriteAngle = world.SpriteAngle;
+		(HeadingX, HeadingY) = ThemeParkIncWalkStep.Vector( SpriteAngle );
+		Wandered = world.Wandered;
+		StrandedTime = world.StrandedTime;
 		CellSerial = world.CellSerial;
 		DrawX = Navigation.X / (float)Fixed16.One;
 		DrawY = Navigation.Y / (float)Fixed16.One;

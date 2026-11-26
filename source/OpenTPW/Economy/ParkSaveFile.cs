@@ -1134,6 +1134,12 @@ public static class ParkSaveFile
 	internal const string StaffHqMissing = "This Theme Park Inc park was saved before OpenTPW kept the staff HQ and the research lab and cannot be continued; start a new game from the Personnel File.";
 
 	/// <summary>
+	/// The refusal of a Theme Park Inc save made before the native walk storage (navigator phases NV4 and NV5, released together): its walkers followed Theme Park World's navigator, or kept OpenTPW's own
+	/// walk fields instead of the person words and the navigator's record. One message for both, so a player sees one refusal.
+	/// </summary>
+	internal const string NativeWalkStorageMissing = "This Theme Park Inc park was saved before Theme Park Inc's own navigator and its walk storage were kept (its guests and staff walked by Theme Park World's rules or kept OpenTPW's own walk fields) and cannot be continued; start a new game from the Personnel File.";
+
+	/// <summary>
 	/// The refusal of a Theme Park Inc park save from before the advisor queue (<see cref="Data.TpiAdvisor"/>): its forecasts had a queue and a play history of their own.
 	/// </summary>
 	internal const string AdvisorMissing = "This Theme Park Inc park was saved before OpenTPW kept the advisor's queue and its advice history and cannot be continued; start a new game from the Personnel File.";
@@ -1180,6 +1186,10 @@ public static class ParkSaveFile
 			// Every save since then holds the HQ with its staff (ThemeParkIncStaff.Capture), so the missing HQ marks the older save before any asset check
 			if ( data.TpiStaff is { Hq: null } )
 				throw new InvalidDataException( StaffHqMissing );
+			// standing user decision (refuse and document): a placed member saved with OpenTPW's own walk (before navigator phase NV5, which stores the person words and the navigator's record) is refused
+			// before any asset check, with the message the guests' check gives (one refusal for NV4 and NV5)
+			if ( data.TpiStaff?.Members.Any( member => member?.World is { } world && (world.Navigation != null || world.Walk == null) ) == true )
+				throw new InvalidDataException( NativeWalkStorageMissing );
 			if ( !ThemeParkIncStaff.IsValid( data.TpiStaff ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc staff." );
 			if ( !ThemeParkIncChallenges.IsValid( data.TpiChallenges ) )

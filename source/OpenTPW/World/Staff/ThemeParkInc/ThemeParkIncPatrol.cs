@@ -17,20 +17,29 @@ internal static class ThemeParkIncPatrol
 	// [BIN:TPI-EXE:0x60B8E0 staff steer] the stamp counter raised (0x5D81F0, ParkCellMap.NextStamp: counted with Theme Park Inc's navigator, else only the edits count); the stranded mark +0x1B0 is tested (0x60BB50) only while nonzero,
 	// and a staff member's never is: its only setter with a stamp, 0x60A4AE in the wander, is reached by kind 1 (the guests) alone, the staff kinds 4, 5, 6, 8, 7 and 0x14 branching to 0x62C720 at
 	// 0x60A454, and every other writer stores 0 (0x608F94, 0x60A56C, 0x60A84C, 0x60B4CA, 0x60B9FC); then +0x28, +0x2A = the words, +0x1B0 = 0 and SetDest 0x63EE80 (0x63E3A0 with the point << 8)
-	internal static bool StaffRoute( GuestPathGrid grid, GuestNavigation walk, bool parkOpen, (int X, int Y) cell, int byteX, int byteY )
+	// [BIN:TPI-EXE:0x60B92A staff person words] with the member (person): 0x60B8E0 entire (ThemeParkIncNativeWalk.RouteToPoint), +0x28, +0x2A = the words and +0x1B0 = 0 before SetDest (NV5)
+	internal static bool StaffRoute( GuestPathGrid grid, GuestNavigation walk, bool parkOpen, (int X, int Y) cell, int byteX, int byteY, IThemeParkIncWalker? person = null )
 	{
 		if ( !parkOpen && cell.Y == 0x11 && cell.X is 0x2F or 0x30 )
 			return false;
 		var (x, y) = walk.Cell;
 		walk.Mask = grid.Cells.RawTypeAt( x, y ) == 0 || grid.Cells.RawTypeAt( cell.X, cell.Y ) == 0 ? 1 : 0;
+		if ( person != null )
+			return ThemeParkIncNativeWalk.RouteToPoint( grid, person, (cell.X << 8) | byteX, (cell.Y << 8) | byteY );
 		// 0x60B8F4: the counter raised (ParkCellMap.NextStamp); the mark it then tests is 0
 		grid.Cells.NextStamp();
 		return Route( grid, walk, cell, byteX, byteY );
 	}
 
-	/// <summary>Sets the walk to a point of a cell with the walk's mask (SetDest, <c>0x63EE80</c>); false when no route reaches it (the walk then stands arrived and stuck).</summary>
-	internal static bool Route( GuestPathGrid grid, GuestNavigation walk, (int X, int Y) cell, int byteX, int byteY )
+	/// <summary>
+	/// Sets the walk to a point of a cell with the walk's mask (SetDest, <c>0x63EE80</c>); false when no route reaches it (the walk then stands arrived and stuck). Every SetDest of Theme Park Inc's person
+	/// code follows a store of the point's words to <c>+0x28</c>/<c>+0x2A</c> (<c>0x60A5B3</c>, <c>0x60A756</c>, <c>0x60A891</c>, <c>0x60B884</c>, <c>0x60B950</c>): with the member (<paramref name="person"/>) they
+	/// are his accurate destination.
+	/// </summary>
+	internal static bool Route( GuestPathGrid grid, GuestNavigation walk, (int X, int Y) cell, int byteX, int byteY, IThemeParkIncWalker? person = null )
 	{
+		if ( person != null )
+			(person.AccurateDestX, person.AccurateDestY) = ((cell.X << 8) | byteX, (cell.Y << 8) | byteY);
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
 		return walk.Navigate( grid.Cells, x, y );
 	}
@@ -49,34 +58,60 @@ internal static class ThemeParkIncPatrol
 	// [BIN:TPI-EXE:0x60A1DD removal 1] a staff member with the flag clear drops each candidate whose word fails 0x62C610 (W3, the corners ordered); the drop that leaves the counter at 0 calls 0x62C720
 	// at once (0x60A401), and so does a step with no candidate left (0x60A454): a walk to a cell of the rectangle; the steps and the other three removals are tp.exe's (GuestWander)
 	// [BIN:TPI-EXE:0x60A547 staff final route] the bytes (0x60A3DA, 0x60A3EA: R & 0x7F clamped 5..123) and the staff route 0x62EB10 to (x << 8 | bx, y << 8 | by) (W2: tp.exe's staff take the guests'
-	// gate and SetDest, 0x004F9983); its success sets +0xE8 = 1 (0x60A5D2), which no staff routine reads (the guests' state 7 at 0x61A9C7 does) and OpenTPW does not hold for staff (navigator plan NV5)
-	internal static bool Destination( GuestPathGrid grid, GuestNavigation walk, (int X0, int Y0, int X1, int Y1) area, WorldRng world, bool parkOpen )
+	// gate and SetDest, 0x004F9983); its success sets +0xE8 = 1 (0x60A5D2), which no staff routine reads (the guests' state 7 at 0x61A9C7 does); OpenTPW keeps it (ThemeParkIncStaffMember.Wandered, NV5)
+	// [BIN:TPI-EXE:0x60A5D2 wander flag] a set walk (the final staff route's answer at 0x60A5CA, an off-path try's at 0x60A762 / 0x60A89D) stores +0xE8 = 1 (0x60A5D2, 0x60A8C1); the fallback's success (0x62C720 → 1)
+	// returns without it. With the member (person) OpenTPW keeps it, and the gates test his mark +0x1B0 as the original's do (a member's mark is 0 unless a native park file carried another)
+	internal static bool Destination( GuestPathGrid grid, GuestNavigation walk, (int X0, int Y0, int X1, int Y1) area, WorldRng world, bool parkOpen, IThemeParkIncWalker? person = null )
 	{
 		var cell = walk.Cell;
-		grid.Cells.NextStamp();
+		var counter = grid.Cells.NextStamp();
+		if ( person != null )
+		{
+			// [BIN:TPI-EXE:0x609FCA wander gate's mark] the counter below +0x1B0 clears it; a mark still held (0x60BB50) asks for the thought 0x11 (presentation) and answers 0 before any draw; else +0x1B0 = 0
+			if ( ParkCellMap.StampBelow( counter, person.StrandedTime ) )
+				person.StrandedTime = 0;
+			if ( person.StrandedTime != 0 && ThemeParkIncNativeWalk.StrandedHolds( grid, cell, person.StrandedTime ) )
+				return false;
+			person.StrandedTime = 0;
+		}
 		uint Draw() => world.NextWord();
 		var remaining = Draw() % 5;
 		var keepToArea = true;
 		if ( !InArea( area, cell ) )
 		{
-			if ( Fallback( grid, walk, area, world, parkOpen ) )
+			if ( Fallback( grid, walk, area, world, parkOpen, person ) )
 				return true;
 			keepToArea = false;
 		}
 		bool InRectangle( int x, int y ) => InArea( area, (x, y) );
+		bool Wandered( bool set )
+		{
+			if ( set && person != null )
+				person.SetDestSuccessfully = true;
+			return set;
+		}
 		if ( (grid.Cells.LinksAt( cell.X, cell.Y ) & 0x55) == 0 )
 		{
 			// [BIN:TPI-EXE:0x60A6D4 off-path routes] the off-path search is the guests' (GuestWander.OffPath) for a staff member too: each candidate raises the counter (0x60A6FB, 0x60A83F), the gate
 			// holds nothing, the mark is cleared and SetDest (0x63EE80) runs with the walk's own mask; no staff route (0x62EB10) and no park-closed refusal
-			return GuestWander.OffPath( grid, cell, Draw, target =>
+			return Wandered( GuestWander.OffPath( grid, cell, Draw, target =>
 			{
-				grid.Cells.NextStamp();
-				return Route( grid, walk, target, GuestWander.CentreByte, GuestWander.CentreByte );
-			} );
+				var stamp = grid.Cells.NextStamp();
+				if ( person != null )
+				{
+					// [BIN:TPI-EXE:0x60A700 off-path gate] the counter below the mark clears it; a held mark skips the candidate; else 0x60B9A0(0) clears it
+					if ( ParkCellMap.StampBelow( stamp, person.StrandedTime ) )
+						person.StrandedTime = 0;
+					if ( person.StrandedTime != 0 && ThemeParkIncNativeWalk.StrandedHolds( grid, cell, person.StrandedTime ) )
+						return false;
+					person.StrandedTime = 0;
+				}
+				return Route( grid, walk, target, GuestWander.CentreByte, GuestWander.CentreByte, person );
+			} ) );
 		}
 		if ( GuestWander.PickAfterCount( grid, cell, remaining, Draw, keepToArea ? InRectangle : null, out var stranded ) is { } destination )
-			return StaffRoute( grid, walk, parkOpen, destination.Cell, destination.ByteX, destination.ByteY );
-		return stranded && Fallback( grid, walk, area, world, parkOpen );
+			return Wandered( StaffRoute( grid, walk, parkOpen, destination.Cell, destination.ByteX, destination.ByteY, person ) );
+		return stranded && Fallback( grid, walk, area, world, parkOpen, person );
 	}
 
 	/// <summary>The patrol rectangle test <c>0x62C610</c> of a cell: inside the rectangle, its corners ordered first (W3).</summary>
@@ -106,7 +141,7 @@ internal static class ThemeParkIncPatrol
 	// staff route 0x62EB10 to its centre (0x80, 0x80) ends it with 1. A negative width or height is an unsigned divisor above every draw (at most 2^31), so x = R + x0 and nearly every try leaves the
 	// map; a zero one (corners one cell apart, reversed) is a divide error, a crash in the original, which a restore refuses (ThemeParkIncStaffMember.IsValidWorld) and no OpenTPW setter writes.
 	// After 30 tries: the debug print 0x9D2AD8 and the thought 0x1E (0x638960, presentation: tp.exe's 0x00506F30 asks for 0x16), 0
-	internal static bool Fallback( GuestPathGrid grid, GuestNavigation walk, (int X0, int Y0, int X1, int Y1) area, WorldRng world, bool parkOpen )
+	internal static bool Fallback( GuestPathGrid grid, GuestNavigation walk, (int X0, int Y0, int X1, int Y1) area, WorldRng world, bool parkOpen, IThemeParkIncWalker? person = null )
 	{
 		var (x0, y0, x1, y1) = area;
 		var width = unchecked( (uint)(x1 - x0 + 1) );
@@ -117,7 +152,7 @@ internal static class ThemeParkIncPatrol
 			var y = unchecked( (int)(world.NextWord() % height + (uint)y0) );
 			// [BIN:TPI-EXE:0x62C84E patrol entry route] the staff route 0x62EB10 to the cell's centre
 			if ( x is >= 0 and <= WalkEdges.LastCell && y is >= 0 and <= WalkEdges.LastCell && grid.InBounds( x, y ) && grid.IsWalkable( x, y )
-				&& StaffRoute( grid, walk, parkOpen, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
+				&& StaffRoute( grid, walk, parkOpen, (x, y), GuestWander.CentreByte, GuestWander.CentreByte, person ) )
 				return true;
 		}
 		return false;

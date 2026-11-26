@@ -27,15 +27,21 @@ public sealed record GuestSnapshot
 	public required GuestState State { get; init; }
 
 	// Movement and presentation (Draw*/StepFrom* are presentation-only but captured for continuity).
-	public required float HeadingX { get; init; }
-	public required float HeadingY { get; init; }
+	/// <summary>The heading vector; absent for a guest of the native walk storage (<see cref="PersonWalk"/>), whose heading word is its <see cref="Tpi"/> record's (this vector then derived).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public float? HeadingX { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public float? HeadingY { get; init; }
 	public required bool IsMoving { get; init; }
 	public required float DistanceWalked { get; init; }
 	public required float DrawX { get; init; }
 	public required float DrawY { get; init; }
 	public required float DrawDistanceWalked { get; init; }
-	public required float StepFromX { get; init; }
-	public required float StepFromY { get; init; }
+	/// <summary>The interpolation's start; absent with the native walk storage, which holds it as mPreviousX/Y (<see cref="ThemeParkIncPersonWalkSnapshot.PreviousX"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public float? StepFromX { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public float? StepFromY { get; init; }
 	public required float StepFromDistance { get; init; }
 	public required long StepTick { get; init; }
 	/// <summary>Optional persistent body history. Absent in older/original saves, which reconstruct a fresh body at load.</summary>
@@ -219,21 +225,44 @@ public sealed record GuestSnapshot
 	public required int ToiletBonus { get; init; }
 	public required ushort Boost { get; init; }
 	public required float SmoothedSpeed { get; init; }
-	public required int MaxSpeed { get; init; }
-	public required int MaxForce { get; init; }
+	/// <summary>The speed caps; absent with the native walk storage, whose navigator record holds them.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? MaxSpeed { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? MaxForce { get; init; }
 
-	/// <summary>The steering state (+212), including its route and progress history.</summary>
-	public required GuestNavigationSnapshot Navigation { get; init; }
+	/// <summary>The steering state (+212), including its route and progress history; absent with the native walk storage (<see cref="PersonWalk"/>: the navigator's record).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public GuestNavigationSnapshot? Navigation { get; init; }
+	/// <summary>
+	/// The native walk storage (navigator phase NV5, docs/reverse/TPI-NAVIGATOR.md) of a guest that runs Theme Park Inc's own state machine (<see cref="Tpi"/>) in a Theme Park Inc park: the person words OpenTPW keeps
+	/// nowhere else and the navigator's 177-byte record. With it the walk fields of OpenTPW's own kind (<see cref="Navigation"/>, the heading vector, the turn's start, the caps, the cells, the offsets and the walking
+	/// flag) are absent and derived on restore (<see cref="ExpandNativeWalk"/>). Absent on every other guest.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public ThemeParkIncPersonWalkSnapshot? PersonWalk { get; init; }
+	/// <summary>The walk fields of the bridged boarding (<see cref="ThemeParkIncBridgedWalkSnapshot"/>), for a guest of the native walk storage in state 16 alone.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public ThemeParkIncBridgedWalkSnapshot? BridgedWalk { get; init; }
 
 	// Cells, arrival lane and timers.
-	public required int CellX { get; init; }
-	public required int CellY { get; init; }
-	public required int PreviousCellX { get; init; }
-	public required int PreviousCellY { get; init; }
-	public required bool OnGrid { get; init; }
-	public required float OffsetX { get; init; }
-	public required float OffsetY { get; init; }
-	public required bool HasWaypoint { get; init; }
+	// cells, offsets and the walking flag: absent with the native walk storage (derived: the position's cell, no previous cell, on the grid, the placement offset of the id, the walk's own state)
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? CellX { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? CellY { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? PreviousCellX { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? PreviousCellY { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public bool? OnGrid { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public float? OffsetX { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public float? OffsetY { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public bool? HasWaypoint { get; init; }
 	/// <summary>The arrival lane's cells (one of the settings' lanes, copied) of a guest saved before schema 9 that walked it; null for every guest on the cell map (all of schema 9).</summary>
 	public required (int X, int Y)[]? Lane { get; init; }
 	public required int LaneIndex { get; init; }
@@ -242,6 +271,48 @@ public sealed record GuestSnapshot
 	/// <summary>The former seconds-based decision timer, written by schemas 1 and 2 only. State 6 now decides once per park turn
 	/// (docs/reverse/WANDER-plan.md), so the restore ignores it.</summary>
 	public float? DecisionTimer { get; init; }
+
+	/// <summary>Whether every walk field of OpenTPW's own kind is present (a guest without the native walk storage, or one whose storage has been expanded).</summary>
+	internal bool HasOwnWalkFields => Navigation != null && HeadingX != null && HeadingY != null && StepFromX != null && StepFromY != null && MaxSpeed != null && MaxForce != null && CellX != null
+		&& CellY != null && PreviousCellX != null && PreviousCellY != null && OnGrid != null && OffsetX != null && OffsetY != null && HasWaypoint != null;
+
+	/// <summary>Whether any walk field of OpenTPW's own kind is present.</summary>
+	internal bool HasAnyOwnWalkField => Navigation != null || HeadingX != null || HeadingY != null || StepFromX != null || StepFromY != null || MaxSpeed != null || MaxForce != null || CellX != null
+		|| CellY != null || PreviousCellX != null || PreviousCellY != null || OnGrid != null || OffsetX != null || OffsetY != null || HasWaypoint != null;
+
+	/// <summary>
+	/// The snapshot as the restore and the validators read it: with the native walk storage (<see cref="PersonWalk"/>) the walk fields of OpenTPW's own kind are derived from it (navigator phase NV5): the walk from
+	/// the navigator's record alone (no route, cursor 0, no crossings or extra open cells, the remaining distance −1, on the grid, no reroutes; <see cref="GuestNavigation.RestoreNativeRecord"/>), the heading
+	/// vector from the record's heading word, the turn's start from mPreviousX/Y, the caps from the navigator, the cell from the position (the person's bytes <c>+5</c>/<c>+7</c>) or the bridged boarding's, no
+	/// previous cell, on the grid, the placement offset of the guest's id (<see cref="GuestSimulation.PlacementJitter"/>, the only offset a native guest has), and the walking flag the walk's own (presentation outside
+	/// the bridged boarding). Without the storage, or with a storage the validators refuse, the snapshot itself.
+	/// </summary>
+	internal GuestSnapshot ExpandNativeWalk()
+	{
+		if ( PersonWalk is not { } walk || walk.Navigator is not { Length: SaveNavigation.Bytes } bytes || GuestNavigation.RecordProblem( SaveNavigation.Read( bytes ) ) != null )
+			return this;
+		var shadow = new GuestNavigation();
+		shadow.RestoreNativeRecord( bytes );
+		var offset = GuestSimulation.PlacementJitter( Id );
+		var (headingX, headingY) = ThemeParkIncWalkStep.Vector( Tpi?.Heading ?? 0 );
+		var cell = BridgedWalk is { } bridged ? (bridged.CellX, bridged.CellY) : shadow.Cell;
+		return this with
+		{
+			Navigation = new GuestNavigationSnapshot
+			{
+				X = shadow.X, Y = shadow.Y, VelocityX = shadow.VelocityX, VelocityY = shadow.VelocityY, TargetX = shadow.TargetX, TargetY = shadow.TargetY, Arrived = shadow.Arrived, Index = shadow.Index,
+				Count = shadow.Count, Route = [], Cursor = 0, WalkCrossings = 0, AlsoOpen = [], History = shadow.History & 0x7fff, PreviousRemaining = -1, OffGrid = false, Reroutes = 0,
+				OriginalWalk = shadow.CaptureOriginal(), Waypoints = shadow.Buffer.ToArray(), Mask = shadow.Mask, NativeRecord = bytes
+			},
+			HeadingX = headingX, HeadingY = headingY,
+			StepFromX = walk.PreviousX / (float)Fixed16.One, StepFromY = walk.PreviousY / (float)Fixed16.One,
+			MaxSpeed = shadow.MaxSpeed, MaxForce = shadow.MaxForce,
+			CellX = cell.Item1, CellY = cell.Item2,
+			PreviousCellX = BridgedWalk?.PreviousCellX ?? -1, PreviousCellY = BridgedWalk?.PreviousCellY ?? -1,
+			OnGrid = true, OffsetX = offset.X, OffsetY = offset.Y,
+			HasWaypoint = BridgedWalk?.HasWaypoint ?? (!shadow.Arrived && !shadow.Stuck)
+		};
+	}
 }
 
 /// <summary>Every field of <see cref="GuestNavigation"/> the next steering step reads. The waypoint buffer itself is
@@ -573,6 +644,15 @@ public sealed record GuestSimulationSnapshot
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public bool ThemeParkIncNativeWalk { get; init; }
+	/// <summary>
+	/// The Theme Park Inc walk storage's version (<see cref="CurrentThemeParkIncWalkStorage"/>), in every Theme Park Inc save since navigator phase NV5: its native guests and its staff keep the person words and
+	/// the navigator's record (<see cref="GuestSnapshot.PersonWalk"/>, <see cref="ThemeParkIncStaffWorldSnapshot.Walk"/>) instead of OpenTPW's own walk fields. Absent in a Theme Park World save, whose
+	/// guest schema stays; a Theme Park Inc save without it (made before NV5) is refused with NV4's refusal (docs/PARK-SAVES.md: one refusal for both).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? ThemeParkIncWalkStorage { get; init; }
+	/// <summary>The Theme Park Inc walk storage this build writes and reads (navigator phase NV5).</summary>
+	public const int CurrentThemeParkIncWalkStorage = 1;
 	/// <summary>The park's visitor count (<see cref="GuestSimulation.VisitorCount"/>). Absent before schema 9: 0.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public int VisitorCount { get; init; }

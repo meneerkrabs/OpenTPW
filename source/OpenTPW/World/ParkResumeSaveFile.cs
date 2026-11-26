@@ -918,8 +918,10 @@ internal static class ParkResumeSaveFile
 		Require( guests.Guests != null, "the guest snapshot has no guest list" );
 		// Theme Park Inc's navigator rules (docs/reverse/TPI-NAVIGATOR.md) exist only in a Theme Park Inc park, and every Theme Park Inc park walks with them since phase NV4: a save made before it is refused
 		Require( !guests.ThemeParkIncNativeWalk || snapshot.Economy?.Edition == GameEdition.ThemeParkInc, "only a Theme Park Inc park walks with Theme Park Inc's navigator rules" );
-		Require( guests.ThemeParkIncNativeWalk || snapshot.Economy?.Edition != GameEdition.ThemeParkInc,
-			"the Theme Park Inc save was made before Theme Park Inc's own navigator (its walkers followed Theme Park World's rules) and cannot be continued" );
+		// ... and its walk storage since phase NV5 (released with NV4: one refusal, ParkSaveFile.NativeWalkStorageMissing, for a save made before either)
+		if ( snapshot.Economy?.Edition == GameEdition.ThemeParkInc && !(guests.ThemeParkIncNativeWalk && guests.ThemeParkIncWalkStorage == GuestSimulationSnapshot.CurrentThemeParkIncWalkStorage) )
+			throw new InvalidDataException( ParkSaveFile.NativeWalkStorageMissing );
+		Require( guests.ThemeParkIncWalkStorage == null || snapshot.Economy?.Edition == GameEdition.ThemeParkInc, "only a Theme Park Inc park keeps Theme Park Inc's walk storage" );
 		// the layout's stamp counter counts every simulation call exactly when the park walks with Theme Park Inc's navigator (ParkCellMap.CountsSimulationCalls): a Theme Park World park's counts the
 		// edits only, so a counter of simulation calls there (or an edit-only counter in a Theme Park Inc park) is refused rather than continued under the other counting
 		Require( snapshot.Layout.Cells.SimulationStampCounter == guests.ThemeParkIncNativeWalk,
@@ -997,6 +999,11 @@ internal static class ParkResumeSaveFile
 		{
 			var guest = guests.Guests[index];
 			Require( guest != null, $"guest snapshot {index} is missing" );
+			// the native walk storage (navigator phase NV5): checked as the guest simulation does, then the walk fields read derived from it
+			foreach ( var problem in GuestSimulation.NativeWalkStorageProblems( guest!, guests.ThemeParkIncNativeWalk, width, height ) )
+				Require( false, problem );
+			guest = guest!.ExpandNativeWalk();
+			Require( guest.HasOwnWalkFields, $"guest {guest.Id} has no walk fields" );
 			// before the thing pool a guest's id is a counter (ascending, below the next id); with it the id is a slot of the pool, so ids are reused and the list is in build order
 			if ( guests.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
 				Require( guest!.Id >= 1 && guest.Id <= ThingPool.Capacity, $"guest {guest.Id} is not a slot of the thing pool (1..{ThingPool.Capacity})" );
@@ -1039,10 +1046,10 @@ internal static class ParkResumeSaveFile
 				&& float.IsFinite( guest.QueueJoinHappiness ) && float.IsFinite( guest.SecondsSinceRide )
 				&& float.IsFinite( guest.StateTimer ) && (guest.DecisionTimer is not { } decisionTimer || float.IsFinite( decisionTimer )) && float.IsFinite( guest.SmoothedSpeed ),
 				$"guest {guest.Id} holds a need or timer that is not finite" );
-			Require( float.IsFinite( guest.HeadingX ) && float.IsFinite( guest.HeadingY ) && float.IsFinite( guest.DistanceWalked )
+			Require( float.IsFinite( guest.HeadingX!.Value ) && float.IsFinite( guest.HeadingY!.Value ) && float.IsFinite( guest.DistanceWalked )
 				&& float.IsFinite( guest.DrawX ) && float.IsFinite( guest.DrawY ) && float.IsFinite( guest.DrawDistanceWalked )
-				&& float.IsFinite( guest.StepFromX ) && float.IsFinite( guest.StepFromY ) && float.IsFinite( guest.StepFromDistance )
-				&& float.IsFinite( guest.OffsetX ) && float.IsFinite( guest.OffsetY ) && float.IsFinite( guest.QueueTargetX )
+				&& float.IsFinite( guest.StepFromX!.Value ) && float.IsFinite( guest.StepFromY!.Value ) && float.IsFinite( guest.StepFromDistance )
+				&& float.IsFinite( guest.OffsetX!.Value ) && float.IsFinite( guest.OffsetY!.Value ) && float.IsFinite( guest.QueueTargetX )
 				&& float.IsFinite( guest.QueueTargetY ),
 				$"guest {guest.Id} holds a position or draw value that is not finite" );
 			// a Theme Park Inc guest's walk speed is scaled by its profile (0x60C712) and stored as a word; the guest simulation checks the exact values against the profile
@@ -1058,9 +1065,9 @@ internal static class ParkResumeSaveFile
 			// A walk keeps the stamp counter of its set-up; the layout's counter can only have grown since (WALK-007).
 			Require( navigation.OriginalWalk is not { } walk || !ParkCellMap.StampBelow( snapshot.Layout.Cells.StampCounter, walk.Stamp ),
 				$"guest {guest.Id} walk stamp {navigation.OriginalWalk?.Stamp} is above the layout's stamp counter {snapshot.Layout.Cells.StampCounter}" );
-			Require( InBounds( guest.CellX, guest.CellY ), $"guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the cell map" );
+			Require( InBounds( guest.CellX!.Value, guest.CellY!.Value ), $"guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the cell map" );
 			if ( guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0 )
-				Require( InBounds( guest.PreviousCellX, guest.PreviousCellY ),
+				Require( InBounds( guest.PreviousCellX!.Value, guest.PreviousCellY!.Value ),
 					$"guest {guest.Id} previous cell ({guest.PreviousCellX}, {guest.PreviousCellY}) is outside the cell map" );
 			Require( InBounds( navigation.X >> 16, navigation.Y >> 16 ),
 				$"guest {guest.Id} navigation position ({navigation.X >> 16}, {navigation.Y >> 16}) is outside the cell map" );
@@ -1075,12 +1082,12 @@ internal static class ParkResumeSaveFile
 				Require( laneState, $"guest {guest.Id} is in state {guest.State} but still carries an arrival lane" );
 				Require( guest.Lane.Length >= 2, $"guest {guest.Id} is in state {guest.State} with an arrival lane of fewer than two cells" );
 				Require( (uint)guest.LaneIndex < (uint)guest.Lane.Length, $"guest {guest.Id} lane index {guest.LaneIndex} is outside its {guest.Lane.Length}-cell lane" );
-				Require( !guest.OnGrid && navigation.OffGrid, $"guest {guest.Id} walks a lane but is marked on the path grid" );
+				Require( guest.OnGrid != true && navigation.OffGrid, $"guest {guest.Id} walks a lane but is marked on the path grid" );
 				foreach ( var (x, y) in guest.Lane )
 					Require( InBounds( x, y ), $"guest {guest.Id} lane cell ({x}, {y}) is outside the cell map" );
 			}
 			else
-				Require( guest.OnGrid && !navigation.OffGrid, $"guest {guest.Id} is in state {guest.State} but is not on the path grid" );
+				Require( guest.OnGrid == true && !navigation.OffGrid, $"guest {guest.Id} is in state {guest.State} but is not on the path grid" );
 		}
 
 		// Membership both ways: queue and rider lists against guest states, exactly as the live validator does.

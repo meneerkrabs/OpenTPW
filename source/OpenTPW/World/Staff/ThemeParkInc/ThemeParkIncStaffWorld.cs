@@ -356,9 +356,14 @@ public sealed partial class ThemeParkIncStaffWorld
 		member.SpeedBonus = 0;
 		member.Boost = 0;
 		member.SmoothedSpeed = 0;
-		var navigation = new GuestNavigation { X = (cell.X << 16) + 0x8000, Y = (cell.Y << 16) + 0x8000 };
-		navigation.SetDestination( navigation.X, navigation.Y, [] );
+		// [BIN:TPI-EXE:0x63ED10 navigator constructor] the person's navigator as its constructor leaves it (finished, no waypoints, the target 0, the constructor's caps), the position the cell's centre (0x63EE50 with a
+		// zero velocity); Theme Park Inc's walk is the navigator's own from the start (one steering step, a native record: navigator phase NV5), and the person's words +0x28, +0x2C, +0x1A8/+0x1AC, +0xE8 and
+		// +0x1B0 start as the constructor writes or leaves them (0x608F00: mPreviousX/Y = the position, 0x60906B; +0xE8, +0x1B0 = 0)
+		var navigation = new GuestNavigation { X = (cell.X << 16) + 0x8000, Y = (cell.Y << 16) + 0x8000, Original = true, Native = true };
 		member.Navigation = navigation;
+		(member.AccurateDestX, member.AccurateDestY, member.SpriteAngle, member.Wandered, member.StrandedTime) = (0, 0, 0, false, 0);
+		(member.HeadingX, member.HeadingY) = ThemeParkIncWalkStep.Vector( 0 );
+		(member.TurnFromX, member.TurnFromY) = (navigation.X, navigation.Y);
 		member.Happiness = member.Motivation = member.Energy = 100f;
 		member.IdleStamp = 0;
 		member.PatrolArea = (0, 0, 0x7F, 0x7F);
@@ -663,13 +668,25 @@ public sealed partial class ThemeParkIncStaffWorld
 			case WalkResult.Walking:
 				return;
 			case WalkResult.Arrived when economy.Litter.TypeAt( target.X, target.Y ) != LitterType.None:
-				var navigation = member.Navigation!;
-				(navigation.X, navigation.Y) = (navigation.TargetX, navigation.TargetY);
+				PlaceAtAccurateDestination( member );
 				SetState( economy, member, Sweeping, turn );
 				return;
 		}
 		member.LitterCell = 0;
 		Search( economy, member, turn );
+	}
+
+	/// <summary>
+	/// The placement on the walk's point (<c>0x60BD80</c> with the accurate destination words): the position the words &lt;&lt; 8, the velocity zero, mPreviousX/Y the position; the cell chain follows at the end
+	/// of the member's update (<see cref="FollowChain"/>).
+	/// </summary>
+	// [BIN:TPI-EXE:0x60BD80 place at point] 0x63EE50(x word << 8, y word << 8, 0, 0) (movsx, shl 8: the position and a zero velocity), 0x63EF10 into +0x1A8/+0x1AC (mPreviousX/Y), 0x637B70(x word, y word)
+	private static void PlaceAtAccurateDestination( ThemeParkIncStaffMember member )
+	{
+		var navigation = member.Navigation!;
+		(navigation.X, navigation.Y) = ((short)member.AccurateDestX << 8, (short)member.AccurateDestY << 8);
+		(navigation.VelocityX, navigation.VelocityY) = (0, 0);
+		(member.TurnFromX, member.TurnFromY) = (navigation.X, navigation.Y);
 	}
 
 	/// <summary>State 0x10: the working step; once the work duration has passed, the litter of his target goes when his own cell holds litter, and he searches again.</summary>
@@ -893,6 +910,8 @@ public sealed partial class ThemeParkIncStaffWorld
 			OpenTPW.WalkResult.Stuck => WalkResult.Stuck,
 			_ => WalkResult.Arrived
 		};
+		// [BIN:TPI-EXE:0x60B4CA stranded mark] the walk step clears +0x1B0 on every call
+		member.StrandedTime = 0;
 		return WalkThemeParkInc( member, beforeX, beforeY, result );
 	}
 
@@ -941,12 +960,12 @@ public sealed partial class ThemeParkIncStaffWorld
 
 	/// <summary>The staff route <c>0x62EB10</c> (<see cref="ThemeParkIncPatrol.StaffRoute"/>): false when a closed park refuses the cell or no route reaches it.</summary>
 	private bool StaffRoute( ParkEconomy economy, ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY ) =>
-		ThemeParkIncPatrol.StaffRoute( grid, member.Navigation!, economy.IsParkOpen, cell, byteX, byteY );
+		ThemeParkIncPatrol.StaffRoute( grid, member.Navigation!, economy.IsParkOpen, cell, byteX, byteY, member );
 
 	/// <summary>Sets the walk to a point of a cell with the walk's mask (SetDest, <c>0x63EE80</c>); false when no route reaches it (the walk then stands arrived and stuck).</summary>
-	private bool Route( ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY ) => ThemeParkIncPatrol.Route( grid, member.Navigation!, cell, byteX, byteY );
+	private bool Route( ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY ) => ThemeParkIncPatrol.Route( grid, member.Navigation!, cell, byteX, byteY, member );
 
 	/// <summary>The wander and patrol destination <c>0x609F70</c> of a staff member (<see cref="ThemeParkIncPatrol.Destination"/>); true when a walk is set.</summary>
 	private bool Patrol( ParkEconomy economy, ThemeParkIncStaffMember member ) =>
-		ThemeParkIncPatrol.Destination( grid, member.Navigation!, member.PatrolArea, economy.World, economy.IsParkOpen );
+		ThemeParkIncPatrol.Destination( grid, member.Navigation!, member.PatrolArea, economy.World, economy.IsParkOpen, member );
 }

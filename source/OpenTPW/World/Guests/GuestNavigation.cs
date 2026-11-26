@@ -551,6 +551,10 @@ public sealed class GuestNavigation
 	/// </summary>
 	public bool Navigate( ParkCellMap map, int targetX, int targetY, IReadOnlyList<(int X, int Y)>? route = null, IReadOnlyList<(int X, int Y)>? alsoOpen = null )
 	{
+		// a Theme Park Inc walk keeps no bookkeeping of OpenTPW's own: its whole state is the native navigator and the person words (navigator phase NV5, the native walk storage), and the only reader of
+		// the cells, the M3 gate, measures Theme Park World parks
+		if ( map.EdgeRules == WalkEdgeRules.ThemeParkInc )
+			(route, alsoOpen) = (null, null);
 		Original = true;
 		Route = route?.ToArray() ?? [];
 		Cursor = 0;
@@ -854,8 +858,10 @@ public sealed class GuestNavigation
 	/// The walk step for a guest: an <see cref="Original"/> walk steps on <paramref name="map"/>; any other (an explicit route) steps as
 	/// <see cref="Step(int, int, Func{int, int, bool}, Func{GuestNavigation, (int X, int Y)}?)"/> with <paramref name="isOpen"/>.
 	/// </summary>
+	// [BIN:TPI-EXE:0x63DD20 steering step] Theme Park Inc's walker has one steering step: a walk to the walker's own point (SetDestination: standing, placed) steps as the navigator it is, so every walk on a map with
+	// Theme Park Inc's rules takes StepOriginal (navigator phase NV5: a restored walk is the native record alone, which does not tell a route walk from another)
 	public WalkResult Step( int maxSpeed, int maxForce, ParkCellMap map, Func<int, int, bool> isOpen, Func<GuestNavigation, (int X, int Y)>? separation = null ) =>
-		Original ? StepOriginal( maxSpeed, maxForce, map, separation )
+		Original || map.EdgeRules == WalkEdgeRules.ThemeParkInc ? StepOriginal( maxSpeed, maxForce, map, separation )
 			: Step( maxSpeed, maxForce, isOpen, separation ) ? WalkResult.Arrived : WalkResult.Walking;
 
 	/// <summary>Every field the next step reads, for <see cref="WorldStateHash"/>.</summary>
@@ -1073,6 +1079,17 @@ public sealed class GuestNavigation
 		for ( var slot = 0; same && slot < Math.Min( carriedSlots, BufferedWaypoints ); slot++ )
 			same = (slot < shadow.BufferSlotsWritten ? shadow.Buffer[slot] : (0, 0)) == Buffer[slot];
 		return same ? null : "the native navigator record does not match the walk's own fields";
+	}
+
+	/// <summary>
+	/// The walk restored from its native record alone (navigator phase NV5, <see cref="ThemeParkIncPersonWalkSnapshot"/>): every member from the serializer's load half (<see cref="LoadRecord"/>), and OpenTPW's own
+	/// bookkeeping derived: no route, cursor 0, no crossings or extra open cells, the remaining distance −1, on the grid, no reroutes counted; the walk is native. <see cref="RecordProblem"/> must have accepted it.
+	/// </summary>
+	internal void RestoreNativeRecord( byte[] bytes )
+	{
+		LoadRecord( SaveNavigation.Read( bytes ) );
+		Reroutes = 0;
+		Native = true;
 	}
 
 	/// <summary>Takes the members only the native record holds from <paramref name="bytes"/> (<see cref="NativeProblem"/> must have accepted it), and marks the walk native.</summary>

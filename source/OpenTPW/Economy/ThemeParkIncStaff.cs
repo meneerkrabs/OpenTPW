@@ -14,14 +14,25 @@ public sealed record ThemeParkIncStaffMemberSnapshot( int Id, ThemeParkIncStaffR
 /// a mechanic's ride (+0x5D8, the ride's economy instance) and job timer (+0x5D4) instead of the litter target and the work stamp; a gardener's plant (+0x5D8, <c>mPlantToWater</c>, the plant's economy
 /// instance) beside the work stamp (+0x5D4, <c>mTimeStartedWatering</c>); an entertainer's performance start (+0x5D4, <c>mTimeStartedEntertaining</c>) and the cell effect of an entertainer or a guard
 /// (+0xE4, the cell word it went down on, and the radius).
+/// <para>
+/// The walk is native (navigator phase NV5, docs/reverse/TPI-NAVIGATOR.md): <see cref="Walk"/> holds the person words OpenTPW keeps nowhere else (the accurate destination +0x28/+0x2A, mPreviousX/Y
+/// +0x1A8/+0x1AC) and the navigator's 177-byte record, <see cref="SpriteAngle"/> the heading word +0x2C, <see cref="Wandered"/> the wander flag +0xE8 and <see cref="StrandedTime"/> the mark +0x1B0
+/// (written only when set: no staff routine sets it). The walk of OpenTPW's own kind (<see cref="Navigation"/>) is no longer written: a save that holds it was made before the native walk storage and is
+/// refused (docs/PARK-SAVES.md).
+/// </para>
 /// </summary>
 public sealed record ThemeParkIncStaffWorldSnapshot( int ThingId, int State, long IdleStamp, long WorkStamp, int LitterCell, int BaseSpeed, int SpeedBonus, int Boost, float SmoothedSpeed,
-	int[] PatrolArea, int Template, ParkSaveFile.NavigationData? Navigation, long CellSerial,
+	int[] PatrolArea, int Template,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ParkSaveFile.NavigationData? Navigation, long CellSerial,
 	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] int? RideId = null,
 	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] long? JobTimer = null,
 	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] int? PlantId = null,
 	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] int? EffectCell = null,
-	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] int? EffectRadius = null );
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] int? EffectRadius = null,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] ThemeParkIncPersonWalkSnapshot? Walk = null,
+	int SpriteAngle = 0,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )] bool Wandered = false,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )] int StrandedTime = 0 );
 
 /// <summary>
 /// The saved Theme Park Inc staff: the 32 pool slots with their being-placed bytes, the members in list order, the park-maximum flags and hired counts of the last

@@ -167,6 +167,7 @@ public sealed partial class GuestSimulation
 	// [BIN:TPI-EXE:0x6375FA guest tick] 0x6375FC calls 0x619B50, 0x637603 calls 0x619FF0, every turn for every guest
 	private void UpdateThemeParkIncGuest( Guest guest, ThemeParkIncGuestRecord tpi )
 	{
+		SyncTpiCell( guest, tpi );
 		// [BIN:TPI-EXE:0x60BC90 speed average] (+0xD4 + +0xD6 + +0xD8) / [0x9CFB2C] (100) + 3 × +0xDC, times 0.25, the caps 0x63EF90 and the boost decay (× 99 / 100, 0x60BD0A): Theme Park World's 0x004FA870 (GuestSpeed.Update)
 		UpdateSpeed( guest );
 		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
@@ -508,7 +509,29 @@ public sealed partial class GuestSimulation
 	/// <summary>
 	/// The walk step <c>0x60B440</c>: 0 arrived, 1 walking, 2 stuck: Theme Park Inc's own (<see cref="StepThemeParkInc"/>, the park's navigator, docs/reverse/TPI-NAVIGATOR.md).
 	/// </summary>
-	private WalkResult TpiWalk( Guest guest ) => MoveAlongStep( guest );
+	// [BIN:TPI-EXE:0x60B4BB cell bytes] the chain update 0x637B70 writes mX/mY = position >> 8 on every step, so the person's cell (+5/+7: the stranded test's, the wander's start) is the position's cell
+	// whatever cell type it lies on; OpenTPW's guest cell follows it (navigator phase NV5: a native guest's cell is derived from its navigator on restore)
+	private WalkResult TpiWalk( Guest guest )
+	{
+		var result = MoveStep( guest );
+		var cell = guest.Navigation.Cell;
+		if ( cell != (guest.CellX, guest.CellY) )
+			(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);
+		return result;
+	}
+
+	/// <summary>
+	/// A native guest's cell is the person's bytes <c>+5</c>/<c>+7</c>, which the chain update writes with every position (<c>0x637B70</c>): the position's cell. Outside the bridged boarding (whose Theme Park World states keep
+	/// their own, <c>[EXT:tpi-twp-guest-rules]</c>) OpenTPW's guest cell is set to it before Theme Park Inc's states read it, so a restore derives it from the navigator (navigator phase NV5).
+	/// </summary>
+	private static void SyncTpiCell( Guest guest, ThemeParkIncGuestRecord tpi )
+	{
+		if ( tpi.State == ThemeParkIncGuestStates.BeingLoaded )
+			return;
+		var cell = guest.Navigation.Cell;
+		if ( cell != (guest.CellX, guest.CellY) )
+			(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);
+	}
 
 	/// <summary>The cell word of the guest's own cell (the thing's bytes <c>+5</c>, <c>+7</c>).</summary>
 	private static ushort TpiCellWord( Guest guest )
@@ -528,14 +551,10 @@ public sealed partial class GuestSimulation
 	// cleared and SetDest 0x63EE80 with the words << 8: tp.exe's 0x004FA5F0
 	private bool RouteToTpiPoint( Guest guest, (int X, int Y) cell, int byteX, int byteY )
 	{
-		if ( ParkCellMap.StampBelow( Grid.Cells.NextStamp(), guest.StrandedMark ) )
-			guest.StrandedMark = 0;
-		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
-			return false;
-		guest.StrandedMark = 0;
-		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
-		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
-		guest.HasWaypoint = true;
+		var found = ThemeParkIncNativeWalk.RouteToPoint( Grid, guest, (cell.X << 8) | byteX, (cell.Y << 8) | byteY );
+		// a request the stranded test refused (the mark survives it) leaves the walk alone; OpenTPW's walking flag follows every other answer
+		if ( found || guest.StrandedMark == 0 )
+			guest.HasWaypoint = true;
 		return found;
 	}
 

@@ -3120,12 +3120,13 @@ def tpi_walk_stubs(target: Target) -> dict:
     return {}
 
 
-def tpi_walk_map_binary(sb: Sandbox, x: dict) -> int:
-    """Writes the input's cells into a synthetic 128 x 128 Theme Park Inc map (72-byte cells); returns the cell array's base."""
+def tpi_walk_map_binary(sb: Sandbox, x: dict, size: int = 0) -> int:
+    """Writes the input's cells into a synthetic 128 x 128 Theme Park Inc map (72-byte cells); returns the cell array's base (an object of at
+    least `size` bytes: the world object, whose map starts at +0x460)."""
     sb.set_fpcw(TPI_X87_CONTROL_WORD)
     holder = sb.object(16)
     records = x.get('records', [])
-    base = sb.object(max(TPI_WALK_CELLS_AT + (128 * 128 + 2) * TPI_WALK_CELL, TPI_WALK_RECORD_BASE + 40 * (len(records) + 2)))
+    base = sb.object(max(TPI_WALK_CELLS_AT + (128 * 128 + 2) * TPI_WALK_CELL, TPI_WALK_RECORD_BASE + 40 * (len(records) + 2), size))
     sb.write(holder, 'I', base)
     sb.write(TPI_WALK_MAP, 'I', holder)
     sb.write(TPI_WALK_RECORDS, 'I', base + TPI_WALK_RECORD_BASE - 0x11FFD8)
@@ -3367,6 +3368,12 @@ def tpi_nav_game(sb: Sandbox) -> int:
     game = sb.object(0x460 + 0x1C0000 + 33 * 9 * 4)
     sb.write(TPI_NAV_GAME, 'I', game)
     sb.write(TPI_NAV_COUNTER, 'I', 0)
+    tpi_nav_behaviours(sb)
+    return game
+
+
+def tpi_nav_behaviours(sb: Sandbox) -> None:
+    """The steering list as the registration 0x63ea90 fills it: avoid_walls 0xe666, follow_path 0x8000, separation 0x1999."""
     pairs = sb.object(24)
     for i, (behaviour, weight) in enumerate(((TPI_NAV_AVOID, 0xE666), (TPI_NAV_FOLLOW, 0x8000), (TPI_NAV_SEPARATION, 0x1999))):
         table = sb.object(4)
@@ -3377,7 +3384,6 @@ def tpi_nav_game(sb: Sandbox) -> int:
         sb.write(pairs + 8 * i + 4, 'I', instance)
     sb.write(TPI_NAV_BEHAVIOURS[0], 'I', pairs)
     sb.write(TPI_NAV_BEHAVIOURS[1], 'I', pairs + 24)
-    return game
 
 
 def tpi_nav_steering_binary(sb: Sandbox, x: dict, log) -> tuple:
@@ -3614,8 +3620,423 @@ TPI_NAV_RECORD_TARGET = Target(
            'an object of random bytes (mode 1, version 1); the load half reads a record of random bytes into an object filled with 0xab (mode 0, '
            'versions 0 and 1). The bytes written, the transfer sizes and the loaded object are compared.'],
     budget=200_000)
+# ------------------------------------------------------------------------------ NV3: the walk step, the speed step, the route requests, the staff route
+# Game.exe's person routines around the navigator (TPI-NAVIGATOR.md, NV3): the walk step 0x60b460 (D1 the heading on arrival, D2 only kids
+# run), the speed step 0x60bc90 with the sprite commit 0x5d1080, the route requests 0x60b7f0 / 0x60b8e0 with the stranded test 0x60bb50, and the
+# staff route 0x62eb10. Every one runs on a person record (0x2b0 bytes) whose navigator at +0xec the constructor 0x63ed10 builds, on a world
+# object whose map starts at +0x460: cells at +0x418 + 72 * id, block stamps at +0x460 + 0x1c0000, the park-closed word at +0x1eab44.
+TPI_WORLD = 0xADE6B0             # global: the world object (the route requests' counter and block stamps through [it] + 0x460)
+TPI_WORLD_SIZE = 0x1EAB50
+TPI_PERSON_SIZE = 0x2B0
+TPI_PERSON_NAV = 0xEC
+TPI_STEP = 0x60B460              # thiscall person -> 0 arrived, 1 walking, 2 stuck
+TPI_SPEED_STEP = 0x60BC90        # thiscall person
+TPI_ROUTE_CELL = 0x60B7F0        # thiscall person (cell word), ret 4
+TPI_ROUTE_POINT = 0x60B8E0       # thiscall person (x word, y word), ret 8
+TPI_STAFF_ROUTE = 0x62EB10       # thiscall person (x word, y word), ret 8
+TPI_CHAIN = 0x637B70             # thiscall person (x word, y word), ret 8: the cell chain; stubbed: it writes +4 / +6 and nothing else here
+TPI_RESTART = 0x4E4AB0           # cdecl (source, program) -> whether the source's restart PC is the program; stubbed with the input's answers
+TPI_SPRITE_RUN = 0x4E49A0        # cdecl (source, program): the sprite commit runs the pending template's program; stubbed, logged
+TPI_SPRITE_INTERVAL = 0x4E42B0   # cdecl (source, interval): the sprite commit applies the pending interval; stubbed, logged
+TPI_QUEUE_BEHIND = 0x5E0A50      # cdecl (out, word) -> out: the queue cell behind a queue cell (0 at its back); stubbed with the input's links
+TPI_PROGRAMS = {1: 0x9AFBA8, 2: 0x9AFC04, 3: 0x9AFC60}   # 0x9cda94[template] for the templates the inputs queue
+TPI_SOURCE = 0x5150             # the sprite source handle the inputs give the person (+0x14)
+TPI_PERSON_RANGES = TPI_NAV_RANGES + [
+    (0x60B460, 0x60B657), (0x60BC90, 0x60BD48), (0x60B7F0, 0x60B8A2), (0x60B8E0, 0x60B96C), (0x60BB50, 0x60BC4B), (0x62EB10, 0x62EBF2),
+    (0x91E074, 0x91E1B4), (0x5D3B20, 0x5D3B2F), (0x5D0F90, 0x5D0F9A), (0x5D10F0, 0x5D1122), (0x5D1080, 0x5D10CC), (0x5D8260, 0x5D828C),
+    (0x64FA30, 0x64FA37), (0x67F6D0, 0x67F6DB)]
+STEP_SENTINEL = 0x7777          # +0x20 (the pending template), +0x24 (the pending interval) and +0x2c (the heading) before each step
+
+
+def tpi_person_stubs(target: Target) -> dict:
+    def chain(sb: Sandbox):
+        person = sb.reg('ecx')
+        sb.write(person + 4, 'H', sb.arg(0) & 0xFFFF)
+        sb.write(person + 6, 'H', sb.arg(1) & 0xFFFF)
+        return 0, 8
+
+    def restart(sb: Sandbox):
+        log = sb.person_log
+        log['asked'].append(sb.arg(1))
+        answers = log['answers']
+        answer = answers[log['calls'] % len(answers)]
+        log['calls'] += 1
+        return answer, 0
+
+    def sprite(sb: Sandbox, what: str):
+        sb.person_log['sprite'].append((what, sb.arg(0), sb.arg(1)))
+        return 0, 0
+
+    def behind(sb: Sandbox):
+        out, word = sb.arg(0), sb.arg(1) & 0xFFFF
+        sb.write(out, 'H', sb.person_log['behind'].get(word, 0))
+        return out, 0
+    return {TPI_NAV_NEIGHBOURS: walk_debug_stub, TPI_CHAIN: chain, TPI_RESTART: restart, TPI_QUEUE_BEHIND: behind,
+            TPI_SPRITE_RUN: lambda sb: sprite(sb, 'run'), TPI_SPRITE_INTERVAL: lambda sb: sprite(sb, 'interval')}
+
+
+def tpi_person_world(sb: Sandbox, x: dict) -> int:
+    """The world object with the input's map, block stamps, counter and park-closed word; the steering list registered."""
+    base = tpi_walk_map_binary(sb, x, TPI_WORLD_SIZE)
+    sb.write(TPI_NAV_GAME, 'I', base)
+    sb.write(TPI_WORLD, 'I', base)
+    sb.write(TPI_NAV_COUNTER, 'I', x.get('counter', 0))
+    sb.write(base + 0x1EAB44, 'I', x.get('closed', 0))
+    for bx, by, value in x.get('stamps', []):
+        sb.write(base + 0x460 + 0x1C0000 + (by * 33 + bx) * 4, 'I', value)
+    tpi_nav_behaviours(sb)
+    sb.person_log = {'asked': [], 'answers': x.get('restarts', [0]), 'calls': 0, 'sprite': [],
+                     'behind': {int(k): v for k, v in x.get('behind', [])}}
+    return base
+
+
+def tpi_person_binary(sb: Sandbox, x: dict) -> int:
+    """A person record with a constructed navigator holding the input's walk, and its person words."""
+    person = sb.object(TPI_PERSON_SIZE)
+    sb.call(TPI_NAV_CTOR, this=person + TPI_PERSON_NAV)
+    init = x['walk']
+    for offset, key in ((8, 'x'), (0xC, 'y'), (0x10, 'vx'), (0x14, 'vy'), (0x18, 'max_force'), (0x1C, 'max_speed'), (0xB4, 'mask')):
+        sb.write(person + TPI_PERSON_NAV + offset, 'i', init[key])
+    p = x.get('person', {})
+    sb.write(person + 2, 'B', p.get('kind', 1))
+    sb.write(person + 4, 'H', (init['x'] >> 8) & 0xFFFF)
+    sb.write(person + 6, 'H', (init['y'] >> 8) & 0xFFFF)
+    sb.write(person + 0x14, 'I', TPI_SOURCE)
+    sb.write(person + 0xD6, 'H', p.get('bonus', 0))
+    sb.write(person + 0x1B0, 'I', p.get('mark', 0))
+    sb.write(person + 0x1B4, 'I', p.get('state', 0))
+    sb.write(person + 0x2A4, 'I', p.get('generation', 0))
+    return person
+
+
+def tpi_person_walk(x: dict) -> 'walk_reading.Walk':
+    init = x['walk']
+    walk = walk_reading.Walk(tpi_walk_map_reading(x), {(bx, by): v for bx, by, v in x.get('stamps', [])}, init['x'], init['y'], init['vx'],
+                             init['vy'], init['mask'], init['max_speed'], init['max_force'])
+    walk.counter = x.get('counter', 0)
+    return walk
+
+
+def tpi_step_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """Set-ups, edits and walk steps 0x60b460 on one person: per step the result, the chain's words +4 / +6, the mark +0x1b0 (set to 0x55aa
+    before), the heading +0x2c, the pending template +0x20 and interval +0x24 (each STEP_SENTINEL before), the programs the restart test was
+    asked about, and the navigator's record."""
+    base = tpi_person_world(sb, x)
+    person = tpi_person_binary(sb, x)
+    walk = person + TPI_PERSON_NAV
+    target = sb.object(8)
+    trace = []
+    for kind, a, b, c in x['events']:
+        if kind == 'go':
+            sb.write(target, 'i', a)
+            sb.write(target + 4, 'i', b)
+            trace.append(('go', sb.call(TPI_NAV_SETUP, args=(target, 0), this=walk).eax, navigator_record(sb, walk)))
+        elif kind == 'edit':
+            sb.write(base + TPI_WALK_CELLS_AT + (b * 128 + a + 1) * TPI_WALK_CELL + 8, 'I', c)
+            counter = (sb.read(TPI_NAV_COUNTER, 'I') + 1) & MASK32
+            sb.write(TPI_NAV_COUNTER, 'I', counter)
+            sb.write(base + 0x460 + 0x1C0000 + ((b >> 4) * 33 + (a >> 4)) * 4, 'I', counter)
+        else:
+            sb.write(person + 0x1B0, 'I', 0x55AA)
+            for offset in (0x20, 0x24, 0x2C):
+                sb.write(person + offset, 'I', STEP_SENTINEL)
+            sb.person_log['asked'] = []
+            result = sb.call(TPI_STEP, this=person).eax
+            trace.append(('step', result, sb.read(person + 4, 'H'), sb.read(person + 6, 'H'), sb.read(person + 0x1B0, 'I'),
+                          sb.read(person + 0x2C, 'I'), sb.read(person + 0x20, 'I'), sb.read(person + 0x24, 'I'),
+                          tuple(sb.person_log['asked']), navigator_record(sb, walk)))
+    return tuple(trace)
+
+
+def tpi_step_plan(x: dict) -> tuple:
+    walk = tpi_person_walk(x)
+    p = x['person']
+    answers, calls = x['restarts'], [0]
+    trace = []
+    for kind, a, b, c in x['events']:
+        if kind == 'go':
+            trace.append(('go', 1 if walk.setup(a, b, False) else 0, walk.record()))
+        elif kind == 'edit':
+            walk.edit(a, b, c)
+        else:
+            asked = []
+
+            def restarts(program):
+                asked.append(program)
+                answer = answers[calls[0] % len(answers)]
+                calls[0] += 1
+                return answer
+            result, chain, heading, template, interval = walk_reading.walk_step(walk, p, restarts)
+            trace.append(('step', result, chain[0], chain[1], 0, STEP_SENTINEL if heading is None else heading,
+                          STEP_SENTINEL if template is None else template, STEP_SENTINEL if interval is None else interval, tuple(asked),
+                          walk.record()))
+    return tuple(trace)
+
+
+def tpi_step_as_tpw(x: dict) -> tuple:
+    """tp.exe's walk step 0x4fa2a0 on the same person: no heading written on arrival (D1) and every guest with a bonus runs (D2)."""
+    trace = list(tpi_step_plan(x))
+    tpw = dict(x, person=dict(x['person'], generation=0))
+    for k, (entry, other) in enumerate(zip(trace, tpi_step_plan(tpw))):
+        if entry[0] == 'step':
+            entry = other
+            if entry[1] == 0:
+                entry = entry[:5] + (STEP_SENTINEL,) + entry[6:]
+        trace[k] = entry
+    return tuple(trace)
+
+
+def tpi_step_inputs(rng: random.Random, n: int) -> list:
+    """Whole walks of persons of every kind (guests of each generation, the staff kinds, a guard carrying someone) with speed bonuses 0, 25
+    and 50 and the word 0x8000, the restart test answering both ways, set-ups that fail, and map edits."""
+    out = []
+    for i in range(min(n, WALK_STEERING_INPUTS)):
+        x = tpi_walk_cells(rng)
+        cx, cy = rng.choice(x['paths'])
+        speed = rng.choice([655, 4000, 7733, 13107, 20000, 26214])
+        x['walk'] = {'x': (cx << 16) + rng.randrange(8000, 57000), 'y': (cy << 16) + rng.randrange(8000, 57000),
+                     'vx': rng.randint(-5000, 5000), 'vy': rng.randint(-5000, 5000), 'mask': rng.choice([0, 0, 0, 1]),
+                     'max_speed': speed, 'max_force': min(52428, 2 * speed)}
+        x['person'] = {'kind': rng.choice([1, 1, 1, 4, 5, 6, 7, 7, 8, 0x14]), 'generation': rng.choice([0, 0, 1, 2]),
+                       'bonus': rng.choice([0, 25, 25, 50, 0x8000]), 'state': rng.choice([0, 1, 0x1C, 0x1C])}
+        x['restarts'] = [rng.choice([0, 0, 1]) for _ in range(7)]
+        events, types = [], {(a, b): t for a, b, t in x['types']}
+        for k in range(WALK_STEERING_STEPS):
+            if k == 0 or rng.random() < 0.03:
+                gx, gy = rng.choice(x['paths']) if rng.random() < 0.9 else (rng.randrange(128), rng.randrange(128))
+                events.append(('go', (gx << 16) + rng.randrange(5 << 8, 123 << 8), (gy << 16) + rng.randrange(5 << 8, 123 << 8), 0))
+            if rng.random() < 0.02:
+                ex, ey = cx + rng.randint(-3, 3), cy + rng.randint(-3, 3)
+                kind = rng.choice([0, 1, 1, 3, 8])
+                if 0 <= ex < 128 and 0 <= ey < 128 and types.get((ex, ey), 0) != kind:
+                    types[(ex, ey)] = kind
+                    events.append(('edit', ex, ey, kind))
+            events.append(('step', 0, 0, 0))
+        x['events'] = events
+        del x['paths']
+        out.append(x)
+    return out
+
+
+def tpi_speed_step_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """0x60bc90 on a person: the smoothed speed +0xdc (as bits), the caps nav +0x18 / +0x1c, the boost +0xd8, mPreviousX/Y +0x1a8 / +0x1ac,
+    the sprite wrapper's five dwords (+0x14 ..) and the sprite calls of its commit."""
+    sb.set_fpcw(TPI_X87_CONTROL_WORD)
+    sb.person_log = {'asked': [], 'answers': [0], 'calls': 0, 'sprite': [], 'behind': {}}
+    person = sb.object(TPI_PERSON_SIZE)
+    sb.call(TPI_NAV_CTOR, this=person + TPI_PERSON_NAV)
+    sb.write(person + TPI_PERSON_NAV + 8, 'i', x['x'])
+    sb.write(person + TPI_PERSON_NAV + 0xC, 'i', x['y'])
+    for offset, key in ((0xD4, 'base'), (0xD6, 'bonus'), (0xD8, 'boost')):
+        sb.write(person + offset, 'H', x[key])
+    sb.write(person + 0xDC, 'I', struct.unpack('<I', struct.pack('<f', x['speed']))[0])
+    for k, value in enumerate(x['sprite']):
+        sb.write(person + 0x14 + 4 * k, 'I', value)
+    sb.call(TPI_SPEED_STEP, this=person)
+    return (sb.read(person + 0xDC, 'I'), sb.read(person + TPI_PERSON_NAV + 0x1C, 'i'), sb.read(person + TPI_PERSON_NAV + 0x18, 'i'),
+            sb.read(person + 0xD8, 'H'), sb.read(person + 0x1A8, 'i'), sb.read(person + 0x1AC, 'i'),
+            tuple(sb.read(person + 0x14 + 4 * k, 'I') for k in range(5)), tuple(sb.person_log['sprite']))
+
+
+def tpi_speed_step_plan(x: dict) -> tuple:
+    speed, top, force, boost = walk_reading.speed_step(x['base'], x['bonus'], x['boost'], x['speed'])
+    source, last, applied, template, interval = x['sprite']
+    calls = []
+    if template:
+        calls.append(('run', source, TPI_PROGRAMS[template]))
+        last, applied, template = applied, template, 0
+    if interval:
+        calls.append(('interval', source, interval))
+        interval = 0
+    return (struct.unpack('<I', struct.pack('<f', speed))[0], top, force, boost, x['x'], x['y'], (source, last, applied, template, interval),
+            tuple(calls))
+
+
+def tpi_speed_step_inputs(rng: random.Random, n: int) -> list:
+    """The base speeds of the guests and the staff (60..140 and the staff's lerps), the bonus words 0, 25 and 50, boosts up to the u16 wrap,
+    previous speeds from 0 to past the cap, and pending templates and intervals in the sprite wrapper."""
+    out = []
+    for i in range(n):
+        out.append({'x': rng.randrange(1 << 23), 'y': rng.randrange(1 << 23), 'base': rng.choice([60, 80, 100, 120, 140, rng.randrange(60, 400)]),
+                    'bonus': rng.choice([0, 0, 25, 50]), 'boost': rng.choice([0, 0, rng.randrange(16), rng.randrange(700), rng.randrange(65536)]),
+                    'speed': walk_reading.f32(rng.choice([0.0, rng.uniform(0, 1.5), rng.uniform(0, 3), rng.uniform(1.9, 2.1), 1.0, 2.0])),
+                    'sprite': [TPI_SOURCE, rng.choice([0, 1, 3]), rng.choice([0, 1, 2]), rng.choice([0, 0, 1, 2, 3]),
+                               rng.choice([0, 0, rng.randrange(1, 251)])]})
+    return out
+
+
+TPI_ROUTE_INPUTS = 200           # each request searches a route; the count bounds the run time
+
+
+def tpi_route_input(rng: random.Random) -> dict:
+    """A map, a counter, block stamps up to it, a person on a path or queue cell (queue links behind it) with a stranded mark of each kind."""
+    x = tpi_walk_cells(rng)
+    ox, oy, w, h = x['window']
+    inner = [c for c in x['paths'] if 0 < c[0] < 127 and 0 < c[1] < 127] or [(max(1, min(126, ox)), max(1, min(126, oy)))]
+    types = {(a, b): t for a, b, t in x['types']}
+    queues = [c for c, t in types.items() if t in (3, 9) and 0 < c[0] < 127 and 0 < c[1] < 127]
+    cx, cy = rng.choice(queues) if queues and rng.random() < 0.3 else rng.choice(inner)
+    counter = rng.randrange(1, 400)
+    x['counter'] = counter
+    x['stamps'] = [[bx, by, rng.choice([0, rng.randrange(counter + 1)])] for bx in range(8) for by in range(8) if rng.random() < 0.3]
+    # the queue links behind the person's cell: a short chain of words, its last 0 (the back)
+    word, behind = cy * 128 + cx + 1, []
+    for _ in range(rng.randint(0, 4)):
+        nxt = rng.randrange(1, 128) * 128 + rng.randrange(1, 127) + 1
+        behind.append([word, nxt])
+        word = nxt
+    x['behind'] = behind
+    mark = rng.choice([0, 0, counter + rng.randrange(1, 50), rng.randrange(1, counter + 1), rng.randrange(1, counter + 1)])
+    speed = rng.choice([7733, 13107])
+    x['walk'] = {'x': (cx << 16) + rng.randrange(8000, 57000), 'y': (cy << 16) + rng.randrange(8000, 57000), 'vx': 0, 'vy': 0,
+                 'mask': rng.choice([0, 0, 1]), 'max_speed': speed, 'max_force': 2 * speed}
+    x['person'] = {'kind': rng.choice([1, 5, 7]), 'mark': mark}
+    x['paths_inner'] = inner
+    return x
+
+
+def tpi_route_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """The requests in order on one person: 'cell' 0x60b7f0(word), 'point' 0x60b8e0(x word, y word), 'staff' 0x62eb10(x word, y word); after
+    each its answer, the counter, the mark +0x1b0, the target words +0x28 / +0x2a, the walk mask +0x1a0 and the navigator's record."""
+    tpi_person_world(sb, x)
+    person = tpi_person_binary(sb, x)
+    trace = []
+    for request in x['requests']:
+        if request[0] == 'cell':
+            answer = sb.call(TPI_ROUTE_CELL, args=(request[1],), this=person).eax
+        else:
+            answer = sb.call(TPI_ROUTE_POINT if request[0] == 'point' else TPI_STAFF_ROUTE, args=(request[1], request[2]), this=person).eax
+        trace.append((answer & 0xFF, sb.read(TPI_NAV_COUNTER, 'I'), sb.read(person + 0x1B0, 'I'), sb.read(person + 0x28, 'H'),
+                      sb.read(person + 0x2A, 'H'), sb.read(person + 0x1A0, 'I'), navigator_record(sb, person + TPI_PERSON_NAV)))
+    return tuple(trace)
+
+
+def tpi_route_plan(x: dict) -> tuple:
+    walk = tpi_person_walk(x)
+    init = x['walk']
+    person = walk_reading.Person(walk, ((init['x'] >> 16) & 0xFF, (init['y'] >> 16) & 0xFF), x['person']['mark'],
+                                 {int(a): b for a, b in x['behind']})
+    trace = []
+    for request in x['requests']:
+        if request[0] == 'cell':
+            answer = person.route_cell(request[1])
+        elif request[0] == 'point':
+            answer = person.route_point(request[1], request[2])
+        else:
+            answer = person.staff_route(request[1], request[2], x['closed'])
+        words = person.words or (0, 0)
+        trace.append((answer, walk.counter, person.mark, words[0], words[1], walk.mask, walk.record()))
+    return tuple(trace)
+
+
+def tpi_route_edit_counter(x: dict) -> tuple:
+    """The requests with the counter that counts the edits only (a Theme Park World park's ParkCellMap): no raise at a request or a set-up, the
+    mark compared with the counter plus one, a set-up stamped with the counter itself."""
+    walk = tpi_person_walk(x)
+    counter = walk.counter
+    original_setup = walk.setup
+
+    def setup(tx, ty, reroute):
+        found = original_setup(tx, ty, reroute)
+        if found:
+            walk.counter = counter
+            walk.stamp = counter
+        return found
+    walk.setup = setup
+    init = x['walk']
+    person = walk_reading.Person(walk, ((init['x'] >> 16) & 0xFF, (init['y'] >> 16) & 0xFF), x['person']['mark'],
+                                 {int(a): b for a, b in x['behind']})
+    trace = []
+    for request in x['requests']:
+        walk.counter = counter
+        answer = person.route_cell(request[1]) if request[0] == 'cell' else person.route_point(request[1], request[2])
+        walk.counter = counter
+        words = person.words or (0, 0)
+        trace.append((answer, walk.counter, person.mark, words[0], words[1], walk.mask, walk.record()))
+    return tuple(trace)
+
+
+def tpi_route_words(rng: random.Random, x: dict) -> tuple:
+    cx, cy = rng.choice(x['paths_inner']) if rng.random() < 0.85 else (rng.randrange(128), rng.randrange(128))
+    return (cx << 8) | rng.randrange(256), (cy << 8) | rng.randrange(256)
+
+
+def tpi_route_inputs(rng: random.Random, n: int) -> list:
+    """One to four route requests per person, to a cell word or a point, reachable or not."""
+    out = []
+    for _ in range(min(n, TPI_ROUTE_INPUTS)):
+        x = tpi_route_input(rng)
+        requests = []
+        for _ in range(rng.randint(1, 4)):
+            if rng.random() < 0.5:
+                cx, cy = rng.choice(x['paths_inner']) if rng.random() < 0.85 else (rng.randrange(128), rng.randrange(128))
+                requests.append(('cell', cy * 128 + cx + 1))
+            else:
+                requests.append(('point', *tpi_route_words(rng, x)))
+        x['requests'] = requests
+        del x['paths'], x['paths_inner']
+        out.append(x)
+    return out
+
+
+def tpi_staff_route_inputs(rng: random.Random, n: int) -> list:
+    """Staff route requests 0x62eb10 from path and empty cells, to path and empty cells and to the entrance cells (0x2f, 0x11) / (0x30, 0x11),
+    with the park open and closed."""
+    out = []
+    for _ in range(min(n, TPI_ROUTE_INPUTS)):
+        x = tpi_route_input(rng)
+        x['person']['kind'] = rng.choice([4, 5, 6, 7, 8, 0x14])
+        x['person']['mark'] = 0
+        x['closed'] = rng.choice([0, 1])
+        requests = []
+        for _ in range(rng.randint(1, 3)):
+            if rng.random() < 0.2:
+                requests.append(('staff', (rng.choice([0x2F, 0x30, 0x31]) << 8) | rng.randrange(256), (0x11 << 8) | rng.randrange(256)))
+            else:
+                requests.append(('staff', *tpi_route_words(rng, x)))
+        x['requests'] = requests
+        del x['paths'], x['paths_inner']
+        out.append(x)
+    return out
+
+
+TPI_STEP_TARGET = Target(
+    'tpi-exe-walk-step', 'tpi', 'Game.exe walk step 0x60b460 on a person record',
+    'GuestSimulation.StepThemeParkInc / ThemeParkIncStaffWorld.Walk through ThemeParkIncWalkStep (TPI-NAVIGATOR.md, NV3)',
+    TPI_STEP, TPI_PERSON_RANGES, tpi_person_stubs, tpi_step_binary, tpi_step_plan, tpi_step_inputs,
+    alternatives={'tpw-walk-step': tpi_step_as_tpw},
+    notes=['Whole walks of one person per input (a guest of each generation, every staff kind, a guard with the carry state 0x1c) on a Theme Park '
+           'Inc map: set-ups, edits and 80 walk steps. The cell chain 0x637b70 is stubbed to write its two words to +4 / +6, the restart test '
+           '0x4e4ab0 answers from the input; the template queue 0x5d0f90, the interval 0x5d10f0, the angle 0x91e074 and the guard test 0x5d3b20 '
+           'run. Per step: the result, +4 / +6, the stranded mark +0x1b0 (cleared), the heading +0x2c (written on arrival too, D1), the pending '
+           'template +0x20 and interval +0x24 (D2: a grown-up guest never runs), the restart test\'s programs and the navigator\'s record. Run at '
+           'the control word 0x7f.'],
+    budget=2_000_000_000)
+TPI_SPEED_STEP_TARGET = Target(
+    'tpi-exe-speed-step', 'tpi', 'Game.exe speed step 0x60bc90 with the sprite commit 0x5d1080',
+    'GuestSpeed.Update and the speed step\'s copy of the position (TPI-NAVIGATOR.md, NV3)',
+    TPI_SPEED_STEP, TPI_PERSON_RANGES, tpi_person_stubs, tpi_speed_step_binary, tpi_speed_step_plan, tpi_speed_step_inputs,
+    notes=['The speed words +0xd4 / +0xd6 / +0xd8 and +0xdc, the caps 0x63ef90, the boost decay, mPreviousX/Y +0x1a8 / +0x1ac (the walk position) '
+           'and the sprite commit 0x5d1080 with its calls 0x4e49a0 / 0x4e42b0 stubbed and logged. Run at the control word 0x7f.'],
+    budget=200_000)
+TPI_ROUTE_TARGET = Target(
+    'tpi-exe-route-request', 'tpi', 'Game.exe route requests 0x60b7f0 and 0x60b8e0 with the stranded test 0x60bb50',
+    'GuestSimulation.RequestRoute / RouteToTpiPoint with the counter of ParkCellMap.NextStamp (TPI-NAVIGATOR.md, NV3)',
+    TPI_ROUTE_POINT, TPI_PERSON_RANGES, tpi_person_stubs, tpi_route_binary, tpi_route_plan, tpi_route_inputs,
+    alternatives={'edit-only-counter': tpi_route_edit_counter},
+    notes=['Requests to a cell word or a point on a person with a stranded mark of each kind (none, above the counter, held or not by the block '
+           'stamps of the nine cells around its cell or its queue\'s back, the queue links 0x5e0a50 stubbed from the input). After each: the answer, '
+           'the stamp counter 0xa9d2e8, the mark, the target words +0x28 / +0x2a and the navigator\'s record (path_timestamp the raised counter).'],
+    budget=400_000_000)
+TPI_STAFF_ROUTE_TARGET = Target(
+    'tpi-exe-staff-route', 'tpi', 'Game.exe staff route 0x62eb10', 'ThemeParkIncStaffWorld.StaffRoute (TPI-NAVIGATOR.md, NV3)',
+    TPI_STAFF_ROUTE, TPI_PERSON_RANGES, tpi_person_stubs, tpi_route_binary, tpi_route_plan, tpi_staff_route_inputs,
+    notes=['The park-closed refusal of the entrance cells, the walk mask from the type-0 test of the member\'s and the target\'s cells, then '
+           '0x60b8e0: the answer, the counter, the mask +0x1a0, the target words and the navigator\'s record.'],
+    budget=400_000_000)
+
 TPI_WALK_TARGETS = [TPI_WALK_EDGE_TARGET, TPI_WALK_COMMIT_TARGET, TPI_WALK_SEARCH_TARGET, TPI_NAV_STEERING_TARGET, TPI_NAV_AVOID_TARGET, TPI_NAV_RECORD_TARGET,
-                    TPI_NAV_ROOT_TARGET]
+                    TPI_NAV_ROOT_TARGET, TPI_STEP_TARGET, TPI_SPEED_STEP_TARGET, TPI_ROUTE_TARGET, TPI_STAFF_ROUTE_TARGET]
 
 # ============================================================================== (t) tp.exe TQI movie matrix 0x6710c0 and transform pass 0x67673c
 TQI_MATRIX = 0x6710C0          # cdecl (int *matrix, int quantiser): fills 64 dwords

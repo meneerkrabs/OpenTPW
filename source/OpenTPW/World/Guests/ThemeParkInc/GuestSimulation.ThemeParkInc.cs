@@ -82,6 +82,8 @@ public sealed partial class GuestSimulation
 		}
 		tpi.Wait = 0;
 		SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.WalkingToBooth );
+		if ( WalksThemeParkInc )
+			ThemeParkIncPlacementStamp( guest );
 		Beamed?.Invoke( guest );
 	}
 
@@ -511,7 +513,10 @@ public sealed partial class GuestSimulation
 		}
 	}
 
-	/// <summary>The walk step <c>0x60B440</c>: Theme Park World's (<c>[EXT:tpi-twp-guest-rules]</c>, tp.exe <c>0x004FA2A0</c>): 0 arrived, 1 walking, 2 stuck.</summary>
+	/// <summary>
+	/// The walk step <c>0x60B440</c>: 0 arrived, 1 walking, 2 stuck. With Theme Park Inc's navigator (<c>--tpi-native-walk</c>) it is Theme Park Inc's own (<see cref="StepThemeParkInc"/>), else Theme Park
+	/// World's (<c>[EXT:tpi-twp-guest-rules]</c>, tp.exe <c>0x004FA2A0</c>).
+	/// </summary>
 	private WalkResult TpiWalk( Guest guest ) => MoveAlongStep( guest );
 
 	/// <summary>The cell word of the guest's own cell (the thing's bytes <c>+5</c>, <c>+7</c>).</summary>
@@ -532,7 +537,7 @@ public sealed partial class GuestSimulation
 	// cleared and SetDest 0x63EE80 with the words << 8: tp.exe's 0x004FA5F0
 	private bool RouteToTpiPoint( Guest guest, (int X, int Y) cell, int byteX, int byteY )
 	{
-		if ( guest.StrandedMark != 0 && Grid.Cells.StampCounter + 1 < guest.StrandedMark )
+		if ( Grid.Cells.NextStamp() < guest.StrandedMark )
 			guest.StrandedMark = 0;
 		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
 			return false;

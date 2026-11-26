@@ -2455,9 +2455,21 @@ the subpath_dist slots keep a `0xcd` fill until a set-up writes them). The block
 come out as k; Theme Park Inc's walk takes that root (`Fixed16.Root`). Theme Park World's walk keeps the exact root; its X25 targets ran tp.exe at the harness's default control
 word 0x37F, not the game thread's 0x7F that `[EXT:hardware-d3d-path]` models, so a 0x7F reading of tp.exe's walk is an open Theme Park World follow-up. `tpi-exe-navigator-record` runs
 the serializer `0x63ad30`: the save half writes the members in `SaveNavigation`'s order and widths and the load half reads them back and zeroes the unnamed `+0x30`. The
-C# meets three Game.exe walks directly, every member but path_timestamp (`ThemeParkIncNavigatorTests`, from `tpi_navigator_golden.py`, which also checks that the
-serializer gives each of their records back), and `tools/tpi-layouts/navigator.py` lists the serializer's 33 transfers. The X25 steering target compares every member
-of tp.exe's navigator too (agree 40/40).
+C# meets three Game.exe walks directly, every member including path_timestamp since NV3 counts the stamp counter natively (`ThemeParkIncNavigatorTests`, from
+`tpi_navigator_golden.py`, which also checks that the serializer gives each of their records back), and `tools/tpi-layouts/navigator.py` lists the serializer's 33 transfers.
+The X25 steering target compares every member of tp.exe's navigator too (agree 40/40).
+
+**The person routines (NV3).** Four targets run Game.exe's routines around the navigator on a person record (0x2b0 bytes, the navigator at `+0xec` built by its constructor)
+on a world object whose map starts at `+0x460`, with the stamp counter `0xa9d2e8` raised at every call. `tpi-exe-walk-step` walks a guest of each generation, every staff kind and a
+guard in the carry state 0x1c through set-ups, edits and the walk step `0x60b460` (40 walks of 80 steps; the cell chain `0x637b70` stubbed to write its two words, the restart test
+`0x4e4ab0` answering from the input): the result, the chain's words, the stranded mark (cleared every call), the heading word `+0x2c` (written on arrival too, D1), the pending
+template and interval (only a kid or a guard runs, D2; the interval `0x5d10f0` at 24 bits) and the navigator's record agree with `walk_reading.py`'s `walk_step`; tp.exe's rules
+(no arrival heading, every guest with a bonus runs) differ on 14 of the 40. `tpi-exe-speed-step` runs `0x60bc90` with the caps `0x63ef90`, the boost decay, the copy of the
+position into mPreviousX/Y and the sprite commit `0x5d1080` (agree 500/500). `tpi-exe-route-request` runs the route requests `0x60b7f0` and `0x60b8e0` with stranded marks
+of every kind (none, above the counter, held or not by the block stamps of the nine cells around the person's cell or its queue's back, the queue links `0x5e0a50` stubbed from
+the input): the answer, the counter, the mark, the target words and the record agree 200/200, and the edit-only counter of a Theme Park World park differs on all 200 (the raised
+stamps). `tpi-exe-staff-route` runs `0x62eb10`: the park-closed refusal of the entrance cells and the walk mask from the type-0 test, then `0x60b8e0` (agree 200/200). The C# meets
+Game.exe's walk steps of a kid, a grown-up guest, a guard and a handyman on two walks directly (`ThemeParkIncWalkStepTests`, from `tpi_walk_step_golden.py`).
 
 **Fixed in C#.** Guests walking the park's cells use this walk (WALK-002 and WALK-009 retired; WALK-004 .. WALK-008 narrowed, WALK-006 later retired). Its
 limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and a park resumed from an old save has the link byte of its entrance and exit cells laid at load (`[EXT:legacy-save-access-links]`; WALK-006 retired), so a refused stand-point search is the original's dismissal; walks restored from older saves keep the route walk (`[EXT:legacy-save-route-walk]`).

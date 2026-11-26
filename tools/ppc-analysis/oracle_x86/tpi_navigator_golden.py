@@ -5,7 +5,8 @@ Three walks over the map below (paths, a queue, walkways with and without the ob
 each steering step the navigator's 177-byte record (every member, in the serializer's order) is printed as hex. Each record also goes through the
 serializer's load half into a navigator filled with 0xab and back out through its save half, which must give the same bytes. The script checks
 walk_reading.py's statement against the run and prints the C# rows of ThemeParkIncNavigatorTests: per walk the step results, the SHA-256 of all
-its records with path_timestamp (+0x48, record bytes 85..88) zeroed, and the full records after the set-up and after every 20th step and the last.
+its records (path_timestamp +0x48 included: the counter 0x5d81f0 starts at 0 and every successful set-up raises it, as ParkCellMap counts with
+Theme Park Inc's navigator since NV3), and the full records after the set-up and after every 20th step and the last.
 
 Usage: python3 -I tools/ppc-analysis/oracle_x86/tpi_navigator_golden.py   (needs Unicorn and OPENTPW_TPI_EXE)
 """
@@ -110,7 +111,7 @@ def main() -> int:
                 print(f'walk {index}: the serializer does not give its record back', file=sys.stderr)
                 return 1
         results = ''.join(str(result) for kind, result, _ in trace[1:])
-        digest = hashlib.sha256(b''.join(record[:85] + bytes(4) + record[89:] for _, _, record in trace)).hexdigest()
+        digest = hashlib.sha256(b''.join(record for _, _, record in trace)).hexdigest()
         kept = sorted({0, len(trace) - 1} | set(range(20, len(trace), 20)))
         print(f'\t// walk {index}: set-up {trace[0][1]}')
         print(f'\tnew( {trace[0][1]}, "{results}", "{digest}",')

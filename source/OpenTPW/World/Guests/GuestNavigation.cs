@@ -616,7 +616,7 @@ public sealed class GuestNavigation
 		Index = 0;
 		Arrived = false;
 		Stuck = false;
-		Stamp = map.StampCounter;
+		Stamp = map.SetupStamp();
 		return true;
 	}
 
@@ -835,9 +835,13 @@ public sealed class GuestNavigation
 			(X, Y) = (newX, newY);
 		else
 			History = unchecked((History << 1) | 1);
-		// the local axes (0x63DECF..0x63DF02, tp.exe 0x50F576..0x50F5A9): the unit velocity and its perpendicular (−y, x)
-		(LocalXAxisX, LocalXAxisY) = Fixed16.Normalize( VelocityX, VelocityY, single );
-		(LocalYAxisX, LocalYAxisY) = (unchecked(-LocalXAxisY), LocalXAxisX);
+		// the local axes (0x63DECF..0x63DF02, tp.exe 0x50F576..0x50F5A9): the unit velocity and its perpendicular (−y, x); only the native record carries them, so a Theme Park World walk skips
+		// the work (nothing else reads them)
+		if ( Native )
+		{
+			(LocalXAxisX, LocalXAxisY) = Fixed16.Normalize( VelocityX, VelocityY, single );
+			(LocalYAxisX, LocalYAxisY) = (unchecked(-LocalXAxisY), LocalXAxisX);
+		}
 		var progress = ProgressValue();
 		History = unchecked((History << 1) | (progress <= Progress ? 1 : 0));
 		Progress = progress;

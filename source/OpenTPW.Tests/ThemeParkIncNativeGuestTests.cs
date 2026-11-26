@@ -668,13 +668,13 @@ public sealed class ThemeParkIncNativeGuestTests
 	public void TheVerdictsProductsRoundOnceFromTheExactInteger()
 	{
 		// fildll loads 2^24 + 1 exactly; × 1.25f is 20971521.25, rounded once to 24 bits: 20971522. A float conversion first gives 2^24 and 20971520
-		Assert.AreEqual( 20971522d, GuestSimulation.X87SingleProduct( 1.25f, 16777217 ) );
+		Assert.AreEqual( 20971522d, (double)ThemeParkIncX87.Product( 16777217, 1.25f ) );
 		Assert.AreEqual( 20971520f, (float)16777217 * 1.25f, "the double rounding the port avoids" );
 		// a tie rounds to even: (2^25 + 1) × 0.5 = 2^24 + 0.5, then 2^24
-		Assert.AreEqual( 16777216d, GuestSimulation.X87SingleProduct( 0.5f, (1u << 25) + 1 ) );
-		Assert.AreEqual( 30d, GuestSimulation.X87SingleProduct( 1.5f, 20 ) );
-		Assert.AreEqual( 0d, GuestSimulation.X87SingleProduct( 0.75f, 0 ) );
-		Assert.AreEqual( 4294967295d * 0.75, GuestSimulation.X87SingleProduct( 0.75f, uint.MaxValue ), 512d );
+		Assert.AreEqual( 16777216d, (double)ThemeParkIncX87.Product( (1u << 25) + 1, 0.5f ) );
+		Assert.AreEqual( 30d, (double)ThemeParkIncX87.Product( 20, 1.5f ) );
+		Assert.AreEqual( 0d, (double)ThemeParkIncX87.Product( 0, 0.75f ) );
+		Assert.AreEqual( 4294967295d * 0.75, (double)ThemeParkIncX87.Product( uint.MaxValue, 0.75f ), 512d );
 	}
 
 	[TestMethod]

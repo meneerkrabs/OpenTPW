@@ -22,7 +22,7 @@ public static class ParkSaveFile
 	/// <summary>The most park seconds a saved challenge time may hold (about 31,000 years), so the arithmetic on it cannot overflow.</summary>
 	internal const long MaximumParkSeconds = 1_000_000_000_000L;
 
-	private static readonly JsonSerializerOptions Options = new()
+	internal static readonly JsonSerializerOptions Options = new()
 	{
 		WriteIndented = true,
 		UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,

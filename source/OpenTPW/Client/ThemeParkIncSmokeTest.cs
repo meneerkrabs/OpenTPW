@@ -289,6 +289,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		} );
 		Wait( "scripts advance", 60 );
 		Do( "faults stay graceful", () => Require( flow.IncHud != null && frame > 0, "script faults never take the slice down" ) );
+		if ( flow.Level?.LevelName == "science" )
+			PlanAdvisorModel();
 		// The remove tool: arm it through the HUD, click the placed object away through the world click.
 		Do( "arm the remove tool", () => Click( Hud.Screen, "remove" ) );
 		Wait( "remove arms", 2 );
@@ -666,6 +668,42 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( Level.TpiPrecipitationRenderer is { DrawnDrops: 0 }, "dry weather submits no precipitation" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Pause );
 		} );
+	}
+
+	private int advisorPostedAt;
+
+	/// <summary>
+	/// The advisor on screen (docs/reverse/TPI-ADVISOR.md §4.4): a rain forecast's speech shows the level's advisor playing canned row 9 (clip 25) with a mouth over the bottom right of the HUD,
+	/// and the model goes once its clips have played.
+	/// </summary>
+	private void PlanAdvisorModel()
+	{
+		Do( "post a rain forecast", () =>
+		{
+			Require( Level.Park!.Economy.PostThemeParkIncAdvice( ThemeParkIncAdviceResponse.ForecastMessage( 2 ) ), "the advisor's queue takes the rain forecast" );
+			advisorPostedAt = frame;
+		} );
+		steps.AddLast( ("the advisor appears", () =>
+		{
+			if ( flow.ThemeParkIncAdvisorView is not { Image: not null } view )
+			{
+				Require( frame - advisorPostedAt < 600, "the forecast's advisor is drawn within ten seconds of its post" );
+				return false;
+			}
+			Require( view.LastClip == 25 && view.LastMouth != null, $"the forecast's level advisor plays canned clip 25 with a mouth (clip {view.LastClip}, mouth {view.LastMouth ?? "none"})" );
+			Require( Level.Park!.Economy.TpiAdvisor!.Presentation is { Response: 645, ModelShown: true, HeadHidden: false }, "the presentation speaks the rain forecast with its head shown" );
+			return true;
+		}) );
+		// the speech ends too before the plan goes on: a save made while it speaks loads silent (0x6A36DE), which the continuation's comparison with the uninterrupted park would see
+		steps.AddLast( ("the advisor goes and its speech ends", () =>
+		{
+			if ( flow.ThemeParkIncAdvisorView is { Image: not null } || Level.Park!.Economy.TpiAdvisor!.Presentation.Speaking )
+			{
+				Require( frame - advisorPostedAt < 1200, "the forecast's advisor goes and its speech ends within twenty seconds of its post" );
+				return false;
+			}
+			return true;
+		}) );
 	}
 
 	private static string RestartEvidencePath => SaveFileSystem.GetAbsolutePath( "opentpw-tpi-restart.evidence" );

@@ -104,6 +104,50 @@ internal sealed class ThemeParkIncAdvisorPresentation
 	/// <summary>The last speech's voice started with it (<c>0xBEF09C</c> cleared by the canned row).</summary>
 	public bool Immediate { get; private set; }
 
+	/// <summary>
+	/// The advisor model plays the speech's clips: set by a speech, whose first clip starts on the model at once (<c>0x465330</c>), and cleared by the stop's kill (<c>0x4650B0</c>) and the init.
+	/// The clips themselves end the model's show (the client's timeline, <see cref="ThemeParkIncAdvisorTimeline"/>). Not saved: the client reads it, the simulation does not.
+	/// </summary>
+	public bool ModelShown { get; private set; }
+
+	/// <summary>The advisor clock of the frame that ended the last speech (after which no frame starts another clip), null while it speaks or once it was stopped. Read by the client.</summary>
+	public uint? EndedAt { get; private set; }
+
+	/// <summary>The frames the trace keeps: two world ticks' worth, so a drawn frame between the last two ticks finds the frame before it.</summary>
+	public const int TraceLength = 2 * ThemeParkIncAdvisor.Substeps;
+
+	// the mouth each recent frame left (0x716ED0 shows it on the model once the frame has run), for the client, which draws between the frames a tick ran at once; not saved, not hashed
+	private readonly uint[] traceTimes = new uint[TraceLength];
+	private readonly int[] traceMouths = new int[TraceLength];
+	private int traceCount, traceNext;
+
+	/// <summary>
+	/// The mouth (<see cref="Mouth"/>) of the last frame at or before advisor clock <paramref name="time"/>: the one a frame drawn at that moment shows. Without such a frame the current mouth.
+	/// Allocation-free; it changes nothing.
+	/// </summary>
+	public int MouthAt( uint time )
+	{
+		var best = -1;
+		var bestAge = 0;
+		for ( var index = 0; index < traceCount; index++ )
+		{
+			var age = unchecked( (int)(time - traceTimes[index]) );
+			if ( age >= 0 && (best < 0 || age < bestAge) )
+				(best, bestAge) = (index, age);
+		}
+		return best >= 0 ? traceMouths[best] : Mouth;
+	}
+
+	private void Trace( uint now )
+	{
+		traceTimes[traceNext] = now;
+		traceMouths[traceNext] = Mouth;
+		traceNext = (traceNext + 1) % TraceLength;
+		traceCount = Math.Min( traceCount + 1, TraceLength );
+	}
+
+	private void ClearTrace() => (traceCount, traceNext) = (0, 0);
+
 	/// <summary>The cues since the last call, oldest first.</summary>
 	public IReadOnlyList<ThemeParkIncAdvisorCue> TakeCues()
 	{
@@ -182,6 +226,8 @@ internal sealed class ThemeParkIncAdvisorPresentation
 		LipNext = marks is { Count: > 0 } ? unchecked( (int)Base + Mark( LipIndex++ ) ) : unchecked( (int)Base - 1 );
 		SpeechEnd = unchecked( Base + sequence );
 		Speaking = true;
+		// [BIN:TPI-EXE:0x7166E9 first clip] the speech starts the sequence's first clip on its model at once (0x465330: AnimID 5, the clip less 1, flags 0x10), which shows the model
+		(ModelShown, EndedAt) = (true, null);
 		if ( Timer != 0 )
 			Timer = unchecked( Timer + Base );
 		return duration;
@@ -199,6 +245,15 @@ internal sealed class ThemeParkIncAdvisorPresentation
 	// one frame per substep as an ideal frame pacing has it, and plays the voice for its sample length from its start on that clock.
 	// [EXT:tpi-advisor-presentation-rand] (user-approved 2026-11-24) rand() at 0x717175 draws from the presentation stream
 	public void Frame( uint now )
+	{
+		var speaking = Speaking;
+		Step( now );
+		if ( speaking && !Speaking )
+			EndedAt = now;
+		Trace( now );
+	}
+
+	private void Step( uint now )
 	{
 		if ( !Speaking )
 		{
@@ -261,6 +316,8 @@ internal sealed class ThemeParkIncAdvisorPresentation
 		var live = VoiceLive;
 		Speaking = false;
 		(LipLoaded, marks, VoiceLive) = (false, null, false);
+		// [BIN:TPI-EXE:0x7169C1 advisor kill] with a voice handle or without (0x716AFD) the stop kills the model's animation (0x4650B0: "Kill advisor", AnimID 12 with the immediate flag), which hides it at once
+		(ModelShown, EndedAt) = (false, null);
 		if ( live && !HeadSuppressed && !HeadHidden )
 			Cue( new ThemeParkIncAdvisorCue( ThemeParkIncAdvisorCueKind.Stop, Response, FirstStopSound + (uint)(Draw() % 3), 0 ) );
 		else if ( live )
@@ -294,6 +351,8 @@ internal sealed class ThemeParkIncAdvisorPresentation
 			(state.HeadHidden, state.HeadSuppressed, state.LipLoaded, state.LipIndex, state.LipNext, state.Talking, state.Mouth, state.MouthNext, state.Timer);
 		(Clips, Bits, Immediate) = (state.Clips.ToArray(), state.Bits.ToArray(), state.Immediate);
 		current = ThemeParkIncAdviceResponse.For( Response );
+		(ModelShown, EndedAt) = (Speaking, null);
+		ClearTrace();
 		marks = LipLoaded && current is { } row ? data.LipMarks( row ) : null;
 		if ( LipLoaded && (marks == null || LipIndex > marks.Count) )
 			throw new InvalidDataException( $"The saved advisor speech's LIP (response {Response}) does not match the speech data." );
@@ -313,6 +372,8 @@ internal sealed class ThemeParkIncAdvisorPresentation
 		(Speaking, Response, Start, Base, SpeechEnd, VoiceDue, VoiceLive, VoiceEnd) = (false, ThemeParkIncAdvisor.NoResponse, 0, 0, 0, 0, false, 0);
 		(HeadHidden, HeadSuppressed, LipLoaded, LipIndex, LipNext, Talking, Mouth, MouthNext, Timer) = (false, false, false, 0, 0, false, 0, 0, 0);
 		(Clips, Bits, Immediate, marks, current) = (Array.Empty<int>(), Array.Empty<int>(), false, null, null);
+		(ModelShown, EndedAt) = (false, null);
+		ClearTrace();
 		cues.Clear();
 	}
 }

@@ -584,6 +584,7 @@ internal sealed partial class GameFlow : IDisposable
 		Advisor?.DetachLevel();
 		EndLobbyAdvisor();
 		StopThemeParkIncAdviceVoice();
+		EndThemeParkIncAdvisorView();
 		GameAudio.LeavePark();
 		GameAudio.LeaveLobby();
 		if ( Level != null )
@@ -1227,7 +1228,10 @@ internal sealed partial class GameFlow : IDisposable
 			using ( FrameMarks.Measure( "draw.level" ) )
 				Level.Render();
 			using ( FrameMarks.Measure( "draw.advisorModel" ) )
+			{
 				Advisor?.Render();
+				RenderThemeParkIncAdvisor( Level );
+			}
 		}
 		else
 		{
@@ -1272,7 +1276,11 @@ internal sealed partial class GameFlow : IDisposable
 				Advisor?.Draw( Context );
 		}
 		else if ( IncHud != null )
+		{
 			IncHud.Draw( Context );
+			using ( FrameMarks.Measure( "draw.advisorUi" ) )
+				ThemeParkIncAdvisorView?.Draw( Context );
+		}
 		else if ( IncFrontEnd != null )
 			IncFrontEnd.Draw( Context );
 		else if ( !LobbyEntering )
@@ -1430,6 +1438,7 @@ internal sealed partial class GameFlow : IDisposable
 		coopShare = null;
 		Advisor?.Dispose();
 		EndLobbyAdvisor();
+		EndThemeParkIncAdvisorView();
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();

@@ -2624,7 +2624,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( !decisions.BeatsInMajorDecision( context, view, score, best ) )
 				continue;
 			// [BIN:TPW-EXE:0x004FCB10 choice route] the route request 0x004FA530 to the ride's back-of-queue cell (0x004DE110) is made for every candidate that passes the counts-test and would win, and its walk stays set: the winner is the last candidate whose route was found, and a candidate whose route fails after it leaves the walk stuck (the original's SetDest failure state); the walk then runs all the way to the back cell (state 10, WALK-004)
+			// [BIN:TPI-EXE:0x6101FD awaiting activation] Theme Park Inc's score refuses a special ride that awaits its activation (HostScore); the candidate test keeps it out whatever a policy's comparison says
 			if ( !(attraction.IsOpen && !attraction.IsBrokenDown && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells
+				&& Payments?.AwaitsActivation( attraction ) != true
 				&& (setWalk ? RouteToCell( guest, attraction.BackCell!.Value ) : CanRouteTo( guest, attraction.BackCell!.Value ))) )
 				continue;
 			(best, chosen) = (score, attraction.AttractionId);
@@ -4535,8 +4537,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [EXT:rain-mood-imported-age] the optional load turn of an imported guest: never negative, and only for a guest without a time in the park
 			if ( guest.RainMoodAgeStartTurn is { } ageStart && (ageStart < 0 || guest.TimeInParkSeconds != null) )
 				Error( $"Guest {guest.Id} rain mood age start {ageStart} is negative or set for a guest with a known time in the park." );
-			// the bin walk (state 9) names its bin; after it the bin stays the target (+0x1DC) wherever an attraction target may stay, and never beside one
-			if ( guest.BinId < 0 || (guest.State == GuestState.ThrowingAwayLitter && guest.BinId == 0)
+			// the bin walk (state 9) names its bin; after it the bin stays the target (+0x1DC) wherever an attraction target may stay, and never beside one (a native Theme Park Inc guest names its bin in
+			// its own target word +0x204, which may be 0 on a bin walk: state 9 then drops the litter where it arrives, 0x617017)
+			if ( guest.BinId < 0 || (guest.Tpi == null && guest.State == GuestState.ThrowingAwayLitter && guest.BinId == 0)
 				|| (guest.BinId != 0 && guest.State != GuestState.ThrowingAwayLitter && (!CanRetainTarget( guest.State, guest.Activity ) || guest.AttractionId != 0)) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );

@@ -26,6 +26,6 @@ public sealed partial class ParkEconomy
 		TpiMissions?.RemoveObstacle( thing );
 	}
 
-	// message 0x21 for a staff member's thing destroyed (the HQ's 0x632520 -> 0x634730, the lab's 0x61DAD0) has no sender in OpenTPW: no Theme Park Inc member leaves the park (the fire and
-	// the quit are not ported), so neither listener is modelled
+	// message 0x21 for a staff member's thing destroyed (the HQ's 0x632520 -> 0x634730 with its special-ride half 0x6241B0, the lab's 0x61DAD0) is sent by the dismissal 0x629040 -> 0x637C40:
+	// ParkEconomy.DestroyThemeParkIncMember runs those listeners in thing order
 }

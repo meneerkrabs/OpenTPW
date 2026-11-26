@@ -45,6 +45,8 @@ public sealed record ThemeParkIncGuestSnapshot
 	public required int Word1DC { get; init; }
 	public required int[] Words1EC { get; init; }
 	public required int Word0E0 { get; init; }
+	/// <summary>The wander flag <c>+0xE8</c> (<see cref="ThemeParkIncGuestRecord.Wandered"/>); absent in a save of phase P1, whose guests never wandered.</summary>
+	public bool Wandered { get; init; }
 
 	/// <summary>A copy of a guest's record.</summary>
 	public static ThemeParkIncGuestSnapshot Capture( ThemeParkIncGuestRecord tpi ) => new()
@@ -54,7 +56,7 @@ public sealed record ThemeParkIncGuestSnapshot
 		SpotTurn = tpi.SpotTurn, Word234 = tpi.Word234, SpriteIndex = tpi.SpriteIndex, Byte28C = tpi.Byte28C, Word290 = tpi.Word290, HoldsBalloon = tpi.HoldsBalloon,
 		BalloonCountdown = tpi.BalloonCountdown, Word29C = tpi.Word29C, Generation = tpi.Generation, PreferredExcitement = tpi.PreferredExcitement, BoredomThreshold = tpi.BoredomThreshold,
 		Byte2B1 = tpi.Byte2B1, FirstAidWait = tpi.FirstAidWait, Word2B8 = tpi.Word2B8, Word2BC = tpi.Word2BC, Word2C8 = tpi.Word2C8, QueueLink = tpi.QueueLink, QueueSlot = tpi.QueueSlot,
-		Words2D0 = tpi.Words2D0.ToArray(), WeatherDay = tpi.WeatherDay, Word1B8 = tpi.Word1B8, Word1DC = tpi.Word1DC, Words1EC = tpi.Words1EC.ToArray(), Word0E0 = tpi.Word0E0
+		Words2D0 = tpi.Words2D0.ToArray(), WeatherDay = tpi.WeatherDay, Word1B8 = tpi.Word1B8, Word1DC = tpi.Word1DC, Words1EC = tpi.Words1EC.ToArray(), Word0E0 = tpi.Word0E0, Wandered = tpi.Wandered
 	};
 
 	/// <summary>A new record holding the saved fields.</summary>
@@ -66,7 +68,7 @@ public sealed record ThemeParkIncGuestSnapshot
 			Byte21B = Byte21B, Word21C = Word21C, Word220 = Word220, Word224 = Word224, Wait = Wait, Paid = Paid, SpotTurn = SpotTurn, Word234 = Word234, SpriteIndex = SpriteIndex,
 			Byte28C = Byte28C, Word290 = Word290, HoldsBalloon = HoldsBalloon, BalloonCountdown = BalloonCountdown, Word29C = Word29C, Generation = Generation,
 			PreferredExcitement = PreferredExcitement, BoredomThreshold = BoredomThreshold, Byte2B1 = Byte2B1, FirstAidWait = FirstAidWait, Word2B8 = Word2B8, Word2BC = Word2BC,
-			Word2C8 = Word2C8, QueueLink = QueueLink, QueueSlot = QueueSlot, WeatherDay = WeatherDay, Word1B8 = Word1B8, Word1DC = Word1DC, Word0E0 = Word0E0
+			Word2C8 = Word2C8, QueueLink = QueueLink, QueueSlot = QueueSlot, WeatherDay = WeatherDay, Word1B8 = Word1B8, Word1DC = Word1DC, Word0E0 = Word0E0, Wandered = Wandered
 		};
 		Words2D0.CopyTo( tpi.Words2D0, 0 );
 		Words1EC.CopyTo( tpi.Words1EC, 0 );
@@ -85,6 +87,9 @@ public sealed record ThemeParkIncGuestSnapshot
 			yield return $"Guest {guestId} Theme Park Inc state {State} ({ThemeParkIncGuestStates.Names[State]}) is not ported in this build.";
 		if ( State == ThemeParkIncGuestStates.SpotAnimation && (uint)Saved < ThemeParkIncGuestStates.Count && !ThemeParkIncGuestStates.RunsInThisBuild( Saved ) )
 			yield return $"Guest {guestId} Theme Park Inc spot animation returns to state {Saved} ({ThemeParkIncGuestStates.Names[Saved]}), which is not ported in this build.";
+		// no native guest can hold a balloon before phase P3 (no shop serves one yet); state 6's victim search (prank case 5) and the balloon's litter rely on that
+		if ( HoldsBalloon || BalloonCountdown != 0 )
+			yield return $"Guest {guestId} Theme Park Inc balloon (held {HoldsBalloon}, countdown {BalloonCountdown}) cannot be held in this build.";
 		if ( (uint)Generation > 2 )
 			yield return $"Guest {guestId} Theme Park Inc generation {Generation} is not 0, 1 or 2.";
 		if ( Words2D0 is not { Length: ThemeParkIncGuestRecord.Words2D0Count } || Words1EC is not { Length: ThemeParkIncGuestRecord.Words1ECCount } )
@@ -94,7 +99,7 @@ public sealed record ThemeParkIncGuestSnapshot
 	}
 
 	/// <summary>The number of words <see cref="CopyHashWords"/> writes.</summary>
-	public const int HashWordCount = 1 + 37 + ThemeParkIncGuestRecord.Words2D0Count + ThemeParkIncGuestRecord.Words1ECCount;
+	public const int HashWordCount = 1 + 38 + ThemeParkIncGuestRecord.Words2D0Count + ThemeParkIncGuestRecord.Words1ECCount;
 
 	/// <summary>The record's words in a fixed order, for the guest state hashes, into <paramref name="into"/> (at least <see cref="HashWordCount"/> long; nothing is allocated).</summary>
 	public static void CopyHashWords( ThemeParkIncGuestRecord tpi, Span<long> into )
@@ -137,9 +142,10 @@ public sealed record ThemeParkIncGuestSnapshot
 		into[35] = tpi.Word1B8;
 		into[36] = tpi.Word1DC;
 		into[37] = tpi.Word0E0;
+		into[38] = tpi.Wandered ? 1 : 0;
 		for ( var index = 0; index < ThemeParkIncGuestRecord.Words2D0Count; index++ )
-			into[38 + index] = tpi.Words2D0[index];
+			into[39 + index] = tpi.Words2D0[index];
 		for ( var index = 0; index < ThemeParkIncGuestRecord.Words1ECCount; index++ )
-			into[38 + ThemeParkIncGuestRecord.Words2D0Count + index] = tpi.Words1EC[index];
+			into[39 + ThemeParkIncGuestRecord.Words2D0Count + index] = tpi.Words1EC[index];
 	}
 }

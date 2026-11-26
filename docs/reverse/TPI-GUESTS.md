@@ -19,6 +19,9 @@ The walk step, the route search, the wander and the speed stay Theme Park World'
 | `World/Guests/ThemeParkInc/ThemeParkIncGuestSettings.cs` | the Standard words the states read, by address |
 | `World/Guests/ThemeParkInc/GuestSimulation.ThemeParkInc.cs` | the setter, the dispatch, the pre-update, the weather rule, the thought pick, the constructor's tail, the P1 states |
 | `World/Guests/ThemeParkInc/GuestSimulation.ThemeParkIncArrivals.cs` | the arrival guest, the vehicle dispatch, the pick-up test |
+| `World/Guests/ThemeParkInc/GuestSimulation.ThemeParkIncIdle.cs` | phase P2: idle (state 6), the spot animation, the bin search, the wander (7), the walk to a bin (9), the removal message |
+| `World/Guests/ThemeParkInc/IThemeParkIncGuestWorld.cs` | what the native guests read of the park: the object list's bins and shows, a thing by id, the entertainers |
+| `World/Level.ThemeParkIncGuests.cs` | the level's side of that view, rebuilt after a placement or a removal, and the removal message's hook |
 | `World/Guests/ThemeParkInc/ThemeParkIncGuestSnapshot.cs` | the save block (an optional member of guest snapshot schema 9) |
 
 ## The tick
@@ -84,7 +87,9 @@ The setter `0x61A540` stores the word, then runs the entry of the table `0x61AA5
 - 27: `+0x2B4 = 100`;
 - 30: a paid guest's stay goes into the analyser's stay ring.
 
-The entries of 7, 17, 19, 20, 21 and 26 read objects of the later phases and are not run in P1.
+- 7 (phase P2): with the wander flag `+0xE8` set, the walk to the target words `+0x28`/`+0x2A` again (`0x60B8E0`).
+
+The entries of 17, 19, 20, 21 and 26 read objects of the later phases and are not run yet.
 
 The projection (`ThemeParkIncGuestStates.Projection`) writes `Guest.State` for the readers outside the simulation, by role and never by number. For
 example, TPI 18 waits at the infodesk while TPW 18 is the leaving state. The guard's catch test `0x614720` catches 6..0xD, 0x16 and any word
@@ -139,14 +144,82 @@ The verdict cases of state 4:
 `0x60B7F0` and `0x60B8E0` are byte for byte Theme Park World's `0x004FA530` and `0x004FA5F0`. Both have the stranded gate (`RequestRoute`,
 `RouteToTpiPoint`).
 
-**State 6 in P1** is a stub under `[EXT:tpi-capability-gates]`. Only the leave gate of `0x614A40` runs: a happiness byte of 0, an exit counter at or below 0 or a closed park
-costs `BigHappinessChange` and sends the guest to the bus stop (state 22). The rest of the handler is phase P2's, including its draw A. The states the later
-phases port (7, 9..21, 24..26) are unreachable in P1, and the dispatch refuses them.
+**State 6** ran a stub in P1 (only its leave gate); phase P2 ports the whole handler (below).
 
 **Not ported, gated under `[EXT:tpi-capability-gates]`:**
 - the tutorial tips of state 5 (advice 0x207 and 0x208 in the first `FirstHour.Minutes`, `0x650890`);
 - state 30's mark of a prankster in the tag system (`0x636B10`, phase P4);
-- the balloon's litter when an umbrella opens (phase P2; no native guest holds a balloon before phase P3).
+- the balloon's litter when an umbrella opens (the types 9, 0xC, 0xB and 0xA of `0x9D0614`; no native guest holds a balloon before phase P3).
+
+## Phase P2: idle, wander, spot animations, litter
+
+**State 6 `0x614A40`.** One world draw A comes first; then, in order:
+1. **Mood.** The turn more than 100 past the spot stamp `+0x230`, a happiness byte above 80 and the umbrella down (`+0x238` 0 or 2): the mood animation `0x60CDD0` (a kid 5, a
+   parent 6 female or 7 male, a grandparent 8 or 9; the gender is the sprite bank's byte `+0x206`, the ESP header's byte `0x10D`) through the spot animation, and the update ends.
+2. **Vomit.** An illness byte of 100 and `A % 3 == 0`: the spot animation 0xC, vomit (litter 7) on the cell, the sound 0xCC, illness 0, and the update ends.
+3. **Litter urge.** A litter byte of 90 or more: draw B, and with `B & 3 == 0` the bin search `0x618D10` of radius 3 (a bin: the target `+0x204`, state 9, end); else draw C and,
+   on a cell without litter, litter `C % 5 + 1` and the urge 0.
+4. **Leave gate.** As in P1, but the handler goes on (bug-compatible): a later step can overwrite state 22 in the same update.
+5. **Show.** The nearest show (`UsageInfo.IsFireworks`, the thing flag `+0x42` bit 0x80) within a squared distance of 4 whose script variable 0 is 0 (`0x6193B0`): the heading
+   `0x91E074(−dx, dy)` unless `dx + dy == 0`, and the update ends.
+6. **Entertainer reaction `0x614D41`.** An entertainer in the 3 × 3 cells (`0x5B1B20`, kind 6, radius 1) and the nearest one of the entertainers' list (`0x619100`) performing
+   (`+0x1B4 == 0x17`): the heading towards him and `+0x1B8 = 1`, and the update ends; nothing else changes. On the diagonal (`dx + dy == 0`) `+0x1B8 = 0` and the update goes on.
+   The staff world gives the list (`ThemeParkIncStaffWorld.Entertainers`); this closes the gate the entertainer's port left.
+7. **Prank gate `0x614E56`.** A happiness byte below `PrankHappinessThreshold`, `+0x29C` clear and `A % 100` below `PrankLikelihood` (or the one-shot `+0x2B1`, always 0 in
+   retail): `+0x2B1 = 0`, then the switch `0x615414` on the prank code − 1:
+   - 0 (code 1): `A % 100` below `StinkbombLikelihood`: a stinkbomb (litter 8), the sound 0xCF and the tail;
+   - 1 (code 2): the toilet meter 80 and `+0x29C = 1`, which shuts the gate for good;
+   - 2 (code 3): the bin search of radius 6 (its route requests included); a bin whose `VAR_PRANKED` (10) is 0 becomes the target `+0x204` and the update ends (`0x61510A`), state
+     10's entry gated (below); no bin goes on;
+   - 4 (code 5, which no birth gives): litter `A % 5 + 1`, the code 0, state 7 and the tail;
+   - 6 and 7 (codes 7 and 8, 16 of the 20 adult entries of the prank table): the stand animation 3 (`0x60B6E0`) and the update ends (`0x6151C8`, `0x615188`) with no draw and
+     no decision; the entries of 25 and 24 and their words are gated (below);
+   - 3 and 5: gated (below).
+
+   The tail `0x614F14` posts the prank message (`ThemeParkIncPrankPosted`: kind 1, 5 or 6 and the guest's id) and adds 1 to happiness; the update goes on.
+8. **Decision on `A & 3` `0x61523F`.**
+   - 0 and 2: after 30 turns past `+0x224`, the major decision `0x610080` clears `+0x204`; with no ride chosen the can't-decide pause (spot animation 4, or 3 with the umbrella up),
+     `SmallHappinessChange` and the stamp.
+   - 1: the wander destination `0x609F70`; found: state 7, else the stamp.
+   - 3: `rand() < 0x3FFF`, and when it passes a second one, towards another guest or an infodesk. Both are world draws `world.Next(0x8000) < 0x3FFF` under `[EXT:tpi-staff-crt-rand]`
+     (the user's decision of 2026-11-22, the reduction decided 2026-11-23).
+
+**Spot animation `0x60FB30`.** The sound for one thing id in three (4: 0x7E, 5..9: 0x4D, 10: 0xD5), the animation on the sprite (`+0x20`), the state into `+0x2C4`, the turn into
+`+0x230` and state 8, which restores the saved state ten turns later.
+
+**State 7 `0x61A179`.** The walk; arrived or stuck, a world draw with `G & 3 == 0` and a new wander destination keep the guest wandering, anything else makes it idle. The wander
+destination is Theme Park World's (`[EXT:tpi-twp-guest-rules]`); a walk it sets raises the wander flag `+0xE8`, which state 7's entry reads.
+
+**State 9 `0x616F10`.** The walk. Arrived at a bin: the bin counts a customer (`0x5E5DA0`); unless its `VAR_CONTENTS` (4) reaches `VAR_CAPACITY` (3) or `VAR_ONFIRE` (5) is set,
+its `VAR_USE` (0) becomes 1. Otherwise (no bin, a full or burning bin, a stuck walk): a draw and litter `D % 5 + 1` on the cell. The urge is emptied and the guest is idle.
+
+**Bin search `0x618D10`.** The object list's bins (`+0x42` bit 0x40), the nearest below the radius whose `VAR_PRANKED` (10) and `VAR_ONFIRE` (5) are 0 and that the route
+request to its stand point reaches. The stand point (`0x5E1300`) is `EntryCellStandPosX/Y` in the entrance cell `+0x46`, turned with the object and times 255.0f at 24 bits. Every
+closer bin makes its own route request, so a failed request after a found bin leaves the walk on the failed one.
+
+**Removal message `0x60D120`.** A destroyed attraction thing (message 0xA, at the click): every native guest whose target `+0x204` it is loses `SmallHappinessChange` and its target
+and becomes idle, whatever its state; `+0x206` and the histories forget it.
+
+**Freeze `0x60FF40`.** Its only caller (through the thunk `0x407815`, at `0x50467C` and `0x5047F7`) is `0x503FD0`, a UI input handler of the park view: it reads the shift,
+control and alt keys (`GetAsyncKeyState`) and freezes the person it keeps in `[0xA568F4]` when that is a guest (kind 1) whose cell is the cell `[0xA43494]`, then shows its info
+text. The freeze itself: not in the queue states (`0x61AC40`), on a park cell (`0x60BE00`) and outside the states 0x13, 0x14 and 0x1B, the old state goes into `+0x2C4` (unless it
+is 23), state 23 and the heading 0. It is UI only and is not ported in P2; state 23's handler (P1) is.
+
+**Gated in P2** (`[EXT:tpi-capability-gates]`; none of them draws):
+- the prank switch's state entries: 10 after a bin is found (the walk to the bin for the prank `0x617140`, phase P4: the guest keeps its target and walk and stays idle), and 25 and 24
+  after rumours or whinging (phase P5: the guest stays idle, and the words `+0x1E8` = `WhingeDuration` and `+0x2B0` = 0, which only those states read, are not held; the thought 0x12
+  is not shown). The update ends where the original's does, so the draws match;
+- case 3, the plant search `0x618EF0` (with the fire test `0x618F30`, phase P4), is read as finding no plant: a prankster of code 4 within six cells of a plant goes on to the decision
+  where the original's update ends (state 11), so the draws differ there;
+- case 5 finds no victim (a guest on the cell holding a balloon, `0x613D00` with litter): exact while no native guest holds a balloon, which none can before phase P3; a restore refuses a
+  block that holds one;
+- the major decision's ride scan (phase P3), so `+0x204` stays 0 and the guest pauses;
+- the walk to another guest (`0x619240`) and the infodesk (`0x618B60`, state 12), phase P5;
+- the prank thought 0x15 ("I pranked", held 120 turns): the bubbles are Theme Park World's, which has no such thought;
+- the removal message's ride and queue branches (phase P3).
+
+`[EXT:tpi-no-maintenance-wear]` keeps the bins' fill: a dirty bin's RegionFX row change (`0x5E3990`, rows 8 and 9 through `0x5D74D0`/`0x5D74A0`) is not made, and the constructor puts
+no row 8 down either. The script itself runs, so `VAR_USE` reaches it.
 
 ## Save
 
@@ -159,13 +232,14 @@ The snapshot also records whether the park ran the native machine, in the option
 - a save with native blocks into a park running with the switch off (its guests would need the native machine);
 - a save without the member, or with it false, into a Theme Park Inc park running with the switch on (its guests run Theme Park World's rules).
 
-A restore also refuses a native guest in a state this build cannot run (7, 9..21 and 24..26, or a spot animation 8 that returns to one), so a save of a
-later phase or an edited save never stops a guest's update mid-tick.
+A restore also refuses a native guest in a state this build cannot run (10..21 and 24..26, or a spot animation 8 that returns to one), so a save of a
+later phase or an edited save never stops a guest's update mid-tick. Phase P2 adds one optional member to the block, the wander flag `+0xE8` (`Wandered`; absent in a phase P1 save, whose
+guests never wandered), without a new schema.
 
 ## Settings
 
 `ThemeParkIncGuestSettings` reads the Standard object (`0xA01A60`, `ThemeParkIncStandard`) by address. It reads:
-- the PeepInfo words the states use (`0xA01A78..0xA01B84`);
+- the PeepInfo words the states use (`0xA01A78..0xA01B84`, with the prank words `StinkbombLikelihood`, `PrankHappinessThreshold` and `PrankLikelihood` at `0xA01B00..0xA01B08`);
 - the three weather arrays (`0xA01B88`, `0xA01BBC`, `0xA01BF0`);
 - FixedItemInfo's booths and stops (`0xA025B4..0xA025DC`, `TicketBooth[]` at `0xA02610`);
 - `FirstHour.Minutes` (`0xA034D4`).
@@ -177,12 +251,13 @@ The level reads these settings (`GuestSettings.TpiNative`) only when the switch 
 ## Verification
 
 - `tools/ppc-analysis/oracle_x86/tpi_guest_states_oracle.py` runs four routines natively at control word `0x7F` and compares them with the port: the catch test over -1..40, the setter's P1
-  entries, the pre-update and the booth's verdict. No mismatch (see the oracle README).
-- `ThemeParkIncNativeGuestTests` and `ThemeParkIncGuestSettingsTests` cover the rig behaviour, the draws, the saves and the shipped values.
+  entries, the pre-update and the booth's verdict. Phase P2 adds state 6 (`0x614A40`, the searches stubbed), the spot animation `0x60FB30`, the mood `0x60CDD0`, the dispatch's states 7 and 8
+  (`0x61A179`, `0x61A382`) and state 9 (`0x616F10`). No mismatch (see the oracle README).
+- `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests` and `ThemeParkIncGuestSettingsTests` cover the rig behaviour, the draws, the saves and the shipped values;
+  `ThemeParkIncPerformerTests` runs the entertainer reaction against a hired, placed and performing entertainer of the retail Science economy.
 
-## Phases after P1
+## Phases after P2
 
-- P2: idle (state 6 in full), wander, spot animations, litter.
 - P3: rides and queues.
 - P4: pranks, then the switch-over. Once the switch is on by default, a Science save made with it off (every save before then) is refused by the
   mismatch rule above; P4 has to document that refusal in `docs/PARK-SAVES.md`.

@@ -73,7 +73,12 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 			// [BIN:TPI-EXE:0x619670 fee recorded] Theme Park Inc's boarding records the price and moves no money (SettlesAtExit)
 			if ( attraction.Kind == RideVisitorKind.Ride )
 				economy.RecordRideUse( instance );
-			return economy.TryAdmitVisit( instance, guestMoney, out pricePaid, out won );
+			var admitted = economy.TryAdmitVisit( instance, guestMoney, out pricePaid, out won );
+			// [EXT:tpi-twp-guest-rules] Theme Park Inc's boarding of a Theme Park World guest stands in for the native guest's admission (state 20, 0x61A77E), which follows the price test (0x61243A
+			// refuses before it): only an admitted guest posts its challenge events; the native guests' state 20 (guest plan P3) takes this call over
+			if ( admitted && attraction.Kind == RideVisitorKind.Ride )
+				economy.ThemeParkIncRideAdmitted( instance );
+			return admitted;
 		}
 		switch ( attraction.Kind )
 		{
@@ -90,6 +95,9 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 	}
 
 	public bool SettlesAtExit => Economy().Rules.ThemeParkInc;
+
+	public bool AwaitsActivation( IRideVisitorBridge attraction ) =>
+		instances.TryGetValue( attraction.AttractionId, out var instance ) && Economy().IsThemeParkIncSpecialRidePending( instance );
 
 	public void SettleVisit( IRideVisitorBridge attraction, int fee, bool? won )
 	{

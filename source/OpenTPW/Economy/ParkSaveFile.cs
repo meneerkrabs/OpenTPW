@@ -107,6 +107,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncTagTubeSnapshot? TpiTagTube { get; init; }
+		/// <summary>
+		/// Theme Park Inc's special rides: the table of the rides awaiting their activation with their staff slots, and the activated rides. Required in a Theme Park Inc save with its staff; absent
+		/// in Theme Park World saves. A Theme Park Inc save from before the special rides is refused (<see cref="SpecialRidesMissing"/>).
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncSpecialRidesSnapshot? TpiSpecialRides { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -787,6 +793,7 @@ public static class ParkSaveFile
 			TpiResearch = park.CaptureThemeParkIncResearch(),
 			TpiCutscene = park.TpiCutscene?.Capture(),
 			TpiTagTube = park.TpiTagTube?.Capture(),
+			TpiSpecialRides = park.TpiSpecialRides?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1107,6 +1114,12 @@ public static class ParkSaveFile
 	internal const string TagTubeMissing = "This Theme Park Inc park was saved before OpenTPW kept the tag tube (the park's letters) and cannot be continued; start a new game from the Personnel File.";
 
 	/// <summary>
+	/// The refusal of a Theme Park Inc park save from before the special rides (<see cref="Data.TpiSpecialRides"/>): which special rides await their activation, the staff in their slots and which
+	/// were activated are not in it, and the share challenges' availability reads them.
+	/// </summary>
+	internal const string SpecialRidesMissing = "This Theme Park Inc park was saved before OpenTPW kept the special rides (their activation and the staff they need) and cannot be continued; start a new game from the Personnel File.";
+
+	/// <summary>
 	/// The refusal of a Theme Park Inc park save from before the shares game (<see cref="ThemeParkIncCareerSnapshot.Shares"/>): the career's holding and share price, which challenge wins and losses
 	/// moved, are not in it.
 	/// </summary>
@@ -1162,6 +1175,14 @@ public static class ParkSaveFile
 			// not continue; it is refused here, before the asset manifest is compared
 			if ( data.TpiCareer.Shares == null )
 				throw new InvalidDataException( SharesMissing );
+			// standing user decision (refuse and document): a park save with its staff from before the special rides holds no activation table, so its special rides could not be told from activated
+			// ones; it is refused here, before the asset manifest is compared
+			if ( data.TpiStaff != null && data.TpiSpecialRides == null )
+				throw new InvalidDataException( SpecialRidesMissing );
+			if ( data.TpiStaff == null && data.TpiSpecialRides != null )
+				throw new InvalidDataException( "Park save has Theme Park Inc special rides without the Theme Park Inc staff that fill their slots." );
+			if ( !ThemeParkIncSpecialRides.IsValid( data.TpiSpecialRides ) )
+				throw new InvalidDataException( "Park save has invalid Theme Park Inc special rides." );
 			// user decision 2026-11-21: a Theme Park Inc park save from before the mechanics and the ride wear is refused: its rides were worn by other rules (or not at all), so it is not the
 			// park the ported rules would have made
 			if ( data.TpiStaff != null && data.TpiRideWear != ThemeParkIncRideWearRules )
@@ -1191,7 +1212,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiTagTube != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiWages != null || data.TpiGardens != null || data.TpiObjectList != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiResearch != null || data.TpiCutscene != null || data.TpiTagTube != null || data.TpiRideWear != null || data.TpiPerformers != null || data.TpiSpecialRides != null || data.TpiWages != null || data.TpiGardens != null || data.TpiObjectList != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1592,6 +1613,8 @@ public static class ParkSaveFile
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.TpiObjectList != null )
 			park.RestoreThemeParkIncObjectList( data.TpiObjectList );
+		// [BIN:TPI-EXE:0x6244B0 special rides load] the World's tail restores the table after the things; a Theme Park Inc save with staff and without it was refused (ValidateEdition)
+		park.RestoreThemeParkIncSpecialRides( data.TpiSpecialRides );
 		if ( data.StatisticsHistory is { } history )
 			park.StatisticsHistory.Restore( history, park.Ledger.History.Select( month => month.ParkRating ) );
 		else

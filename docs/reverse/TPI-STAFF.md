@@ -520,8 +520,11 @@ Not ported, with the reason:
   the first aid's patient can be read from them without inventing a mapping. The release points are resolved (`KidRelease[0..1]` at `0xA02638`, from `levels/Standard.sam`, and the entrances `EntranceA/BPos` at
   `0xA025D0` and `0xA025D8`), the chase timer is `5 × 0x62E4C0` and the first aid's `5 ×` then 10, but the states stay unported. A guard in one of them is refused in a save, and no prank reaches the guards.
   `[EXT:tpi-capability-gates]` covers this.
-- **The guests' reaction to a performing entertainer** (in the guest's own update; `[EXT:tpi-capability-gates]`: Theme Park World's turn towards a performer, `0x004FEFF4`, reads Theme Park World's staff, so a Theme Park Inc park's guests get neither reaction; `0x614D41..0x615414`: a performing entertainer in the guest's 3 × 3 cells turns the guest and writes its state through the jump table `0x615414`; the
-  amounts are unread) is not ported; only the row 0 cheer reaches the guests.
+- **The guests' reaction to a performing entertainer** on the default path (the guests of Theme Park World's rules, `[EXT:tpi-twp-guest-rules]`: Theme Park World's turn towards a performer,
+  `0x004FEFF4`, reads Theme Park World's staff, so they get no reaction; only the row 0 cheer reaches them). The guests of Theme Park Inc's native states (`--tpi-native-guests`) react since phase P2
+  of their port (November 24, 2026): `0x614D41` finds an entertainer in the guest's 3 × 3 cells (`0x5B1B20`, kind 6), asks the entertainers' list for the nearest (`0x619100`, world `+0x1EAB82`
+  through `+0x5D0`, which `ThemeParkIncStaffWorld.Entertainers` gives in the members' order) and, when he performs (`+0x1B4 == 0x17`), turns the guest to him and sets `+0x1B8 = 1`. The reaction
+  has no amounts: no happiness, urge or illness changes (docs/reverse/TPI-GUESTS.md, "Phase P2"). The gate `[EXT:tpi-capability-gates]` no longer covers it.
 - The effect's removal by the destructors (`0x4D4620`-like; staff cannot be fired or picked up yet), the dead routines `0x5D1BC0` and `0x5D18D0` (the "Ouch! You little git!" message; no reference anywhere in
   `Game.exe`), the duplicates `0x5D1C80` and `0x5D1CC0`, the voices' log lines, the advisor's message `0x3A` of the guard's constructor and the patrol area `0x6256A0` (WP15).
 - The shared helpers (`SearchPeriod`, `IdleTerm`, `member.Step`, at the game thread's 24 bits) are used as for the gardener; no new formula of the two roles has a float. No `rand()` call is reached

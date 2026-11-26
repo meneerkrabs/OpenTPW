@@ -727,6 +727,7 @@ public partial class Level : IDisposable
 				SetupThemeParkIncStaff();
 				SetupThemeParkIncRideEvents();
 				SeedThemeParkIncObjectList();
+				AttachThemeParkIncGuestWorld();
 				SeedThemeParkIncCurrentObstacle();
 				SeedThemeParkIncHqAndLab();
 				AttachThemeParkIncMissionWorld();
@@ -828,6 +829,7 @@ public partial class Level : IDisposable
 			var legacyKids = gameKidCount = banks[0].Count;
 			var simulation = Guests;
 			simulation.TpiSpriteBankCounts = counts;
+			simulation.TpiSpriteBankFemale = banks.Select( group => group.Select( pair => pair.Body.Animations.FlagB != 0 ).ToArray() ).ToArray();
 			sprites = banks.SelectMany( group => group.Select( pair => pair.Body ) ).ToList();
 			headSprites = banks.SelectMany( group => group.Select( pair => pair.Head ) ).ToList();
 			tpiAtlas = guest => guest.TpiPrankCode.HasValue ? NativeAtlas( guest ) : GuestAppearance.KidSet( guest, legacyKids );
@@ -1230,9 +1232,7 @@ public partial class Level : IDisposable
 		var weather = economy.TpiWeatherState;
 		var record = EconomyStateOf( runtime );
 		var info = record != null && economy.Catalog.TryGet( record.InfoId, out var known ) ? known : null;
-		bool Running( int type ) => economy.TpiChallenges?.Slots.Any( slot => slot.Type == type && slot.Status == ThemeParkIncChallengeStatus.Running ) == true;
-		var mayOpen = ParkGate.MayOpen( Guests, runtime, record ) && !(info?.SpecialIngredient == 1 && Running( 42 )) && economy.IsParkOpen && !runtime.WeatherCloses( weather );
-		if ( !mayOpen && !(info?.WhichUIType == 0 && Running( 46 )) )
+		if ( !ThemeParkIncMayOpen( runtime, record, info, economy ) && ThemeParkIncHeldOpen( info, economy ) is false )
 			runtime.Close();
 		runtime.CloseForWeatherAfterRepair( weather );
 		if ( runtime.Coaster is { AcceptsGuests: false } )

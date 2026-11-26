@@ -41,6 +41,7 @@ public sealed class ThemeParkIncGuestSettingsTests
 			"PeepInfo.SmallHappinessChange 11", "PeepInfo.MediumHappinessChange 12", "PeepInfo.BigHappinessChange 13", "PeepInfo.ExcitementToCostDivisor 14", "PeepInfo.MinimumEntryFee 15",
 			"PeepInfo.CheapPriceMultiplier 0.5", "PeepInfo.AveragePriceMultiplier 1.5", "PeepInfo.ExpensivePriceMultiplier 2.5",
 			"PeepInfo.OpinionForMuchTooHigh 21", "PeepInfo.OpinionForTooHigh 22", "PeepInfo.OpinionForTooLow 23", "PeepInfo.OpinionForAboutRight 24",
+			"PeepInfo.StinkbombLikelihood 25", "PeepInfo.PrankHappinessThreshold 26", "PeepInfo.PrankLikelihood 27",
 			"PeepInfo.UmbrellaModifier 31", "PeepInfo.WeatherModifierFrequency 32", "PeepInfo.SlowestWeatherChangeResponse 33", "PeepInfo.DiscardBalloonPctModifier 34",
 			"PeepInfo.ThoughtBubbleHungry 41", "PeepInfo.ThoughtBubbleThirsty 42", "PeepInfo.ThoughtBubbleNeedTheLoo 43", "PeepInfo.ThoughtBubbleSick 44", "PeepInfo.ThoughtBubbleMess 0.25",
 			"PeepInfo.ThoughtBubbleHappy 45", "PeepInfo.ThoughtBubbleUnhappy 46",
@@ -62,6 +63,7 @@ public sealed class ThemeParkIncGuestSettingsTests
 		Assert.AreEqual( (14u, 15u), (settings.ExcitementToCostDivisor, settings.MinimumEntryFee) );
 		Assert.AreEqual( (0.5f, 1.5f, 2.5f), (settings.CheapPriceMultiplier, settings.AveragePriceMultiplier, settings.ExpensivePriceMultiplier) );
 		Assert.AreEqual( (21, 22, 23, 24), (settings.OpinionForMuchTooHigh, settings.OpinionForTooHigh, settings.OpinionForTooLow, settings.OpinionForAboutRight) );
+		Assert.AreEqual( (25, 26, 27), (settings.StinkbombLikelihood, settings.PrankHappinessThreshold, settings.PrankLikelihood), "0xA01B00, 0xA01B04, 0xA01B08" );
 		Assert.AreEqual( (31, 32, 33, 34), (settings.UmbrellaModifier, settings.WeatherModifierFrequency, settings.SlowestWeatherChangeResponse, settings.DiscardBalloonPctModifier) );
 		Assert.AreEqual( (41, 42, 43, 44), (settings.ThoughtBubbleHungry, settings.ThoughtBubbleThirsty, settings.ThoughtBubbleNeedTheLoo, settings.ThoughtBubbleSick) );
 		Assert.AreEqual( (0.25f, 45, 46), (settings.ThoughtBubbleMess, settings.ThoughtBubbleHappy, settings.ThoughtBubbleUnhappy) );
@@ -94,6 +96,7 @@ public sealed class ThemeParkIncGuestSettingsTests
 		Assert.AreEqual( (6u, 20u), (settings.ExcitementToCostDivisor, settings.MinimumEntryFee) );
 		Assert.AreEqual( (0.75f, 1.25f, 2f), (settings.CheapPriceMultiplier, settings.AveragePriceMultiplier, settings.ExpensivePriceMultiplier) );
 		Assert.AreEqual( (0, 20, 100, 50), (settings.OpinionForMuchTooHigh, settings.OpinionForTooHigh, settings.OpinionForTooLow, settings.OpinionForAboutRight) );
+		Assert.AreEqual( (25, 15, 10), (settings.StinkbombLikelihood, settings.PrankHappinessThreshold, settings.PrankLikelihood) );
 		Assert.AreEqual( (1, 4, 3, 100), (settings.UmbrellaModifier, settings.WeatherModifierFrequency, settings.SlowestWeatherChangeResponse, settings.DiscardBalloonPctModifier) );
 		Assert.AreEqual( (80, 80, 80, 80, 0.3f, 80, 20), (settings.ThoughtBubbleHungry, settings.ThoughtBubbleThirsty, settings.ThoughtBubbleNeedTheLoo, settings.ThoughtBubbleSick,
 			settings.ThoughtBubbleMess, settings.ThoughtBubbleHappy, settings.ThoughtBubbleUnhappy) );

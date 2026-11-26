@@ -15,6 +15,17 @@ public partial class Level
 		Park.Economy.ObjectThingId = ThingIdOfInstance;
 		Park.Economy.ArrivalBusStopCell = ArrivalBusStopCellWord;
 		Park.Economy.ThemeParkIncScriptOf = ScriptVariablesOfInstance;
+		Park.Economy.ThemeParkIncObjectOnUnownedLand = ObjectOnUnownedLand;
+	}
+
+	/// <summary>Whether the object linked to an economy instance stands on a square the park does not own (its thing square's flag 0x40); false for an object the level does not hold.</summary>
+	// [BIN:TPI-EXE:0x67ECA0 square flag] the special rides' slot walks (0x62402B, 0x62420D) test the flag 0x40 of the square at the thing's bytes +5 (x) and +7 (y): ParkCellFlags.Unowned
+	private bool ObjectOnUnownedLand( int instance )
+	{
+		if ( ObjectOfInstance( instance ) is not { } item || Guests?.Grid.Cells is not { } cells )
+			return false;
+		var (x, y) = item.ThingCell;
+		return cells.InBounds( x, y ) && (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0;
 	}
 
 	/// <summary>

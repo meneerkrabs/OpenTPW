@@ -142,7 +142,7 @@ public class ParkResumeValidationTests
 		var minimumVelocity = snapshot.Guests.Guests.Select( ( guest, index ) => index == 0
 			? guest with { Navigation = guest.Navigation with { VelocityY = int.MinValue } } : guest ).ToArray();
 		Rejects( snapshot with { Guests = snapshot.Guests with { Guests = minimumVelocity } }, "navigation velocity" );
-		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = 10 } }, "schema version" );
+		Rejects( snapshot with { Guests = snapshot.Guests with { SchemaVersion = GuestSimulationSnapshot.CurrentSchemaVersion + 1 } }, "schema version" );
 		Rejects( snapshot with { Guests = snapshot.Guests with { SeenQueueEdits = Array.Empty<(int AttractionId, int SeenEditCount)>() } }, "no seen queue-edit counter" );
 		Rejects( snapshot with
 		{

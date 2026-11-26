@@ -555,11 +555,16 @@ public sealed partial class ThemeParkIncStaffWorld
 		|| member.Role == ThemeParkIncStaffRole.Researcher && member.State == ThemeParkIncResearch.Researching;
 
 	/// <summary>The handyman's search period and idle wait: trunc((1 − experience / MaxExperience) × 50).</summary>
-	public static int SearchPeriod( int experience, int maxExperience ) => unchecked( (int)(long)((1.0 - (double)(uint)experience / maxExperience) * 50.0f) );
+	// [EXT:hardware-d3d-path] the pre-updates run on the game thread at the control word 0x7F the Direct3D device set (ThemeParkIncX87): the quotient, the difference and the product each round to a
+	// single (experience 34000 of 100000: 33.0 at 24 bits, where 53 bits keep 32.99999999999999 and truncate to 32)
+	public static int SearchPeriod( int experience, int maxExperience ) =>
+		unchecked( (int)(long)(ThemeParkIncStaffMember.SingleOneMinusRatio( (uint)experience, maxExperience ) * 50f) );
 
 	/// <summary>The idle wait's term: trunc((1 − experience / MaxExperience) × −50), at most 0.</summary>
-	// [BIN:TPI-EXE:0x62CA10 idle end] fmuls 0x93E878 (-50.0); the stamp less this term is the end of the wait
-	public static int IdleTerm( int experience, int maxExperience ) => unchecked( (int)(long)((1.0 - (double)(uint)experience / maxExperience) * -50.0f) );
+	// [BIN:TPI-EXE:0x62CA10 idle end] fildll, fidivl 0xA02260, fsubrl 1.0, fmuls 0x93E878 (-50.0), _ftol; the stamp less this term is the end of the wait; each step rounds to a single at the game thread's
+	// 24 bits ([EXT:hardware-d3d-path])
+	public static int IdleTerm( int experience, int maxExperience ) =>
+		unchecked( (int)(long)(ThemeParkIncStaffMember.SingleOneMinusRatio( (uint)experience, maxExperience ) * -50f) );
 
 	/// <summary>The cell word of a cell (y × 128 + x + 1).</summary>
 	private static int CellWord( (int X, int Y) cell ) => cell.Y * 128 + cell.X + 1;

@@ -511,7 +511,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [BIN:TPI-EXE:0x649868 staff pool update] after the thing loop the world update's tail updates the hiring pool (0x5D65E0 -> 0x631B40: expiry, refill and top-up, drawing
 		// from the world generator) in every world state, and only then the calendar (0x5D65FB -> 0x6083D0), whose day and month messages follow below
 		// [BIN:TPI-EXE:0x630CB0 pool rank] the pool reads the career's rank (+0x1060), which promotions raise (ThemeParkIncCareer.Promote)
-		// Before the pool, 0x5D65E9 first runs the staff sub-object update [esi+0x44c] -> 0x5BCB10 (a timer against [0xA02234] that posts message 0x17); it draws nothing from the world generator, so the draw order is unaffected; not ported.
+		// Before the pool, 0x5D65E9 first runs the arrival update [esi+0x44c] -> 0x5BCB10 (the timer against TimeBetweenArrivals [0xA02234], message 0x17 is the log channel of "Bus about to arrive"):
+		// the guest simulation runs it at the turn's end before this (GuestSimulation.UpdateTurnEndArrivals; Theme Park Inc's own dispatch and arrival for its native guests, docs/reverse/TPI-GUESTS.md)
 		TpiStaff?.UpdatePool( World, turn, TpiCareer!.Rank );
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
@@ -1828,13 +1829,16 @@ public sealed partial class ParkEconomy : IParkEconomy
 		return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;
 	}
 
-	/// <summary>The scrap percentage of an object that requires watering (<c>0x5E75F0</c> first branch): 100, 67, 34 and 0 for a count of 0 to 3, negative above.</summary>
-	// [BIN:TPI-EXE:0x5E7613 watering percentage] fild n; fsubr 3.0 (0x93AD54); times 33.33333206176758 (0x93B818, a single) in the x87's extended precision; the product is truncated toward zero (0x86FAB0); 3 - n compared with 0.0 (0x93A038): equal returns the truncated product, else 1 + it
+	/// <summary>The scrap percentage of an object that requires watering (<c>0x5E75F0</c> first branch): 101, 67, 34 and 0 for a count of 0 to 3, negative above.</summary>
+	// [BIN:TPI-EXE:0x5E7613 watering percentage] fild n; fsubrs 3.0 (0x93AD54); fmuls 33.33333206176758 (0x93B818, a single); the product is truncated toward zero (0x86FAB0); 3 - n compared with 0.0
+	// (0x93A038): equal returns the truncated product, else 1 + it
+	// [EXT:hardware-d3d-path] the sale runs on the game thread at the control word 0x7F the Direct3D device set (ThemeParkIncX87): 3 × 33.333332f is 99.999996185302734375 exactly, the midpoint
+	// between the singles 99.99999237 and 100.0, which rounds to the even 100.0, so a count of 0 refunds 101 percent (53 bits keep 99.99999618 and give 100)
 	public static int ThemeParkIncWateringPercent( int count )
 	{
-		var remaining = 3.0 - count;
-		var truncated = (int)(remaining * 33.33333206176758);
-		return remaining == 0.0 ? truncated : 1 + truncated;
+		var remaining = ThemeParkIncX87.Sum( -(long)count, 3f );
+		var truncated = ThemeParkIncX87.Ftol( (float)(remaining * 33.333332f) );
+		return remaining == 0f ? truncated : 1 + truncated;
 	}
 
 	/// <summary>
@@ -1849,7 +1853,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
-		// [BIN:TPI-EXE:0x005E75F9 scrap percentage] the routine tests the thing flag +0x43 bit 0x10 first (set for a type with UsageInfo.RequiresWatering, 0x5DB654): the script variable 0 of the thing's script (0x6B0740 finds it by the thing id +0x2C, 0x6B0C90 reads variable 0; no script reads 0) is the count n, and the answer is ftol((3 - n) x 33.333332) plus 1 unless 3 - n is exactly 0: 100, 67, 34, 0 for n = 0..3, then -32, -65 and so on (0x5E7613..0x5E764F); the condemned test follows only for the other objects
+		// [BIN:TPI-EXE:0x005E75F9 scrap percentage] the routine tests the thing flag +0x43 bit 0x10 first (set for a type with UsageInfo.RequiresWatering, 0x5DB654): the script variable 0 of the thing's script (0x6B0740 finds it by the thing id +0x2C, 0x6B0C90 reads variable 0; no script reads 0) is the count n, and the answer is ftol((3 - n) x 33.333332) plus 1 unless 3 - n is exactly 0: 101, 67, 34, 0 for n = 0..3 at the game thread's 24 bits (ThemeParkIncWateringPercent), then -32, -65 and so on (0x5E7613..0x5E764F); the condemned test follows only for the other objects
 		if ( Rules.ThemeParkInc && info.RequiresWatering )
 			return ThemeParkIncWateringPercent( item.ScriptCondition );
 		// [BIN:TPI-EXE:0x005E765B scrap percentage] Theme Park Inc's percentage routine 0x005E75F0 refuses a condemned object (state +0xA0 = 4) any refund before it reaches the year rule it shares with tp.exe 0x004E2290
@@ -2879,11 +2883,23 @@ public sealed partial class ParkEconomy : IParkEconomy
 		feePaid = 0;
 		if ( IsBankrupt )
 			return false;
-		feePaid = EntranceFee;
-		Post( LedgerCategory.GateTakings, feePaid );
-		Counters.Add( ParkCounters.Admissions, 1 );
-		Raise( ParkEventKind.GuestPaid, feePaid, 0, 0, nameof( LedgerCategory.GateTakings ) );
+		feePaid = BookAdmission();
 		return true;
+	}
+
+	/// <summary>
+	/// Books the entrance fee with no refusal and returns it: Theme Park Inc's booth (<c>0x5C0E10</c>) has no bankruptcy test, so its native guests' paying verdict always books the fee.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5C0E10 admission fee] the park's +0x14 and +0x12C take the fee (+0x120), the analyser's +0x1FEF8 and +0x20148 too, then 0x5AEF40; nothing tests the bank's state
+	public int AdmitThemeParkIncVisitor() => BookAdmission();
+
+	private int BookAdmission()
+	{
+		var fee = EntranceFee;
+		Post( LedgerCategory.GateTakings, fee );
+		Counters.Add( ParkCounters.Admissions, 1 );
+		Raise( ParkEventKind.GuestPaid, fee, 0, 0, nameof( LedgerCategory.GateTakings ) );
+		return fee;
 	}
 
 	public bool TryBuy( int instanceId, long visitorCash, out int pricePaid )

@@ -229,6 +229,11 @@ checks saving, pause-menu continuation and the Personnel File's **Load A Game**.
 on Theme Park World data, and without a fresh, dedicated `OPENTPW_SAVE_DIR`: leaving the park saves, and a smoke must never write into a real save folder. See
 [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for what works.
 
+`--tpi-native-guests` is a hidden developer switch, off by default: with it, the Theme Park Inc guests run Theme Park Inc's own guest state
+machine (phase P1 of the port: arrival, the booth and leaving) instead of Theme Park World's rules ([TPI-GUESTS.md](reverse/TPI-GUESTS.md)). It
+combines with `--tpi-smoke-test`. A Science save records the setting, and a save made with the other setting is refused
+([PARK-SAVES.md](PARK-SAVES.md#experimental-science-continuation-on-desktop)).
+
 To verify Science continuation across a process restart, use the same fresh, dedicated `OPENTPW_SAVE_DIR`
 for both runs, with `OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1` for an automated run. Run Science with `--load-original-level science --debug-tpi-restart-smoke capture`, then
 start a second process with `--front-end --debug-tpi-restart-smoke restore` and the same game data. The first

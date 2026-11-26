@@ -683,6 +683,8 @@ public sealed partial class ThemeParkIncHud
 	// [BIN:TPI-EXE:0x526CF1 letter closes the HUD's window] the letter's builder 0x526CD0 calls 0x5013C0 first, which sends message 5 to the window registered at 0xA568BC: an open mission
 	// window closes, as a mission window opening closes a letter
 	// [BIN:TPI-EXE:0x59ABE6 wage windows registered] the wage demand window and the negotiation dialog (0x559C98) register at 0xA568BC too, so the letter closes them with message 5 as well
+	// [BIN:TPI-EXE:0x5013C0 close the HUD's window, second branch] with [0xA5E890] holding a window the call closes that window instead (message 4) and sends no message 5, so the letter would not close a mission window;
+	// OpenTPW builds no window for that slot (see OpenMissionWindow)
 	internal void ShowLetter( ThemeParkIncLetterWindow.Letter letter, Action dismissed )
 	{
 		CloseHudWindow();

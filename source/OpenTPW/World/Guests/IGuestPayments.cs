@@ -12,6 +12,15 @@ public interface IGuestPayments
 	int AdmissionFee { get; }
 	/// <summary>Books admission at the booth. False only when the park refuses it (bankrupt); the guest's purse is not read, and a closed park stops guests on their walk to the booth (<see cref="ParkClosed"/>).</summary>
 	bool TryPayAdmission( out int feePaid );
+	/// <summary>
+	/// Books the admission of a Theme Park Inc native guest, which no state of the park refuses (<c>0x5C0E10</c>), and returns the fee booked. The park economy books it unconditionally
+	/// (<see cref="ParkEconomy.AdmitThemeParkIncVisitor"/>); by default a payer books it through <see cref="TryPayAdmission"/>, and one that refuses books nothing and returns its fee (0 for none).
+	/// </summary>
+	int PayThemeParkIncAdmission()
+	{
+		TryPayAdmission( out var fee );
+		return fee;
+	}
 	/// <summary>True while the park is closed (the world variable <c>mParkClosed</c>): every guest that gets to decide heads home (<see cref="GuestLifecycle"/>).</summary>
 	bool ParkClosed => false;
 	/// <summary>Charges a shop or sideshow visit (0 for rides, which only count the use).</summary>

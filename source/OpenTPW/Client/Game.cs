@@ -382,6 +382,8 @@ internal static class Game
 		// [EXT:tpi-viewer] the experimental Theme Park Inc slice's own native smoke test: injected HUD input
 		// drives the real user flow (docs/THEME-PARK-INC.md); it needs the slice, not a Theme Park World park.
 		var sliceSmoke = args.Contains( "--tpi-smoke-test" );
+		// the hidden switch of Theme Park Inc's native guest states (docs/reverse/TPI-GUESTS.md): off by default, for tests and development runs of the port's phases
+		GuestSimulation.ThemeParkIncNativeGuestsRequested = args.Contains( "--tpi-native-guests" );
 		var tpiRestartPhase = GetOption( args, "--debug-tpi-restart-smoke", "'capture' or 'restore'" );
 		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );

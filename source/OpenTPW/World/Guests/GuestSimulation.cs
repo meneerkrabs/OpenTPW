@@ -529,7 +529,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			Money = profile.Money, ExitLevel = profile.ExitLevel, Happiness = meters.Happiness,
 			Thirst = meters.Thirst, Hunger = meters.Hunger, Toilet = meters.Toilet,
-			ToiletBonus = GuestSpeed.ToiletBonus, TpiPrankCode = meters.Prank
+			ToiletBonus = GuestSpeed.ToiletBonus, TpiPrankCode = meters.Prank,
+			Tpi = NativeTpi != null ? NewThemeParkIncRecord( profile ) : null
 		};
 	}
 
@@ -614,6 +615,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			throw new ArgumentException( $"Cell ({x}, {y}) is not a walkable path cell." );
 		var guest = Create() ?? throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no guest can be built." );
 		PlaceOnGrid( guest, x, y );
+		if ( guest.Tpi is { } tpi )
+		{
+			ThemeParkIncConstructorTail( guest, tpi, NativeTpi! );
+			return guest;
+		}
 		// [BIN:TPW-EXE:0x004FB1D9 constructor on a park cell] a guest made on a park cell (0x004FA990 true) takes its visitor number at once (0x0051AAF0 into +0x1D8) and is in state 6
 		guest.VisitorNumber = ++VisitorCount;
 		EnterGuestState( guest, GuestState.DoingNothing );
@@ -891,7 +897,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					break;
 			}
 		}
-		if ( LeavingGuestWaits() )
+		if ( (NativeTpi != null ? ThemeParkIncLeavingGuestWaits() : LeavingGuestWaits()) )
 		{
 			var status = ReadArrivalVehicle();
 			// [EXT:cheats-arrival] a held arrival calls no vehicle, but one standing at the stop is still sent on with the leaving guests
@@ -929,6 +935,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		DispatchArrivalVehicle( vehicleKind + 1 );
 		return true;
 	}
+
+	/// <summary>Runs the vehicle dispatch of a group of <paramref name="size"/> (tests).</summary>
+	internal void DispatchArrivalVehicleForTest( int size ) => DispatchArrivalVehicle( size );
 
 	/// <summary>Puts <paramref name="kind"/> at work without a dispatch (tests).</summary>
 	internal void RestoreArrivalVehicleForTest( int kind ) => arrivalVehicle = kind;
@@ -971,6 +980,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( arrivalVehicle >= 0 )
 		{
 			host.SetVariable( arrivalVehicle, ArrivalVehicleKind.TriggerVariable, 1 );
+			return;
+		}
+		if ( NativeTpi != null )
+		{
+			DispatchThemeParkIncVehicle( host, size );
 			return;
 		}
 		var tried = 0;
@@ -1025,14 +1039,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		int count;
 		if ( Settings.ArrivalWeatherPercentages is { } percentages )
 		{
-			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
+			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (fild or flds the percentage, fild the total, fmuls 0.01f, fmulp, fidivl, _ftol 0x86FAB0: the low dword); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
+			// [EXT:hardware-d3d-path] the arrival runs on the game thread at the control word 0x7F the Direct3D device set (ThemeParkIncX87): each step rounds to a single (the oracle's X7 agrees on 532 of
+			// 532 inputs read at 24 bits); 100 x 0.01f is then 1.0, so the shipped 80 points and NewParkBonus 20 over PointsPerVisitor 25 give 4, where 53 bits keep 0.99999998 and give 3
 			// [BIN:TPI-EXE:0x5BCD7A mode exit] the theme object (0xA06558, +0x14) answering 3, the Intro World, gives no group (IntroWorld, above); -1 becomes 3 at start-up (0x6A32D7), the default when no theme was chosen
 			// [APPROX:ARRIVAL-008] TPI reads the spell kind for arrivals, not the drop count. The economy steps the count separately without RNG (0x642230); rendering, precipitation audio, lightning, thunder and the TPI sky remain separate work.
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
-			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
+			var factor = state is >= 1 and <= 4 ? ThemeParkIncX87.Product( percentages[WeatherStateIndex[state - 1]], 0.01f ) : (float)(100f * 0.01f);
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );
-			var scaled = (double)points * (percent * (double)0.01f) / perVisitor;
-			count = Math.Abs( scaled ) < 2147483648.0 ? (int)scaled : int.MinValue;
+			count = ThemeParkIncX87.Ftol( ThemeParkIncX87.Divide( ThemeParkIncX87.Product( points, factor ), perVisitor ) );
 		}
 		else
 		{
@@ -1086,6 +1101,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
+		// a native Theme Park Inc guest has no per tick step of OpenTPW's own: only its drawn point moves
+		if ( guest.Tpi != null )
+		{
+			if ( !guest.HasWaypoint )
+				guest.IsMoving = false;
+			UpdatePresentation( guest );
+			return;
+		}
 		if ( InPark( guest ) )
 			UpdateNeeds( guest, dt );
 		if ( StepsEveryTick( guest ) )
@@ -1109,6 +1132,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [APPROX:GUEST-920] seconds still accumulate per step for legacy displays and the stay of a guest without integer provenance; the integer-turn age (DisplayAge) feeds the visitor displays, the stay statistics (EnterWaitingToGoHome) and, since UMB-003, the weather extensions' day gate. No other gameplay consumer is migrated here.
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
+		// a native Theme Park Inc guest runs Theme Park Inc's pre-update and dispatch, never Theme Park World's handlers (GuestSimulation.ThemeParkInc)
+		if ( guest.Tpi is { } tpi )
+		{
+			if ( turnStarted )
+				UpdateThemeParkIncGuest( guest, tpi );
+			if ( !guest.HasWaypoint )
+				guest.IsMoving = false;
+			UpdatePresentation( guest );
+			return;
+		}
 		if ( turnStarted )
 		{
 			UpdateSpeed( guest );
@@ -1339,7 +1372,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	(int X, int Y)? IGuardGuests.CellOf( int guestId ) => Find( guestId ) is { State: not GuestState.Gone } guest ? guest.Cell : null;
 
 	// [BIN:TPW-EXE:0x004FEC10 catchable] states 6, 7, 8, 9 and 10 (deciding, wandering, the activity state, throwing litter away, going to a ride)
-	bool IGuardGuests.IsCatchable( int guestId ) => Find( guestId )?.State is GuestState.DoingNothing or GuestState.WalkingAround or GuestState.ThrowingAwayLitter or GuestState.GoingToRide;
+	// [BIN:TPI-EXE:0x614720 catch test] a native Theme Park Inc guest answers by its own state word (ThemeParkIncGuestStates.IsCatchable)
+	bool IGuardGuests.IsCatchable( int guestId ) => Find( guestId ) is { Tpi: { } tpi }
+		? ThemeParkIncGuestStates.IsCatchable( tpi.State )
+		: Find( guestId )?.State is GuestState.DoingNothing or GuestState.WalkingAround or GuestState.ThrowingAwayLitter or GuestState.GoingToRide;
 
 	/// <summary>A guard caught the guest (tp.exe <c>0x004FEB10</c>): its balloon goes, its model is taken off the map, and it is held (state 17).</summary>
 	void IGuardGuests.Hold( int guestId )
@@ -4066,6 +4102,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Admissions = Admissions,
 			Departed = Departed,
 			VisitorCount = VisitorCount,
+			ThemeParkIncNativeGuests = NativeTpi != null,
 			ArrivalTimerStart = arrivalTimerStart,
 			DeliveringArrivals = deliveringArrivals,
 			SpawnTimer = spawnTimer,
@@ -4159,6 +4196,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			BinId = guest.BinId,
 			PrankFlag = guest.PrankFlag,
 			TpiPrankCode = guest.TpiPrankCode,
+			Tpi = guest.Tpi is { } tpi ? ThemeParkIncGuestSnapshot.Capture( tpi ) : null,
 			ExitSide = guest.ExitSide,
 			BalloonLife = guest.BalloonLife,
 			HasBalloon = guest.HasBalloon,
@@ -4262,6 +4300,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Error( $"Admissions {snapshot.Admissions} is negative." );
 		if ( snapshot.Departed < 0 )
 			Error( $"Departed {snapshot.Departed} is negative." );
+		// the save's native switch must be the running simulation's: a native guest block needs the native machine (NativeTpi), and a native park cannot continue guests of the Theme Park World rules
+		if ( snapshot.ThemeParkIncNativeGuests != (NativeTpi != null) )
+			Error( snapshot.ThemeParkIncNativeGuests
+				? "The save was made with Theme Park Inc's native guest states on (--tpi-native-guests), which this park runs without."
+				: "The save was made without Theme Park Inc's native guest states, which this park runs (--tpi-native-guests)." );
 		if ( snapshot.VisitorCount < 0 )
 			Error( $"VisitorCount {snapshot.VisitorCount} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
@@ -4438,6 +4481,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			else if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
+			if ( guest.Tpi is { } native )
+			{
+				if ( !guest.TpiPrankCode.HasValue || NativeTpi == null || !snapshot.ThemeParkIncNativeGuests )
+					Error( $"Guest {guest.Id} holds a Theme Park Inc native block that a save of this park cannot hold (it runs without the native guest states, or the save says it did)." );
+				foreach ( var problem in native.Problems( guest.Id ) )
+					Error( problem );
+				if ( native.State < ThemeParkIncGuestStates.Count && ThemeParkIncGuestStates.Projection( native.State ) != guest.State )
+					Error( $"Guest {guest.Id} state {guest.State} is not the projection of its Theme Park Inc state {native.State}." );
+			}
 			if ( guest.KidSetDraw is < 0 or > uint.MaxValue )
 				Error( $"Guest {guest.Id} kid set draw {guest.KidSetDraw} is not an unsigned 32-bit number." );
 			// Schema 1 grew hunger, thirst and toilet to the old model's 150 cap; the meter model (schema 2 on) holds 0..100.
@@ -4882,6 +4934,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.BinId = snapshot.BinId;
 		guest.PrankFlag = snapshot.PrankFlag;
 		guest.TpiPrankCode = snapshot.TpiPrankCode;
+		guest.Tpi = snapshot.Tpi?.Restore();
 		guest.ExitSide = snapshot.ExitSide;
 		guest.BalloonLife = snapshot.BalloonLife;
 		guest.HasBalloon = snapshot.HasBalloon;
@@ -4972,6 +5025,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var hashesDisplayAge = ReadsDisplayAge;
 		if ( hashesDisplayAge )
 			hash.Add( 0x44415047L + displayTurnPhaseTicks );
+		Span<long> tpiWords = stackalloc long[ThemeParkIncGuestSnapshot.HashWordCount];
 		foreach ( var guest in guests )
 		{
 			hash.Add( guest.Id );
@@ -5041,6 +5095,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( guest.PrankFlag );
 			if ( guest.TpiPrankCode is { } tpiPrank )
 				hash.Add( tpiPrank );
+			// a native Theme Park Inc guest's own fields join the digest only on such a guest (every other park keeps its pins)
+			if ( guest.Tpi is { } nativeTpi )
+			{
+				ThemeParkIncGuestSnapshot.CopyHashWords( nativeTpi, tpiWords );
+				foreach ( var word in tpiWords )
+					hash.Add( word );
+			}
 			// a guard's drawn way out joins the digest only while a guest has one (every other park keeps its pins)
 			if ( guest.ExitSide is { } exitSide )
 				hash.Add( 0x45786974L + exitSide );
@@ -5152,6 +5213,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Add( things.NextId );
 		Add( Admissions );
 		Add( guests.Count );
+		Span<long> tpiWords = stackalloc long[ThemeParkIncGuestSnapshot.HashWordCount];
 		foreach ( var guest in guests )
 		{
 			Add( guest.Id );
@@ -5169,6 +5231,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Add( guest.PrankFlag );
 			if ( guest.TpiPrankCode is { } tpiPrank )
 				Add( tpiPrank );
+			// a native Theme Park Inc guest's own fields join the hash only on such a guest (every other park keeps its pins)
+			if ( guest.Tpi is { } nativeTpi )
+			{
+				ThemeParkIncGuestSnapshot.CopyHashWords( nativeTpi, tpiWords );
+				foreach ( var word in tpiWords )
+					Add( word );
+			}
 			Add( guest.BalloonLife );
 			Add( guest.HasBalloon ? 1 : 0 );
 			Add( guest.InCostume ? 1 : 0 );

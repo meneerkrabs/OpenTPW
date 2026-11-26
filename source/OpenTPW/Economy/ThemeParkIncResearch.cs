@@ -176,8 +176,8 @@ public sealed class ThemeParkIncResearch
 	/// <summary>One scientist's term of the lab tick at the 24-bit control word: <c>fild</c> the work, <c>fimul</c> the workload, <c>fmuls</c> SpeedScaleDown, <c>fadds</c> the sum, each rounded to a single.</summary>
 	internal static float ScientistPoints( int work, int workLoad, float speedScaleDown, float sum )
 	{
-		// the integer product is exact in a double (|work × workLoad| < 2^53), so its conversion is the fimul's one rounding
-		var product = (float)((double)work * workLoad);
+		// fimul: the exact 64-bit product of the two integers converted to a single, the instruction's one rounding
+		var product = (float)((long)work * workLoad);
 		var scaled = (float)(product * speedScaleDown);
 		return (float)(scaled + sum);
 	}
@@ -201,8 +201,8 @@ public sealed class ThemeParkIncResearch
 			points = project.Cost - project.Done;
 		var done = points + project.Done;
 		projects[index] = project with { Done = done };
-		// fildl CashPerBrainPoint, fmuls points: one product rounded to a single at the control word 0x7F (Tick), then _ftol; the product of a small integer and a single is exact in a double
-		debit( unchecked( (int)(long)(float)((double)project.CashPerBrainPoint * points) ) );
+		// fildl CashPerBrainPoint, fmuls points: one product rounded to a single at the control word 0x7F (Tick), then _ftol (the low dword)
+		debit( ThemeParkIncX87.Ftol( ThemeParkIncX87.Product( project.CashPerBrainPoint, points ) ) );
 		if ( done >= project.Cost )
 		{
 			MarkResearched( project.ObjectId, project.Level );
@@ -451,7 +451,7 @@ public sealed class ThemeParkIncResearch
 		{
 			if ( info.CostOfResearch[level] > 0 )
 			{
-				return projects[Count] with { Level = (byte)level, Group = 0, Category = 4, Cost = (float)((double)info.CostOfResearch[level] * CostScaleUp),
+				return projects[Count] with { Level = (byte)level, Group = 0, Category = 4, Cost = ThemeParkIncX87.Product( info.CostOfResearch[level], CostScaleUp ),
 					CashPerBrainPoint = info.CashPerBrainPoint[level] == 0 ? 1 : info.CashPerBrainPoint[level], ObjectId = (ushort)info.Id, Done = 0f, StaffRqd = 0, StaffSA = 0 };
 			}
 			controls[control] = controls[control] with { Level = level };

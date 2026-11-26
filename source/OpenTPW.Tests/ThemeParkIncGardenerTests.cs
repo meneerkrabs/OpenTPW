@@ -191,10 +191,24 @@ public class ThemeParkIncGardenerTests
 		var duration = economy.TpiStaff!.Settings.WorkDuration( ThemeParkIncStaffRole.Gardener, member.Experience, member.Motivation, member.Salary );
 		var started = turn;
 		while ( member.State == ThemeParkIncStaffWorld.Watering )
+		{
 			world.Update( economy, member, ++turn );
+			// [BIN:TPI-EXE:0x609E60 face the cell's link] each watering update turns him by the queue link of his cell: 0x10 faces 0x3E8
+			Assert.AreEqual( 0x3E8, member.SpriteAngle, "the watering faces the cell's link" );
+		}
 		Assert.AreEqual( started + duration + 1, turn, "the watering ends past +0x5D4 + the work duration" );
 		Assert.AreEqual( (1, 100.0, 0, false), (garden.Scripts[plant.Id][ParkEconomy.PlantWater], plant.Repair, plant.MechanicId, plant.MaintenanceRequested), "0x5E31B0: VAR_WATER, +0x54, the claim and the request" );
 		Assert.AreEqual( ThemeParkIncStaffWorld.Idle, member.State );
+	}
+
+	/// <summary>The sprite turn <c>0x609E60</c>: the cell's queue-link byte picks the heading word; any other byte, none included, faces 0x7D0.</summary>
+	[TestMethod]
+	public void TheWateringFacingFollowsTheExecutablesTable()
+	{
+		// [BIN:TPI-EXE:0x609E60 face the cell's link] 1: 0x7D0, 4: 0x5DC, 0x10: 0x3E8, 0x40: 0x1F4, otherwise 0x7D0
+		var expected = new Dictionary<byte, int> { [0x01] = 0x7D0, [0x04] = 0x5DC, [0x10] = 0x3E8, [0x40] = 0x1F4 };
+		for ( var link = 0; link < 256; link++ )
+			Assert.AreEqual( expected.GetValueOrDefault( (byte)link, 0x7D0 ), ThemeParkIncStaffWorld.Facing( (byte)link ), $"link {link:X2}" );
 	}
 
 	[TestMethod]

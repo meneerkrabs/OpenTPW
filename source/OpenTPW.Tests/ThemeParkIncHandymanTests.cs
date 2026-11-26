@@ -417,6 +417,85 @@ public class ThemeParkIncHandymanTests
 		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ), "both go on alike" );
 	}
 
+	/// <summary>
+	/// The wander flag <c>+0xE8</c> of a staff member: a patrol whose route on Theme Park Inc's rules succeeds sets it, as the guest's does, and the save keeps it in the member's world.
+	/// </summary>
+	[TestMethod]
+	public void ANativeHandymansPatrolSetsTheWanderFlagAndTheSaveKeepsIt()
+	{
+		var economy = ScienceEconomy();
+		var grid = Row( economy );
+		grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
+		var world = new ThemeParkIncStaffWorld( grid );
+		var member = Hire( economy, world, (2, 5), experience: economy.TpiStaff!.Settings.MaxExperience / 2 );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 400 && member.State != ThemeParkIncStaffWorld.Walking; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( ThemeParkIncStaffWorld.Walking, member.State, "no litter: a patrol" );
+		// [BIN:TPI-EXE:0x60A5D2 final route success] mSetDestSuccessfully = 1
+		Assert.IsTrue( member.Wandered, "the patrol's route succeeded" );
+		var saved = economy.TpiStaff.Capture().Members.Single().World!;
+		Assert.IsTrue( saved.Wandered );
+		Assert.AreEqual( member.StrandedTime, saved.StrandedTime );
+	}
+
+	/// <summary>
+	/// T2 for staff. A native handyman mid-walk, his person block as the save half writes it, loaded with the original's semantics in a fresh process (the counter from 0, the re-route of
+	/// <c>0x609B55</c>): loading the block onto a member whose walk and person words were blanked gives the park that loading it onto the restored member gives, and both go on alike.
+	/// </summary>
+	[TestMethod]
+	public void ANativeHandymanLoadsWithTheOriginalsSemanticsFromHisPersonBlock()
+	{
+		var economy = ScienceEconomy();
+		var grid = Row( economy );
+		grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
+		var world = new ThemeParkIncStaffWorld( grid );
+		PlaceLitter( economy, (6, 5) );
+		var member = Hire( economy, world, (2, 5), experience: economy.TpiStaff!.Settings.MaxExperience / 2 );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 2; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.IsFalse( member.Navigation!.Arrived, "mid-walk" );
+		var block = ThemeParkIncNativeWalk.Write( member );
+		var directory = Directory.CreateTempSubdirectory( "opentpw-tpi-native-load-" );
+		var path = Path.Combine( directory.FullName, "science.json" );
+		ParkSaveFile.Save( path, economy );
+		(ParkEconomy Economy, ThemeParkIncStaffWorld World, ThemeParkIncStaffMember Member, GuestPathGrid Grid) Loaded( bool blank )
+		{
+			var loaded = ParkSaveFile.Load( path );
+			var loadedGrid = Row( loaded );
+			loadedGrid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
+			var loadedMember = loaded.TpiStaff!.Members.Single();
+			IThemeParkIncWalker walker = loadedMember;
+			if ( blank )
+			{
+				walker.Walk.RestoreNativeRecord( new GuestNavigation().ToRecord().Raw );
+				(walker.AccurateDestX, walker.AccurateDestY, walker.StrandedTime, walker.PreviousX, walker.PreviousY, walker.SpriteAngle, walker.SetDestSuccessfully) = (0, 0, 0, 0, 0, 0, false);
+			}
+			ThemeParkIncNativeWalk.LoadAll( loadedGrid, [(walker, block)], freshProcess: true );
+			return (loaded, new ThemeParkIncStaffWorld( loadedGrid ), loadedMember, loadedGrid);
+		}
+		(ParkEconomy Economy, ThemeParkIncStaffWorld World, ThemeParkIncStaffMember Member, GuestPathGrid Grid) reference, subject;
+		try
+		{
+			reference = Loaded( blank: false );
+			subject = Loaded( blank: true );
+		}
+		finally
+		{
+			directory.Delete( recursive: true );
+		}
+		Assert.IsTrue( reference.Grid.Cells.StampCounter is 1 or 2, "a fresh process counts the re-route from 0" );
+		Assert.AreEqual( ParkSaveFile.Serialize( reference.Economy ), ParkSaveFile.Serialize( subject.Economy ), "the block restores the walk" );
+		for ( var step = 0; step < 60; step++ )
+		{
+			turn++;
+			reference.World.Update( reference.Economy, reference.Member, turn );
+			subject.World.Update( subject.Economy, subject.Member, turn );
+		}
+		Assert.AreEqual( ParkSaveFile.Serialize( reference.Economy ), ParkSaveFile.Serialize( subject.Economy ), "both go on alike" );
+	}
+
 	[TestMethod]
 	public void APlacedHandymanSurvivesASaveMidWalkAndGoesOnExactly()
 	{

@@ -9,8 +9,6 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x64836F advisor thing] the new-world init builds the advisor (model 11) before the tag system (0x6483B7); its scorer loads Advisor.sam on first use (0x71B6B0)
 	public ThemeParkIncAdvisor? TpiAdvisor { get; private set; }
 
-	private readonly ThemeParkIncAdvisorSpeech tpiAdvisorSpeech = new();
-	private Func<int, uint>? tpiAdvisorDuration;
 
 	/// <summary>
 	/// The park clock's rate the player chose (<see cref="GameSpeedScale"/>: 1, 2 or 4), which the client sets while the park runs; a camera flight's rate replaces it
@@ -23,11 +21,18 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x5D053C flight clock] the flight sets the park clock's rate to its mode's until its end restores the speed word's rate
 	internal double TpiAdvisorClockRate => TpiCutscene?.ClockRate ?? TpiSpeedRate;
 
-	private void CreateThemeParkIncAdvisor()
+	private void CreateThemeParkIncAdvisor( ulong seed )
 	{
 		if ( Rules.ThemeParkInc )
-			TpiAdvisor = new ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings.Load(), ThemeParkIncAdvisorTable.Shipped );
+			TpiAdvisor = new ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings.Load(), ThemeParkIncAdvisorTable.Shipped, new ThemeParkIncAdvisorSpeech( Settings.Theme ),
+				PresentationSeed( seed ) );
 	}
+
+	/// <summary>
+	/// The presentation stream's seed from the economy's stream seed (D-4: the session seed): its two halves XORed (the default world seed gives 1). The original seeds the C runtime from the tick count at startup (srand(GetTickCount()), 0x6A1514), which no run can repeat.
+	/// </summary>
+	// [EXT:tpi-advisor-presentation-rand] (user-approved 2026-11-24; D-4, lead 2026-11-25) the stream is seeded from the session seed, saved and hashed
+	internal static uint PresentationSeed( ulong seed ) => unchecked( (uint)(seed ^ (seed >> 32)) );
 
 	/// <summary>
 	/// The advice context of the class check: the career game's mode word 0, and the cutscene thing playing with its mode. The game object's bytes <c>+0x2E</c> and <c>+0x2F</c> are not
@@ -45,8 +50,11 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x6376C7 advisor update] the thing pass's class switch sends model 11 to 0x637704 -> 0x718190 (skipped while the mode word is 1, an online game)
 	internal void UpdateThemeParkIncAdvisor( long turn )
 	{
-		if ( TpiAdvisor is { } advisor && TpiCareer is { } career )
-			advisor.Update( turn, career, TpiAdviceContext, tpiAdvisorDuration ??= tpiAdvisorSpeech.Duration );
+		if ( TpiAdvisor is not { } advisor || TpiCareer is not { } career )
+			return;
+		advisor.Update( turn, career, TpiAdviceContext );
+		foreach ( var broadcast in advisor.TakeBroadcasts() )
+			FileThemeParkIncAdviceRow( broadcast );
 	}
 
 	// [BIN:TPI-EXE:0x7191AB easy-mode history reset] the advisor's handler clears every history entry but its time stamp (variant -1, played, slaps and plays 0) on RESET_FOR_EASY_MODE

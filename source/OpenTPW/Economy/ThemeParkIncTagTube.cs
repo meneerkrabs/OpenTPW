@@ -12,7 +12,9 @@ public enum ThemeParkIncLetterSource
 	/// <summary>A staff member's wage demand (<c>0x5CEFB0</c>, kind 0xA or 0xB); the argument is the kind, the key (<c>+0xE14</c>) the member's thing and the go-to argument (<c>+0xE18</c>) the demand.</summary>
 	WageDemand = 4,
 	/// <summary>A training letter (<c>0x5CEFB0</c>, kind 0xC finished or 0xD suspended); the argument is the kind, the key the member's thing and the ability is kept in <see cref="ThemeParkIncTagTubeRow.Ability"/>.</summary>
-	Training = 5
+	Training = 5,
+	/// <summary>An advice's caption (<c>0x635D80</c>, branch 0x18): the argument is the tag, whose record gives the texts.</summary>
+	Advice = 6
 }
 
 /// <summary>
@@ -319,6 +321,8 @@ public sealed class ThemeParkIncTagTube
 			ThemeParkIncLetterSource.Training => row.Argument is ThemeParkIncTagLetter.TrainingFinished or ThemeParkIncTagLetter.TrainingSuspended
 				&& row.Tag == (row.Argument == ThemeParkIncTagLetter.TrainingFinished ? ThemeParkIncTagLetter.TrainingFinishedTag : ThemeParkIncTagLetter.TrainingSuspendedTag)
 				&& row.GotoKind == ThemeParkIncTagLetter.TrainingGoto && row.Key is > 0 and <= ushort.MaxValue && row.Ability is >= 0 and < ThemeParkIncCareer.AbilityCount,
+			ThemeParkIncLetterSource.Advice => ThemeParkIncAdviceTag.For( row.Argument ) is { } tag && row.Tag == tag.Tag && row.Kind == tag.Kind && row.GotoKind == tag.GotoKind
+				&& row.Picture == ThemeParkIncAdviceTag.SenderPicture && row.Key is >= 0 and <= ushort.MaxValue,
 			ThemeParkIncLetterSource.WageDemand => row.Argument is ThemeParkIncTagLetter.WageDemandWithStrike or ThemeParkIncTagLetter.WageDemandWithoutStrike
 				&& row.Tag == ThemeParkIncTagLetter.WageDemandTag && row.GotoKind == ThemeParkIncTagLetter.WageDemandGoto && row.Key is > 0 and <= ushort.MaxValue,
 			_ => row.Argument is ThemeParkIncTagLetter.RedSixMonthsId or ThemeParkIncTagLetter.ChallengeLostId

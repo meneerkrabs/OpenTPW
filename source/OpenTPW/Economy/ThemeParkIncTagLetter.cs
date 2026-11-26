@@ -134,6 +134,25 @@ public static class ThemeParkIncTagLetter
 		Date = PackedDate( turn )
 	};
 
+	/// <summary>The row of an advice's caption (the playback's kind-0x18 broadcast), unread; null for a tag without a record.</summary>
+	// [BIN:TPI-EXE:0x6362CA advice row] +0 = the tag, +4 = the record's +4, +0xE04 = its +0x14 word, +0xE10 = its +0xC, +0xE0E = its +0x24 word, +0xE14 = the broadcast's locate word, +0xE18 = its
+	// locate dword, the sender TAG_SYSTEM[+0x1C] and its picture (0x5CD460: 8 for 0xC0), the addressee the player, the subject TAG_SYSTEM[+0x20], the body the formatter's (+0x18 = 0: TAG_SYSTEM[+8]);
+	// +0xE0C stays the builder's 0 (0x635E35): unread
+	internal static ThemeParkIncTagTubeRow? Advice( ThemeParkIncAdviceBroadcast broadcast, long turn ) => ThemeParkIncAdviceTag.For( broadcast.Tag ) is not { } tag ? null : new()
+	{
+		Tag = tag.Tag,
+		Kind = tag.Kind,
+		Source = ThemeParkIncLetterSource.Advice,
+		Argument = tag.Tag,
+		Picture = ThemeParkIncAdviceTag.SenderPicture,
+		ExpiryUnits = tag.ExpiryUnits,
+		Category = tag.Category,
+		GotoKind = tag.GotoKind,
+		Key = broadcast.Locate,
+		GotoArgument = broadcast.LocateData,
+		Date = PackedDate( turn )
+	};
+
 	/// <summary>The advice mail of a notification row's id.</summary>
 	internal static ThemeParkIncAdviceMail NotificationMail( int id ) => id == RedSixMonthsId ? ThemeParkIncAdviceMail.RedSixMonths : ThemeParkIncAdviceMail.ChallengeLost;
 }

@@ -274,15 +274,27 @@ public sealed class ThemeParkIncStaffMember
 	public bool Placed => Navigation != null;
 	/// <summary>The turn of the member's last thing update (bookkeeping for the smoke test and the HUD; not saved).</summary>
 	internal long LastUpdateTurn { get; set; } = -1;
-	/// <summary>The walk's speed caps the pre-update set this update (not saved: every update sets them before its walk).</summary>
-	internal int MaxSpeed, MaxForce;
+	/// <summary>
+	/// The walk's speed caps the pre-update set this update: the walk object's members (<see cref="GuestNavigation.MaxSpeed"/>, <see cref="GuestNavigation.MaxForce"/>, nav <c>+0x1C</c>/<c>+0x18</c>).
+	/// Only a placed member updates; his own snapshot does not save them (every update sets them before its walk), the native record does.
+	/// </summary>
+	internal int MaxSpeed { get => Navigation?.MaxSpeed ?? 0; set => (Navigation ?? throw new InvalidOperationException( "An unplaced member has no walk." )).MaxSpeed = value; }
+	internal int MaxForce { get => Navigation?.MaxForce ?? 0; set => (Navigation ?? throw new InvalidOperationException( "An unplaced member has no walk." )).MaxForce = value; }
 	/// <summary>Presentation: the point the member is drawn at, in cells.</summary>
 	public float DrawX { get; internal set; }
 	public float DrawY { get; internal set; }
 	/// <summary>Presentation: the walk's heading (the direction of its last step), which turns the sprite.</summary>
 	public float HeadingX { get; internal set; }
 	public float HeadingY { get; internal set; } = 1f;
-	/// <summary>Presentation: the walk position at the start of the member's last update and the tick it was taken, for the draw point's interpolation over the turn.</summary>
+	/// <summary>
+	/// The heading word <c>+0x2C</c> the walk step writes with Theme Park Inc's navigator (<see cref="ThemeParkIncWalkStep.Heading"/>, the switch <c>--tpi-native-walk</c>); <see cref="HeadingX"/>
+	/// and <see cref="HeadingY"/> are then its vector. Not saved or hashed yet: the native walk storage (navigator plan NV5) stores it with the person words.
+	/// </summary>
+	internal int SpriteAngle { get; set; }
+	/// <summary>
+	/// Presentation: the walk position at the start of the member's last update and the tick it was taken, for the draw point's interpolation over the turn. It is <c>mPreviousX/Y</c>
+	/// (<c>+0x1A8</c>/<c>+0x1AC</c>), the copy the speed step <c>0x60BC90</c> takes before the walk step.
+	/// </summary>
 	internal int TurnFromX, TurnFromY;
 	internal long TurnTick = -1;
 	/// <summary>

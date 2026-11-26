@@ -350,7 +350,7 @@ The ride's head step `0x5E3CC0` forces such a head onto the ride when VAR_LETMEO
 
 The pre-update skips the thought draw and the balloon countdown in 20 (`0x619E6A`).
 
-**The exit `0x619980`** is the ride's dismiss of VAR_LETMEOFF (the bridge's `OnVisitorExitRide`). A guest with no target leaves at once and is not moved. Otherwise the guest is put at the exit's
+**The exit `0x619980`** is the ride's dismiss of VAR_LETMEOFF (the bridge's `OnVisitorExitRide`) for a guest in state 20; the let-off of a guest still in 17 is open (below). A guest with no target leaves at once and is not moved. Otherwise the guest is put at the exit's
 appear point and asked to walk to the cell beyond the exit (Theme Park World's ExitRide `0x005014E0`, byte for byte: a queue or entrance cell beyond, `0x67F5D0`, or no route closes the ride,
 `0x5E1620`, and the guest stays). Then the use routine runs and the guest enters 19.
 
@@ -419,6 +419,12 @@ taken out of the list and made idle the same way. A demolished ride's riders are
 - several attractions in one cell are visited in the object list's order where the minor decision walks the cell's thing chain (`0x6114B0`);
 - `WorldRng.Next(0)` returns 0 where the original's division faults; the native states never divide by a zero they could reach (the variant draw `0x6902F0` of a rig without loaded banks reads
   variant 0 the same way).
+
+**Open: the let-off in state 17 (not yet ported, under research).** The original's dismiss callers (`0x5E4FFF`, `0x5E5907`, `0x5E5A96`) call the exit `0x619980` without a state test,
+and neither the exit, the use routine `0x6118D0` nor the setter `0x61A540` calls the unlink `0x5E0100`, so a guest let off while still in 17 leaves a ghost in the ride's queue list. The case is
+reachable: a script can take a guest and let it off before the guest's own update (`RideVisitorBridge.KeepsBoardedGuestQueued`). OpenTPW ignores that let-off for now: the guest is later forced
+into state 20 with no ride holding it and stays stuck, and a save of that park is refused ("state 20 but no attraction holds it aboard"). There is no crash, and the switch-off paths are not
+affected. The ghost's later fate in the original is being researched before a decision.
 
 ## Save
 

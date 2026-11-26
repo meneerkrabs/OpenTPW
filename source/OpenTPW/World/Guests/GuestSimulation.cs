@@ -3675,6 +3675,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( Find( guestId ) is not { } guest )
 			return true;
+		// Not yet ported, open and under research: a native guest let off while still in state 17 (a script that takes a guest and lets it off before the guest's own update,
+		// RideVisitorBridge.KeepsBoardedGuestQueued) is ignored here. The original's dismiss reaches the exit in any state and never unlinks the guest from the queue list, so it keeps a
+		// ghost in the list. Here the guest is later forced into state 20 with no ride holding it and stays stuck there, and a save of that park is refused ("state 20 but no attraction
+		// holds it aboard"); the switch-off paths are not affected. TPI-GUESTS.md, "Open: the let-off in state 17".
 		if ( guest.Tpi is { } tpi )
 			return tpi.State != ThemeParkIncGuestStates.UnderObjectControl || ride is not RideVisitorBridge bridge || TpiExitRide( guest, tpi, bridge );
 		// [EXT:pools-swim] a guest released from a changing room with a pool beside it swims; any other release walks on

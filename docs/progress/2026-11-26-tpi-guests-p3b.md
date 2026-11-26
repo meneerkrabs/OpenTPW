@@ -26,6 +26,9 @@ Labels:
 - `[EXT:tpi-no-maintenance-wear]` covers a relief visit's toilet wear (`0x5E78E0`).
 - `[EXT:tpi-twp-guest-rules]` no longer covers the boarding.
 
+Open: a guest let off while still in state 17 (a script that takes it and lets it off before its own update) is not yet handled. The original keeps a ghost of it in the ride's queue list;
+OpenTPW ignores the let-off for now, so the guest stays stuck and a later save of the park is refused. It is under research before a decision.
+
 No new approximation or label is added, and no new CRT `rand()` site was found.
 
 Saves: the native block gains five optional members (the fee, the use flag, the balloon colour and a costume's sprite words), without a new schema. A native guest may now hold a balloon. A

@@ -99,6 +99,22 @@ public class ThemeParkIncMissionWindowTests
 		return (window, world, host, closed);
 	}
 
+	[TestMethod]
+	public void TheWindowSaysItsAdviceWhenItOpensAndCancelsItWhenItGoes()
+	{
+		var (window, _, _, closed) = Window( 2, "Info.Number 0\n", "Info.Number 1\n", "Info.Number 2\n" );
+		var advice = new ThemeParkIncAdvisorSenderTests.RecordingAdvice();
+		window.Advice = advice;
+		var screen = window.Build();
+		CollectionAssert.AreEqual( new[] { "post 225", "delayed 277" }, advice.Calls, "0x55A879: the mission panel 0x93E3E0[2], then 0x503AD0(0x277)" );
+		((UiButton)screen.Find( "help" )!).Clicked!();
+		Assert.AreEqual( "help 1B6", advice.Calls[^1], "0x55BEAD: the help button" );
+		advice.Calls.Clear();
+		screen.Back!();
+		CollectionAssert.AreEqual( new[] { "cancel help 1B6", "cancel help 277", "cancel 225", "post 1FA" }, advice.Calls, "0x55BB48 destroy, then 0x1FA" );
+		CollectionAssert.AreEqual( new[] { "close" }, closed );
+	}
+
 	private static UiContext FakeContext( UiStringTable strings )
 	{
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );

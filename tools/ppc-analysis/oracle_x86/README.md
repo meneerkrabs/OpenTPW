@@ -82,10 +82,16 @@ python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/orac
 
 ## Theme Park Inc advisor queue
 
-`tpi_advisor_queue_oracle.py` runs the descriptor initializer at `0x729530` and compares all 664 rows with `content/data/tpi-advisor-descriptors.toml`; it also calls every constant score callback. It replays the acceptance `0x718B40` for each DataRow of `source/OpenTPW.Tests/ThemeParkIncAdvisorTests.cs` on synthetic scorer words, history entries and queues. It also checks enqueue and replacement (`0x718820`, `0x718E90`), selection (`0x718F80`, with and without the advisor panel) and cancel (`0x718990`, whose speech stop is captured). The managed tests repeat these scenarios. `--write-table PATH` writes the table file. See [the advisor trace](../../../docs/reverse/TPI-ADVISOR.md).
+`tpi_advisor_queue_oracle.py` runs the descriptor initializer at `0x729530` and compares all 664 rows with `content/data/tpi-advisor-descriptors.toml`; it also calls every constant score callback and every callback that returns one scorer word (`mov eax, [ecx + offset]; ret`, the rows' `field`) on a synthetic scorer. It replays the acceptance `0x718B40` for each DataRow of `source/OpenTPW.Tests/ThemeParkIncAdvisorTests.cs` on synthetic scorer words, history entries and queues. It also checks enqueue and replacement (`0x718820`, `0x718E90`), selection (`0x718F80`, with and without the advisor panel) and cancel (`0x718990`, whose speech stop is captured), and the senders of phase P4: the history score callbacks `0x727410` and `0x728580`, the unread-mail counter `0x54F1A0` (its posts at 3, 6 and 12 unread letters and their record arguments) and the stored-tutorial repeat `0x718AB0`. The managed tests repeat these scenarios. `--write-table PATH` writes the table file. See [the advisor trace](../../../docs/reverse/TPI-ADVISOR.md).
 
 ```bash
 python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/oracle_x86"); runpy.run_module("tpi_advisor_queue_oracle", run_name="__main__")'
+```
+
+`tpi_advisor_tables_oracle.py` runs the response initializer at `0x708BF0` and compares the 994 rows it fills at `0xBEF1F0` (up to the end id `0x270F` the lookup `0x716D10` stops at) with `content/data/tpi-advisor-responses.toml`, and compares the scorer's `Advisor.sam` schema at `0x97C180` (1006 records and the end record, which the scorer's constructor `0x71B6B0` binds) with `content/data/tpi-advisor-schema.toml`. `--write-responses PATH` and `--write-schema PATH` write the files. See [the advisor trace](../../../docs/reverse/TPI-ADVISOR.md) §9.
+
+```bash
+python3 -I -B -c 'import runpy, sys; sys.path.insert(0, "tools/ppc-analysis/oracle_x86"); runpy.run_module("tpi_advisor_tables_oracle", run_name="__main__")'
 ```
 
 ## Theme Park Inc lightning and thunder

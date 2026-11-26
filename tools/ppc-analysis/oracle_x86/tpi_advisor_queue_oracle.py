@@ -14,7 +14,9 @@ import re
 import struct
 from pathlib import Path
 
-from x86_harness import Image, Sandbox, executable_path
+
+
+from x86_harness import Image, Sandbox, executable_path, x86
 
 TABLE = 0x9DE020
 ROW = 56
@@ -299,6 +301,84 @@ def check_enqueue_and_selection(arena, queue, clock, stops):
     arena.write(TEST_ROW + 8, 'I', rain_group)
 
 
+def check_senders(image):
+    """The P4 senders' native paths the managed tests repeat (ThemeParkIncAdvisorSenderTests): the history callbacks 0x727410 and
+    0x728580, the unread counter 0x54F1A0 and the stored-tutorial repeat 0x718AB0."""
+    posts = []
+    advisor_holder = {}
+
+    def record(arena):
+        # 0x71A930(message, locate word, locate data, variant, bypass, score) on the record at ecx: capture and build it
+        record_at = arena.uc.reg_read(x86.UC_X86_REG_ECX)
+        posts.append(tuple(arena.arg(index) for index in range(6)))
+        arena.write(record_at + 0xC, 'I', arena.arg(0))
+        return record_at, 0x18
+
+    def enqueue(arena):
+        posts.append(('enqueue', arena.arg(0)))
+        return 1, 4
+
+    arena = Sandbox(image, [
+        (0x727410, 0x727436), (0x728580, 0x7285A9), (0x71B4F0, 0x71B506), (0x71B520, 0x71B536), (0x42A3B0, 0x42A41D),
+        (0x54F1A0, 0x54F2C8), (0x4313D0, 0x4313DD), (0x718AB0, 0x718B13),
+        *((address, address + 5) for address in (0x40694C, 0x406753, 0x40B528, 0x40C1F3)),
+    ], stubs={
+        0x4077F2: lambda _: (advisor_holder['advisor'], 0),  # 0x64EA00: the world's advisor thing
+        0x40A592: record,
+        0x40A600: enqueue,
+    }, budget=200_000)
+    career = arena.object(0x4740)
+    arena.write(CAREER_GLOBAL, 'I', career)
+    arena.write(0xC64DC7, 'B', 1)  # The scorer is constructed (no Advisor.sam load).
+    advisor = arena.object(0x118)
+    advisor_holder['advisor'] = advisor
+
+    def history_played(message, played):
+        arena.write(career + HISTORY + 20 * message + 8, 'B', played)
+
+    for callback, message in ((0x727410, 0x1FA), (0x728580, 0x21D)):
+        for played, expected in ((0, 10_000), (1, 0)):
+            history_played(message, played)
+            arena.executed = 0
+            check(arena.call(callback, this=SCORER).eax, expected, f'callback {callback:#x} with {message:#x} played {played}')
+
+    # The unread counter: total +0, threshold +4, the category counts at [+8]; the HUD panel 0xA6011C is absent
+    counts = arena.object(16)
+    counter = arena.object(12, {0: ('I', 0), 4: ('I', 3), 8: ('I', counts)})
+    arena.write(0xA6011C, 'I', 0)
+    seen = []
+    for letter in range(1, 13):
+        posts.clear()
+        arena.executed = 0
+        arena.call(0x54F1A0, (2, 0), this=counter)
+        for post in posts:
+            if post[0] != 'enqueue':
+                seen.append(post[0])
+                check(post[1:], (0, 0, 0xFFFFFFFF, 0, 0xFFFFFFFF), 'locate 0, data 0, variant -1, bypass 0, score -1 (the descriptor\'s)')
+        check(arena.read(counter, 'I'), letter, f'unread total after letter {letter}')
+    check(seen, [0x198, 0x15D, 0x15D], 'the counter posts 0x198 at 3, then 0x15D at 6 and 12')
+    check(arena.read(counter + 4, 'I'), 24, 'the threshold doubles')
+    posts.clear()
+    arena.executed = 0
+    arena.call(0x54F1A0, (2, 1), this=counter)
+    check(posts, [], 'a silent count (a load) posts nothing')
+
+    # The stored-tutorial repeat: nothing stored refuses; a stored record takes HelpMessage.ContextHelpScore (0xC656C0), its explicit and bypass bytes
+    arena.write(advisor + 0x100, 'B', 0)
+    arena.executed = 0
+    check(arena.call(0x718AB0, this=advisor).eax & 0xFF, 0, 'nothing stored')
+    arena.write(advisor + 0x100, 'B', 1)
+    arena.write(advisor + 0xEC + 0xC, 'I', 0x1FA)
+    arena.write(0xC656C0, 'I', 900)
+    posts.clear()
+    arena.executed = 0
+    check(arena.call(0x718AB0, this=advisor).eax & 0xFF, 1, 'a stored record is offered')
+    check(posts, [('enqueue', advisor + 0xEC)], 'the stored record itself goes to 0x718820')
+    check((arena.read(advisor + 0xEC + 0x10, 'i'), arena.read(advisor + 0xEC + 0x15, 'B'), arena.read(advisor + 0xEC + 0x16, 'B')), (900, 1, 1),
+          'score, bypass and explicit bytes')
+    return 4 + 12 + 1 + 2
+
+
 def cases_from(path):
     cases = []
     for match in CASE_PATTERN.finditer(Path(path).read_text(encoding='utf-8')):
@@ -379,8 +459,9 @@ def main():
     for case in cases:
         check(acceptance(queue, case), case[-1], f'acceptance case {case}')
     check_enqueue_and_selection(arena, queue, clock, stops)
+    senders = check_senders(image)
     print(f'{len(rows)} descriptor rows ({constants} constant scores, {fields} field getters), {len(cases)} acceptance cases, '
-          '3 enqueue, 6 selection and 3 cancel scenarios match')
+          f'3 enqueue, 6 selection and 3 cancel scenarios and {senders} sender cases match')
 
 
 if __name__ == '__main__':

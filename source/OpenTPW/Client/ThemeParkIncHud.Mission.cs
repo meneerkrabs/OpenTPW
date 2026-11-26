@@ -56,7 +56,7 @@ public sealed partial class ThemeParkIncHud
 			return false;
 		CloseHudWindow();
 		ThemeParkIncMissionWindow? window = null;
-		window = new ThemeParkIncMissionWindow( TextsOrLanguage, strings, world, missionSession, () => CloseMissionWindow( window ), OpenChallengePanel );
+		window = new ThemeParkIncMissionWindow( TextsOrLanguage, strings, world, missionSession, () => CloseMissionWindow( window ), OpenChallengePanel ) { Advice = economy.TpiWindowAdvice };
 		var screen = window.Build();
 		window.Rebuilt = () => OpenMissionWindow();
 		MissionWindow = window;
@@ -83,6 +83,15 @@ public sealed partial class ThemeParkIncHud
 	{
 		if ( !MenuOpen && !Input.TextEntryActive && input.Has( UiKeys.Objectives ) )
 			OpenMissionWindow();
+	}
+
+	/// <summary>F1 without a modifier: the advisor says its stored tutorial advice again (<see cref="ParkEconomy.RepeatThemeParkIncTutorial"/>); a text field keeps the key.</summary>
+	// [BIN:TPI-EXE:0x9A866C help key] the key table's F1 row (key 0x70, its handler word 0x4305E0 at 0x9A866C) and the default window procedure's F1 (0x507FE8, key 0x70 without a modifier) both call 0x718AB0 on the
+	// advisor thing; a lost park's key tables are disabled (0x431230) and the loss window's procedure (0x50ACE0) does not pass keys to the default one
+	private void UpdateHelpKey()
+	{
+		if ( !Lost && !MenuOpen && !Input.TextEntryActive && Input.Pressed( InputButton.Help ) && Input.ModifierMaskDown == 0 )
+			level.Park?.Economy.RepeatThemeParkIncTutorial();
 	}
 
 	/// <summary>The text HUD's button that opens the mission window, below the challenges button.</summary>

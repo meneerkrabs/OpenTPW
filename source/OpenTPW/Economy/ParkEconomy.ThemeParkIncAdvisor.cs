@@ -1,7 +1,34 @@
 namespace OpenTPW;
 
+/// <summary>
+/// What a Theme Park Inc window asks of the advisor thing (<c>0x64EA00</c>): its help said after the panel delay when it opens (<c>0x503AD0</c>), its help button (<c>0x503A40</c>), its help
+/// cancelled when it goes (<c>0x503B40</c>), and the window's own advice posted (<c>0x71A930</c>, <c>0x718820</c>) or cancelled (<c>0x718990</c>).
+/// </summary>
+// [EXT:tpi-advisor-tick-clock] (D-2: window state is simulation input) the client's windows call it between world ticks, as the original's window procedures run between them
+public interface IThemeParkIncWindowAdvice
+{
+	void DelayedHelp( int message );
+	bool HelpButton( int message );
+	bool CancelHelp( int message );
+	bool Post( int message );
+	bool Cancel( int message );
+}
+
 public sealed partial class ParkEconomy
 {
+	/// <summary>The advisor as Theme Park Inc's windows reach it (<see cref="IThemeParkIncWindowAdvice"/>); every call does nothing in a park without an advisor.</summary>
+	public IThemeParkIncWindowAdvice TpiWindowAdvice => tpiWindowAdvice ??= new ThemeParkIncWindowAdvice( this );
+	private IThemeParkIncWindowAdvice? tpiWindowAdvice;
+
+	private sealed class ThemeParkIncWindowAdvice( ParkEconomy economy ) : IThemeParkIncWindowAdvice
+	{
+		public void DelayedHelp( int message ) => economy.ThemeParkIncDelayedHelp( message );
+		public bool HelpButton( int message ) => economy.ThemeParkIncHelpButton( message );
+		public bool CancelHelp( int message ) => economy.CancelThemeParkIncHelp( message );
+		public bool Post( int message ) => economy.PostThemeParkIncAdvice( message );
+		public bool Cancel( int message ) => economy.CancelThemeParkIncAdvice( message );
+	}
+
 	/// <summary>
 	/// Theme Park Inc's advisor thing (docs/reverse/TPI-ADVISOR.md): the single queue every advice goes through (the forecasts and the notification letters so far), updated once per world
 	/// tick at its place in the thing pass. Null in Theme Park World.

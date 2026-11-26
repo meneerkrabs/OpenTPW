@@ -521,6 +521,7 @@ public sealed partial class ThemeParkIncHud
 			TogglePause( input );
 		UpdateMissionKey( input );
 		UpdateTagTubeKey( input );
+		UpdateHelpKey();
 		UpdateMissionWindowRequests();
 
 		// The level's last action (builds, refusals) becomes a message here; the slice has no advisor to say it.

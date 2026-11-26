@@ -32,7 +32,7 @@ public sealed partial class ThemeParkIncHud
 		ThemeParkIncTagTubeWindow? window = null;
 		var addressee = strings.Entry( ThemeParkIncText.NewPlayer );
 		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee, MemberName ),
-			() => RemoveTagTube( window ), RunTubeGoto );
+			() => RemoveTagTube( window ), RunTubeGoto ) { Advice = economy.TpiWindowAdvice };
 		TagTubeWindow = window;
 		Stack.Push( window.Build() );
 		return true;

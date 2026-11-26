@@ -34,7 +34,7 @@ public sealed partial class ThemeParkIncHud
 		CloseHudWindow();
 		ThemeParkIncWageDemandWindow? window = null;
 		window = new ThemeParkIncWageDemandWindow( strings, staff.Settings, member, row.GotoArgument, () => RemoveScreen( ThemeParkIncWageDemandWindow.ScreenName, () => WageDemandWindow = null ),
-			OpenNegotiation, level.DismissTpiMember );
+			OpenNegotiation, level.DismissTpiMember ) { Advice = economy.TpiWindowAdvice };
 		WageDemandWindow = window;
 		Stack.Push( window.Build() );
 		return true;
@@ -43,12 +43,12 @@ public sealed partial class ThemeParkIncHud
 	/// <summary>Opens the negotiation dialog on the offer (<c>0x559C40</c>); nothing while one is open.</summary>
 	internal void OpenNegotiation( ThemeParkIncStaffMember member, int demand, int offer )
 	{
-		if ( NegotiationWindow != null || level.Park?.Economy is not { TpiStaff: { } staff } || !staff.Members.Contains( member ) )
+		if ( NegotiationWindow != null || level.Park?.Economy is not { TpiStaff: { } staff } economy || !staff.Members.Contains( member ) )
 			return;
 		CloseHudWindow();
 		var window = new ThemeParkIncWageNegotiationWindow( strings, staff.Settings, member, demand, offer,
 			() => RemoveScreen( ThemeParkIncWageNegotiationWindow.ScreenName, () => NegotiationWindow = null ),
-			( result, choice ) => level.EndTpiNegotiation( member, result, offer, demand, choice ) );
+			( result, choice ) => level.EndTpiNegotiation( member, result, offer, demand, choice ) ) { Advice = economy.TpiWindowAdvice };
 		NegotiationWindow = window;
 		Stack.Push( window.Build() );
 	}
@@ -58,7 +58,11 @@ public sealed partial class ThemeParkIncHud
 	{
 		if ( LetterOpen )
 			closeOpenLetter?.Invoke();
-		CloseMissionWindow();
+		// the mission window's message 5 is its own close (0x55BB0A): its destroy cancels its advice and it posts 0x1FA
+		if ( MissionWindow is { } mission )
+			mission.CloseFromHud();
+		else
+			CloseMissionWindow();
 		CloseTagTube();
 		WageDemandWindow?.Close();
 		NegotiationWindow?.Close();

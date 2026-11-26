@@ -66,7 +66,7 @@ internal static class ThemeParkIncWageWindowParts
 /// by WageStep between MinWage and MaxWage; OK negotiates the offer, the close and cancel buttons negotiate an offer of 0, and the fire button dismisses the member.
 /// </summary>
 // [BIN:TPI-EXE:0x59ABB0 wage window] on the controller 0xA6C2B0 when no window is open (+0): +4 = the member, +0x14 = +0x18 = the demand; the HUD's window closes (0x5013C0), CreateWindow 0x84DEA0(0x9C9F64)
-// with the procedure 0x40CCAC (0x59A8A0 -> 0x59A900), the title 0xCA199 (UITEXT 0xFB, 0x501D50), the controls (0x59ACA0), the gauges (0x59B9F0) and sound 0x1B0
+// with the procedure 0x40CCAC (0x59A8A0 -> 0x59A900), the title 0xCA199 (UITEXT 0xFB, 0x501D50), the controls (0x59ACA0), the gauges (0x59B9F0) and the delayed help 0x503AD0(0x1B0)
 internal sealed class ThemeParkIncWageDemandWindow
 {
 	/// <summary>The screen's name on the HUD stack.</summary>
@@ -123,6 +123,12 @@ internal sealed class ThemeParkIncWageDemandWindow
 	private void ComposeTexts() => Texts = (strings.StaffName( (int)Member.Role, Member.NameIndex ),
 		strings.FormatByType( DemandText, new Dictionary<int, string> { [0xD] = Demand.ToString( CultureInfo.InvariantCulture ) } ), strings.Entry( AgencyText( Member.Agency ) ),
 		strings.Ability( Member.Ability ));
+
+	/// <summary>The advisor the window's help reaches; null: no advisor (the window still works).</summary>
+	internal IThemeParkIncWindowAdvice? Advice { get; set; }
+
+	/// <summary>The window's help (<c>0x1B0</c>): said after the panel delay when it opens, by its help button, and cancelled when it goes.</summary>
+	public const int HelpMessage = 0x1B0;
 
 	public UiScreen Build()
 	{
@@ -181,8 +187,10 @@ internal sealed class ThemeParkIncWageDemandWindow
 		ThemeParkIncWageWindowParts.Button( screen, strings, "close", table.Control( 0xCA182 ), PressClose );
 		ThemeParkIncWageWindowParts.Button( screen, strings, "cancel", table.Control( 0xFFFFFFFE ), PressClose );
 		ThemeParkIncWageWindowParts.Button( screen, strings, "fire", table.Control( 0xCA183 ), PressFire );
-		// [BIN:TPI-EXE:0x59AA8D wage window help] 0xCA19A calls 0x503A40(0x1B0), the advisor panel's help, which is not ported
-		ThemeParkIncWageWindowParts.Button( screen, strings, "help", table.Control( 0xCA19A ), null );
+		// [BIN:TPI-EXE:0x59AA8D wage window help] 0xCA19A calls 0x503A40(0x1B0): the advisor's help button
+		ThemeParkIncWageWindowParts.Button( screen, strings, "help", table.Control( 0xCA19A ), () => Advice?.HelpButton( HelpMessage ) );
+		// [BIN:TPI-EXE:0x59AC16 wage window delayed help] the builder ends with 0x503AD0(0x1B0): the advisor says the window's help once the panel delay has passed
+		Advice?.DelayedHelp( HelpMessage );
 		return screen;
 	}
 
@@ -195,7 +203,8 @@ internal sealed class ThemeParkIncWageDemandWindow
 	internal void Step( int direction ) => Offer = Math.Clamp( unchecked( Offer + direction * settings.WageStep ), settings.MinWage, settings.MaxWage );
 
 	/// <summary>OK (<c>0xCA184</c>, as the Enter command -1): the window closes and the negotiation opens on the offer.</summary>
-	// [BIN:TPI-EXE:0x59AA0E wage negotiate] message 0x100 with 0xCA184 or -1: message 4 to the window (0x85049F), sound 0x1B0, and with a member (+4) the dialog's builder 0x559C40(member, +0x18, +0x14)
+	// [BIN:TPI-EXE:0x59AA0E wage negotiate] message 0x100 with 0xCA184 or -1: message 4 to the window (0x85049F, whose destroy's message 0x14 runs 0x503B40(0x1B0) at once), 0x503B40(0x1B0) again,
+	// and with a member (+4) the dialog's builder 0x559C40(member, +0x18, +0x14)
 	internal void PressOkay() => Finish( Offer );
 
 	/// <summary>The close (<c>0xCA182</c>) and cancel (-2) buttons: the offer becomes 0 and the negotiation opens on it.</summary>
@@ -207,24 +216,24 @@ internal sealed class ThemeParkIncWageDemandWindow
 	}
 
 	/// <summary>The fire button (<c>0xCA183</c>): the member is dismissed (<c>0x629040</c>) and the window closes without a negotiation.</summary>
-	// [BIN:TPI-EXE:0x59A9C7 wage fire] 0x629040 on the member (+4), +4 = 0, message 4 to the window, sound 0x1B0; no negotiation
+	// [BIN:TPI-EXE:0x59A9C7 wage fire] 0x629040 on the member (+4), +4 = 0, message 4 to the window (its destroy cancels the help), 0x503B40(0x1B0); no negotiation
 	internal void PressFire()
 	{
 		if ( Closed )
 			return;
 		Closed = true;
 		dismiss( Member );
-		close();
+		Destroy();
 	}
 
 	/// <summary>The window closes without a negotiation: the HUD's message 5 and the Escape key (the default procedure <c>0x507FA0</c> posts message 4 on key 0x1B).</summary>
-	// [BIN:TPI-EXE:0x59A936 wage window close] message 5: message 4 to the window and sound 0x1B0; message 0x14 then clears +0 (0x502E20); the member word +4 stays, and no negotiation opens
+	// [BIN:TPI-EXE:0x59A936 wage window close] message 5: message 4 to the window and 0x503B40(0x1B0); message 0x14 then clears +0 (0x502E20); the member word +4 stays, and no negotiation opens
 	public void Close()
 	{
 		if ( Closed )
 			return;
 		Closed = true;
-		close();
+		Destroy();
 	}
 
 	private void Finish( int offer )
@@ -232,8 +241,16 @@ internal sealed class ThemeParkIncWageDemandWindow
 		if ( Closed )
 			return;
 		Closed = true;
-		close();
+		Destroy();
 		negotiate( Member, Demand, offer );
+	}
+
+	// [BIN:TPI-EXE:0x59A92A wage window destroy] message 0x14: +0 = 0, 0x403B11, 0x503B40(0x1B0) (the help's delay dropped and the help cancelled); every close then calls 0x503B40(0x1B0) again,
+	// which finds nothing more to cancel
+	private void Destroy()
+	{
+		close();
+		Advice?.CancelHelp( HelpMessage );
 	}
 }
 
@@ -242,7 +259,7 @@ internal sealed class ThemeParkIncWageDemandWindow
 /// answer; a refused offer shows the two choices, accept the demand (selected) or let them leave. Closing the dialog in any way applies the decision.
 /// </summary>
 // [BIN:TPI-EXE:0x559C40 negotiation dialog] the dialog 0xA60408 with no window (+0): +4 = the member, +8 = the offer, +0xC = the demand; the HUD's window closes (0x5013C0), CreateWindow 0x84DEA0(0x9BE518)
-// with the procedure 0x559DA0 (-> 0x559860), the title 0xB28A (UITEXT 0xFE), the member's picture in 0xB289 (0x502B60), the decision 0x559E00 and sound 0x1B1
+// with the procedure 0x559DA0 (-> 0x559860), the title 0xB28A (UITEXT 0xFE), the member's picture in 0xB289 (0x502B60), the decision 0x559E00 and the delayed help 0x503AD0(0x1B1)
 internal sealed class ThemeParkIncWageNegotiationWindow
 {
 	/// <summary>The screen's name on the HUD stack.</summary>
@@ -291,6 +308,12 @@ internal sealed class ThemeParkIncWageNegotiationWindow
 	/// <summary>The body: the member's answer, composed once into the body buffer 0xA4E56C as the decision does.</summary>
 	public string Body { get; }
 
+	/// <summary>The advisor the dialog's help reaches; null: no advisor (the dialog still works).</summary>
+	internal IThemeParkIncWindowAdvice? Advice { get; set; }
+
+	/// <summary>The dialog's help (<c>0x1B1</c>): said after the panel delay when it opens, by its help button, and cancelled when it goes.</summary>
+	public const int HelpMessage = 0x1B1;
+
 	public UiScreen Build()
 	{
 		var table = ThemeParkIncLayoutTables.WageNegotiation;
@@ -321,24 +344,28 @@ internal sealed class ThemeParkIncWageNegotiationWindow
 					() => strings.Entry( label ) );
 			}
 		}
-		// [BIN:TPI-EXE:0x5599A1 negotiation buttons] 0xB285 (b_close) and 0xB28B (b_okay) post message 4 and play sound 0x1B1; the window's destroy then sends message 0x14, which applies the decision
+		// [BIN:TPI-EXE:0x5599A1 negotiation buttons] 0xB285 (b_close) and 0xB28B (b_okay) post message 4 and call 0x503B40(0x1B1); the window's destroy sends message 0x14, which applies the decision
 		ThemeParkIncWageWindowParts.Button( screen, strings, "ok", table.Control( 0xB28B ), Close );
 		ThemeParkIncWageWindowParts.Button( screen, strings, "close", table.Control( 0xB285 ), Close );
-		// [BIN:TPI-EXE:0x5599B2 negotiation help] 0xB291 calls 0x503A40(0x1B1), the advisor panel's help, which is not ported
-		ThemeParkIncWageWindowParts.Button( screen, strings, "help", table.Control( 0xB291 ), null );
+		// [BIN:TPI-EXE:0x5599B2 negotiation help] 0xB291 calls 0x503A40(0x1B1): the advisor's help button
+		ThemeParkIncWageWindowParts.Button( screen, strings, "help", table.Control( 0xB291 ), () => Advice?.HelpButton( HelpMessage ) );
+		// [BIN:TPI-EXE:0x559D15 negotiation delayed help] the builder ends with 0x503AD0(0x1B1): the advisor says the dialog's help once the panel delay has passed
+		Advice?.DelayedHelp( HelpMessage );
 		return screen;
 	}
 
 	/// <summary>
 	/// The dialog's close in any way (OK, the close button, the Escape key through the default procedure <c>0x507FA0</c>, the HUD's message 5): the window goes and its message 0x14 applies the decision.
 	/// </summary>
-	// [BIN:TPI-EXE:0x5598B6 negotiation close] message 0x14: sound 0x1B1, then the decision's branch (ParkEconomy.EndThemeParkIncNegotiation), +4 = 0, +0 = 0 and 0x502E20
+	// [BIN:TPI-EXE:0x5598B6 negotiation close] message 0x14: 0x503B40(0x1B1) (the help's delay dropped and the help cancelled), then the decision's branch (ParkEconomy.EndThemeParkIncNegotiation), +4 = 0,
+	// +0 = 0 and 0x502E20; the buttons and message 5 (0x55988F) call 0x503B40(0x1B1) again after the destroy, which finds nothing more to cancel
 	public void Close()
 	{
 		if ( Closed )
 			return;
 		Closed = true;
 		close();
+		Advice?.CancelHelp( HelpMessage );
 		finish( Result, Choice );
 	}
 }

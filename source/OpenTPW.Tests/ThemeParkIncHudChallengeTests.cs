@@ -18,9 +18,10 @@ public class ThemeParkIncHudChallengeTests
 		+ "PeepInfo.ExcitementToCostDivisor 6\nPeepInfo.MinimumEntryFee 20\nPeepInfo.CheapPriceMultiplier 0.75\nPeepInfo.AveragePriceMultiplier 1.25\nPeepInfo.ExpensivePriceMultiplier 2.0\n"
 		+ "Challenges.DaysBetweenOffers 20\nChallengesInThisLevel[0].ChallengeType 2\nChallengesInThisLevel[1].ChallengeType 18\n";
 
+	// every challenge names sender 2, as the retail rows name the senders 2 to 6 (ThemeParkIncChallenges.SenderAdvice)
 	private const string ChallengesSam =
-		"Challenges[2].Type 2\nChallenges[2].TargetTime 60\nChallenges[2].TargetVal 30\nChallenges[2].ScriptIndex 2\n"
-		+ "Challenges[18].Type 41\nChallenges[18].TargetTime 90\nChallenges[18].TriggerData 3\nChallenges[18].CheckAtEndOnly 1\nChallenges[18].GracePeriodLimit 31\nChallenges[18].ScriptIndex 18\n";
+		"Challenges[2].Type 2\nChallenges[2].TargetTime 60\nChallenges[2].TargetVal 30\nChallenges[2].ScriptIndex 2\nChallenges[2].Sender 2\n"
+		+ "Challenges[18].Type 41\nChallenges[18].TargetTime 90\nChallenges[18].TriggerData 3\nChallenges[18].CheckAtEndOnly 1\nChallenges[18].GracePeriodLimit 31\nChallenges[18].ScriptIndex 18\nChallenges[18].Sender 2\n";
 
 	internal static ParkEconomy Economy()
 	{

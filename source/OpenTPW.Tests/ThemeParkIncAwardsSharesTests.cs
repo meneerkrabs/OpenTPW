@@ -341,7 +341,7 @@ public class ThemeParkIncAwardsSharesTests
 
 	private const string ShareChallenges =
 		"Challenges[2].Type 2\nChallenges[2].TargetTime 60\nChallenges[2].TargetVal 3\nChallenges[2].CashPrize 5000\nChallenges[2].GTPrize 2\nChallenges[2].ScriptIndex 2\n"
-		+ "Challenges[2].SharePrize 600\nChallenges[2].SharePriceEffectWon 4\nChallenges[2].SharePriceEffectLost 2\n";
+		+ "Challenges[2].SharePrize 600\nChallenges[2].SharePriceEffectWon 4\nChallenges[2].SharePriceEffectLost 2\nChallenges[2].Sender 2\n";
 
 	private static readonly EconomyObjectInfo HotDogs = new( 1207, "Hot dogs", ParkObjectKind.Shop, ResearchCategory.Shop, 0,
 		new[] { new UpgradeLevelInfo( 0, 500, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, 10, 2, null, 2, 1, 0, 0, 0, 0, "/x" );

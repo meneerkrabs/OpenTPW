@@ -234,6 +234,10 @@ machine (phase P1 of the port: arrival, the booth and leaving) instead of Theme 
 combines with `--tpi-smoke-test`. A Science save records the setting, and a save made with the other setting is refused
 ([PARK-SAVES.md](PARK-SAVES.md#experimental-science-continuation-on-desktop)).
 
+`--tpi-native-walk` is a second hidden developer switch, off by default: with it, the Theme Park Inc guests and staff walk with the parts of Theme Park Inc's own
+navigator ported so far (its edge test; [TPI-NAVIGATOR.md](reverse/TPI-NAVIGATOR.md)). It combines with `--tpi-smoke-test` and `--tpi-native-guests`. A Science save records the
+setting, and a save made with the other setting is refused ([PARK-SAVES.md](PARK-SAVES.md#experimental-science-continuation-on-desktop)).
+
 To verify Science continuation across a process restart, use the same fresh, dedicated `OPENTPW_SAVE_DIR`
 for both runs, with `OPENTPW_SILENT=1 OPENTPW_OFFSCREEN=1` for an automated run. Run Science with `--load-original-level science --debug-tpi-restart-smoke capture`, then
 start a second process with `--front-end --debug-tpi-restart-smoke restore` and the same game data. The first

@@ -366,12 +366,15 @@ public sealed class Guest
 	public ushort Boost { get; internal set; }
 	/// <summary>Smoothed speed input s [+200], 0 at creation.</summary>
 	public float SmoothedSpeed { get; internal set; }
-	/// <summary>Max speed [nav +28] in 16.16 cells per park turn, from <see cref="GuestSpeed.Caps"/>.</summary>
-	public int MaxSpeed { get; internal set; } = GuestSpeed.Floor;
-	/// <summary>Max steering force [nav +24].</summary>
-	public int MaxForce { get; internal set; } = GuestSpeed.Floor;
-	/// <summary>The steering state [+212]; its position is <see cref="X"/>/<see cref="Y"/>.</summary>
-	public GuestNavigation Navigation { get; } = new();
+	/// <summary>Max speed [nav +28] in 16.16 cells per park turn, from <see cref="GuestSpeed.Caps"/>: the walk object's member (<see cref="GuestNavigation.MaxSpeed"/>).</summary>
+	public int MaxSpeed { get => Navigation.MaxSpeed; internal set => Navigation.MaxSpeed = value; }
+	/// <summary>Max steering force [nav +24]: the walk object's member (<see cref="GuestNavigation.MaxForce"/>).</summary>
+	public int MaxForce { get => Navigation.MaxForce; internal set => Navigation.MaxForce = value; }
+	/// <summary>
+	/// The steering state [+212]; its position is <see cref="X"/>/<see cref="Y"/>. A guest starts with the speed setter's floor as its caps (OpenTPW's start, which every
+	/// pin holds; the speed step sets them before the guest's first walk step); Theme Park Inc's native walk starts a guest with the constructor's (<see cref="GuestNavigation.ConstructorMaxSpeed"/>).
+	/// </summary>
+	public GuestNavigation Navigation { get; } = new() { MaxSpeed = GuestSpeed.Floor, MaxForce = GuestSpeed.Floor };
 
 	// Navigation
 	internal float StepFromX;         // position before the last steering step (presentation)

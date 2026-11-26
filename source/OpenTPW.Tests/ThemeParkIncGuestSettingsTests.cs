@@ -48,7 +48,10 @@ public sealed class ThemeParkIncGuestSettingsTests
 			"FixedItemInfo.NumTicketBooths 2", "TicketBooth[0].PosX 51", "TicketBooth[0].PosY 52", "TicketBooth[0].Angle 53", "TicketBooth[1].PosX 54", "TicketBooth[1].PosY 55", "TicketBooth[1].Angle 56",
 			"FixedItemInfo.BusStopAPosX 61", "FixedItemInfo.BusStopAPosY 62", "FixedItemInfo.BusStopBPosX 63", "FixedItemInfo.BusStopBPosY 64", "FixedItemInfo.BusStopCPosX 65",
 			"FixedItemInfo.BusStopCPosY 66", "FixedItemInfo.EntranceAPosX 67", "FixedItemInfo.EntranceAPosY 68", "FixedItemInfo.EntranceBPosX 69", "FixedItemInfo.EntranceBPosY 70",
-			"FirstHour.Minutes 77"
+			"FirstHour.Minutes 77",
+			"PeepInfo.DecisionVariable1 81", "PeepInfo.DecisionVariable2 82", "PeepInfo.DecisionVariable3 83", "PeepInfo.DecisionVarDistWeight 84", "PeepInfo.DecisionVarQueueWeight 85",
+			"PeepInfo.DecisionVarExcitementWeight 86", "PeepInfo.DecisionVarThirstWeight 87", "PeepInfo.DecisionVarHungerWeight 88", "PeepInfo.DecisionVarToiletWeight 89",
+			"PeepInfo.DecisionVarIllnessWeight 90"
 		};
 		var columns = new[] { "Heatwave", "Rain", "Storm", "Snow" };
 		foreach ( var (array, offset) in new[] { ("PeepHappinessWeatherEffects", 100), ("PeepThirstWeatherEffects", 200), ("PeepHungerWeatherEffects", 300) } )
@@ -79,6 +82,8 @@ public sealed class ThemeParkIncGuestSettingsTests
 		Assert.AreEqual( ((61, 62), (63, 64), (65, 66)), (settings.BusStopA, settings.BusStopB, settings.BusStopC) );
 		Assert.AreEqual( ((67, 68), (69, 70)), (settings.EntranceA, settings.EntranceB) );
 		Assert.AreEqual( 77, settings.FirstHourMinutes, "FirstHour.Minutes at 0xA034D4 (0x650890)" );
+		Assert.AreEqual( new DecisionVariables( 81, 82, 0 ), settings.DecisionVariables, "0xA01AA4, 0xA01AA8; DecisionVariable3 is unread" );
+		Assert.AreEqual( new DecisionWeights( 84, 85, 86, 87, 88, 89, 90 ), settings.DecisionWeights, "0xA01AC4..0xA01ADC" );
 		Assert.AreEqual( ThemeParkIncGuestSettings.CellWord( 51, 52 ), settings.BoothCell( 0 ), "0x5D79B0: (PosY << 7) + PosX + 1" );
 		Assert.AreEqual( (61, 62), settings.StopCell( -1 ) );
 		Assert.AreEqual( (63, 64), settings.StopCell( 1 ) );

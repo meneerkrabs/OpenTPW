@@ -24,6 +24,13 @@ public readonly record struct ThemeParkIncThingView( ushort ThingId, (int X, int
 public readonly record struct ThemeParkIncEntertainerView( ushort ThingId, (int X, int Y) Cell, bool Performing );
 
 /// <summary>
+/// An attraction thing as Theme Park Inc's ride choice and queues read it (phase P3a): its thing id, its thing cell (<c>+5</c>, <c>+7</c>, the cell whose thing chain the minor decision walks), the
+/// ride bridge that holds its queue list, its open word and its admission (<see cref="IRideVisitorBridge"/>) and its type's score words. Whether it is a special ride awaiting its activation
+/// (<c>0x6242F0</c>) is the economy's live state (<see cref="IGuestPayments.AwaitsActivation"/>), read when it is scored.
+/// </summary>
+public readonly record struct ThemeParkIncAttractionView( ushort ThingId, (int X, int Y) Cell, RideVisitorBridge Ride, ThemeParkIncScoreTerms Terms );
+
+/// <summary>
 /// What Theme Park Inc's native guests read of the park outside the guest simulation (phase P2 of the guest states, docs/reverse/TPI-GUESTS.md): the object list's litter bins and shows, a thing by
 /// its id, the entertainers' list and the customers of a bin. The level supplies it; a headless simulation without one finds no bin, no show and no entertainer.
 /// </summary>
@@ -43,4 +50,23 @@ public interface IThemeParkIncGuestWorld
 
 	/// <summary>A guest used the thing (<c>0x5E5DA0</c>): its daily and monthly customers rise.</summary>
 	void RecordCustomer( ushort thingId );
+
+	/// <summary>
+	/// The object list's choosable attractions (the thing flag <c>+0x42</c> bit 4, <c>Info.IsChoosable</c>) whose ride bridge the guests host, newest first, as the major decision <c>0x610080</c> walks them
+	/// (phase P3a). None by default: a world without rides offers no choice.
+	/// </summary>
+	IReadOnlyList<ThemeParkIncAttractionView> Attractions() => [];
+
+	/// <summary>
+	/// The type of any live thing in the thing slot <paramref name="thingId"/> (the table <c>0xAA18B0</c>, the type word <c>+0x16</c>), or null for an empty slot: the score's same-type gate reads it for
+	/// the last used thing, whatever kind of thing that is. By default only the choosable attractions are known.
+	/// </summary>
+	int? ThingTypeId( ushort thingId )
+	{
+		var list = Attractions();
+		for ( var index = 0; index < list.Count; index++ )
+			if ( list[index].ThingId == thingId )
+				return list[index].Ride.TypeId;
+		return null;
+	}
 }

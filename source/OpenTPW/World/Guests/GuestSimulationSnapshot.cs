@@ -281,6 +281,41 @@ public sealed record GuestNavigationSnapshot
 	/// <summary>The walk mask (<see cref="GuestNavigation.Mask"/>, guest <c>+0x188</c>); 0, the default, is not written and older saves have none.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public int Mask { get; init; }
+	/// <summary>
+	/// Theme Park Inc's native navigator (<see cref="GuestNavigation.Native"/>, the hidden switch <c>--tpi-native-walk</c>): the walk's 177-byte record
+	/// (<see cref="GuestNavigation.ToRecord"/>), which carries the members the fields above do not (mass, radius, the speed caps, the local axes, formation_pos, force, the five
+	/// subpath_dist slots, the whole progress history word, the written waypoint slots). Written only for a native walk; the fields above stay the walk's own.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public byte[]? NativeRecord { get; init; }
+
+	/// <summary>
+	/// Why <see cref="NativeRecord"/> does not belong with the walk these fields restore, or null (<see cref="GuestNavigation.NativeProblem"/>): a walk of either kind, the original walk's
+	/// fields compared only when it is one, the waypoint slots as the restore takes them (all five saved, or the route's from the cursor).
+	/// </summary>
+	internal string? NativeProblem()
+	{
+		if ( NativeRecord is not { } record )
+			return null;
+		var shadow = new GuestNavigation
+		{
+			X = X, Y = Y, VelocityX = VelocityX, VelocityY = VelocityY, TargetX = TargetX, TargetY = TargetY, Arrived = Arrived, Index = Index, Count = Count, History = History,
+			Mask = Mask
+		};
+		shadow.RestoreOriginal( OriginalWalk );
+		var carried = 0;
+		if ( Waypoints is { Length: GuestNavigation.BufferedWaypoints } waypoints )
+		{
+			waypoints.AsSpan().CopyTo( shadow.Buffer );
+			carried = GuestNavigation.BufferedWaypoints;
+		}
+		else if ( Route != null && Cursor >= 0 && Cursor + Count <= Route.Length && Count <= GuestNavigation.BufferedWaypoints )
+		{
+			Route.AsSpan( Cursor, Count ).CopyTo( shadow.Buffer );
+			carried = Count;
+		}
+		return shadow.NativeProblem( record, carried );
+	}
 
 	/// <summary>
 	/// Walk-structure problems of this snapshot (both kinds), for the save validators; <paramref name="inBounds"/> tells a cell of the map.
@@ -342,6 +377,8 @@ public sealed record GuestNavigationSnapshot
 		}
 		if ( History is < 0 or > 0x7fff )
 			yield return $"guest {guestId} progress history {History} is outside its 15-bit window";
+		if ( NativeRecord != null && NativeProblem() is { } native )
+			yield return $"guest {guestId}: {native}";
 		if ( Reroutes < 0 || WalkCrossings < 0 )
 			yield return $"guest {guestId} navigation counters ({Reroutes} reroutes, {WalkCrossings} crossings) are negative";
 		foreach ( var (x, y) in Route )
@@ -527,6 +564,13 @@ public sealed record GuestSimulationSnapshot
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public bool ThemeParkIncNativeGuests { get; init; }
+	/// <summary>
+	/// Whether the park walked with Theme Park Inc's navigator rules (the hidden switch <c>--tpi-native-walk</c>, <see cref="ParkCellMap.EdgeRules"/>, docs/reverse/TPI-NAVIGATOR.md); absent (false)
+	/// otherwise and in saves made before it (an optional member, no schema bump). A restore refuses a save whose value differs from the running park's: a walk set up under one edge test cannot
+	/// continue under the other (a staff member stepped off the paths under Theme Park World's rules may stand on unowned land that Theme Park Inc's refuses, 0x5D7D0D).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public bool ThemeParkIncNativeWalk { get; init; }
 	/// <summary>The park's visitor count (<see cref="GuestSimulation.VisitorCount"/>). Absent before schema 9: 0.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public int VisitorCount { get; init; }

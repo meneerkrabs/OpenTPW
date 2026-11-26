@@ -384,6 +384,8 @@ internal static class Game
 		var sliceSmoke = args.Contains( "--tpi-smoke-test" );
 		// the hidden switch of Theme Park Inc's native guest states (docs/reverse/TPI-GUESTS.md): off by default, for tests and development runs of the port's phases
 		GuestSimulation.ThemeParkIncNativeGuestsRequested = args.Contains( "--tpi-native-guests" );
+		// the hidden switch of Theme Park Inc's own navigator rules (docs/reverse/TPI-NAVIGATOR.md): off by default until the navigator port is complete
+		GuestSimulation.ThemeParkIncNativeWalkRequested = args.Contains( "--tpi-native-walk" );
 		var tpiRestartPhase = GetOption( args, "--debug-tpi-restart-smoke", "'capture' or 'restore'" );
 		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );

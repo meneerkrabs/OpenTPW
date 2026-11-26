@@ -52,6 +52,7 @@ public sealed class GlobalStateGuard : TestMethodAttribute
 	{
 		var before = Array.ConvertAll( watched, global => global.Read() );
 		var nativeGuests = GuestSimulation.ThemeParkIncNativeGuestsRequested;
+		var nativeWalk = GuestSimulation.ThemeParkIncNativeWalkRequested;
 		var outer = Running;
 		Running = testMethod;
 		TestResult[] results;
@@ -70,6 +71,12 @@ public sealed class GlobalStateGuard : TestMethodAttribute
 			{
 				leaks = [.. leaks, $"{nameof( GuestSimulation.ThemeParkIncNativeGuestsRequested )} was {nativeGuests} and is now {GuestSimulation.ThemeParkIncNativeGuestsRequested}"];
 				GuestSimulation.ThemeParkIncNativeGuestsRequested = nativeGuests;
+			}
+			// so is the hidden switch of Theme Park Inc's navigator rules
+			if ( GuestSimulation.ThemeParkIncNativeWalkRequested != nativeWalk )
+			{
+				leaks = [.. leaks, $"{nameof( GuestSimulation.ThemeParkIncNativeWalkRequested )} was {nativeWalk} and is now {GuestSimulation.ThemeParkIncNativeWalkRequested}"];
+				GuestSimulation.ThemeParkIncNativeWalkRequested = nativeWalk;
 			}
 			// the pause object's static state (paused word, advisor flag, focus latch) belongs to no file system: a test that pauses the sound must not hand it on
 			GamePauseSound.Reset();

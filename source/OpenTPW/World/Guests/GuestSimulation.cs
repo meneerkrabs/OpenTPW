@@ -360,13 +360,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		SmarterGuests?.Throughputs.Remove( attraction.AttractionId );
 		foreach ( var guest in guests )
 		{
-			if ( guest.AttractionId != attraction.AttractionId || attraction.AttractionId == 0 )
+			// a native Theme Park Inc guest hears the removal message at the click (ThemeParkIncObjectRemoved) and its histories hold thing ids, not attraction ids
+			if ( guest.Tpi != null || guest.AttractionId != attraction.AttractionId || attraction.AttractionId == 0 )
 				continue;
 			DropForRemovedAttraction( guest, attraction );
 		}
 		// every guest, targeting it or not, forgets it in its histories and in its major destination
 		foreach ( var guest in guests )
 		{
+			if ( guest.Tpi != null )
+				continue;
 			// [BIN:TPW-EXE:0x004FB4A6 major destination removed] the message clears +0x1DE of every guest it reaches when it names the object, whatever the target
 			if ( guest.SavedMajorAttractionId == attraction.AttractionId && attraction.AttractionId != 0 )
 				guest.SavedMajorAttractionId = 0;
@@ -525,13 +528,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// then five meter/prank draws at 0x60C734. Keep the code separate from TPW's prank actions.
 		var profile = settings.ReadProfile( random );
 		var meters = ThemeParkIncGuestStart.ReadMeters( profile.Generation, settings.PrankLikelihood, (ushort)id, random.NextWord );
-		return new Guest( id, profile.Type )
+		var guest = new Guest( id, profile.Type )
 		{
 			Money = profile.Money, ExitLevel = profile.ExitLevel, Happiness = meters.Happiness,
 			Thirst = meters.Thirst, Hunger = meters.Hunger, Toilet = meters.Toilet,
 			ToiletBonus = GuestSpeed.ToiletBonus, TpiPrankCode = meters.Prank,
 			Tpi = NativeTpi != null ? NewThemeParkIncRecord( profile ) : null
 		};
+		// [BIN:TPI-EXE:0x0063ED10 navigator constructor] Theme Park Inc's native walk (--tpi-native-walk) starts the person's navigator (+0xEC, called at 0x608F83) with the constructor's caps
+		// 0x3333 and 0x6666; the speed step sets them before the first walk step
+		if ( Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc )
+			(guest.MaxSpeed, guest.MaxForce) = (GuestNavigation.ConstructorMaxSpeed, GuestNavigation.ConstructorMaxForce);
+		return guest;
 	}
 
 	/// <summary>
@@ -1101,9 +1109,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
-		// a native Theme Park Inc guest has no per tick step of OpenTPW's own: only its drawn point moves
-		if ( guest.Tpi != null )
+		// a native Theme Park Inc guest has no per tick step of OpenTPW's own: only its drawn point moves (and the bridged boarding's, Theme Park World's per tick states)
+		if ( guest.Tpi is { } nativeTpi )
 		{
+			if ( nativeTpi.State == ThemeParkIncGuestStates.BeingLoaded && StepsEveryTick( guest ) )
+				UpdateTpiBridgedBoarding( guest, nativeTpi, dt );
 			if ( !guest.HasWaypoint )
 				guest.IsMoving = false;
 			UpdatePresentation( guest );
@@ -1135,9 +1145,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// a native Theme Park Inc guest runs Theme Park Inc's pre-update and dispatch, never Theme Park World's handlers (GuestSimulation.ThemeParkInc)
 		if ( guest.Tpi is { } tpi )
 		{
+			// the bridged boarding runs only for a guest that was already in state 16 when this update began: the turn on which state 14 sets 16 (its front call) ends with that
+			// set, as the original's dispatch does, and Theme Park World's boarding step first runs on the next update
+			var wasBeingLoaded = tpi.State == ThemeParkIncGuestStates.BeingLoaded;
 			if ( turnStarted )
 				UpdateThemeParkIncGuest( guest, tpi );
-			if ( !guest.HasWaypoint )
+			// [EXT:tpi-twp-guest-rules] the bridged boarding (state 16 until phase P3b) runs Theme Park World's boarding states after Theme Park Inc's pre-update
+			if ( wasBeingLoaded && tpi.State == ThemeParkIncGuestStates.BeingLoaded )
+				UpdateTpiBridgedBoarding( guest, tpi, dt );
+			if ( !guest.HasWaypoint && guest.State is not GuestState.Boarding )
 				guest.IsMoving = false;
 			UpdatePresentation( guest );
 			return;
@@ -2926,6 +2942,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var room = RideVisitorBridge.PositionsPerCell * (sizeInCells ?? attraction.QueueSizeInCells);
 		foreach ( var guest in guests )
 		{
+			// [BIN:TPI-EXE:0x5E0733 queue re-evaluation] Theme Park Inc's ride visits its list's guests but the called one with 0x6197F0 (ThemeParkIncQueueEdited); a sync that only moves the cells dismisses nobody
+			if ( guest.Tpi is { } nativeTpi )
+			{
+				if ( dismiss && attraction is RideVisitorBridge bridge && guest.Id != attraction.CalledGuest && nativeTpi.State != ThemeParkIncGuestStates.BeingLoaded
+					&& attraction.GetQueuePosition( guest.Id ) >= 0 )
+					ThemeParkIncQueueEdited( guest, nativeTpi, bridge, room );
+				continue;
+			}
 			if ( guest.AttractionId != attraction.AttractionId || guest.State is not (GuestState.Queueing or GuestState.MovingUpQueue or GuestState.Boarding) || guest.Id == attraction.CalledGuest )
 				continue;
 			var position = attraction.GetQueuePosition( guest.Id );
@@ -3574,13 +3598,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	long IRideVisitorHost.ParkTurn => ParkTurn;
 	bool IRideVisitorHost.WalksToBoard => true;
 
-	bool IRideVisitorHost.IsStandingAtFront( IRideVisitorBridge ride, int guestId ) =>
-		Find( guestId ) is { State: GuestState.Queueing, InQueueInterlude: false, QueuePosition: 0 } guest && guest.AttractionId == ride.AttractionId;
+	bool IRideVisitorHost.IsStandingAtFront( IRideVisitorBridge ride, int guestId ) => Find( guestId ) is { Tpi: { } tpi }
+		? ThemeParkIncStandsAtFront( tpi )
+		: Find( guestId ) is { State: GuestState.Queueing, InQueueInterlude: false, QueuePosition: 0 } guest && guest.AttractionId == ride.AttractionId;
 
 	void IRideVisitorHost.OnVisitorOffered( IRideVisitorBridge ride, int guestId )
 	{
 		// Head +504 = 1; the guest notices on its next state-11 update.
-		if ( Find( guestId ) is { } guest )
+		if ( Find( guestId ) is { Tpi: { } tpi } native )
+			OfferThemeParkIncGuest( native, tpi );
+		else if ( Find( guestId ) is { } guest )
 			guest.QueueCalled = true;
 	}
 
@@ -3813,8 +3840,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 		}
 		Payments?.VisitFinished( ride );
+		if ( guest.Tpi != null )
+			// [BIN:TPI-EXE:0x6118E9 used history] Theme Park Inc's use routine 0x6118D0 pushes the thing id (0x6375C0) into the four words +0x20A with the bug-compatible shift
+			// (0x6118EC..0x611906: [a, b, c, d] becomes [id, a, b, b]); Theme Park World's decision hook does not run for a native guest
+			PushThemeParkIncHistory( guest.UsedHistory, TpiAttractionOf( ride )?.ThingId ?? 0 );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
-		if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )
+		else if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )
 			PushHistory( guest.UsedHistory, ride.AttractionId );
 		// [BIN:TPW-EXE:0x004FD9EE use fatigue] a completed use, won or lost, lowers the meter +0x1B8 by the type's UsageInfo.FatigueEffect (type +0xE8) through the clamped adder 0x004FB4F0, before the use routine; only the save reads the meter (0x004FC026)
 		guest.Energy = MeterMath.Add( guest.Energy, -(float)ride.FatigueEffect );
@@ -3853,6 +3884,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( Find( guestId ) is not { } guest )
 			return;
+		if ( guest.Tpi is { State: not ThemeParkIncGuestStates.BeingLoaded } tpi )
+		{
+			DismissThemeParkIncGuest( guest, tpi );
+			return;
+		}
 		NoteQueueEnd( guest, ride.AttractionId, QueueEndReason.RideBroken );
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 		ClearQueueState( guest );
@@ -3863,6 +3899,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( Find( guestId ) is not { } guest )
 			return;
+		// OpenTPW's teardown of a ride whose script stopped: a native guest in its queue is dismissed as by the ride's head step
+		if ( guest.Tpi is { State: not ThemeParkIncGuestStates.BeingLoaded } tpi )
+		{
+			DismissThemeParkIncGuest( guest, tpi );
+			return;
+		}
 		NoteQueueEnd( guest, ride.AttractionId, QueueEndReason.RideClosed );
 		ClearQueueState( guest );
 		Think( guest, GuestThought.Dissatisfied );
@@ -4105,6 +4147,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Departed = Departed,
 			VisitorCount = VisitorCount,
 			ThemeParkIncNativeGuests = NativeTpi != null,
+			ThemeParkIncNativeWalk = Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc,
 			ArrivalTimerStart = arrivalTimerStart,
 			DeliveringArrivals = deliveringArrivals,
 			SpawnTimer = spawnTimer,
@@ -4238,13 +4281,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Cursor = navigation.Cursor,
 				WalkCrossings = navigation.WalkCrossings,
 				AlsoOpen = navigation.AlsoOpen.ToArray(),
-				History = navigation.History,
+				History = navigation.History & 0x7fff,
 				PreviousRemaining = navigation.PreviousRemaining,
 				OffGrid = navigation.OffGrid,
 				Reroutes = navigation.Reroutes,
 				OriginalWalk = navigation.CaptureOriginal(),
 				Waypoints = navigation.Buffer.ToArray(),
-				Mask = navigation.Mask
+				Mask = navigation.Mask,
+				NativeRecord = navigation.CaptureNative()
 			},
 			CellX = guest.CellX,
 			CellY = guest.CellY,
@@ -4307,6 +4351,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Error( snapshot.ThemeParkIncNativeGuests
 				? "The save was made with Theme Park Inc's native guest states on (--tpi-native-guests), which this park runs without."
 				: "The save was made without Theme Park Inc's native guest states, which this park runs (--tpi-native-guests)." );
+		// so must the walk's switch: the park's edge test is the save's (docs/reverse/TPI-NAVIGATOR.md)
+		if ( snapshot.ThemeParkIncNativeWalk != (Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc) )
+			Error( snapshot.ThemeParkIncNativeWalk
+				? "The save was made with Theme Park Inc's navigator rules on (--tpi-native-walk), which this park runs without."
+				: "The save was made without Theme Park Inc's navigator rules, which this park runs (--tpi-native-walk)." );
 		if ( snapshot.VisitorCount < 0 )
 			Error( $"VisitorCount {snapshot.VisitorCount} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
@@ -4489,7 +4538,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					Error( $"Guest {guest.Id} holds a Theme Park Inc native block that a save of this park cannot hold (it runs without the native guest states, or the save says it did)." );
 				foreach ( var problem in native.Problems( guest.Id ) )
 					Error( problem );
-				if ( native.State < ThemeParkIncGuestStates.Count && ThemeParkIncGuestStates.Projection( native.State ) != guest.State )
+				// [EXT:tpi-twp-guest-rules] the bridged boarding keeps the state word 16 through Theme Park World's boarding, waiting, ride and exit states (BeginTpiBridgedBoarding)
+				if ( native.State < ThemeParkIncGuestStates.Count && ThemeParkIncGuestStates.Projection( native.State ) != guest.State
+					&& !(native.State == ThemeParkIncGuestStates.BeingLoaded && IsBridgedBoardingState( guest.State )) )
 					Error( $"Guest {guest.Id} state {guest.State} is not the projection of its Theme Park Inc state {native.State}." );
 			}
 			if ( guest.KidSetDraw is < 0 or > uint.MaxValue )
@@ -4643,6 +4694,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			var guest = snapshot.Guests[index];
 			if ( guest == null )
 				continue;
+			// a native Theme Park Inc guest outside the bridged boarding is in a queue by its own state word (0x61AC40: 14..17, or a spot animation that returns to one), whatever its projection
+			if ( guest.Tpi is { } native && native.State != ThemeParkIncGuestStates.BeingLoaded )
+			{
+				var nativeInQueue = ThemeParkIncGuestStates.InQueueOrLoading( native.State, native.Saved );
+				if ( nativeInQueue != queuedIn.TryGetValue( guest.Id, out var nativeQueue ) )
+					Error( $"Guest {guest.Id} is in Theme Park Inc state {native.State} but {(nativeInQueue ? "no attraction's queue holds it" : $"attraction {nativeQueue}'s queue holds it")}." );
+				else if ( nativeInQueue && nativeQueue != guest.AttractionId )
+					Error( $"Guest {guest.Id} queues for attraction {guest.AttractionId} but attraction {nativeQueue}'s queue holds it." );
+				if ( aboardOf.TryGetValue( guest.Id, out var nativeRide ) )
+					Error( $"Guest {guest.Id} is in Theme Park Inc state {native.State} but is held aboard attraction {nativeRide}." );
+				if ( guest.AttractionId != 0 && !snapshotIds.Contains( guest.AttractionId ) )
+					Error( $"Guest {guest.Id} names attraction {guest.AttractionId}, which is not registered." );
+				continue;
+			}
 			var inQueue = guest.State is GuestState.MovingUpQueue or GuestState.Queueing or GuestState.Boarding or GuestState.WaitingToBoard;
 			if ( inQueue )
 			{
@@ -4743,6 +4808,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
 		foreach ( var problem in navigation.Problems( guest.Id, Grid.InBounds ) )
 			error( char.ToUpperInvariant( problem[0] ) + problem[1..] + "." );
+		// a native navigator record only with Theme Park Inc's navigator (--tpi-native-walk), and with the guest's own caps
+		if ( navigation.NativeRecord is { Length: SaveNavigation.Bytes } nativeRecord )
+		{
+			if ( Grid.Cells.EdgeRules != WalkEdgeRules.ThemeParkInc )
+				error( $"Guest {guest.Id} carries Theme Park Inc's native navigator record without Theme Park Inc's navigator rules." );
+			var record = SaveNavigation.Read( nativeRecord );
+			if ( record.MaxSpeed.Raw != guest.MaxSpeed || record.MaxForce.Raw != guest.MaxForce )
+				error( $"Guest {guest.Id} native navigator caps ({record.MaxSpeed.Raw}, {record.MaxForce.Raw}) are not its own ({guest.MaxSpeed}, {guest.MaxForce})." );
+		}
 		// [BIN:TPI-EXE:0x60C712 guest base speed] a Theme Park Inc guest's base speed is a walk speed scaled by its profile's SpeedMultiplier
 		if ( !IsBirthBaseSpeed( guest.BaseSpeed, guest.Type, guest.TpiPrankCode.HasValue ) )
 			error( $"Guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds." );
@@ -5001,6 +5075,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else
 			for ( var index = 0; index < navigationSnapshot.Count; index++ )
 				navigation.Buffer[index] = navigation.Route[navigationSnapshot.Cursor + index];
+		navigation.RestoreSegments();
+		if ( navigationSnapshot.NativeRecord is { } native )
+			navigation.RestoreNative( native );
 	}
 
 	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: gameplay fields, in id order.

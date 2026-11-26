@@ -17,7 +17,8 @@ public readonly record struct SaveSubpath( SaveFixedVector Buffer, SaveFixed Dis
 
 /// <summary>
 /// The guest/staff navigation state (177 bytes, tp.exe reader <c>0x50D150</c>, field names from the reader's own log strings): every value is 16.16 fixed point in cells
-/// unless noted. Unused sub-path distances hold the debug fill <c>0xCDCDCDCD</c>. <see cref="Raw"/> keeps the 177 bytes as read.
+/// unless noted. Unused sub-path distances hold the debug fill <c>0xCDCDCDCD</c>. <see cref="Raw"/> keeps the 177 bytes as read. Theme Park Inc's serializer <c>0x63AD30</c> has the
+/// same order and widths (docs/reverse/TPI-NAVIGATOR.md); <see cref="Write"/> is its save half and <c>GuestNavigation.ToRecord</c> / <c>LoadRecord</c> map it onto the walk.
 /// </summary>
 // [BIN:TPW-EXE:0x50D150 navigation state reader] force, formation_pos, local_xaxis, local_yaxis, mass, max_force, max_speed, mCantReachDest, nav_mode, path_buffer_count, path_count, path_finished, path_last_progress, path_stuck_buffer, path_subpath_dist, path_tail_dist, path_target_pos, path_timestamp, path_total_count, path_total_dist, pos, radius, 5 x (subpath_buffer, subpath_dist), vel
 public sealed record SaveNavigation(
@@ -64,5 +65,60 @@ public sealed record SaveNavigation(
 			throw new InvalidOperationException( "The navigation reader does not cover the navigation state." );
 		return new SaveNavigation( force, formation, xAxis, yAxis, mass, maxForce, maxSpeed, cantReach, navMode, bufferCount, pathCount, finished, lastProgress, stuckBuffer,
 			subpathDist, tailDist, target, timestamp, totalCount, totalDist, pos, radius, subpaths, vel, bytes.ToArray() );
+	}
+
+	/// <summary>
+	/// The 177 bytes of the members (not <see cref="Raw"/>), in the order and widths <see cref="Read"/> takes them: the save half of the serializer (Theme Park Inc <c>0x63AD30</c> mode 1,
+	/// tp.exe <c>0x50D150</c>), which writes every member under its name, alphabetically, the five (subpath_buffer[p], subpath_dist[p]) pairs interleaved. Read(Write()) gives the members back.
+	/// </summary>
+	// [BIN:TPI-EXE:0x0063AD30 navigator serializer] mode 1 (save, versions 0..1): force 8, formation_pos 8, local_xaxis 8, local_yaxis 8, mass 4, max_force 4, max_speed 4, mCantReachDest 4, nav_mode 4, path_buffer_count 4, path_count 4, path_finished 1, path_last_progress 4, path_stuck_buffer 4, path_subpath_dist 4, path_tail_dist 4, path_target_pos 8, path_timestamp 4, path_total_count 4, path_total_dist 4, pos 8, radius 4, 5 x (subpath_buffer[p] 8, subpath_dist[p] 4), vel 8 through the stream's write 0x7CC960, each under its member name (0x441DA0); a short transfer returns 1; mode 0 (0x63B583) reads the same and zeroes the unnamed +0x30 (0x63B9AB, 0x63B64A)
+	public byte[] Write()
+	{
+		if ( Subpaths.Count != SubpathCount )
+			throw new InvalidOperationException( $"The navigation state has {Subpaths.Count} sub-paths; the record holds {SubpathCount}." );
+		var data = new byte[Bytes];
+		var position = 0;
+		void I32( int value )
+		{
+			BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( position ), value );
+			position += 4;
+		}
+		void Fixed( SaveFixed value ) => I32( value.Raw );
+		void Vector( SaveFixedVector value )
+		{
+			Fixed( value.X );
+			Fixed( value.Y );
+		}
+		Vector( Force );
+		Vector( FormationPos );
+		Vector( LocalXAxis );
+		Vector( LocalYAxis );
+		Fixed( Mass );
+		Fixed( MaxForce );
+		Fixed( MaxSpeed );
+		I32( CantReachDest );
+		I32( NavMode );
+		I32( PathBufferCount );
+		I32( PathCount );
+		data[position++] = PathFinished;
+		Fixed( PathLastProgress );
+		Fixed( PathStuckBuffer );
+		Fixed( PathSubpathDist );
+		Fixed( PathTailDist );
+		Vector( PathTargetPos );
+		I32( PathTimestamp );
+		I32( PathTotalCount );
+		Fixed( PathTotalDist );
+		Vector( Pos );
+		Fixed( Radius );
+		foreach ( var subpath in Subpaths )
+		{
+			Vector( subpath.Buffer );
+			Fixed( subpath.Distance );
+		}
+		Vector( Vel );
+		if ( position != Bytes )
+			throw new InvalidOperationException( "The navigation writer does not cover the navigation state." );
+		return data;
 	}
 }

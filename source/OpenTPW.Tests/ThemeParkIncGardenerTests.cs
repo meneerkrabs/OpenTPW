@@ -136,6 +136,38 @@ public class ThemeParkIncGardenerTests
 		Assert.AreEqual( (30, 5, 3, 5), (gardener.MinWorkDuration, gardener.MaxWorkDuration, gardener.MinRange, gardener.MaxRange) );
 	}
 
+	// ---- Separation ---------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void AGardenerIsASeparationNeighbourOfTheGuestsAndTheStaff()
+	{
+		// [BIN:TPI-EXE:0x63F1E0 separation neighbours] Theme Park Inc's query takes the kinds 1, 4, 5, 6, 8, 7, 0x14 and 0x12 (0x63F2AD..0x63F2CB): the gardener (0x14) is a neighbour, which Theme Park
+		// World's 0x5102F0 has no kind for. OpenTPW files every placed member on the staff chain and the query reads it without a kind test (docs/reverse/TPI-NAVIGATOR.md)
+		var economy = ScienceEconomy();
+		var grid = Row( economy );
+		var guests = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var world = new ThemeParkIncStaffWorld( grid ) { Guests = guests };
+		var gardener = HireGardener( economy, world, (4, 5) );
+		Assert.AreEqual( ThemeParkIncStaffRole.Gardener, gardener.Role );
+		Assert.IsNotNull( guests.StaffChain.Of( gardener.ThingId ), "the dropped gardener is filed on his cell's chain" );
+		var guest = guests.SpawnInPark( 4, 5 );
+		// a step off the gardener's centre, inside separation's range (2 x radius)
+		guest.Navigation.X = gardener.Navigation!.X + 0x2000;
+		guest.Navigation.Y = gardener.Navigation.Y + 0x1000;
+		var chain = new List<GuestNavigation>();
+		guests.AppendCellChain( 4, 5, chain );
+		CollectionAssert.Contains( chain, gardener.Navigation, "the cell's chain holds the gardener beside the guest" );
+		var push = GuestNavigation.Separation( guest.Navigation, chain );
+		Assert.AreNotEqual( (0, 0), push, "the guest is pushed away from the gardener" );
+		Assert.IsTrue( push.X > 0 && push.Y > 0, "away from him: the guest stands right of and below him" );
+		Assert.AreEqual( push, GuestNavigation.Separation( guest.Navigation, [gardener.Navigation] ), "he is the guest's only neighbour" );
+		// and the gardener's own separation sees the guest
+		var back = new List<GuestNavigation>();
+		guests.AppendCellChain( 4, 5, back );
+		var away = GuestNavigation.Separation( gardener.Navigation, back );
+		Assert.IsTrue( away.X < 0 && away.Y < 0, "the gardener is pushed the other way" );
+	}
+
 	// ---- Hire, search and watering --------------------------------------------------------------
 
 	[TestMethod]

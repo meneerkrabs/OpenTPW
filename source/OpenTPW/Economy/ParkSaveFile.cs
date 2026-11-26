@@ -623,6 +623,12 @@ public static class ParkSaveFile
 		/// <summary>The walk mask (staff +0x188); 0, the default, is not written.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public int Mask { get; init; }
+		/// <summary>
+		/// Theme Park Inc's native navigator (<see cref="GuestNavigation.Native"/>, the hidden switch <c>--tpi-native-walk</c>): the walk's 177-byte record, carrying the members the fields
+		/// above do not (<see cref="GuestNavigationSnapshot.NativeRecord"/>). Written only for a native walk.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public byte[]? NativeRecord { get; init; }
 
 		private static int[] Pairs( IEnumerable<(int X, int Y)> cells ) => cells.SelectMany( cell => new[] { cell.X, cell.Y } ).ToArray();
 
@@ -640,13 +646,14 @@ public static class ParkSaveFile
 			Cursor = navigation.Cursor,
 			WalkCrossings = navigation.WalkCrossings,
 			AlsoOpen = Pairs( navigation.AlsoOpen ),
-			History = navigation.History,
+			History = navigation.History & 0x7fff,
 			PreviousRemaining = navigation.PreviousRemaining,
 			OffGrid = navigation.OffGrid,
 			Reroutes = navigation.Reroutes,
 			OriginalWalk = navigation.CaptureOriginal(),
 			Waypoints = navigation.Original ? Pairs( navigation.Buffer ) : null,
-			Mask = navigation.Mask
+			Mask = navigation.Mask,
+			NativeRecord = navigation.CaptureNative()
 		};
 
 		internal bool IsValid => Position is { Length: 2 } && Velocity is { Length: 2 } && Target is { Length: 2 } && Route is { } route && route.Length % 2 == 0
@@ -656,9 +663,19 @@ public static class ParkSaveFile
 				? Waypoints is { Length: 2 * GuestNavigation.BufferedWaypoints } waypoints && waypoints.All( value => value is >= 0 and < ParkLitter.MapSize )
 					&& walk.PathCount is >= 0 and <= 0xFC && Count == Math.Min( walk.PathCount, GuestNavigation.BufferedWaypoints ) && !OffGrid
 					&& walk.Stamp >= 0 && walk.Total >= 0 && walk.Ahead >= 0 && walk.Beyond >= 0 && walk.Progress <= Fixed16.One && Cursor <= route.Length / 2
-				: Waypoints is null && Cursor <= route.Length / 2 - Count);
+				: Waypoints is null && Cursor <= route.Length / 2 - Count)
+			&& (NativeRecord is null || RestoreFields().NativeProblem( NativeRecord, Waypoints != null ? GuestNavigation.BufferedWaypoints : Count ) == null);
 
 		internal GuestNavigation Restore()
+		{
+			var navigation = RestoreFields();
+			if ( NativeRecord is { } native )
+				navigation.RestoreNative( native );
+			return navigation;
+		}
+
+		/// <summary>The walk from the fields alone (the subpath lengths of its buffered waypoints rebuilt), before a native record adds its own members.</summary>
+		private GuestNavigation RestoreFields()
 		{
 			var navigation = new GuestNavigation
 			{
@@ -673,6 +690,7 @@ public static class ParkSaveFile
 			else
 				for ( var index = 0; index < Count; index++ )
 					navigation.Buffer[index] = navigation.Route[Cursor + index];
+			navigation.RestoreSegments();
 			return navigation;
 		}
 	}

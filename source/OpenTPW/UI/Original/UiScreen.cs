@@ -28,6 +28,11 @@ public class UiScreen
 	public UiElement? Focused { get; private set; }
 	/// <summary>Called for Escape / right click; null means Escape does nothing.</summary>
 	public Action? Back { get; set; }
+	/// <summary>
+	/// What Enter does on this screen in place of activating the focused element (a window whose procedure gives Enter its own command, such as Theme Park Inc's command -1); null keeps the
+	/// focused element's activation.
+	/// </summary>
+	public Action? Accept { get; set; }
 	/// <summary>Extra drawing before the elements (backdrops, 3D-like decorations).</summary>
 	public Action<UiContext>? DrawBackground { get; set; }
 	/// <summary>Extra drawing after the elements.</summary>
@@ -273,11 +278,18 @@ public class UiScreen
 			// Enter activates, as for a text field: Space belongs to the park's map key
 			// (the original key table; ParkHud.ScreenShortcuts), not to the hovered element.
 			// [EXT:ui-key-navigation] the original has no key that activates a focused control (only the eight dialog Enter/Escape paths of docs/AUDIO.md, "List owners"), so a focused button's click on Enter (UiButton.Activate) is OpenTPW's; a focused list row stays silent
-			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
+			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) && Accept == null )
 				Focused.Activate();
 		}
 		if ( IsRemoved )
 			return true;
+		if ( Accept != null && input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
+		{
+			Accept();
+			consumed = true;
+			if ( IsRemoved )
+				return true;
+		}
 		if ( input.Has( UiKeys.Back ) || (RightCancels( input ) && Modal && !rightHandled) )
 		{
 			Back?.Invoke();

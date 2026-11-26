@@ -71,6 +71,15 @@ public sealed class ThemeParkIncStaffSettings
 		EnergyPercentToStrike = Int( "Strike.EnergyPercentToStrike" );
 		HappyPercentToStrike = Int( "Strike.HappyPercentToStrike" );
 		MotivationPercentToStrike = Int( "Strike.MotivationPercentToStrike" );
+		// [BIN:TPI-EXE:0x59ACA0 offer range] the wage window's offer box takes AllStaffConstants.MinWage (0xA02280) and MaxWage (0xA02284) as its range and WageStep (0xA02288) as its step
+		MaxWage = Int( "AllStaffConstants.MaxWage" );
+		WageStep = Int( "AllStaffConstants.WageStep" );
+		// [BIN:TPI-EXE:0x62BC03 strike area] the strike walk reads FixedItemInfo.StrikeAreaStartX/Y (0xA02600, 0xA02604) and StrikeAreaSizeX/Y (0xA02608, 0xA0260C), the theme's Standard.sam;
+		// [BIN:TPI-EXE:0x62A5D1 park entrance] a striker's way back takes FixedItemInfo.EntranceAPosX/Y (0xA025D0, 0xA025D4). A file without them leaves the reset block's 0 (the strike walk then
+		// divides by zero: ThemeParkIncStaffWorld refuses it)
+		StrikeArea = (standard.GetInt( "FixedItemInfo.StrikeAreaStartX", 0, optional: true ), standard.GetInt( "FixedItemInfo.StrikeAreaStartY", 0, optional: true ),
+			standard.GetInt( "FixedItemInfo.StrikeAreaSizeX", 0, optional: true ), standard.GetInt( "FixedItemInfo.StrikeAreaSizeY", 0, optional: true ));
+		EntranceA = (standard.GetInt( "FixedItemInfo.EntranceAPosX", 0, optional: true ), standard.GetInt( "FixedItemInfo.EntranceAPosY", 0, optional: true ));
 		var agencies = new List<ThemeParkIncStaffAgency>();
 		foreach ( var index in standard.GetIndices( "StaffAgencies", "RequiredPromotionLevel" ) )
 		{
@@ -127,6 +136,14 @@ public sealed class ThemeParkIncStaffSettings
 	public float MaxRecuperationRate { get; }
 	public float MinHappinessRecuperationRate { get; }
 	public float MaxHappinessRecuperationRate { get; }
+	/// <summary><c>AllStaffConstants.MaxWage</c>: the wage window's highest offer.</summary>
+	public int MaxWage { get; }
+	/// <summary><c>AllStaffConstants.WageStep</c>: the wage window's offer step.</summary>
+	public int WageStep { get; }
+	/// <summary><c>FixedItemInfo.StrikeAreaStartX/Y</c> and <c>StrikeAreaSizeX/Y</c>: the cells a striker walks to.</summary>
+	public (int X, int Y, int Width, int Height) StrikeArea { get; }
+	/// <summary><c>FixedItemInfo.EntranceAPosX/Y</c>: the cell a striker walks back to when his strike is over.</summary>
+	public (int X, int Y) EntranceA { get; }
 	public int MinMonthsForStrike { get; }
 	public int MinStaffOfTypeForStrike { get; }
 	public int EnergyPercentToStrike { get; }

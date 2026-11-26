@@ -81,6 +81,13 @@ public sealed partial class ThemeParkIncStaffWorld
 			case RestSearch:
 				UpdateRestSearch( economy, settings, member, turn );
 				break;
+			// [BIN:TPI-EXE:0x6287A0 strike states] the role's table sends 4 and 5 to the common handler: 4 -> 0x628855, 5 -> 0x628892 (ThemeParkIncStaffWorld.Strikes.cs)
+			case ToStrike:
+				UpdateToStrike( economy, member, turn );
+				break;
+			case Striking:
+				UpdateStriking( economy, member, turn );
+				break;
 		}
 	}
 

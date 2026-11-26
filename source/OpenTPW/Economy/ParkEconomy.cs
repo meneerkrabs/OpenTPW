@@ -135,12 +135,6 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>Theme Park Inc's staff: the hiring pool, the members and their strikes (null in Theme Park World and where the staff keys are missing).</summary>
 	public ThemeParkIncStaff? TpiStaff { get; private set; }
 
-	/// <summary>
-	/// The Theme Park Inc wage demands of the last day message (0x628CA0's type-0x19 message). The salary negotiation that answers them is not ported yet: the HUD takes them every frame
-	/// and shows them as notes. Each day message clears the list before it adds its own demands, so a run without the HUD (headless, the smoke) holds at most one day's demands instead of
-	/// a list that grows for ever. Not saved (a notice, like the original's message bar).
-	/// </summary>
-	internal List<ThemeParkIncStaff.WageDemand> TpiWageDemands { get; } = new();
 
 	/// <summary>
 	/// A Theme Park Inc staff name's identity for the pool's name test, which compares the texts of the per-language <c>*_NAMES.str</c> tables. No retail language holds a
@@ -540,11 +534,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [BIN:TPI-EXE:0x626624 staff day] the day message (0x0B, broadcast by the calendar 0x6084FA after the thing loop and the pool update) runs every member's daily routine 0x628CA0 (the experience
 		// gain and a wage demand on its day of the month) and then 0x62D1A0 (the day's counters cleared); it takes no draw, and the staff hear it in ascending handle order
 		if ( changes.HasFlag( CalendarChange.Day ) && TpiStaff != null )
-		{
-			// one day's demands at most: the HUD drains them every frame, a headless run never does
-			TpiWageDemands.Clear();
-			TpiWageDemands.AddRange( TpiStaff.EndDay( turn, stored.Day ) );
-		}
+			FileThemeParkIncWageDemands( TpiStaff.EndDay( turn, stored.Day ) );
 		if ( changes.HasFlag( CalendarChange.Month ) )
 		{
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
@@ -1577,7 +1567,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		// [BIN:TPI-EXE:0x5AF220 analyser month] Theme Park Inc's month message reaches its listeners in ascending thing-id order (the id-keyed tree walked in order by 0x436DD0).
 		// The analyser is id 5 and the bank 9, so its close and sample precede the batch credit, the instalments and the objects — whose entries therefore fall in the month that opens.
-		// A Theme Park Inc park runs no staff work (EconomyRules.ThemeParkIncMoney has Staff false), so nothing else moves
+		// Theme Park World's staff work (Rules.Staff) is off in a Theme Park Inc park; its own staff (TpiStaff) hear the month as things of the same order: the HQ first, the members' paydays after the bank
+		// [BIN:TPI-EXE:0x632C20 strike month] the staff HQ (thing 1) hears it first: the strike consideration reads the meters before the members' paydays review their wages
+		if ( Rules.ThemeParkInc )
+			ConsiderThemeParkIncStrikes();
 		var analyserClosed = Rules.ThemeParkInc ? CloseAnalyserMonth( nextMonthIndex ) : null;
 
 		// [BIN:TPW-EXE:0x004D0370 bank month] the month message first pays the batch word (+0x10, an unsigned credit below 1,000,000 by the routine's own assertion) into the balance, the money-in total (+0x1FC90) and the year's profit (+0x124), then zeroes it (0x4D0393..0x4D03DB), before any instalment

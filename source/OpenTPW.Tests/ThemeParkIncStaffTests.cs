@@ -43,6 +43,8 @@ public class ThemeParkIncStaffTests
 		Assert.IsNotNull( economy.TpiStaff );
 		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
 		Assert.IsTrue( json.Remove( "TpiStaff" ) );
+		// a save from before the staff holds no special-ride table either (the table is built with the staff)
+		Assert.IsTrue( json.Remove( "TpiSpecialRides" ) );
 		var data = ParkSaveFile.Deserialize( Bytes( json.ToJsonString() ) );
 		var exception = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( data, settings, economy.Catalog ) );
 		StringAssert.Contains( exception.Message, "made before Theme Park Inc staff" );

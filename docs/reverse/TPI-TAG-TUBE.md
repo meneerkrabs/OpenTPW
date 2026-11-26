@@ -80,7 +80,7 @@ checked, because the arrival's briefing and every objective letter would have be
 ## 5. Not ported
 
 - The advisor's unread messages 0x198 and 0x15D (descriptors `0x9E3F80` and `0x9E3FB8`, group 0, responses 739 and 652..653) and the go-to hint 0x211
-  (`0x9E5B80`): Theme Park Inc's advisor plays only the weather forecasts, and the speech choice among two responses is not read (`[EXT:tpi-capability-gates]`).
+  (`0x9E5B80`): Theme Park Inc's advisor queue takes only the forecasts and the letters so far, and the speech choice among two responses is not read (`[EXT:tpi-capability-gates]`).
   The tube counts and doubles its threshold exactly; the client notes the message. Porting the speech means running the advisor's playback (queued by `0x718820`), which draws
   the C runtime's `rand()` three times, all presentation: the talking-animation segments (`0x715AC4`, GenerateAnimSequence `0x715AB0`), the stop sound (`0x716A2C`, `0x716950`) and the
   mouth frame (`0x717175`). That port waits on the user's decision about those draws.

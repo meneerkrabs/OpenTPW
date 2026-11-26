@@ -7,7 +7,7 @@ public sealed partial class ParkEconomy
 	public const int ThemeParkIncWageDemandAdvice = 0x1C8;
 
 	/// <summary>
-	/// The advisor messages the staff posted since the client last took them: the wage demand's <see cref="ThemeParkIncWageDemandAdvice"/>. Theme Park Inc's advisor plays only the forecasts, so the
+	/// The advisor messages the staff posted since the client last took them: the wage demand's <see cref="ThemeParkIncWageDemandAdvice"/>. Theme Park Inc's advisor queue takes only the forecasts and the letters so far, so the
 	/// client notes them (<c>[EXT:tpi-capability-gates]</c>).
 	/// </summary>
 	internal List<int> TpiStaffAdvice { get; } = new();

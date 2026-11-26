@@ -14,7 +14,7 @@ public sealed class ThemeParkIncNativeGuestTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
 
-	private sealed class Payments : IGuestPayments
+	internal sealed class Payments : IGuestPayments
 	{
 		public bool Closed;
 		public int Fee = 30;
@@ -29,7 +29,7 @@ public sealed class ThemeParkIncNativeGuestTests
 		public void PriceTested( int category, int value ) => Opinions.Add( (category, value) );
 	}
 
-	private sealed class Vehicles : IArrivalVehicleHost
+	internal sealed class Vehicles : IArrivalVehicleHost
 	{
 		public readonly bool[] Defined = { true, true, true };
 		public readonly bool[] Placed = new bool[3];
@@ -75,7 +75,7 @@ public sealed class ThemeParkIncNativeGuestTests
 	/// </summary>
 	internal const bool NativeWalkByDefault = true;
 
-	private static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false, ThemeParkIncGuestSettings? nativeSettings = null,
+	internal static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false, ThemeParkIncGuestSettings? nativeSettings = null,
 		bool? walk = null )
 	{
 		var grid = new GuestPathGrid( 30, 24 );
@@ -103,7 +103,7 @@ public sealed class ThemeParkIncNativeGuestTests
 		return (simulation, payments, vehicles);
 	}
 
-	private static void Turns( GuestSimulation simulation, int turns )
+	internal static void Turns( GuestSimulation simulation, int turns )
 	{
 		var target = simulation.ParkTurn + turns;
 		while ( simulation.ParkTurn < target )

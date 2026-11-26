@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -158,6 +159,89 @@ public class ThemeParkIncNativeWalkTests
 			random.NextBytes( bytes );
 			CollectionAssert.AreEqual( bytes, ThemeParkIncPersonRecord.Read( bytes ).Write(), $"{model}: read then write" );
 		}
+	}
+
+	/// <summary>A native park of the native guests' rig with six arrivals, run until they walk, wander and queue.</summary>
+	private static GuestSimulation PlayedPark()
+	{
+		var (simulation, _, _) = ThemeParkIncNativeGuestTests.Rig();
+		for ( var arrival = 0; arrival < 6; arrival++ )
+		{
+			simulation.SpawnArrival();
+			ThemeParkIncNativeGuestTests.Turns( simulation, 25 );
+		}
+		return simulation;
+	}
+
+	private static GuestSimulation Restored( GuestSimulationSnapshot saved )
+	{
+		var (simulation, _, _) = ThemeParkIncNativeGuestTests.Rig();
+		simulation.RestoreSnapshot( saved );
+		return simulation;
+	}
+
+	/// <summary>Both parks go on turn by turn with the same state hash.</summary>
+	private static void GoOnAlike( GuestSimulation expected, GuestSimulation actual, int turns, string what )
+	{
+		for ( var turn = 0; turn < turns; turn++ )
+		{
+			ThemeParkIncNativeGuestTests.Turns( expected, 1 );
+			ThemeParkIncNativeGuestTests.Turns( actual, 1 );
+			Assert.AreEqual( expected.ComputeStateHash(), actual.ComputeStateHash(), $"{what}: turn {turn}" );
+		}
+	}
+
+	/// <summary>
+	/// OpenTPW's own Theme Park Inc resume (the JSON continuation until the park writer's N10) restores native guests verbatim from the native walk storage alone: no walk field of OpenTPW's own kind is
+	/// written, a restored park saves the same bytes again (T3), has the same state hash and goes on exactly as the live one.
+	/// </summary>
+	[TestMethod]
+	public void NativeGuestsResumeVerbatimFromTheNativeWalkStorage()
+	{
+		var live = PlayedPark();
+		var walking = 0;
+		for ( var point = 0; point < 5; point++ )
+		{
+			ThemeParkIncNativeGuestTests.Turns( live, 37 );
+			var json = ParkResumeJson.Serialize( live.CaptureSnapshot() );
+			var saved = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( json )!;
+			Assert.AreEqual( GuestSimulationSnapshot.CurrentThemeParkIncWalkStorage, saved.ThemeParkIncWalkStorage );
+			Assert.IsTrue( saved.Guests.Length > 0 && saved.Guests.All( guest => guest.PersonWalk != null && !guest.HasAnyOwnWalkField ), "only the native walk storage is written" );
+			walking += live.Guests.Count( guest => !guest.Navigation.Arrived );
+			var resumed = Restored( saved );
+			CollectionAssert.AreEqual( json, ParkResumeJson.Serialize( resumed.CaptureSnapshot() ), $"save {point}: a restored park saves the same bytes" );
+			Assert.AreEqual( live.ComputeStateHash(), resumed.ComputeStateHash(), $"save {point}: the same state" );
+			GoOnAlike( live, resumed, 23, $"save {point}" );
+		}
+		Assert.IsTrue( walking > 0, "the saves caught guests mid-walk" );
+	}
+
+	/// <summary>
+	/// T2. The original's load semantics on a played park: each native guest's person block as the save half writes it (<see cref="ThemeParkIncNativeWalk.Write"/>), loaded in a fresh process (the counter 0,
+	/// the block stamps zeroed, each guest re-routed in order). Loading the blocks onto guests whose walk and person words were blanked gives the park that loading them onto the restored guests gives,
+	/// turn by turn: the blocks carry the whole walk. The counter counts the re-routes from 0.
+	/// </summary>
+	[TestMethod]
+	public void APlayedParkLoadsWithTheOriginalsSemanticsFromItsPersonBlocks()
+	{
+		var live = PlayedPark();
+		ThemeParkIncNativeGuestTests.Turns( live, 41 );
+		var saved = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( live.CaptureSnapshot() ) )!;
+		var blocks = live.Guests.Select( guest => ThemeParkIncNativeWalk.Write( guest ) ).ToArray();
+		var reference = Restored( saved );
+		ThemeParkIncNativeWalk.LoadAll( reference.Grid, reference.Guests.Zip( blocks, ( guest, block ) => ((IThemeParkIncWalker)guest, block) ), freshProcess: true );
+		var reroutes = reference.Grid.Cells.StampCounter;
+		Assert.IsTrue( reroutes >= blocks.Length && reroutes <= 2 * blocks.Length, "a fresh process counts each re-route from 0 (once, or twice with a set-up)" );
+		var subject = Restored( saved );
+		foreach ( IThemeParkIncWalker guest in subject.Guests )
+		{
+			guest.Walk.RestoreNativeRecord( new GuestNavigation().ToRecord().Raw );
+			(guest.AccurateDestX, guest.AccurateDestY, guest.StrandedTime, guest.PreviousX, guest.PreviousY, guest.SpriteAngle) = (0, 0, 0, 0, 0, 0);
+		}
+		ThemeParkIncNativeWalk.LoadAll( subject.Grid, subject.Guests.Zip( blocks, ( guest, block ) => ((IThemeParkIncWalker)guest, block) ), freshProcess: true );
+		Assert.AreEqual( reroutes, subject.Grid.Cells.StampCounter );
+		Assert.AreEqual( reference.ComputeStateHash(), subject.ComputeStateHash(), "the blocks restore the walk" );
+		GoOnAlike( reference, subject, 40, "after the native load" );
 	}
 
 	/// <summary>

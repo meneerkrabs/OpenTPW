@@ -10,10 +10,8 @@ namespace OpenTPW;
 /// (ThemeParkIncStaffWorld.Rest.cs).
 /// </summary>
 /// <remarks>
-/// [EXT:tpi-twp-guest-rules] (user-approved 2026-11-21 for the staff's walk) the walk step 0x60B440, the route search behind the staff route 0x62EB10 (SetDest 0x63E3A0; the route's entrance refusal, walk mask and the cell steer 0x60B7F0 are ported, StaffRoute), the patrol destination 0x609F70 and the speed step 0x60BC90 are not
-/// proven identical to Theme Park World's (WP0 movement: D1 the arrival heading, D2 the run flag, D5 the cell node stride; 0x609F70 is read as a call skeleton only), so a member walks
-/// Theme Park World's walk (the guests' steering step with separation, the route search, the wander destination 0x004F9490 with its off-path search, the speed smoothing 0x004FA870 and the
-/// caps 0x00510190), over Theme Park Inc's own speed words (+0xD4, +0xD6, +0xD8).
+/// A member walks with Theme Park Inc's own navigator (docs/reverse/TPI-NAVIGATOR.md): the walk step 0x60B440 (<see cref="Walk"/>), the speed step 0x60BC90, the staff route 0x62EB10 and the wander
+/// and patrol destination 0x609F70 with the patrol rectangle 0x62C610 and its fallback 0x62C720 (<see cref="Patrol"/>), over the route search and steering step that are Theme Park World's code.
 /// [EXT:tpi-no-maintenance-wear] (user-approved 2026-11-21) Theme Park Inc's toilet wear and the bins' fill are unported, so the loo finder 0x5D6230 and the bin finder 0x5D5F10 find nothing
 /// to clean: the handymen sweep litter only (states 0x11 to 0x14 are not entered). The rides' wear and the mechanics are ported (ThemeParkIncStaffWorld.Mechanics,
 /// ParkEconomy.UpdateThemeParkIncRide).
@@ -525,8 +523,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x628050 staff pre-update] 0x60BC90 (the speed words' smoothing and the walk's caps), the thought check on the member's phase, then one tick of the display state's day counter
 	private void CommonPreUpdate( ThemeParkIncStaffMember member )
 	{
-		// [EXT:tpi-twp-guest-rules] 0x60BC90's smoothing of (+0xD4 + +0xD6 + +0xD8) / 100 into +0xDC and the decay of +0xD8 by 99/100 are taken as Theme Park World's 0x004FA870, the caps
-		// 0x63EF90 as 0x00510190
+		// [BIN:TPI-EXE:0x60BC90 speed step] (+0xD4 + +0xD6 + +0xD8) / 100 + 3 x +0xDC, x 0.25 into +0xDC, the caps 0x63EF90 and the decay of +0xD8 by 99 / 100: Theme Park World's 0x004FA870 value for value
+		// (oracle tpi-exe-speed-step, TPI-NAVIGATOR.md NV3), so GuestSpeed.Update computes it
 		(member.SmoothedSpeed, member.Boost, member.MaxSpeed, member.MaxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, member.Boost );
 		// [BIN:TPI-EXE:0x5D1080 sprite requests] 0x60BC90 then applies the wrapper's pending template (+0xC, through the table 0x9CDA94, 0x4E49A0) and interval (+0x10, 0x4E42B0), clearing each, as tp.exe's
 		// 0x004D4190; a member restored from a save (whose sprite is not saved) gets a source in his state's template first; a member inside a room (training, researching) has no source (0x5D1050 at the
@@ -750,18 +748,8 @@ public sealed partial class ThemeParkIncStaffWorld
 			SearchHandyman( economy, member, turn );
 	}
 
-	/// <summary>The patrol rectangle test (0x62C610): the cell word's cell inside the member's rectangle, its corners ordered first.</summary>
-	// [BIN:TPI-EXE:0x62C610 patrol rectangle] x = (w - 1) & 0x7F, y = (w - 1) >> 7 against +0x24C..+0x258 (each pair swapped when reversed), inclusive, signed
-	private static bool InPatrolArea( ThemeParkIncStaffMember member, int word )
-	{
-		var (x, y) = CellOf( word );
-		var (x0, y0, x1, y1) = member.PatrolArea;
-		if ( x0 > x1 )
-			(x0, x1) = (x1, x0);
-		if ( y0 > y1 )
-			(y0, y1) = (y1, y0);
-		return x >= x0 && x <= x1 && y >= y0 && y <= y1;
-	}
+	/// <summary>The patrol rectangle test <c>0x62C610</c> of a cell word (<see cref="ThemeParkIncPatrol.InArea(ValueTuple{int, int, int, int}, int)"/>).</summary>
+	private static bool InPatrolArea( ThemeParkIncStaffMember member, int word ) => ThemeParkIncPatrol.InArea( member.PatrolArea, word );
 
 	/// <summary>
 	/// The strike and rest gate (0x62BBA0) before every search: true when it set the member's state. A comfortable member's base speed follows his energy and his mood may show; a tired
@@ -892,10 +880,7 @@ public sealed partial class ThemeParkIncStaffWorld
 
 	private enum WalkResult { Arrived, Walking, Stuck }
 
-	/// <summary>
-	/// One walk step: arrived, walking or stuck. With Theme Park Inc's navigator (<c>--tpi-native-walk</c>) the walk step <c>0x60B460</c> (<see cref="WalkThemeParkInc"/>), else Theme Park World's walk
-	/// (see the class remarks).
-	/// </summary>
+	/// <summary>One walk step: arrived, walking or stuck: Theme Park Inc's walk step <c>0x60B460</c> (the steering step, then <see cref="WalkThemeParkInc"/>).</summary>
 	private WalkResult Walk( ThemeParkIncStaffMember member )
 	{
 		var navigation = member.Navigation!;
@@ -908,31 +893,7 @@ public sealed partial class ThemeParkIncStaffWorld
 			OpenTPW.WalkResult.Stuck => WalkResult.Stuck,
 			_ => WalkResult.Arrived
 		};
-		if ( grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc )
-			return WalkThemeParkInc( member, beforeX, beforeY, result );
-		// the heading (+0x2C) follows the step's direction ([EXT:tpi-twp-guest-rules]: Theme Park World's walk; Theme Park Inc's arrival also writes it, D1, from the same differences)
-		var (dx, dy) = ((long)navigation.X - beforeX, (long)navigation.Y - beforeY);
-		if ( dx != 0 || dy != 0 )
-		{
-			var length = Math.Sqrt( dx * (double)dx + dy * (double)dy );
-			(member.HeadingX, member.HeadingY) = ((float)(dx / length), (float)(dy / length));
-		}
-		// [BIN:TPI-EXE:0x60B541 walk request] a step that is still walking asks the sprite for the walk (template 1, 0x9AFBA8) unless its restart PC is there already (0x4E4AB0, then 0x5D0F90(1)): the run
-		// (2, 0x9AFC04) is for a guest without +0x2A4 or a guard with a speed bonus, never a handyman; then the interval clamp(trunc(62 / v), 0, 250) (0x5D10F0) of the step's length times 0x93E5B4,
-		// doubled without the run, as tp.exe's 0x004FA3F8
-		if ( result == WalkResult.Walking )
-		{
-			// 0x60B541: the speed bonus +0xD6 above the table's first word (0x9CFB20, 0) and the class byte 7 (a guard) runs; no other staff role does
-			var run = member.Role == ThemeParkIncStaffRole.Guard && unchecked( (ushort)member.SpeedBonus ) > unchecked( (ushort)BonusTable[0] );
-			var (template, program) = run ? (2, StaffSpriteEvents.Run) : (1, StaffSpriteEvents.Walk);
-			if ( !member.Sprite.RestartsAt( program ) )
-			{
-				member.Template = template;
-				member.Sprite.QueueTemplate( program );
-			}
-			member.Sprite.QueueInterval( GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, run ) );
-		}
-		return result;
+		return WalkThemeParkInc( member, beforeX, beforeY, result );
 	}
 
 	/// <summary>
@@ -978,69 +939,14 @@ public sealed partial class ThemeParkIncStaffWorld
 		return GuestNavigation.Separation( self, neighbours );
 	}
 
-	/// <summary>
-	/// The staff route (<c>0x62EB10</c>): a closed park refuses a walk to the entrance cells (47, 17) and (48, 17); else the walk mask is 1 when the member's cell or the target cell is empty (type 0),
-	/// 0 otherwise, and the walk is set to the point (<c>0x60B8E0</c>). False when no route reaches it.
-	/// </summary>
-	// [BIN:TPI-EXE:0x62EB10 staff route] park+0x1EAB44 (0x64FA30, nonzero: the park is closed) with the target word's cell x (its high byte) 0x2F or 0x30 and the y word's cell 0x11 answers 0 and leaves the
-	// walk; the member's cell record (+0x418 + 72 × (y << 7 + x + 1), from the bytes +5 and +7) of type 0 (0x67F6D0, its dword +8) or else the target's sets +0x1A0 = 1, else +0x1A0 = 0 (the walk's +0xB4,
-	// the mask the search and the edge test read); then 0x60B8E0 with the two words
-	// [BIN:TPI-EXE:0x60B8E0 staff steer] the stamp counter raised (0x5D81F0, ParkCellMap.NextStamp: counted with Theme Park Inc's navigator, else only the edits count); the stranded mark +0x1B0 is tested (0x60BB50) only while nonzero,
-	// and a staff member's never is: its only setter with a stamp, 0x60A4AE in the wander, is reached by kind 1 (the guests) alone, the staff kinds 4, 5, 6, 8, 7 and 0x14 branching to 0x62C720 at
-	// 0x60A454, and every other writer stores 0 (0x608F94, 0x60A56C, 0x60A84C, 0x60B4CA, 0x60B9FC); then +0x28, +0x2A = the words, +0x1B0 = 0 and SetDest 0x63EE80 (0x63E3A0 with the point << 8)
-	private bool StaffRoute( ParkEconomy economy, ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY )
-	{
-		if ( !economy.IsParkOpen && cell.Y == 0x11 && cell.X is 0x2F or 0x30 )
-			return false;
-		var (x, y) = member.Navigation!.Cell;
-		member.Navigation.Mask = grid.Cells.RawTypeAt( x, y ) == 0 || grid.Cells.RawTypeAt( cell.X, cell.Y ) == 0 ? 1 : 0;
-		// 0x60B8F4: the counter raised (a park counting the simulation's calls, ParkCellMap.NextStamp); the mark it then tests is 0
-		grid.Cells.NextStamp();
-		return Route( member, cell, byteX, byteY );
-	}
+	/// <summary>The staff route <c>0x62EB10</c> (<see cref="ThemeParkIncPatrol.StaffRoute"/>): false when a closed park refuses the cell or no route reaches it.</summary>
+	private bool StaffRoute( ParkEconomy economy, ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY ) =>
+		ThemeParkIncPatrol.StaffRoute( grid, member.Navigation!, economy.IsParkOpen, cell, byteX, byteY );
 
 	/// <summary>Sets the walk to a point of a cell with the walk's mask (SetDest, <c>0x63EE80</c>); false when no route reaches it (the walk then stands arrived and stuck).</summary>
-	private bool Route( ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY )
-	{
-		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
-		return member.Navigation!.Navigate( grid.Cells, x, y );
-	}
+	private bool Route( ThemeParkIncStaffMember member, (int X, int Y) cell, int byteX, int byteY ) => ThemeParkIncPatrol.Route( grid, member.Navigation!, cell, byteX, byteY );
 
-	/// <summary>The patrol destination: a wander inside the patrol rectangle, or the off-path search from a cell without links; true when a walk is set.</summary>
-	// [EXT:tpi-twp-guest-rules] Theme Park World's wander: Theme Park Inc's 0x609F70 for the staff (its stamp-counter gates 0x609FBE, 0x60A6FB and 0x60A83F, the final route through the staff route
-	// 0x62EB10 and the patrol fallback 0x62C720) is the navigator plan's NV4, so with --tpi-native-walk the counter counts no call of the patrol until then
-	private bool Patrol( ParkEconomy economy, ThemeParkIncStaffMember member )
-	{
-		var cell = member.Navigation!.Cell;
-		var area = member.PatrolArea;
-		bool InArea( int x, int y ) => x >= area.X0 && x <= area.X1 && y >= area.Y0 && y <= area.Y1;
-		var keepToArea = true;
-		if ( !InArea( cell.X, cell.Y ) )
-		{
-			if ( EnterPatrolArea( economy, member ) )
-				return true;
-			keepToArea = false;
-		}
-		uint Draw() => economy.World.NextWord();
-		if ( GuestWander.Pick( grid, cell, Draw, keepToArea ? InArea : null, out var stranded ) is { } destination )
-			return Route( member, destination.Cell, destination.ByteX, destination.ByteY );
-		if ( (grid.Cells.LinksAt( cell.X, cell.Y ) & 0x55) == 0 )
-			return GuestWander.OffPath( grid, cell, Draw, target => Route( member, target, GuestWander.CentreByte, GuestWander.CentreByte ) );
-		return stranded && EnterPatrolArea( economy, member );
-	}
-
-	/// <summary>A walk to a random path cell of the patrol rectangle: up to 30 tries of two world draws.</summary>
-	private bool EnterPatrolArea( ParkEconomy economy, ThemeParkIncStaffMember member )
-	{
-		var area = member.PatrolArea;
-		for ( var tries = 0; tries < 30; tries++ )
-		{
-			var x = (int)(economy.World.NextWord() % (uint)(area.X1 - area.X0 + 1)) + area.X0;
-			var y = (int)(economy.World.NextWord() % (uint)(area.Y1 - area.Y0 + 1)) + area.Y0;
-			// [BIN:TPI-EXE:0x62C84E patrol entry route] the staff route 0x62EB10 to the cell's centre
-			if ( grid.IsWalkable( x, y ) && StaffRoute( economy, member, (x, y), GuestWander.CentreByte, GuestWander.CentreByte ) )
-				return true;
-		}
-		return false;
-	}
+	/// <summary>The wander and patrol destination <c>0x609F70</c> of a staff member (<see cref="ThemeParkIncPatrol.Destination"/>); true when a walk is set.</summary>
+	private bool Patrol( ParkEconomy economy, ThemeParkIncStaffMember member ) =>
+		ThemeParkIncPatrol.Destination( grid, member.Navigation!, member.PatrolArea, economy.World, economy.IsParkOpen );
 }

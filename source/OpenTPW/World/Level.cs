@@ -262,8 +262,8 @@ public partial class Level : IDisposable
 		&& ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, LevelName ) != null;
 	private bool? runsThemeParkIncNativeGuests;
 	/// <summary>
-	/// The edge test this level's walkers use (docs/reverse/TPI-NAVIGATOR.md): Theme Park Inc's in a Theme Park Inc level with the hidden switch <c>--tpi-native-walk</c>
-	/// (<see cref="GuestSimulation.ThemeParkIncNativeWalkRequested"/>, read once here, <see cref="WalkEdges.RulesForNewPark"/>), else Theme Park World's. It sets the cell map's <see cref="ParkCellMap.EdgeRules"/>.
+	/// The edge test this level's walkers use (docs/reverse/TPI-NAVIGATOR.md): Theme Park Inc's in a Theme Park Inc level, else Theme Park World's (<see cref="WalkEdges.RulesForNewPark"/>, read once
+	/// here). It sets the cell map's <see cref="ParkCellMap.EdgeRules"/>.
 	/// </summary>
 	private WalkEdgeRules ParkEdgeRules => parkEdgeRules ??= WalkEdges.RulesForNewPark();
 	private WalkEdgeRules? parkEdgeRules;

@@ -3,8 +3,8 @@ namespace OpenTPW;
 // Theme Park Inc's own guest state machine (docs/reverse/TPI-GUESTS.md, phase P1 of the port): the setter 0x61A540 with its entry table, the dispatch 0x619FF0 (table 0x61A3A8),
 // the pre-update 0x619B50 with the weather rule 0x611050, the constructor's tail and the arrival and leaving states (idle, the wander and the walk to a bin, phase P2, are in
 // GuestSimulation.ThemeParkIncIdle.cs). It runs on the shared Guest records, inside the shared
-// sweep, for the guests that carry a Theme Park Inc record (Guest.Tpi); every other guest keeps the Theme Park World update untouched. The walk step, the route search, the
-// wander and the speed stay Theme Park World's ([EXT:tpi-twp-guest-rules]), as for the staff.
+// sweep, for the guests that carry a Theme Park Inc record (Guest.Tpi); every other guest keeps the Theme Park World update untouched. The walk step, the route requests, the
+// wander and the speed step are Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md), as for the staff.
 public sealed partial class GuestSimulation
 {
 	/// <summary>
@@ -12,14 +12,6 @@ public sealed partial class GuestSimulation
 	/// guest simulation (<see cref="ThemeParkIncNativeGuests"/>).
 	/// </summary>
 	public static bool ThemeParkIncNativeGuestsRequested { get; set; }
-
-	/// <summary>
-	/// Whether the next Theme Park Inc park a level builds walks its guests and staff with Theme Park Inc's own navigator rules (the hidden <c>--tpi-native-walk</c> option,
-	/// <c>ThemeParkIncNativeWalk</c> of docs/reverse/TPI-NAVIGATOR.md); off by default, so the Theme Park Inc determinism pins move once, when the port's last phase turns it on. A level reads it once,
-	/// when it builds its cell map (<see cref="ParkCellMap.EdgeRules"/>, <see cref="WalkEdges.RulesForNewPark"/>); a save records it and a restore refuses the other setting
-	/// (<see cref="GuestSimulationSnapshot.ThemeParkIncNativeWalk"/>). So far it selects Theme Park Inc's edge test.
-	/// </summary>
-	public static bool ThemeParkIncNativeWalkRequested { get; set; }
 
 	/// <summary>
 	/// Whether the Theme Park Inc guests this simulation builds run Theme Park Inc's own state machine (<see cref="Guest.Tpi"/>, docs/reverse/TPI-GUESTS.md) instead of Theme Park World's
@@ -514,8 +506,7 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// The walk step <c>0x60B440</c>: 0 arrived, 1 walking, 2 stuck. With Theme Park Inc's navigator (<c>--tpi-native-walk</c>) it is Theme Park Inc's own (<see cref="StepThemeParkInc"/>), else Theme Park
-	/// World's (<c>[EXT:tpi-twp-guest-rules]</c>, tp.exe <c>0x004FA2A0</c>).
+	/// The walk step <c>0x60B440</c>: 0 arrived, 1 walking, 2 stuck: Theme Park Inc's own (<see cref="StepThemeParkInc"/>, the park's navigator, docs/reverse/TPI-NAVIGATOR.md).
 	/// </summary>
 	private WalkResult TpiWalk( Guest guest ) => MoveAlongStep( guest );
 
@@ -537,7 +528,7 @@ public sealed partial class GuestSimulation
 	// cleared and SetDest 0x63EE80 with the words << 8: tp.exe's 0x004FA5F0
 	private bool RouteToTpiPoint( Guest guest, (int X, int Y) cell, int byteX, int byteY )
 	{
-		if ( Grid.Cells.NextStamp() < guest.StrandedMark )
+		if ( ParkCellMap.StampBelow( Grid.Cells.NextStamp(), guest.StrandedMark ) )
 			guest.StrandedMark = 0;
 		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
 			return false;

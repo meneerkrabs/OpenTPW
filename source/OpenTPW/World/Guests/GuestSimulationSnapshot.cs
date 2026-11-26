@@ -282,7 +282,7 @@ public sealed record GuestNavigationSnapshot
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public int Mask { get; init; }
 	/// <summary>
-	/// Theme Park Inc's native navigator (<see cref="GuestNavigation.Native"/>, the hidden switch <c>--tpi-native-walk</c>): the walk's 177-byte record
+	/// Theme Park Inc's native navigator (<see cref="GuestNavigation.Native"/>, every Theme Park Inc park): the walk's 177-byte record
 	/// (<see cref="GuestNavigation.ToRecord"/>), which carries the members the fields above do not (mass, radius, the speed caps, the local axes, formation_pos, force, the five
 	/// subpath_dist slots, the whole progress history word, the written waypoint slots). Written only for a native walk; the fields above stay the walk's own.
 	/// </summary>
@@ -356,8 +356,9 @@ public sealed record GuestNavigationSnapshot
 				yield return $"guest {guestId} buffers {Count} of {walk.PathCount} waypoints";
 			if ( Count == 0 ? Index != 0 : (uint)Index >= (uint)Count )
 				yield return $"guest {guestId} waypoint index {Index} is outside its {Count} buffered waypoints";
-			if ( walk.Stamp < 0 || walk.Total < 0 || walk.Ahead < 0 || walk.Beyond < 0 )
-				yield return $"guest {guestId} original walk lengths or stamp are negative";
+			// the stamp is an unsigned dword of the stamp counter (ParkCellMap.StampCounter): any 32 bits are valid
+			if ( walk.Total < 0 || walk.Ahead < 0 || walk.Beyond < 0 )
+				yield return $"guest {guestId} original walk lengths are negative";
 			if ( walk.Progress > Fixed16.One )
 				yield return $"guest {guestId} walk progress {walk.Progress} is above ONE";
 			if ( OffGrid )
@@ -565,9 +566,10 @@ public sealed record GuestSimulationSnapshot
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public bool ThemeParkIncNativeGuests { get; init; }
 	/// <summary>
-	/// Whether the park walked with Theme Park Inc's navigator rules (the hidden switch <c>--tpi-native-walk</c>, <see cref="ParkCellMap.EdgeRules"/>, docs/reverse/TPI-NAVIGATOR.md); absent (false)
-	/// otherwise and in saves made before it (an optional member, no schema bump). A restore refuses a save whose value differs from the running park's: a walk set up under one edge test cannot
-	/// continue under the other (a staff member stepped off the paths under Theme Park World's rules may stand on unowned land that Theme Park Inc's refuses, 0x5D7D0D).
+	/// Whether the park walked with Theme Park Inc's navigator rules (<see cref="ParkCellMap.EdgeRules"/>, docs/reverse/TPI-NAVIGATOR.md): true in every Theme Park Inc save since phase NV4, absent
+	/// (false) in a Theme Park World save and in a Theme Park Inc save made before it (the hidden switch <c>--tpi-native-walk</c> was off by default; an optional member, no schema bump). A restore
+	/// refuses a save whose value differs from the running park's: a walk set up under one edge test cannot continue under the other (a staff member stepped off the paths under Theme Park World's
+	/// rules may stand on unowned land that Theme Park Inc's refuses, 0x5D7D0D), so every Theme Park Inc save made before phase NV4 is refused.
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
 	public bool ThemeParkIncNativeWalk { get; init; }

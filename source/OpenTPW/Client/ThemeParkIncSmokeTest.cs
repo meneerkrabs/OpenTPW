@@ -265,9 +265,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "note the resume frame", () =>
 		{
 			resumedAt = frame;
-			// the hidden switch of Theme Park Inc's navigator rules (--tpi-native-walk, docs/reverse/TPI-NAVIGATOR.md) reaches the walks through the park's cell map
-			Require( Level.Guests!.Grid.Cells.EdgeRules == (GuestSimulation.ThemeParkIncNativeWalkRequested ? WalkEdgeRules.ThemeParkInc : WalkEdgeRules.ThemeParkWorld),
-				"the park's walks use the edge test the switch selects" );
+			// Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md) reaches the walks through the park's cell map: its edge test, and the stamp counter that counts every simulation call
+			Require( Level.Guests!.Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc && Level.Guests.Grid.Cells.CountsSimulationCalls, "the park's walks use Theme Park Inc's navigator" );
 		} );
 		steps.AddLast( ("guests walk again", () =>
 		{

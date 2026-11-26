@@ -228,14 +228,19 @@ public sealed partial class ParkCellMap
 	/// The stamp counter (tp.exe <c>0x7CDB98</c>, Game.exe <c>0xA9D2E8</c>): raised by every write that changes a cell type, which stamps the cell's block with it.
 	/// A walk keeps the counter of its set-up (<see cref="GuestNavigation.Stamp"/>). The original also raises it at every walk set-up and
 	/// route test (<c>0x4D8C50</c>), which changes no comparison of a block stamp with a walk's, so a Theme Park World park counts the edits only; a park with
-	/// Theme Park Inc's navigator counts every simulation call (<see cref="CountsSimulationCalls"/>).
+	/// Theme Park Inc's navigator counts every simulation call (<see cref="CountsSimulationCalls"/>). The original's counter is an unsigned dword compared unsigned (the route request's
+	/// <c>cmp</c>/<c>jae</c> at <c>0x60B833</c>, follow_path's <c>jbe</c> at <c>0x63D0BF</c>): the int here holds its 32 bits, wraps past 2^31 as the dword does, and every comparison of a counter
+	/// value, a block stamp, a walk's stamp or a stranded mark is unsigned (<see cref="StampBelow"/>), so a long session's values above 2^31 compare, save and load as the original's.
 	/// </summary>
 	public int StampCounter { get; private set; }
 
+	/// <summary>Whether the stamp-counter value <paramref name="a"/> is below <paramref name="b"/> as the original's unsigned dwords compare (<c>jae</c>/<c>jb</c>).</summary>
+	public static bool StampBelow( int a, int b ) => unchecked( (uint)a < (uint)b );
+
 	/// <summary>
 	/// Whether the counter counts every simulation call of the counter routine (Game.exe <c>0x5D81F0</c>): the walk set-ups, the route requests, the wander's gates and its stranded mark, the
-	/// sprite placement's calls from the guest constructor, and the edits. True for a park with Theme Park Inc's navigator (<see cref="WalkEdgeRules.ThemeParkInc"/>, the hidden switch
-	/// <c>--tpi-native-walk</c>), so the stamps a walk and a stranded guest hold are the original's own values (docs/reverse/TPI-NAVIGATOR.md, NV3); false for every other park, whose counter
+	/// sprite placement's calls from the guest constructor, and the edits. True for a park with Theme Park Inc's navigator (<see cref="WalkEdgeRules.ThemeParkInc"/>, every Theme Park
+	/// Inc park), so the stamps a walk and a stranded guest hold are the original's own values (docs/reverse/TPI-NAVIGATOR.md, NV3); false for every other park, whose counter
 	/// counts the edits only, so no comparison and no Theme Park World pin changes.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5D81F0 stamp counter] ++[0xA9D2E8], returned; called by the queue length change 0x5E06B3, the wander 0x609FBE / 0x60A4A5 / 0x60A55F / 0x60A6FB / 0x60A83F, the route requests 0x60B828 /
@@ -279,13 +284,14 @@ public sealed partial class ParkCellMap
 	internal void RestoreBlockStamps( int counter, IReadOnlyList<int>? stamps )
 	{
 		Array.Clear( blockStamps );
-		StampCounter = counter >= 0 ? counter : throw new InvalidDataException( "the stamp counter is negative" );
+		// the counter and the stamps are unsigned dwords held in ints (StampCounter): a value past 2^31 is negative here and valid
+		StampCounter = counter;
 		if ( stamps == null )
 			return;
 		if ( stamps.Count != blockStamps.Length )
 			throw new InvalidDataException( $"the cell map has {blockStamps.Length} stamp blocks, the snapshot {stamps.Count}" );
 		for ( var index = 0; index < blockStamps.Length; index++ )
-			blockStamps[index] = stamps[index] >= 0 ? stamps[index] : throw new InvalidDataException( $"stamp block {index} is negative" );
+			blockStamps[index] = stamps[index];
 	}
 
 	/// <summary>The block stamps row by row, or null while no block is stamped.</summary>
@@ -936,7 +942,7 @@ public sealed partial class ParkCellMap
 	}
 
 	/// <summary>
-	/// The edge test the walks over this map use (<see cref="WalkEdges.Blocked"/>): Theme Park World's unless the level sets Theme Park Inc's (the hidden switch <c>--tpi-native-walk</c>,
+	/// The edge test the walks over this map use (<see cref="WalkEdges.Blocked"/>): Theme Park World's unless the level sets Theme Park Inc's (every Theme Park Inc level,
 	/// docs/reverse/TPI-NAVIGATOR.md). A property of the park, set once when its map is made; not part of the cells' state, the digest or the layout snapshot: the guests' snapshot records it (GuestSimulationSnapshot.ThemeParkIncNativeWalk) and a restore refuses a mismatch.
 	/// </summary>
 	public WalkEdgeRules EdgeRules { get; set; }

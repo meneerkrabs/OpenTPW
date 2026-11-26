@@ -72,6 +72,8 @@ internal sealed record ThemeParkIncLayoutCheckpoint
 	internal ParkCellMap RestoreInto(ParkObjects target, IReadOnlyDictionary<string, string> currentAssets, int width, int height)
 	{
 		Validate(target.Catalog, currentAssets, width, height);
+		// the restored stamp counter is the value the park's counter goes on from: a Theme Park Inc park counts every simulation call since the navigator plan's NV4 (ParkCellMap.CountsSimulationCalls),
+		// and a checkpoint written before (an edit-only counter, SimulationStampCounter false) holds a counter at or above every block stamp it saved, so counting on from it changes no comparison
 		var cells = ParkLayoutSnapshot.RestoreCellMap(Layout);
 		ParkLayoutSnapshot.RestoreObjects(Layout, target);
 		return cells;

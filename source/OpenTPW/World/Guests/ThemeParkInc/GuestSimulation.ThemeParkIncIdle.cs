@@ -1,8 +1,8 @@
 namespace OpenTPW;
 
 // Theme Park Inc's native guest states, phase P2 (docs/reverse/TPI-GUESTS.md): idle (state 6, 0x614A40..0x615411) with its spot animations (0x60FB30, the mood 0x60CDD0), its litter, the
-// turn towards a show or a performing entertainer and the prank gate and switch; the wander (state 7, 0x61A179) and the walk to a litter bin (state 9, 0x616F10). The walk step, the route search and
-// the wander destination stay Theme Park World's ([EXT:tpi-twp-guest-rules]), as in phase P1.
+// turn towards a show or a performing entertainer and the prank gate and switch; the wander (state 7, 0x61A179) and the walk to a litter bin (state 9, 0x616F10). The walk step, the route requests and
+// the wander destination are Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md).
 public sealed partial class GuestSimulation
 {
 	/// <summary>What the native guests read of the park outside the simulation: the bins, the shows, the entertainers (docs/reverse/TPI-GUESTS.md, phase P2). Null: none of them.</summary>
@@ -355,11 +355,11 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// The wander destination <c>0x609F70</c>: Theme Park World's wander (<c>[EXT:tpi-twp-guest-rules]</c>, tp.exe <c>0x004F9490</c>, as the staff's); a walk it sets raises the wander flag
-	/// <c>+0xE8</c>.
+	/// The wander destination <c>0x609F70</c> for a guest (<see cref="Wander"/>, TPI-NAVIGATOR.md NV4); a walk it sets raises the wander flag <c>+0xE8</c>.
 	/// </summary>
-	// [BIN:TPI-EXE:0x609F70 wander] the stranded hold ("Confused", thought 0x11), the draws 0x60A010, 0x60A34C, 0x60A3DA, 0x60A3EA, 0x60A7A5 and 0x60A7BE (tp.exe 0x004F9490's), and +0xE8 = 1 after a
-	// SetDest that succeeds (0x60A5D2, 0x60A8C1)
+	// [BIN:TPI-EXE:0x609F70 wander] for a guest (kind 1) tp.exe's 0x004F9490 call for call: the gate (0x609FBE) with the stranded hold ("Confused", thought 0x11), the draws 0x60A010, 0x60A34C, 0x60A3DA,
+	// 0x60A3EA, 0x60A7A5 and 0x60A7BE, the mark at a step with no candidate (0x60A4A5), the off-path gates (0x60A6FB, 0x60A83F) and the final gate (0x60A55F) with SetDest; +0xE8 = 1 after a SetDest that
+	// succeeds (0x60A5D2, 0x60A8C1). W1-W4 are the staff's (ThemeParkIncStaffWorld.Patrol)
 	private bool ThemeParkIncWander( Guest guest, ThemeParkIncGuestRecord tpi )
 	{
 		if ( !Wander( guest ) )

@@ -70,10 +70,10 @@ public sealed class ThemeParkIncNativeGuestTests
 	};
 
 	/// <summary>
-	/// Whether the rigs walk with Theme Park Inc's navigator by default: set <c>OPENTPW_TEST_TPI_NATIVE_WALK=1</c> to run every test of this class with both switches on (the navigator plan's NV3 check);
-	/// the tests themselves pin the default walk.
+	/// Whether the rigs walk with Theme Park Inc's navigator by default: yes, as every Theme Park Inc park does since the navigator plan's NV4; a rig asks for Theme Park World's rules with
+	/// <c>walk: false</c>.
 	/// </summary>
-	internal static bool NativeWalkByDefault => Environment.GetEnvironmentVariable( "OPENTPW_TEST_TPI_NATIVE_WALK" ) == "1";
+	internal const bool NativeWalkByDefault = true;
 
 	private static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false, ThemeParkIncGuestSettings? nativeSettings = null,
 		bool? walk = null )

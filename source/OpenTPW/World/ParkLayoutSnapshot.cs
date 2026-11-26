@@ -460,7 +460,8 @@ public static class ParkLayoutSnapshot
 		{
 			var blocks = (long)((cells.Width + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock) * ((cells.Height + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock);
 			Require( stamps.Length == blocks, $"the cell map has {stamps.Length} block stamps for {blocks} blocks" );
-			Require( Array.TrueForAll( stamps, stamp => stamp >= 0 && stamp <= cells.StampCounter ), "a block stamp is negative or above the stamp counter" );
+			// unsigned dwords (ParkCellMap.StampCounter): a stamp past 2^31 is a negative int and valid
+			Require( Array.TrueForAll( stamps, stamp => !ParkCellMap.StampBelow( cells.StampCounter, stamp ) ), "a block stamp is above the stamp counter" );
 		}
 		else
 			Require( cells.StampCounter == 0 || cells.SimulationStampCounter, "the cell map has a stamp counter but no block stamps" );

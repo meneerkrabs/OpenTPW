@@ -193,43 +193,33 @@ public class ThemeParkIncWalkStepTests
 
 	// ---- The level's switch ---------------------------------------------------------------------------------------------------------------------------------
 
-	/// <summary>The level reads the hidden switch once and gives a Theme Park Inc park's cell map Theme Park Inc's edge test and counter; a Theme Park World level ignores the switch.</summary>
+	/// <summary>A Theme Park Inc level gives its park's cell map Theme Park Inc's edge test and counter (the default since NV4, read once); a Theme Park World level keeps Theme Park World's.</summary>
 	[TestMethod]
-	public void TheLevelGivesAThemeParkIncParkTheNavigatorAndThemeParkWorldIgnoresTheSwitch()
+	public void TheLevelGivesAThemeParkIncParkTheNavigatorAndThemeParkWorldItsOwnRules()
 	{
 		var edition = GameEditions.Current;
-		var requested = GuestSimulation.ThemeParkIncNativeWalkRequested;
 		try
 		{
 			GameEditions.Select( GameEdition.ThemeParkInc );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
 			var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 			var cells = new ParkCellMap( 16, 16 );
 			level.ApplyParkEdgeRules( cells );
 			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, cells.EdgeRules );
 			Assert.IsTrue( cells.CountsSimulationCalls );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = false;
+			GameEditions.Select( GameEdition.ThemeParkWorld );
 			var later = new ParkCellMap( 16, 16 );
 			level.ApplyParkEdgeRules( later );
-			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, later.EdgeRules, "the level read the switch once" );
+			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, later.EdgeRules, "the level read the edition's rules once" );
 
-			var plain = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
-			var off = new ParkCellMap( 16, 16 );
-			plain.ApplyParkEdgeRules( off );
-			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, off.EdgeRules, "off by default" );
-
-			GameEditions.Select( GameEdition.ThemeParkWorld );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
 			var world = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 			var worldCells = new ParkCellMap( 16, 16 );
 			world.ApplyParkEdgeRules( worldCells );
-			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, worldCells.EdgeRules, "a Theme Park World level ignores the switch" );
+			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, worldCells.EdgeRules, "a Theme Park World level walks with Theme Park World's rules" );
 			Assert.IsFalse( worldCells.CountsSimulationCalls );
 		}
 		finally
 		{
 			GameEditions.Select( edition );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = requested;
 		}
 	}
 }

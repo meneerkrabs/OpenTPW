@@ -232,6 +232,11 @@ EXPECTED = {
     ('tpi-exe-route-request', 'plan'): AGREE,
     ('tpi-exe-route-request', 'edit-only-counter'): (200, (245, (0, 113, 8, 15))),
     ('tpi-exe-staff-route', 'plan'): AGREE,
+    # NV4: Game.exe's wander and patrol destination 0x609f70 with the rectangle test 0x62c610 and the fallback 0x62c720, every draw of the world
+    # generator 0x6493e0 run, agrees with walk_reading.py's Wanderer. tp.exe's rules (W1-W4 undone: no gardener kind, no ordered corners, a staff
+    # member's final route a guest's, the fallback's route to the cell and thought 0x16) differ on 86 of the 200 persons.
+    ('tpi-exe-wander', 'plan'): AGREE,
+    ('tpi-exe-wander', 'tpw-wander-rules'): (86, (20, (120, 113, 8, 15))),
 }
 
 BASE = 0x400000
@@ -445,7 +450,7 @@ def check_pinned(case, comparison, key):
         if isinstance(first_input, tuple):
             if key[0] in ('tpw-exe-skirt-flags', 'tpw-exe-ground-conform', 'tpw-exe-base-height'):
                 first = targets.skirt_summary(key[0], first)
-            elif key[0] == 'tpi-exe-walk-step':
+            elif key[0] in ('tpi-exe-walk-step', 'tpi-exe-wander'):
                 first = (first['person']['kind'], tuple(first['window']))
             elif key[0] in ('tpi-exe-route-request', 'tpi-exe-staff-route'):
                 first = (first['counter'], tuple(first['window']))
@@ -1667,6 +1672,28 @@ class OracleTpi(CoastTests, unittest.TestCase):
             self.check((key, 'plan'))
         self.check(('tpi-exe-walk-step', 'tpw-walk-step'))
         self.check(('tpi-exe-route-request', 'edit-only-counter'))
+
+    # ------------------------------------------------------------------ NV4: the wander and patrol destination
+    def test_wander_and_patrol_agree(self):
+        self.check(('tpi-exe-wander', 'plan'))
+        self.check(('tpi-exe-wander', 'tpw-wander-rules'))
+
+    def test_wander_inputs_reach_every_branch(self):
+        """The wander's inputs reach each branch the port distinguishes: a guest's held mark (thought 0x11) and walk, a staff member of every kind
+        (the gardener 0x14 included), the fallback's failure (thought 0x1e) and success, reversed corners, a start without links, a closed park."""
+        inputs = targets.tpi_wander_inputs(__import__('x86_harness').seeded('oracle-v1:tpi-exe-wander'), 200)
+        plans = [(x, targets.tpi_wander_plan(x)) for x in inputs]
+        kinds = {x['person']['kind'] for x in inputs}
+        self.assertTrue({1, 4, 5, 6, 7, 8, 0x14} <= kinds)
+        thoughts = [plan[2] for _, plan in plans]
+        self.assertTrue(any(((0x44, 0x11),) == t for t in thoughts), 'a held or stranded guest')
+        self.assertTrue(any((0x44, 0x1E) in t for t in thoughts), 'a failed fallback')
+        self.assertTrue(any(x['person']['kind'] != 1 and plan[0] == 1 and not plan[2] and x['rect'] != [0, 0, 0x7F, 0x7F] for x, plan in plans), 'a staff walk kept to a rectangle')
+        self.assertTrue(any(x['rect'][0] > x['rect'][2] or x['rect'][1] > x['rect'][3] for x in inputs), 'reversed corners')
+        self.assertTrue(any(x['closed'] for x in inputs if x['person']['kind'] != 1))
+        starts = {(x['walk']['x'] >> 16, x['walk']['y'] >> 16) for x in inputs}
+        self.assertTrue(any(not any(l[0] == x['walk']['x'] >> 16 and l[1] == x['walk']['y'] >> 16 and l[2] & 0x55 for l in x['links']) for x in inputs), 'a start without links')
+        self.assertGreater(len(starts), 100)
 
     def test_navigator_root_rounds_to_a_single(self):
         self.check(('tpi-exe-navigator-root', 'plan'))

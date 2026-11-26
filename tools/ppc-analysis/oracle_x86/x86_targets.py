@@ -4035,8 +4035,159 @@ TPI_STAFF_ROUTE_TARGET = Target(
            '0x60b8e0: the answer, the counter, the mask +0x1a0, the target words and the navigator\'s record.'],
     budget=400_000_000)
 
+# ------------------------------------------------------------------------------ NV4: the wander and patrol destination 0x609f70
+# Game.exe's wander 0x609f70 (TPI-NAVIGATOR.md, NV4) on the person record of the NV3 targets: its entry gate and the mark (the stamp counter
+# 0x5d81f0, the stranded test 0x60bb50, the mark setter 0x60b9a0), the step count and the random walk over the cell links, the sub-cell bytes,
+# the staff kinds' patrol rectangle test 0x62c610 and fallback 0x62c720, a staff member's final route through 0x62eb10, a guest's gate and
+# SetDest 0x63ee80, and the off-path search; every draw the world generator 0x6493e0 (state at world +0x1eab3c) runs itself.
+TPI_WANDER = 0x609F70            # thiscall person -> nonzero when a walk is set
+TPI_THOUGHT = 0x638960           # thiscall thought object (+0x44) (thought, 0), ret 8: stubbed and logged (presentation)
+TPI_THING_ID = 0x6375C0          # thiscall person (out), ret 4: the thing id word for the debug print; stubbed
+TPI_WANDER_DIRECTIONS = {0xA9D308: (0, -1), 0xA9D310: (0, 1), 0xA9D330: (1, 0), 0xA9D338: (-1, 0)}   # link 1, 16, 4, 64 (dx, dy), as 0x5D95D5.. writes them
+TPI_WANDER_RANGES = TPI_PERSON_RANGES + [
+    (0x609F70, 0x60A8DC), (0x62C610, 0x62C682), (0x62C720, 0x62C899), (0x6493E0, 0x649415), (0x60B9A0, 0x60BA0E), (0x65CBF0, 0x65CC27),
+    (0x4A63F0, 0x4A6407), (0x4D15C0, 0x4D15C1)]
+
+
+def tpi_wander_stubs(target: Target) -> dict:
+    stubs = tpi_person_stubs(target)
+
+    def thought(sb: Sandbox):
+        sb.person_log['thoughts'].append((sb.reg('ecx') - sb.person_log['person'], sb.arg(0), sb.arg(1)))
+        return 0, 8
+
+    def thing_id(sb: Sandbox):
+        out = sb.arg(0)
+        sb.write(out, 'H', 7)
+        return out, 4
+    stubs.update({TPI_THOUGHT: thought, TPI_THING_ID: thing_id})
+    return stubs
+
+
+def tpi_wander_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """0x609f70 on one person: the answer, the draws (the generator's state), the thoughts, the counter, the mark +0x1b0, the target words
+    +0x28 / +0x2a, the wander flag +0xe8, the walk mask +0x1a0 and the navigator's record."""
+    base = tpi_person_world(sb, x)
+    sb.write(base + TPI_WORLD_RNG, 'I', x['rng'])
+    for address, (dx, dy) in TPI_WANDER_DIRECTIONS.items():
+        sb.write(address, 'i', dx)
+        sb.write(address + 4, 'i', dy)
+    person = tpi_person_binary(sb, x)
+    for k, value in enumerate(x['rect']):
+        sb.write(person + 0x24C + 4 * k, 'i', value)
+    sb.write(person + 0x28, 'I', 0x55AA55AA)
+    sb.write(person + 0xE8, 'I', 0)
+    sb.person_log['person'] = person
+    sb.person_log['thoughts'] = []
+    answer = sb.call(TPI_WANDER, this=person).eax
+    return (1 if answer else 0, sb.read(base + TPI_WORLD_RNG, 'I'), tuple((offset, thought) for offset, thought, _ in sb.person_log['thoughts']),
+            sb.read(TPI_NAV_COUNTER, 'I'), sb.read(person + 0x1B0, 'I'), sb.read(person + 0x28, 'H'), sb.read(person + 0x2A, 'H'),
+            sb.read(person + 0xE8, 'I'), sb.read(person + 0x1A0, 'I'), navigator_record(sb, person + TPI_PERSON_NAV))
+
+
+def tpi_wanderer(x: dict, tpi: bool = True) -> 'walk_reading.Wanderer':
+    walk = tpi_person_walk(x)
+    init = x['walk']
+    return walk_reading.Wanderer(walk, ((init['x'] >> 16) & 0xFF, (init['y'] >> 16) & 0xFF), x['person']['mark'],
+                                 {int(a): b for a, b in x['behind']}, x['person']['kind'], tuple(x['rect']), x['rng'], x['closed'], tpi)
+
+
+def tpi_wander_plan(x: dict, tpi: bool = True) -> tuple:
+    person = tpi_wanderer(x, tpi)
+    try:
+        answer = person.wander()
+    except ZeroDivisionError:
+        return ('divide error',)
+    words = person.words or (0x55AA, 0x55AA)
+    return (answer, person.rng, tuple((0x44, thought) for thought in person.thoughts), person.walk.counter, person.mark, words[0], words[1],
+            person.wandered, person.walk.mask, person.walk.record())
+
+
+def tpi_wander_as_tpw(x: dict) -> tuple:
+    """tp.exe's rules on the same person (W1-W4 undone): the gardener (0x14) wanders as a guest does, the rectangle is not ordered, a staff
+    member's final route is a guest's (gate, mark cleared, SetDest), and the fallback routes to the cell (0x4fa530 in tp.exe: no walk mask, no
+    park-closed refusal) and asks for the thought 0x16 on failure."""
+    return tpi_wander_plan(x, tpi=False)
+
+
+def tpi_wander_inputs(rng: random.Random, n: int) -> list:
+    """A guest or a staff member of every kind (the gardener 0x14 included) on a path, queue or link-less cell of a Theme Park Inc map, with a
+    held or stale stranded mark (guests), a patrol rectangle of each kind (the whole map, around the start, away from it, reversed corners, one
+    cell), the park open or closed, and the world generator's state; links leaving the map are dropped (no park cell has one)."""
+    out = []
+    for i in range(min(n, TPI_ROUTE_INPUTS)):
+        x = tpi_route_input(rng)
+        types = {(a, b): t for a, b, t in x['types']}
+        links = []
+        for a, b, v in x['links']:
+            for bit, (dx, dy) in walk_reading.WANDER_LINKS:
+                if v & bit and not (0 <= a + dx < 128 and 0 <= b + dy < 128):
+                    v &= ~bit
+            links.append([a, b, v])
+        # the links mostly along real neighbours on a third of the maps, so that walks run several steps
+        if rng.random() < 0.35:
+            links = []
+            for (a, b), t in types.items():
+                if t in (1, 3, 9, 10):
+                    v = 0
+                    for bit, (dx, dy) in walk_reading.WANDER_LINKS:
+                        if types.get((a + dx, b + dy)) in (1, 3, 9, 10) and rng.random() < 0.8:
+                            v |= bit
+                    links.append([a, b, v])
+        x['links'] = links
+        kind = rng.choice([1, 1, 1, 4, 5, 6, 7, 8, 0x14, 0x14])
+        x['person']['kind'] = kind
+        if kind != 1:
+            x['person']['mark'] = 0
+        init = x['walk']
+        cx, cy = (init['x'] >> 16) & 0xFF, (init['y'] >> 16) & 0xFF
+        if rng.random() < 0.15:
+            # a start without links (the off-path search)
+            x['links'] = [l for l in x['links'] if (l[0], l[1]) != (cx, cy)]
+        style = rng.choice(['whole', 'whole', 'around', 'away', 'reversed', 'one', 'around'])
+        if style == 'whole':
+            rect = [0, 0, 0x7F, 0x7F]
+        elif style == 'around':
+            rect = [max(0, cx - rng.randint(0, 5)), max(0, cy - rng.randint(0, 5)), min(127, cx + rng.randint(0, 5)), min(127, cy + rng.randint(0, 5))]
+            if rng.random() < 0.5:
+                rect = [rect[2], rect[3], rect[0], rect[1]]      # the corners given in the other order: 0x62c610 orders them
+        elif style == 'away':
+            ox, oy, w, h = x['window']
+            ax, ay = rng.randrange(ox, ox + w), rng.randrange(oy, oy + h)
+            rect = [ax, ay, min(127, ax + rng.randint(0, 8)), min(127, ay + rng.randint(0, 8))]
+        elif style == 'reversed':
+            # reversed corners at least two apart (0x62c720's width x1 - x0 + 1 is then negative; one apart would divide by zero)
+            ax, ay = min(125, cx + rng.randint(0, 4)), min(125, cy + rng.randint(0, 4))
+            rect = [ax + 2 + rng.randint(0, 3), ay + rng.randint(0, 3), ax, ay] if rng.random() < 0.5 else [ax, ay + 2 + rng.randint(0, 3), ax + rng.randint(0, 3), ay]
+            rect = [min(127, v) for v in rect]
+        else:
+            rect = [cx, cy, cx, cy]
+        if rect[2] - rect[0] == -1 or rect[3] - rect[1] == -1:
+            rect = [0, 0, 0x7F, 0x7F]     # a reversed pair one cell apart is a divide error in 0x62c720 (a crash in the original)
+        x['rect'] = rect
+        x['closed'] = 1 if rng.random() < 0.2 else 0
+        x['rng'] = rng.randrange(1 << 32)
+        del x['paths'], x['paths_inner']
+        out.append(x)
+    return out
+
+
+TPI_WANDER_TARGET = Target(
+    'tpi-exe-wander', 'tpi', 'Game.exe wander and patrol destination 0x609f70 with 0x62c610 and 0x62c720',
+    'GuestSimulation.Wander / ThemeParkIncStaffWorld.Patrol through GuestWander (TPI-NAVIGATOR.md, NV4)',
+    TPI_WANDER, TPI_WANDER_RANGES, tpi_wander_stubs, tpi_wander_binary, tpi_wander_plan, tpi_wander_inputs,
+    alternatives={'tpw-wander-rules': tpi_wander_as_tpw},
+    notes=['One wander per input on a guest or a staff member of each kind (4, 5, 6, 7, 8 and the gardener 0x14) on a Theme Park Inc map, '
+           'with the world generator 0x6493e0, the counter 0x5d81f0, the stranded test 0x60bb50, the mark setter 0x60b9a0, the rectangle test '
+           '0x62c610, the fallback 0x62c720, the staff route 0x62eb10, the route search and the cell readers run; the thought object 0x638960 '
+           'and the thing id 0x6375c0 are stubbed (the thoughts logged), the debug prints are empty; the direction table 0xa9d308.. holds what its '
+           'initialiser 0x5d95d5.. writes. Compared: the answer, the generator\'s '
+           'state after the draws, the thoughts, the counter, the mark, the target words +0x28 / +0x2a, the wander flag +0xe8, the walk mask '
+           'and the navigator\'s record. Run at the control word 0x7f.'],
+    budget=600_000_000)
+
 TPI_WALK_TARGETS = [TPI_WALK_EDGE_TARGET, TPI_WALK_COMMIT_TARGET, TPI_WALK_SEARCH_TARGET, TPI_NAV_STEERING_TARGET, TPI_NAV_AVOID_TARGET, TPI_NAV_RECORD_TARGET,
-                    TPI_NAV_ROOT_TARGET, TPI_STEP_TARGET, TPI_SPEED_STEP_TARGET, TPI_ROUTE_TARGET, TPI_STAFF_ROUTE_TARGET]
+                    TPI_NAV_ROOT_TARGET, TPI_STEP_TARGET, TPI_SPEED_STEP_TARGET, TPI_ROUTE_TARGET, TPI_STAFF_ROUTE_TARGET, TPI_WANDER_TARGET]
 
 # ============================================================================== (t) tp.exe TQI movie matrix 0x6710c0 and transform pass 0x67673c
 TQI_MATRIX = 0x6710C0          # cdecl (int *matrix, int quantiser): fills 64 dwords

@@ -8,7 +8,8 @@ The port runs on the shared `Guest` records inside the shared `GuestSimulation` 
 (`--tpi-native-guests`) or from a test. The switch is **off by default**. With it off, Theme Park Inc guests keep Theme Park World's rules
 (`[EXT:tpi-twp-guest-rules]`), and Theme Park World and the default Theme Park Inc park behave exactly as before. Phase P4 turns the switch on by default.
 
-The walk step, the route search, the wander and the speed stay Theme Park World's under `[EXT:tpi-twp-guest-rules]`, as for the staff.
+The walk step, the route requests, the wander and the speed step are Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md; the default since its phase NV4, for the native guests,
+the default path's guests and the staff alike); `[EXT:tpi-twp-guest-rules]` no longer covers the walk.
 
 ## Files
 
@@ -192,7 +193,7 @@ The verdict cases of state 4:
 `+0x230` and state 8, which restores the saved state ten turns later.
 
 **State 7 `0x61A179`.** The walk; arrived or stuck, a world draw with `G & 3 == 0` and a new wander destination keep the guest wandering, anything else makes it idle. The wander
-destination is Theme Park World's (`[EXT:tpi-twp-guest-rules]`); a walk it sets raises the wander flag `+0xE8`, which state 7's entry reads.
+destination is Theme Park Inc's `0x609F70` (for a guest the calls and draws of tp.exe's `0x4F9490`; TPI-NAVIGATOR.md, NV4); a walk it sets raises the wander flag `+0xE8`, which state 7's entry reads.
 
 **State 9 `0x616F10`.** The walk. Arrived at a bin: the bin counts a customer (`0x5E5DA0`); unless its `VAR_CONTENTS` (4) reaches `VAR_CAPACITY` (3) or `VAR_ONFIRE` (5) is set,
 its `VAR_USE` (0) becomes 1. Otherwise (no bin, a full or burning bin, a stuck walk): a draw and litter `D % 5 + 1` on the cell. The urge is emptied and the guest is idle.

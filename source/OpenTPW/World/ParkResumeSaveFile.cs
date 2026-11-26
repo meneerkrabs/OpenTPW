@@ -786,7 +786,7 @@ internal static class ParkResumeSaveFile
 		// A staff walk of the original kind keeps the stamp counter of its set-up, as a guest's does (WALK-007).
 		if ( snapshot.Layout?.Cells is { } layoutCells )
 			foreach ( var member in snapshot.Economy.Staff!.Members! )
-				Require( member.WorldState?.Navigation?.OriginalWalk is not { } staffWalk || staffWalk.Stamp <= layoutCells.StampCounter,
+				Require( member.WorldState?.Navigation?.OriginalWalk is not { } staffWalk || !ParkCellMap.StampBelow( layoutCells.StampCounter, staffWalk.Stamp ),
 					$"staff {member.Id} walk stamp {member.WorldState?.Navigation?.OriginalWalk?.Stamp} is above the layout's stamp counter {layoutCells.StampCounter}" );
 		if ( snapshot.Advisor is { } advisor )
 		{
@@ -916,8 +916,15 @@ internal static class ParkResumeSaveFile
 		Require( GuestSimulationSnapshot.AcceptedSchemaVersions.Contains( guests.SchemaVersion ),
 			$"the guest snapshot's schema version {guests.SchemaVersion} is not one of {string.Join( ", ", GuestSimulationSnapshot.AcceptedSchemaVersions )}" );
 		Require( guests.Guests != null, "the guest snapshot has no guest list" );
-		// Theme Park Inc's navigator rules (--tpi-native-walk, docs/reverse/TPI-NAVIGATOR.md) exist only in a Theme Park Inc park; the restore refuses a save whose switch differs from the park's
+		// Theme Park Inc's navigator rules (docs/reverse/TPI-NAVIGATOR.md) exist only in a Theme Park Inc park, and every Theme Park Inc park walks with them since phase NV4: a save made before it is refused
 		Require( !guests.ThemeParkIncNativeWalk || snapshot.Economy?.Edition == GameEdition.ThemeParkInc, "only a Theme Park Inc park walks with Theme Park Inc's navigator rules" );
+		Require( guests.ThemeParkIncNativeWalk || snapshot.Economy?.Edition != GameEdition.ThemeParkInc,
+			"the Theme Park Inc save was made before Theme Park Inc's own navigator (its walkers followed Theme Park World's rules) and cannot be continued" );
+		// the layout's stamp counter counts every simulation call exactly when the park walks with Theme Park Inc's navigator (ParkCellMap.CountsSimulationCalls): a Theme Park World park's counts the
+		// edits only, so a counter of simulation calls there (or an edit-only counter in a Theme Park Inc park) is refused rather than continued under the other counting
+		Require( snapshot.Layout.Cells.SimulationStampCounter == guests.ThemeParkIncNativeWalk,
+			guests.ThemeParkIncNativeWalk ? "the layout's stamp counter counts the edits only in a park with Theme Park Inc's navigator"
+				: "the layout's stamp counter counts the simulation's calls in a park without Theme Park Inc's navigator" );
 		// a staff member's native navigator record (GuestNavigation.NativeRecord) belongs to a save made with those rules, as a guest's does (GuestSimulation's restore)
 		Require( StaffNativeRecordsAllowed( snapshot.Economy, guests.ThemeParkIncNativeWalk ),
 			"a staff member carries Theme Park Inc's native navigator record in a save made without Theme Park Inc's navigator rules" );
@@ -1049,7 +1056,7 @@ internal static class ParkResumeSaveFile
 			foreach ( var problem in navigation.Problems( guest.Id, InBounds ) )
 				Require( false, problem );
 			// A walk keeps the stamp counter of its set-up; the layout's counter can only have grown since (WALK-007).
-			Require( navigation.OriginalWalk is not { } walk || walk.Stamp <= snapshot.Layout.Cells.StampCounter,
+			Require( navigation.OriginalWalk is not { } walk || !ParkCellMap.StampBelow( snapshot.Layout.Cells.StampCounter, walk.Stamp ),
 				$"guest {guest.Id} walk stamp {navigation.OriginalWalk?.Stamp} is above the layout's stamp counter {snapshot.Layout.Cells.StampCounter}" );
 			Require( InBounds( guest.CellX, guest.CellY ), $"guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the cell map" );
 			if ( guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0 )

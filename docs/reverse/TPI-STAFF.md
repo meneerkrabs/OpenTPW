@@ -291,9 +291,10 @@ refuses its staff capability, so its staff world is not built in a Theme Park In
 - **Saves.** A placed member's thing (state, stamps, target, speed words, patrol rectangle, template and walk) is in the TpiStaff snapshot; the members' cell-chain entry numbers
   are in the continuation save (`TpiStaffChain`); a litter claim by a placed member's thing id is valid.
 
-Labels: the walk step `0x60B440`, the route search behind the staff route `0x62EB10` (SetDest `0x63E3A0`), the patrol destination `0x609F70` and the speed step `0x60BC90` use Theme Park World's walk, wander and speed
-smoothing (`[EXT:tpi-twp-guest-rules]`, user-approved 2026-11-21 for the staff's walk; WP0 found D1/D2/D5 differences and read `0x609F70` as a call skeleton only), as do the
-guests' bin search, bin walk and bin arrival; the loo finder `0x5D6230` and the bin finder `0x5D5F10` find nothing to clean because Theme Park Inc's toilet wear and the bins' fill
+The walk: since the navigator port's NV4 (docs/reverse/TPI-NAVIGATOR.md) a member walks with Theme Park Inc's own navigator: the walk step `0x60B440`, the route search behind the
+staff route `0x62EB10`, the wander and patrol destination `0x609F70` with the rectangle test `0x62C610` and the fallback `0x62C720` (`ThemeParkIncPatrol`), and the speed step `0x60BC90`. The
+staff's use of `[EXT:tpi-twp-guest-rules]` (user-approved 2026-11-21 for the staff's walk) is retired. Labels: the guests' bin search, bin walk and bin arrival keep Theme Park World's rules
+(`[EXT:tpi-twp-guest-rules]`); the loo finder `0x5D6230` and the bin finder `0x5D5F10` find nothing to clean because Theme Park Inc's toilet wear and the bins' fill
 are unported (`[EXT:tpi-no-maintenance-wear]`, reworded: the handymen ship without loo and bin cleaning); every role is hired since the entertainer and the guard (WP11, WP12).
 
 The rest-area finder `0x62BA20` (in the gate, the slack test `0x62D650` on entering state 1 and the low-motivation check of `0x62D810`) tests a thing for the flag `+0x42` bit 2 (and `+0x7C`
@@ -463,8 +464,8 @@ and `+0x5D4` = 0, the removal message 10 subscribed, then the search. The thing 
 
 Training: the gardener learns abilities 10 to 14 (`0x62B6C0`) through §12.2 and fills a staff HQ slot that asks for one (the rebuild's staff type 5, the finder `0x6348C0`).
 
-Not ported (inert, no stand-in): the facing `0x609E60` (the heading word `+0x2C` from the queue link of his cell, in the 2048 units of `0x91E074`: presentation; he keeps his walk's
-last heading under `[EXT:tpi-twp-guest-rules]`, D1); the destructor's claim release `0x5D2430` → `0x5E37B0` (Theme Park Inc staff cannot be fired yet); the advisor's notices
+Not ported (inert, no stand-in): the facing `0x609E60` (the heading word `+0x2C` from the queue link of his cell, in the 2048 units of `0x91E074`: it only turns the sprite, and the word is
+neither saved nor hashed until the navigator plan's NV5 stores the person words; he keeps the heading his walk step wrote, D1); the destructor's claim release `0x5D2430` → `0x5E37B0` (Theme Park Inc staff cannot be fired yet); the advisor's notices
 (`[EXT:tpi-capability-gates]`, the advisor's other messages); the patrol area `0x6256A0` (WP15); the guests' fire prank on plants (`0x618F30`, `VAR_SETFIRE`, with the guests' Theme Park
 Inc pranks); the plant counts of the statistics (`0x5B4470`, `0x5B8960`); the handyman's bin finder's plant branch for ability 7 (`0x5D5FAC`, with the bins, whose fill is unported: `[EXT:tpi-no-maintenance-wear]`). No `rand()` call is reached:
 the gardener draws only the world generator, in the gate, the walking voice and the patrol.

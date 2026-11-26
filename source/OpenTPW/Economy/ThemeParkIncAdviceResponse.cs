@@ -11,9 +11,10 @@ namespace OpenTPW;
 /// <param name="Model">The low word of <c>+0x10</c>: the advisor model that shows the clips (0 the global advisor, 1 the level's).</param>
 /// <param name="LevelBank">The high word of <c>+0x10</c>: the voice and LIP come from the level's speech instead of the global one.</param>
 /// <param name="Accessory">The word <c>+0x14</c>: 0x29A hides the head; else the accessory the head shows (<c>0x715CF0</c>).</param>
+/// <param name="SecondAccessory">The word <c>+0x18</c>: a second accessory the head shows when it is not 0 (<c>0x715F9C</c>); 0 in every row OpenTPW plays.</param>
 // [BIN:TPI-EXE:0x70F59E forecast response rows] [BIN:TPI-EXE:0x7104A0 notification response rows] rows of 0x715570 (tools/ppc-analysis/oracle_x86/tpi_advisor_forecast_oracle.py):
 // {response, +4, +8, +0xC, +0x10, +0x14, +0x18, +0x1C}
-public readonly record struct ThemeParkIncAdviceResponse( int Response, uint Voice, int Lip, int Animation, int Model, bool LevelBank, int Accessory, int Tag )
+public readonly record struct ThemeParkIncAdviceResponse( int Response, uint Voice, int Lip, int Animation, int Model, bool LevelBank, int Accessory, int Tag, int SecondAccessory = 0 )
 {
 	/// <summary>The tag of a response that broadcasts no caption (<c>0x97</c>).</summary>
 	public const int NoTag = 0x97;
@@ -34,7 +35,7 @@ public readonly record struct ThemeParkIncAdviceResponse( int Response, uint Voi
 	};
 
 	/// <summary>The rows OpenTPW plays.</summary>
-	public static IReadOnlyList<ThemeParkIncAdviceResponse> All => Known;
+	public static IReadOnlyList<ThemeParkIncAdviceResponse> All { get; } = Array.AsReadOnly( Known );
 
 	/// <summary>The row of <paramref name="response"/>, or null for a response OpenTPW cannot play yet.</summary>
 	public static ThemeParkIncAdviceResponse? For( int response ) => Array.FindIndex( Known, row => row.Response == response ) is var index and >= 0 ? Known[index] : null;

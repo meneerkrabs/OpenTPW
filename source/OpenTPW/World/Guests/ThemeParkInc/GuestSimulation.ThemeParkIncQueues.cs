@@ -2,8 +2,8 @@ namespace OpenTPW;
 
 // Theme Park Inc's native guest states, phase P3a (docs/reverse/TPI-GUESTS.md): the walk to a ride (state 13, 0x616AC0), standing in its queue (state 14, 0x6176C0), the queue step (state 15,
 // 0x61A1DB) and the queue functions they call (0x619530, 0x619700, 0x5E0280, 0x5E0100, 0x5DFF50, 0x5DFF10, 0x5DFDD0, 0x5E0520, 0x60B7F0). The queue list is the ride bridge's: Theme Park Inc's list
-// through the guest words +0x2CC/+0x2CE is Theme Park World's through +0x228/+0x22A (tp.exe 0x004DDB90, 0x004DDD20, 0x004DDF50) instruction for instruction, the field offsets aside. The boarding
-// from state 16 on is phase P3b's: a guest the ride calls to its stand point is handed to Theme Park World's boarding walk (the bridged state 16) and comes back as an idle guest.
+// through the guest words +0x2CC/+0x2CE is Theme Park World's through +0x228/+0x22A (tp.exe 0x004DDB90, 0x004DDD20, 0x004DDF50) instruction for instruction, the field offsets aside. The visit from
+// state 16 on is phase P3b's (GuestSimulation.ThemeParkIncVisit).
 public sealed partial class GuestSimulation
 {
 	/// <summary>Whether this simulation hosts <paramref name="attraction"/> (the ride bridges registered for its guests).</summary>
@@ -340,7 +340,8 @@ public sealed partial class GuestSimulation
 				var (x, y) = StandPoint( ride );
 				if ( RouteToTpiPoint( guest, (x >> 16, y >> 16), (x >> 8) & 0xFF, (y >> 8) & 0xFF ) )
 				{
-					BeginTpiBridgedBoarding( guest, tpi, ride );
+					// [BIN:TPI-EXE:0x6177AB being loaded] "Person %d being loaded to ride %d" and setter(0x10): the entry's mode 1 only (0x61A9E2)
+					SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.BeingLoaded );
 					return;
 				}
 			}
@@ -494,11 +495,11 @@ public sealed partial class GuestSimulation
 	// ---- The ride's side ---------------------------------------------------------------------------------------------------------
 
 	/// <summary>The ride calls a native guest at the head of its queue (<c>0x619670</c>, OnAdmittance): the call word <c>+0x220</c>, which state 14 answers.</summary>
-	// [BIN:TPI-EXE:0x619670 on admittance] "Person %d: OnAdmittance": +0x220 = 1 and +0x1B4 = the ride's price word +0x94 (0x5E6200), the fee the exit charges (0x6126D0)
-	// [EXT:tpi-capability-gates] the fee word +0x1B4 is not kept: the bridged boarding of phase P3a books the fee by Theme Park World's boarding instead (IGuestPayments.TryPayVisit, ECON-062)
-	private static void OfferThemeParkIncGuest( Guest guest, ThemeParkIncGuestRecord tpi )
+	// [BIN:TPI-EXE:0x619670 on admittance] "Person %d: OnAdmittance": +0x220 = 1 and +0x1B4 = the ride's price word +0x94 (0x5E6200), the fee the use's payment step charges (0x6126D0)
+	private void OfferThemeParkIncGuest( Guest guest, ThemeParkIncGuestRecord tpi, RideVisitorBridge ride )
 	{
 		tpi.Word220 = 1;
+		tpi.Fee = TpiThingWords( ride ).Price;
 		guest.QueueCalled = true;
 	}
 
@@ -508,7 +509,7 @@ public sealed partial class GuestSimulation
 
 	/// <summary>
 	/// The ride's head step sends a native guest away (a closed or broken ride, <c>0x5E3CC0</c>; or OpenTPW's teardown of a ride whose script stopped): the bridge has unlinked it, and the dismissal
-	/// <c>0x619700(0)</c> makes it idle. A guest of the bridged boarding leaves Theme Park World's boarding the same way.
+	/// <c>0x619700(0)</c> makes it idle.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5E3CC0 head step] VAR 0 not the head and the head in state 17: "script admitted person %d but he doesn't know yet, forcing him onto ride" (0x6182A0); else a head: 0x5E0100 and 0x619700(0)
 	private void DismissThemeParkIncGuest( Guest guest, ThemeParkIncGuestRecord tpi )
@@ -532,59 +533,5 @@ public sealed partial class GuestSimulation
 			Think( guest, GuestThought.Angry );
 		TpiRemoveFromQueue( ride, guest );
 		TpiDismissFromQueue( guest, tpi, quietly: false );
-	}
-
-	// ---- The bridged boarding ------------------------------------------------------------------------------------------------------
-
-	/// <summary>
-	/// State 14 sets 16 ("being loaded", the walk to the stand point already requested): phase P3b ports 16, 17, 19 and 20. Until then the guest boards, rides and leaves by Theme Park World's
-	/// boarding, as the default path's Theme Park Inc guests do (<c>[EXT:tpi-twp-guest-rules]</c>): the state word is 16 throughout, the shared record carries the walk, and the guest is idle again when it is
-	/// done. Every draw up to the setter of 16 is the original's and state 16 itself draws nothing; the differences after that (17's missing entry roll <c>0x5E7A00</c>, Theme Park World's balloon
-	/// reseeds, sideshow tail and small-portion draws) are listed in TPI-GUESTS.md, "The bridged boarding".
-	/// </summary>
-	// [BIN:TPI-EXE:0x6177AB being loaded] "Person %d being loaded to ride %d" and setter(0x10): the entry's mode 1 only (0x61A9E2)
-	// [EXT:tpi-twp-guest-rules] the boarding from state 16 on (0x617F80, 0x61A21D, 0x61A77E, 0x618380, 0x619980: the price test, the admission, 17's roll 0x5E7A00, the ride's control and the unloading) runs
-	// Theme Park World's walk to the stand point, AdmitPerson, boarding, ride and exit (UpdateQueueWalk, RideVisitorBridge) until phase P3b ports them
-	private void BeginTpiBridgedBoarding( Guest guest, ThemeParkIncGuestRecord tpi, RideVisitorBridge ride )
-	{
-		SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.BeingLoaded );
-		guest.AttractionId = ride.AttractionId;
-		guest.QueuePosition = 0;
-		guest.QueueCalled = false;
-		guest.QueueTargetIndex = 0;
-		guest.InQueueInterlude = false;
-		guest.HasWaypoint = true;
-	}
-
-	/// <summary>The Theme Park World states of the bridged boarding (<see cref="BeginTpiBridgedBoarding"/>).</summary>
-	private static bool IsBridgedBoardingState( GuestState state ) =>
-		state is GuestState.Boarding or GuestState.WaitingToBoard or GuestState.Using or GuestState.ExitingRide;
-
-	/// <summary>
-	/// One update of a bridged guest (state 16): Theme Park World's boarding state handler; when it ends (the guest idle, refused or sent back to its place), the guest returns to Theme Park Inc's states: back
-	/// to its queue place (state 15) when the ride refused it at the stand point, else idle with no target.
-	/// </summary>
-	private void UpdateTpiBridgedBoarding( Guest guest, ThemeParkIncGuestRecord tpi, float dt )
-	{
-		if ( IsBridgedBoardingState( guest.State ) )
-			UpdateState( guest, dt );
-		if ( tpi.State != ThemeParkIncGuestStates.BeingLoaded || IsBridgedBoardingState( guest.State ) || guest.State == GuestState.Gone )
-			return;
-		EndTpiBridgedBoarding( guest, tpi );
-	}
-
-	/// <summary>The bridged boarding hands the guest back to Theme Park Inc's states: still in the list (refused at the stand point, walking back to its place) state 15, else idle with no target.</summary>
-	private void EndTpiBridgedBoarding( Guest guest, ThemeParkIncGuestRecord tpi )
-	{
-		if ( guest.State is GuestState.MovingUpQueue or GuestState.Queueing && FindAttraction( guest.AttractionId ) is RideVisitorBridge ride && TpiQueuePosition( ride, guest.Id ) >= 0 )
-		{
-			tpi.Byte21B = guest.QueuePosition & 0xFF;
-			SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.TakingQueueStep );
-			return;
-		}
-		(tpi.QueueSlot, tpi.QueueLink, tpi.Byte28C, tpi.Word290, tpi.Word220, tpi.Target, tpi.Byte21B) = (0, 0, 0, 0, 0, 0, 0);
-		guest.SavedMajorAttractionId = 0;
-		ClearTpiQueueMirror( guest );
-		SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.Idle );
 	}
 }

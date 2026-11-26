@@ -94,6 +94,36 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 		}
 	}
 
+	public ThemeParkIncThingWords? ThemeParkIncThing( IRideVisitorBridge attraction ) =>
+		instances.TryGetValue( attraction.AttractionId, out var instance ) ? Economy().ThemeParkIncThingWordsOf( instance ) : null;
+
+	public void ThemeParkIncTakings( IRideVisitorBridge attraction, int fee )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().ThemeParkIncTakings( instance, fee );
+	}
+
+	public void ThemeParkIncCustomer( IRideVisitorBridge attraction )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().RecordCustomer( instance );
+	}
+
+	public void ThemeParkIncCostBooked( IRideVisitorBridge attraction, int amount )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().ThemeParkIncCostBooked( instance, amount );
+	}
+
+	public int ThemeParkIncGoodsCost( IRideVisitorBridge attraction ) =>
+		instances.TryGetValue( attraction.AttractionId, out var instance ) ? Economy().ThemeParkIncGoodsCostOf( instance ) : 0;
+
+	public void ThemeParkIncRideAdmitted( IRideVisitorBridge attraction )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().ThemeParkIncRideAdmitted( instance );
+	}
+
 	public bool SettlesAtExit => Economy().Rules.ThemeParkInc;
 
 	public bool AwaitsActivation( IRideVisitorBridge attraction ) =>

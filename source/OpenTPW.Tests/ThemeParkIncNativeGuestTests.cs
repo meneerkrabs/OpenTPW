@@ -66,7 +66,9 @@ public sealed class ThemeParkIncNativeGuestTests
 		ThirstWeather = [new( 2, 0, 0, -1 ), new( 2, 0, 0, -1 ), new( 3, 0, 0, -1 )],
 		HungerWeather = [new( -1, 0, 0, 1 ), new( -1, 0, 0, 1 ), new( -1, 0, 0, 1 )],
 		NumTicketBooths = 2, TicketBooths = [(10, 13, 512), (11, 13, 1536), (0, 0, 0)],
-		BusStopA = (10, 5), BusStopB = (16, 5), BusStopC = (18, 5), EntranceA = (10, 17), EntranceB = (11, 17), FirstHourMinutes = 120
+		BusStopA = (10, 5), BusStopB = (16, 5), BusStopC = (18, 5), EntranceA = (10, 17), EntranceB = (11, 17), FirstHourMinutes = 120,
+		RideVomitDivisor = 10, SatisfactionWeightForPhoto = 2, DistanceWeightForPhoto = 1, PhotoThreshold = 115, HappyDiffForVGood = 24, HappyDiffForGood = 14, HappyDiffForPoor = 5,
+		HappyDiffForVPoor = 1, PerfectExcitementMatch = 5, GoodExcitementMatch = 15, OkExcitementMatch = 40, PerfectRide = 25, GoodRide = 15, OkRide = 5, ComplainAboutThisQuality = 20
 	};
 
 	private static (GuestSimulation Simulation, Payments Payments, Vehicles Vehicles) Rig( bool native = true, bool withVehicles = false, ThemeParkIncGuestSettings? nativeSettings = null )
@@ -599,13 +601,13 @@ public sealed class ThemeParkIncNativeGuestTests
 			var guest = save.Guests.Single();
 			return save with { Guests = [guest with { Tpi = guest.Tpi! with { State = state, Saved = saved }, State = ThemeParkIncGuestStates.Projection( state ) }] };
 		}
-		foreach ( var state in new[] { 10, 11, 12, 17, 18, 19, 20, 21, 24, 25, 26 } )
+		foreach ( var state in new[] { 10, 11, 12, 18, 21, 24, 25, 26 } )
 			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state}" );
-		// phase P3a runs the queue states, and the cross-references refuse a guest in one that no ride's list holds
-		foreach ( var state in new[] { 14, 15 } )
+		// phases P3a and P3b run the queue and visit states, and the cross-references refuse a guest in one that no ride's list or riders hold
+		foreach ( var state in new[] { 14, 15, 16, 17, 20 } )
 			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state} outside every list" );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( 8, 14 ) ), "a spot animation that returns to a queue no list holds" );
-		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 22, 23, 27, 28, 29, 30 } )
+		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 19, 22, 23, 27, 28, 29, 30 } )
 			Rig().Simulation.RestoreSnapshot( With( state, 6 ) );
 		Rig().Simulation.RestoreSnapshot( With( 8, 27 ) );
 	}

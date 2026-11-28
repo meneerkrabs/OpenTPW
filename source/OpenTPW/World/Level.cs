@@ -841,6 +841,9 @@ public partial class Level : IDisposable
 
 			int NativeAtlas( Guest guest )
 			{
+				// [BIN:TPI-EXE:0x613079 costume taken off] a guest whose costume came off is drawn with the bank (+0x34, +0x30) the use set: the kids' category 0
+				if ( guest.Tpi is { SpriteCategory: { } category and >= 0 and <= 2, SpriteVariant: { } variant } && counts[category] > 0 )
+					return offsets[category] + variant % counts[category];
 				var generation = simulation.TpiGeneration( guest );
 				return offsets[generation] + GuestAppearance.KidSet( guest, counts[generation] );
 			}
@@ -856,6 +859,9 @@ public partial class Level : IDisposable
 		yield return true;
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
 		legacyHeadById = costumeHeads.Count == 0;
+		// [BIN:TPI-EXE:0x68E7B0 costume bank gender] a Theme Park Inc costume shop's guest reads the costume bank's header byte 0x10D (category 6, the bank its draw 0x6902F0(6) picks)
+		if ( GameEditions.IsThemeParkInc && Guests is { } costumeGuests )
+			costumeGuests.TpiCostumeBankFemale = costumes.Select( atlas => atlas.Animations.FlagB != 0 ).ToArray();
 		// [BIN:TPW-EXE:0x004FCAC0 head pick] a theme without costume heads (Fantasy, Hallow) reseeds the world generator with the rider and draws once on every head hung on a ride (RideScriptWorld.HeadHung)
 		Objects.ScriptWorld.HeadHangReseeds = !GameEditions.IsThemeParkInc && costumeHeads.Count == 0;
 		NextStepIsLong = true;
@@ -888,7 +894,13 @@ public partial class Level : IDisposable
 			AddCoasterHeads( CostumeHeadRenderer );
 		}
 		yield return true;
-		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, GuestSpriteAtlas.LoadBalloons() );
+		var balloonSets = GuestSpriteAtlas.LoadBalloons();
+		// [BIN:TPI-EXE:0x68EBEF balloon bank slots] a Theme Park Inc balloon's colour draw takes the loaded bank's slot count (the ESP's slots with frames, 0x690394); the shipped bank has four, one per
+		// type of the litter table 0x9D0614, and a bank with more than the table's four (no shipped data) keeps the shipped count
+		if ( GameEditions.IsThemeParkInc && Guests is { } balloonGuests && balloonSets.FirstOrDefault() is { } balloonSet
+			&& balloonSet.Animations.Animations.Count( slot => !slot.IsEmpty ) is > 0 and <= GuestSimulation.ThemeParkIncBalloonColours and var colours )
+			balloonGuests.TpiBalloonColours = colours;
+		BalloonRenderer = new BalloonRenderer( Guests, park.Heightfield, balloonSets );
 		yield return true;
 		// [EXT:umbrellas-draw] the open umbrellas, drawn with the umbrellas extension's own sprites at the guests' hands (the kids' renderer, then the costumes'); parks without the extension or its content have none
 		UmbrellaRenderer = null;

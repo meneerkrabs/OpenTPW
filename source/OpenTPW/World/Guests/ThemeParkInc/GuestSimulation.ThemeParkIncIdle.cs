@@ -37,6 +37,13 @@ public sealed partial class GuestSimulation
 	// [DATA:esprites.wad/Generic/{Kids,Parents,Grandparents}/SPR_xx.ESP] byte 0x10D: BD 0, GB 1, GK 1, KB 0; FA 0, MO 1; GM 1, GR 0
 	private bool ThemeParkIncSpriteIsFemale( Guest guest )
 	{
+		// [BIN:TPI-EXE:0x612F58 costume bank] a costume shop's guest reads the bank (+0x34, +0x30) it set: the costumes (category 6) or, once taken off, the kids' (category 0)
+		if ( guest.Tpi is { SpriteCategory: { } category, SpriteVariant: { } variant } )
+		{
+			var costumeOrKids = category == ThemeParkIncGuestSnapshot.ThemeParkIncCostumeCategory ? TpiCostumeBankFemale
+				: TpiSpriteBankFemale is { } generations && (uint)category < (uint)generations.Length ? generations[category] : null;
+			return costumeOrKids is { Length: > 0 } && (uint)variant < (uint)costumeOrKids.Length && costumeOrKids[variant];
+		}
 		if ( TpiSpriteBankFemale is not { } banks || TpiSpriteBankCounts is not { } counts )
 			return false;
 		var generation = TpiGeneration( guest );
@@ -294,11 +301,19 @@ public sealed partial class GuestSimulation
 				// which only those two states read, are not held; the guest stays idle. The thought 0x12 is not shown (Theme Park World's bubbles). The stand animation is made and the update ends
 				tpi.Mode = 3;
 				return true;
+			case 5:
+			{
+				// [BIN:TPI-EXE:0x614FE2 balloon to burst] the guest's cell's thing chain head first (+0x440, next +0xA): the first thing that is not the guest, of class 1 (a guest) and holding a balloon
+				// (+0x294 nonzero or +0x298 above 0) loses it with its litter (0x613D00(1)) and the tail runs with kind 6; none goes to the decision. The balloons are phase P3b's visit's (0x612740)
+				if ( ThemeParkIncBalloonVictim( guest ) is not { } victim )
+					return false;
+				ReleaseThemeParkIncBalloon( victim, victim.Tpi!, settings, litter: true );
+				kind = 6;
+				break;
+			}
 			default:
 				// [EXT:tpi-capability-gates] case 3 (the plant search 0x618EF0 with radius 6 and its fire test 0x618F30; a plant found sets +0x204 and state 11 and returns at 0x615148) is phase P4's: it is
-				// read as finding no plant, so a prankster with code 4 within six cells of a plant goes on to the decision where the original's update ends. Case 5 (the first guest on the cell holding
-				// a balloon or a balloon countdown: 0x613D00(victim, 1) and the tail with kind 6) finds no victim, which is exact while no native guest holds a balloon (none can before phase P3: a
-				// restore refuses a block that holds one); neither draws
+				// read as finding no plant, so a prankster with code 4 within six cells of a plant goes on to the decision where the original's update ends; it draws nothing
 				return false;
 		}
 		// [BIN:TPI-EXE:0x614F14 prank tail] the thought object takes thought 0x15 (0x638960(0x15, 0)), the message 0x436DD0 with the template 0x93E6B0 (the kind, the guest's id; the buffer 0xA09728
@@ -307,6 +322,20 @@ public sealed partial class GuestSimulation
 		ThemeParkIncPrankPosted?.Invoke( guest, kind );
 		guest.Happiness = MeterMath.Add( guest.Happiness, 1f );
 		return false;
+	}
+
+	/// <summary>The first guest after <paramref name="guest"/> on its cell's thing chain, head first, that holds a balloon (<c>+0x294</c> or <c>+0x298</c>); staff are not class-1 things.</summary>
+	private Guest? ThemeParkIncBalloonVictim( Guest guest )
+	{
+		if ( !occupants.TryGetValue( guest.Navigation.Cell, out var list ) )
+			return null;
+		for ( var index = list.Count - 1; index >= 0; index-- )
+		{
+			var other = list[index];
+			if ( other != guest && other.State != GuestState.Gone && other.Tpi is { } tpi && (tpi.HoldsBalloon || tpi.BalloonCountdown > 0) )
+				return other;
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -396,33 +425,35 @@ public sealed partial class GuestSimulation
 	// [BIN:TPI-EXE:0x60D120 removal message] message 0xA with the object's id (+8): +0x204 equal: state 0x14 gets its model back and the sound 0x80, else a guest in the queue states (0x61AC40) leaves
 	// the queue (0x619700(0)); then happiness += −byte [0xA01A78] (0x60D0D0), +0x204 = 0 and setter(6); then +0x206 equal is cleared, and each of the four words +0x20A..+0x210 equal is cleared with
 	// the word 8 bytes on (+0x212..+0x218, the temporary history)
-	// [EXT:tpi-twp-guest-rules] a guest of the bridged boarding (state 16 until phase P3b) leaves the removed ride by Theme Park World's removal (DropForRemovedAttraction: on the ride, the model back
-	// and the sound 0x80 as for 0x14; on the way to the stand point, the medium step; then its own small step), and state 6 as below
 	internal void ThemeParkIncObjectRemoved( int thingId )
 	{
 		if ( NativeTpi is not { } settings || thingId == 0 )
 			return;
-		var ride = TpiAttraction( thingId )?.Ride;
+		var view = TpiAttraction( thingId );
+		var ride = view?.Ride;
 		foreach ( var guest in guests )
 		{
 			if ( guest.Tpi is not { } tpi )
 				continue;
 			if ( tpi.Target == thingId )
 			{
-				if ( tpi.State == ThemeParkIncGuestStates.BeingLoaded && ride != null )
-					// Theme Park World's removal takes its own small step
-					DropForRemovedAttraction( guest, ride );
-				else
+				if ( tpi.State == ThemeParkIncGuestStates.UnderObjectControl )
 				{
-					if ( ThemeParkIncGuestStates.InQueueOrLoading( tpi.State, tpi.Saved ) )
-					{
-						// [BIN:TPI-EXE:0x60D17F queued guest] 0x619700(0); the destroyed ride's list goes with it (the bridge lets the guest go here so that its teardown does not send it away twice)
-						if ( ride != null )
-							TpiRemoveFromQueue( ride, guest );
-						TpiDismissFromQueue( guest, tpi, quietly: false );
-					}
-					guest.Happiness = MeterMath.Add( guest.Happiness, -HappinessChange( settings, 0 ) );
+					// [BIN:TPI-EXE:0x60D14B rider] the sprite back (0x5D0F90(1) when it was kept, a ride that draws it; else made again, 0x5D1000, the mode kept), +0x38 = +0x3C = 0 and the sound
+					// 0x80 (0x60BE90), for every rider; the guest stays where the ride had it
+					if ( view?.Use.RideHandlesSprite == true )
+						tpi.Mode = 1;
+					RemovedRideBodySprite( guest );
+					Voiced?.Invoke( guest, DismissalVoiceEvent );
 				}
+				else if ( ThemeParkIncGuestStates.InQueueOrLoading( tpi.State, tpi.Saved ) )
+				{
+					// [BIN:TPI-EXE:0x60D17F queued guest] 0x619700(0); the destroyed ride's list goes with it (the bridge lets the guest go here so that its teardown does not send it away twice)
+					if ( ride != null )
+						TpiRemoveFromQueue( ride, guest );
+					TpiDismissFromQueue( guest, tpi, quietly: false );
+				}
+				guest.Happiness = MeterMath.Add( guest.Happiness, -HappinessChange( settings, 0 ) );
 				tpi.Target = 0;
 				ClearTpiQueueMirror( guest );
 				SetThemeParkIncState( guest, tpi, ThemeParkIncGuestStates.Idle );

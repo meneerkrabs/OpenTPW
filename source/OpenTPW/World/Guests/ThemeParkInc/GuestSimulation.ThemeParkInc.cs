@@ -135,10 +135,18 @@ public sealed partial class GuestSimulation
 				if ( tpi.Wandered )
 					RouteToThemeParkIncTarget( guest );
 				break;
-			case ThemeParkIncGuestStates.WaitingToBeAdmitted or ThemeParkIncGuestStates.BeingUnloaded
-				or ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl or ThemeParkIncGuestStates.ListeningToRumours:
-				// [EXT:tpi-capability-gates] the entries of 17 (0x61A66A, the ride's roll 0x5E7A00), 19 and 20 (0x61A69D, 0x61A77E, the ride), 21 (0x61A906, the guard) and 26 (0x61A9F6, 0x60B6E0) read
-				// objects the later phases port; no state of phases P1 and P2 enters them
+			case ThemeParkIncGuestStates.WaitingToBeAdmitted:
+				// [BIN:TPI-EXE:0x61A66A state 17 entry] mode 3, then +0x21B = 0x5E7A00(the target), the ride's chance roll (phase P3b)
+				EnterTpiWaitingToBeAdmitted( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.BeingUnloaded:
+				EnterTpiBeingUnloaded( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.UnderObjectControl:
+				EnterTpiUnderObjectControl( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.UnderGuardControl or ThemeParkIncGuestStates.ListeningToRumours:
+				// [EXT:tpi-capability-gates] the entries of 21 (0x61A906, the guard) and 26 (0x61A9F6, 0x60B6E0) read objects the later phases port; no state of phases P1 to P3b enters them
 				throw new NotSupportedException( $"Theme Park Inc guest state {state} ({ThemeParkIncGuestStates.Names[state]}) is not ported yet (docs/reverse/TPI-GUESTS.md)." );
 		}
 	}
@@ -229,11 +237,7 @@ public sealed partial class GuestSimulation
 			guest.ToiletBonus = UmbrellaRules.SpeedTerm( guest.UmbrellaState, SpeedTermWord( term ) );
 			// [BIN:TPI-EXE:0x619E63 thought draw] outside states 0x14 and 0x15 and on a park cell (0x60BE00): one world draw, R % 10 == 0 runs the pick 0x60FC60; then the balloon countdown 0x619E9E:
 			// +0x298 above 0 (unsigned) loses 1 and at 0 the balloon goes (0x613D00(0)). Either test failing jumps to 0x619EBB, past the countdown: a guest on an object, held or outside the park keeps its balloon's time
-			// [EXT:tpi-twp-guest-rules] the bridged boarding's ride (state 16 with Theme Park World's Using) stands in for state 0x14, the guest under the ride's control (0x619E6A), so it skips the draw too; the
-			// bridged boarding's draw stream still differs: 17's entry roll 0x5E7A00 (one draw at 0x5E7A2D) is missing, Theme Park World's balloon give-back and balloon shop reseed and take two draws each
-			// (FinishUse, ApplyAppearance), a won sideshow takes a tail draw, and its small-portion draws stand in for 0x612AEC/0x612BCF at another moment (TPI-GUESTS.md, "The bridged boarding")
-			if ( tpi.State is not (ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl)
-				&& !(tpi.State == ThemeParkIncGuestStates.BeingLoaded && guest.State == GuestState.Using) && OnParkCellTypeAt( cx, cy ) )
+			if ( tpi.State is not (ThemeParkIncGuestStates.UnderObjectControl or ThemeParkIncGuestStates.UnderGuardControl) && OnParkCellTypeAt( cx, cy ) )
 			{
 				if ( random.NextWord() % 10 == 0 )
 					ThemeParkIncThoughtPick( guest, settings );
@@ -313,14 +317,23 @@ public sealed partial class GuestSimulation
 	/// <summary>
 	/// The balloon goes (<c>0x613D00</c> with 0): a held balloon object is released, the guest loses <c>MediumHappinessChange</c> (a byte) and the countdown is cleared, held or not.
 	/// </summary>
-	// [BIN:TPI-EXE:0x613D00 balloon release] +0x294 nonzero: 0x4E49A0 (the float-away) and +0x294 = 0; with the argument nonzero (not here) the litter 0x5D8C80 of [0x9D0614 + 4 × +0x2A0] drops;
-	// then happiness += -byte [0xA01A7C] (clamped) and +0x298 = 0, whatever was held
-	private static void ReleaseThemeParkIncBalloon( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncGuestSettings settings )
+	// [BIN:TPI-EXE:0x613D00 balloon release] +0x294 nonzero: 0x4E49A0 (the float-away) and +0x294 = 0, and with the argument nonzero the litter 0x5D8C80 of [0x9D0614 + 4 × +0x2A0] drops on the
+	// guest's cell record (the bytes +5 and +7, 0x613D2C..0x613D60); then happiness += -byte [0xA01A7C] (clamped) and +0x298 = 0, whatever was held. The umbrella's carrying out (0x6140F2..0x61419A)
+	// repeats this body inline, with the drop at 0x61413A
+	internal void ReleaseThemeParkIncBalloon( Guest guest, ThemeParkIncGuestRecord tpi, ThemeParkIncGuestSettings settings, bool litter = false )
 	{
+		// [BIN:TPI-EXE:0x613D37 balloon litter] the type by the colour +0x2A0 (0x9D0614: 9, 0xC, 0xB, 0xA); the drop (0x5D8C80) on a cell that holds no litter reseeds the world generator with the
+		// cell word and draws twice (0x5D8DCF, 0x5D8E14, 0x5D8E42), on one that holds some it does nothing (+0x30 nonzero, 0x5D8CC7)
+		if ( litter && tpi.HoldsBalloon )
+			DropThemeParkIncLitter( guest, ThemeParkIncBalloonLitter[tpi.BalloonColour] );
 		tpi.HoldsBalloon = false;
 		guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(settings.MediumHappinessChange & 0xFF) );
 		tpi.BalloonCountdown = 0;
 	}
+
+	/// <summary>The litter of a lost balloon by its colour (the table <c>0x9D0614</c>).</summary>
+	// [BIN:TPI-EXE:0x9D0614 balloon litter types] the dwords 9, 0xC, 0xB, 0xA for the colours 0..3
+	internal static readonly LitterType[] ThemeParkIncBalloonLitter = { LitterType.BurstBalloon1, LitterType.BurstBalloon4, LitterType.BurstBalloon3, LitterType.BurstBalloon2 };
 
 	// ---- The weather rule ------------------------------------------------------------------------------------------------------------
 
@@ -416,13 +429,7 @@ public sealed partial class GuestSimulation
 			return;
 		}
 		if ( tpi.HoldsBalloon || tpi.BalloonCountdown > 0 )
-		{
-			// [EXT:tpi-capability-gates] the balloon's litter (0x5D8C80 of [0x9D0614 + 4 × +0x2A0]: the types 9, 0xC, 0xB, 0xA by the balloon's colour) is not dropped: ParkLitter holds the types 1..8, and no
-			// native guest holds a balloon before phase P3
-			tpi.HoldsBalloon = false;
-			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(settings.MediumHappinessChange & 0xFF) );
-			tpi.BalloonCountdown = 0;
-		}
+			ReleaseThemeParkIncBalloon( guest, tpi, settings, litter: true );
 		if ( guest.UmbrellaState != UmbrellaRules.StateNone && !UmbrellaRules.HasSprite( guest.UmbrellaState ) )
 		{
 			guest.ToiletBonus = 0;
@@ -480,7 +487,16 @@ public sealed partial class GuestSimulation
 				UpdateTpiTakingQueueStep( guest, tpi );
 				break;
 			case ThemeParkIncGuestStates.BeingLoaded:
-				// [EXT:tpi-twp-guest-rules] state 16 (0x617F80) is phase P3b's: the guest walks, boards and rides by Theme Park World's boarding (UpdateTpiBridgedBoarding, after the dispatch)
+				UpdateTpiBeingLoaded( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.WaitingToBeAdmitted:
+				UpdateTpiWaitingToBeAdmitted( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.BeingUnloaded:
+				UpdateTpiBeingUnloaded( guest, tpi );
+				break;
+			case ThemeParkIncGuestStates.UnderObjectControl:
+				UpdateTpiUnderObjectControl();
 				break;
 			case ThemeParkIncGuestStates.LeavingPark:
 				UpdateTpiLeavingPark( guest, tpi );
@@ -501,7 +517,7 @@ public sealed partial class GuestSimulation
 				UpdateTpiWaitingToBePickedUp( guest, tpi );
 				break;
 			case >= 0 and < ThemeParkIncGuestStates.Count:
-				// [EXT:tpi-capability-gates] states 10..12, 17..21 and 24..26 are the later phases' (P3b..P6); nothing of phases P1..P3a enters them
+				// [EXT:tpi-capability-gates] states 10..12, 18, 21 and 24..26 are the later phases' (P4..P6); nothing of phases P1..P3b enters them
 				throw new NotSupportedException( $"Theme Park Inc guest state {tpi.State} ({ThemeParkIncGuestStates.Names[tpi.State]}) is not ported yet (docs/reverse/TPI-GUESTS.md)." );
 		}
 	}
@@ -521,13 +537,10 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// A native guest's cell is the person's bytes <c>+5</c>/<c>+7</c>, which the chain update writes with every position (<c>0x637B70</c>): the position's cell. Outside the bridged boarding (whose Theme Park World states keep
-	/// their own, <c>[EXT:tpi-twp-guest-rules]</c>) OpenTPW's guest cell is set to it before Theme Park Inc's states read it, so a restore derives it from the navigator (navigator phase NV5).
+	/// A native guest's cell is the person's bytes <c>+5</c>/<c>+7</c>, which the chain update writes with every position (<c>0x637B70</c>): the position's cell. OpenTPW's guest cell is set to it before Theme Park Inc's states read it, so a restore derives it from the navigator (navigator phase NV5).
 	/// </summary>
 	private static void SyncTpiCell( Guest guest, ThemeParkIncGuestRecord tpi )
 	{
-		if ( tpi.State == ThemeParkIncGuestStates.BeingLoaded )
-			return;
 		var cell = guest.Navigation.Cell;
 		if ( cell != (guest.CellX, guest.CellY) )
 			(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);

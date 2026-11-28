@@ -1499,6 +1499,6 @@ A Theme Park Inc staff member and a native guest store their walk as Theme Park 
 in a few places, all ports: every route request and wander writes the accurate destination words, which a native guest's digest now hashes; the handyman's placement at his litter zeroes his velocity
 (`0x60BD80`); a native guest's cell follows its navigator every update (the walk step `0x60B4BB`); the gardener's watering sets his heading word (`0x609E60`); a staff member keeps his wander flag and
 stranded mark, which his park save (and so the digest) holds; a Theme Park Inc walk keeps no route bookkeeping, and a staff member's fresh walk starts with the navigator's constructor state instead of a walk
-to his own point. A native guest's digest no longer hashes its heading floats, moving flag, previous cell and waypoint flag outside the bridged boarding (derived or presentation). No draw is added or
+to his own point. A native guest's digest no longer hashes its heading floats, moving flag, previous cell and waypoint flag (derived or presentation). No draw is added or
 removed. No checked-in pin holds a Theme Park Inc run, so no pinned value changes; Theme Park World is unchanged (every `DeterminismTests` pin, the `BuildStepsTests` digests and the save-digest pins
 hold), and a Theme Park World save writes none of the new members.

@@ -75,12 +75,6 @@ public sealed record ThemeParkIncPersonWalkSnapshot
 }
 
 /// <summary>
-/// The walk fields of a native guest in the bridged boarding (state 16, <c>[EXT:tpi-twp-guest-rules]</c> until phase P3b of the guest port): Theme Park World's boarding, ride and exit read and write the
-/// guest's cell, its previous cell and its walking flag, which have no native home; they are saved for such a guest alone and derived for every other native guest.
-/// </summary>
-public sealed record ThemeParkIncBridgedWalkSnapshot( int CellX, int CellY, int PreviousCellX, int PreviousCellY, bool HasWaypoint );
-
-/// <summary>
 /// Theme Park Inc's route requests to a point and the stranded test (<c>0x60B8E0</c>, <c>0x60BB50</c>) on any walker, and the person serializer's walk semantics (<c>0x609170</c> with its re-route
 /// <c>0x609B55</c>): the native walk storage of navigator phase NV5 (docs/reverse/TPI-NAVIGATOR.md). OpenTPW's own Theme Park Inc resume restores a walker verbatim; the park writer's native loader
 /// (its phases N2 onwards) and native writer use <see cref="Load"/>, <see cref="LoadAll"/> and <see cref="ReRouteAfterSave"/>.

@@ -178,8 +178,8 @@ Theme Park World result moves now.
 
 A native guest stores the heading in its record's `Heading` (saved since P1); every walker's presentation vector is the word's (`ThemeParkIncWalkStep.Vector`). A staff member keeps the
 word in `SpriteAngle`, not saved yet (NV5 stores the person words). The guard's carry (`0x5D3B20`: state 0x1C) needs the guard's chase, which is not ported (`[EXT:tpi-capability-gates]`).
-The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the rigs of `ThemeParkIncNativeGuestTests` and `ThemeParkIncNativeIdleTests` walk with
-Theme Park Inc's navigator, as every Theme Park Inc park does since NV4.
+The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the rigs of `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`,
+`ThemeParkIncNativeQueueTests` and `ThemeParkIncNativeVisitTests` walk with Theme Park Inc's navigator, as every Theme Park Inc park does since NV4.
 
 **The speed step `0x60BC90`** [R, O] is Theme Park World's `0x4FA870` value for value (TPI adds +3.0 × `+0xDC` with `faddp` where tp.exe subtracts −3.0 × it; the same single):
 (`+0xD4` + `+0xD6` + `+0xD8`) / `[0x9CFB2C]` (100) + 3 × `+0xDC`, × 0.25, each operation a single; the caps `0x63EF90`; the boost × 99 / 100 as a word; mPreviousX/Y `+0x1A8/+0x1AC` = the
@@ -206,7 +206,7 @@ request's or the wander's gate and for a mark, `SetupStamp` for a set-up's succe
 | a guest's wander: entry gate, final route, off-path tries, the stranded mark | `0x609FBE`, `0x60A55F`, `0x60A6FB` / `0x60A83F`, `0x60A4A5` | `GuestSimulation.Wander` (Theme Park World's `0x4F9490` has the same calls at `0x4F94E2`, `0x4F9CB5`, `0x4F9983` / `0x4F9B2E`, `0x4F9DFC`) |
 | a staff member's wander and patrol: entry gate, off-path tries, the final staff route | `0x609FBE`, `0x60A6FB` / `0x60A83F`, `0x60A547` → `0x62EB10` | `ThemeParkIncPatrol.Destination` (NV4; the fallback `0x62C720` counts through its staff routes) |
 | the cell edits and the queue length change | `0x67CC50`, `0x67CE47`, `0x682FB3`, `0x5E06B3` | `ParkCellMap.SetType`, `StampBlockAt` (already counted) |
-| the sprite placement's simulation calls | `0x60CAC9` (guest constructor), `0x61A70B` (the state setter's entry for state 19) | `ThemeParkIncPlacementStamp` after the constructor's walk to the booth; state 19 is a later guest phase's |
+| the sprite placement's simulation calls | `0x60CAC9` (guest constructor), `0x61A70B` (the state setter's entry for state 19) | `ThemeParkIncPlacementStamp` after the constructor's walk to the booth, and in state 19's entry for a teleporting ride before its beam (guest phase P3b) |
 
 The guests of the default path (Theme Park World's states under `[EXT:tpi-twp-guest-rules]`, which still covers their decisions, not their walk) count through the same routines, as tp.exe's own
 states do at the same places: their route requests (`RequestRoute`, tp.exe `0x4FA530` with its counter call `0x4FA578`; `RouteToPoint` and `RouteToStopPoint`, `0x4FA5F0` at `0x4FA5FE`), their
@@ -322,15 +322,15 @@ floats, the step start, the caps, the cell and previous cell, the on-grid flag, 
 - the heading floats from the heading word (`ThemeParkIncWalkStep.Vector`), the step start from mPreviousX/Y, the caps from the record;
 - the cell is the navigator's (`+5`/`+7` are the position >> 8, which the chain update writes with every step); a native guest's own cell field now follows its navigator every update (the walk step
   `0x60B4BB` writes the cell bytes), where it lagged a step before; the previous cell is never read for a native guest, the on-grid flag is always set, the placement offset is the id's jitter (presentation);
-- the bridged boarding of a native guest (state 16, Theme Park World's boarding under `[EXT:tpi-twp-guest-rules]`) is not the original's walk: there the guest keeps its cell, previous cell and waypoint
-  flag in the member `BridgedWalk`.
+- the waypoint flag (presentation: the moving flag reads it) is the walk's own, cleared under an object's control (state 20's entry `0x61A77E` clears it). Since guest phase P3b every native
+  guest state is Theme Park Inc's own, the visit included, so no native guest keeps walk fields of Theme Park World's boarding.
 
 `CellSerial` stays in OpenTPW's snapshot until the native writer writes the chain links (the park writer's N6/N7). The original keeps each cell's things as a chain (mMapChild/mMapParent, newest at the
 head), and OpenTPW orders each cell's list by the serial its walkers took on entering it: the order of one cell's list is the serials' order, so either can be rebuilt from the other exactly, and the order
 of serials across cells is never read. Deriving the serials now would need the links, which no OpenTPW save holds yet; the writer will write the links from the serials' order and the native loader
 will number the chains it reads.
 
-The digest of a native guest no longer hashes its heading floats, its moving flag, its previous cell or its waypoint flag (presentation or derived), except in the bridged boarding, and hashes its accurate
+The digest of a native guest no longer hashes its heading floats, its moving flag, its previous cell or its waypoint flag (presentation or derived), and hashes its accurate
 destination words; a staff member's digest is his park save, which now holds the new members. No pin moves: no pin runs a Theme Park Inc park.
 
 **The load semantics for the park writer.** `ThemeParkIncNativeWalk.Load` is the load half on one walker (the members verbatim, then the re-route with the park's counter and block stamps as they stand),

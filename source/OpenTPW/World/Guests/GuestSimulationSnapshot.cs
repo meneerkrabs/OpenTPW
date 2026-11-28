@@ -241,9 +241,6 @@ public sealed record GuestSnapshot
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public ThemeParkIncPersonWalkSnapshot? PersonWalk { get; init; }
-	/// <summary>The walk fields of the bridged boarding (<see cref="ThemeParkIncBridgedWalkSnapshot"/>), for a guest of the native walk storage in state 16 alone.</summary>
-	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
-	public ThemeParkIncBridgedWalkSnapshot? BridgedWalk { get; init; }
 
 	// Cells, arrival lane and timers.
 	// cells, offsets and the walking flag: absent with the native walk storage (derived: the position's cell, no previous cell, on the grid, the placement offset of the id, the walk's own state)
@@ -283,9 +280,9 @@ public sealed record GuestSnapshot
 	/// <summary>
 	/// The snapshot as the restore and the validators read it: with the native walk storage (<see cref="PersonWalk"/>) the walk fields of OpenTPW's own kind are derived from it (navigator phase NV5): the walk from
 	/// the navigator's record alone (no route, cursor 0, no crossings or extra open cells, the remaining distance −1, on the grid, no reroutes; <see cref="GuestNavigation.RestoreNativeRecord"/>), the heading
-	/// vector from the record's heading word, the turn's start from mPreviousX/Y, the caps from the navigator, the cell from the position (the person's bytes <c>+5</c>/<c>+7</c>) or the bridged boarding's, no
-	/// previous cell, on the grid, the placement offset of the guest's id (<see cref="GuestSimulation.PlacementJitter"/>, the only offset a native guest has), and the walking flag the walk's own (presentation outside
-	/// the bridged boarding). Without the storage, or with a storage the validators refuse, the snapshot itself.
+	/// vector from the record's heading word, the turn's start from mPreviousX/Y, the caps from the navigator, the cell from the position (the person's bytes <c>+5</c>/<c>+7</c>), no
+	/// previous cell, on the grid, the placement offset of the guest's id (<see cref="GuestSimulation.PlacementJitter"/>, the only offset a native guest has), and the walking flag the walk's own, cleared under an object's control (state 20's entry clears
+	/// it; presentation only). Without the storage, or with a storage the validators refuse, the snapshot itself.
 	/// </summary>
 	internal GuestSnapshot ExpandNativeWalk()
 	{
@@ -295,7 +292,7 @@ public sealed record GuestSnapshot
 		shadow.RestoreNativeRecord( bytes );
 		var offset = GuestSimulation.PlacementJitter( Id );
 		var (headingX, headingY) = ThemeParkIncWalkStep.Vector( Tpi?.Heading ?? 0 );
-		var cell = BridgedWalk is { } bridged ? (bridged.CellX, bridged.CellY) : shadow.Cell;
+		var cell = shadow.Cell;
 		return this with
 		{
 			Navigation = new GuestNavigationSnapshot
@@ -308,9 +305,9 @@ public sealed record GuestSnapshot
 			StepFromX = walk.PreviousX / (float)Fixed16.One, StepFromY = walk.PreviousY / (float)Fixed16.One,
 			MaxSpeed = shadow.MaxSpeed, MaxForce = shadow.MaxForce,
 			CellX = cell.Item1, CellY = cell.Item2,
-			PreviousCellX = BridgedWalk?.PreviousCellX ?? -1, PreviousCellY = BridgedWalk?.PreviousCellY ?? -1,
+			PreviousCellX = -1, PreviousCellY = -1,
 			OnGrid = true, OffsetX = offset.X, OffsetY = offset.Y,
-			HasWaypoint = BridgedWalk?.HasWaypoint ?? (!shadow.Arrived && !shadow.Stuck)
+			HasWaypoint = !shadow.Arrived && !shadow.Stuck && Tpi?.State != ThemeParkIncGuestStates.UnderObjectControl
 		};
 	}
 }

@@ -243,7 +243,8 @@ public class ThemeParkIncWalkStepTests
 	[TestMethod]
 	public void TheCounterIsAnUnsignedDwordPastTwoToTheThirtyFirst()
 	{
-		var inc = new ParkCellMap( 32, 32 ) { EdgeRules = WalkEdgeRules.ThemeParkInc };
+		// a Theme Park Inc park's map (its land record): only such a layout keeps a counter of the simulation's calls
+		var inc = new ParkCellMap( 32, 32 ) { EdgeRules = WalkEdgeRules.ThemeParkInc, HasThemeParkIncLand = true };
 		inc.RestoreBlockStamps( int.MaxValue - 1, null );
 		Assert.AreEqual( int.MaxValue, inc.NextStamp() );
 		Assert.AreEqual( int.MinValue, inc.NextStamp(), "the dword passes 0x7FFFFFFF to 0x80000000" );
@@ -265,7 +266,7 @@ public class ThemeParkIncWalkStepTests
 	[TestMethod]
 	public void ACountingMapKeepsItsCounterInTheLayoutAndAThemeParkWorldMapWritesNothingNew()
 	{
-		var inc = new ParkCellMap( 32, 32 ) { EdgeRules = WalkEdgeRules.ThemeParkInc };
+		var inc = new ParkCellMap( 32, 32 ) { EdgeRules = WalkEdgeRules.ThemeParkInc, HasThemeParkIncLand = true };
 		inc.NextStamp();
 		inc.NextStamp();
 		Assert.IsNull( inc.CaptureBlockStamps(), "no block is stamped" );
@@ -279,6 +280,8 @@ public class ThemeParkIncWalkStepTests
 		Assert.AreEqual( (2, true), (data.Cells.StampCounter, data.Cells.SimulationStampCounter) );
 		var restored = ParkLayoutSnapshot.RestoreCellMap( ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( data ) ) );
 		Assert.AreEqual( 2, restored.StampCounter );
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( data with { Cells = data.Cells with { TpiUnowned = null } } ) ).Message,
+			"not a Theme Park Inc park's map", "a counter of the simulation's calls belongs to a Theme Park Inc park's map (the NV4 review)" );
 
 		var world = new ParkCellMap( 32, 32 );
 		world.NextStamp();

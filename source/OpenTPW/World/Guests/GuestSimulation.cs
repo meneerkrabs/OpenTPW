@@ -1523,18 +1523,30 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool RequestRoute( Guest guest, (int X, int Y) cell, List<(int X, int Y)>? route )
 	{
 		var navigation = guest.Navigation;
-		// the counter is raised first, whatever the mark (0x60B828: a park counting the simulation's calls, ParkCellMap.NextStamp)
-		if ( ParkCellMap.StampBelow( Grid.Cells.NextStamp(), guest.StrandedMark ) )
-			guest.StrandedMark = 0;
-		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
+		if ( !PassesStrandedGate( guest ) )
 			return false;
-		guest.StrandedMark = 0;
 		// [BIN:TPI-EXE:0x60B85E accurate destination] +0x2A, +0x28 = the cell's centre words ((cell << 8) | 0x80) before SetDest (0x60B880, 0x60B884): Theme Park Inc's person words (NV5)
 		(guest.AccurateDestX, guest.AccurateDestY) = ((cell.X << 8) | GuestWander.CentreByte, (cell.Y << 8) | GuestWander.CentreByte);
 		var (x, y) = GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte );
 		var found = route == null ? navigation.Navigate( Grid.Cells, x, y ) : SetDestination( guest, (x, y), route );
 		guest.HasWaypoint = true;
 		return found;
+	}
+
+	/// <summary>
+	/// The stranded gate the route requests <c>0x004FA530</c> and <c>0x004FA5F0</c> (Theme Park Inc's <c>0x60B7F0</c>, <c>0x60B8E0</c>) open with: the counter raised first, whatever the mark; a counter
+	/// below the mark clears it; a mark still set and held (<c>0x004FA770</c>) refuses before anything is written; else the mark is cleared and the request goes on.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA5F0 stranded gate] 0x4D8C50 (0x4FA5FE), cmp/jae against +0x198 and its clear (0x4FA609), a mark above 0 tested by 0x4FA770 (0x4FA621) returns 0 (0x4FA62A), else +0x198 = 0
+	// (0x4FA63E) before the words +0x18/+0x1A and SetDest 0x510100; 0x004FA530 opens the same way. The counter call counts in a park counting the simulation's calls (0x60B828, ParkCellMap.NextStamp)
+	private bool PassesStrandedGate( Guest guest )
+	{
+		if ( ParkCellMap.StampBelow( Grid.Cells.NextStamp(), guest.StrandedMark ) )
+			guest.StrandedMark = 0;
+		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
+			return false;
+		guest.StrandedMark = 0;
+		return true;
 	}
 
 	private WalkResult Step( Guest guest )
@@ -1835,12 +1847,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>A route request to a random point of <paramref name="cell"/> (the two sub-cell bytes are world draws in tp.exe, <c>0x00516330</c>); false when the walk search fails.</summary>
 	// [BIN:TPW-EXE:0x00500BD0 stop walk draws] the cell pick and the two sub-cell bytes (0x00500AD0, 0x00500BD0) are world draws (0x00516330), taken here from the park's one world generator (WorldRng) in the original's order: the pick, then x, then y
-	// [BIN:TPW-EXE:0x00500BAE stop walk request] the route request 0x004FA5F0, whose counter call (0x004FA5FE) counts in a park with Theme Park Inc's navigator (ParkCellMap.NextStamp)
+	// [BIN:TPW-EXE:0x00500BAE stop walk request] the route request 0x004FA5F0 after the draws: its stranded gate (PassesStrandedGate; its counter call 0x004FA5FE counts in a park with Theme Park Inc's
+	// navigator, ParkCellMap.NextStamp), the destination words, SetDest
 	private bool RouteToStopPoint( Guest guest, (int X, int Y) cell )
 	{
 		var byteX = (int)(random.NextWord() & 0xFF);
 		var byteY = (int)(random.NextWord() & 0xFF);
-		Grid.Cells.NextStamp();
+		if ( !PassesStrandedGate( guest ) )
+			return false;
+		(guest.AccurateDestX, guest.AccurateDestY) = ((cell.X << 8) | byteX, (cell.Y << 8) | byteY);
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
 		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
 		guest.HasWaypoint = true;
@@ -2269,8 +2284,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// the ordinary litter drawn before the cell is tested; an occupied cell takes neither the drop nor the urge's reset. True when the guest walks to a bin.
 	/// </summary>
 	// [BIN:TPI-EXE:0x614B84 litter gate] draw B; (B & 3) != 0 leaves the block (jne 0x614C2B) with no litter and the urge (+0x1D8) kept
-	// [BIN:TPI-EXE:0x614B97 bin search] 0x618D10 with radius 3: a bin sets the target (+0x204) and dispatch index 9 and returns, the urge kept ([EXT:tpi-twp-guest-rules] the search, the walk to the bin
-	// and its arrival are Theme Park World's: 0x618D10's reachability 0x60B8E0 and the bin handler 0x616F10's capacity and dirt tests are unread, the bins' fill is unported)
+	// [BIN:TPI-EXE:0x614B97 bin search] 0x618D10 with radius 3: a bin sets the target (+0x204) and dispatch index 9 and returns, the urge kept ([EXT:tpi-twp-guest-rules] on the default path the
+	// choice of the bin and the handling on arrival are Theme Park World's (SeekBin, tp.exe 0x00500DC0, and the ThrowingAwayLitter state): 0x618D10's reachability test 0x60B8E0 and the bin handler 0x616F10's
+	// capacity and dirt tests are unread, and the bins' fill is unported. The walk to the bin is not in the label's scope: its route requests and steps are Theme Park Inc's navigator since NV4)
 	// [BIN:TPI-EXE:0x614C03 ordinary litter] draw C, type C % 5 + 1 (0x93E2BC holds 6), then the cell record's type (+0x30) must be 0 or the drop and the urge's reset are skipped
 	// (0x614C15..0x614C1B); the drop 0x5D8C80 and urge = 0 (0x614C25)
 	private bool ThemeParkIncLitterStep( Guest guest )

@@ -7,6 +7,17 @@ The fifth and last phase of the Theme Park Inc navigator port (NV5). A Theme Par
 - **Load and save as the original.** The original sets every walk up again when it loads a park, with a counter that starts at 0 in a new process, and also after each save of a person. Both are ported as calls the native park writer will make. OpenTPW's own resume stays a continuation: it restores every walk exactly and the session goes on as if unsaved.
 - **Two staff details.** A gardener watering now turns to face the path beside his plant as in the original, and a staff member's wander flag and stranded mark are saved, as the original saves them. A handyman put down at his litter stands still, as in the original.
 - **Saves.** Science saves made before this phase are refused with the same message as those from before the previous phase, so a player sees one refusal. Theme Park World saves are unchanged.
+- **Follow-ups from the previous phase's review.**
+  - A Theme Park Inc park's stamp counter can wrap past 2^32 as the original's does, and OpenTPW keeps it from one session to the next where the original starts at 0 each time. Saves no longer refuse stamps above a wrapped counter in a Theme Park Inc park; a Theme Park World park's counter never wraps and is checked as before. A layout whose counter counts the simulation's calls but which is not a Theme Park Inc park's map is refused.
+  - New tests cover the refusal of a Theme Park Inc continuation made before the native walk storage and the refusal of an edit-only counter in a Theme Park Inc continuation.
+  - The save documentation now notes the refusal of a staff patrol rectangle whose corners are one cell apart and reversed (the original's patrol fallback would crash on it).
+  - The two route requests to a point that the arrival and leaving walks use now have the stranded gate the original's routine has, as the route request to a cell already did. No Theme Park World pin moved.
+- **What `[EXT:tpi-twp-guest-rules]` still covers.** After this phase and the native guests' visit phase, the label covers only these Theme Park World rules in a Theme Park Inc park, and none of the walk:
+  - the guests of the default path (without `--tpi-native-guests`): their decisions and state handlers are Theme Park World's shared update over Theme Park Inc's profiles, meters, speeds and art, with their ride admission standing in for the native guest's admission (its challenge events) and no reaction to a performing entertainer;
+  - the default path's litter step: the bin search's choice of bin and the handling on arrival are Theme Park World's (the original's reachability test of the search and the bin's capacity and dirt tests are not read, and bins do not fill); the walk to the bin is Theme Park Inc's navigator;
+  - the guests' body animation: Theme Park World's sprite programs for the walk and the run (Theme Park Inc's sprite commit is presentation and not ported), and Theme Park World's sprite pass for the staff;
+  - the thought bubbles: their timing and drawing follow Theme Park World's bubble rules, and the "too messy" thought reads the litter census through Theme Park World's analyser blocks (the same census as the original's, without Theme Park Inc's block size);
+  - the guests' reactions to the weather spells, over Theme Park Inc's data.
 
 No new approximation or label is added, and no C runtime `rand()` is reached from the person serializer or its re-route.
 

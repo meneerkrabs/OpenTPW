@@ -786,7 +786,7 @@ internal static class ParkResumeSaveFile
 		// A staff walk of the original kind keeps the stamp counter of its set-up, as a guest's does (WALK-007).
 		if ( snapshot.Layout?.Cells is { } layoutCells )
 			foreach ( var member in snapshot.Economy.Staff!.Members! )
-				Require( member.WorldState?.Navigation?.OriginalWalk is not { } staffWalk || !ParkCellMap.StampBelow( layoutCells.StampCounter, staffWalk.Stamp ),
+				Require( member.WorldState?.Navigation?.OriginalWalk is not { } staffWalk || ParkCellMap.StampMayStandBeside( layoutCells.StampCounter, staffWalk.Stamp, layoutCells.SimulationStampCounter ),
 					$"staff {member.Id} walk stamp {member.WorldState?.Navigation?.OriginalWalk?.Stamp} is above the layout's stamp counter {layoutCells.StampCounter}" );
 		if ( snapshot.Advisor is { } advisor )
 		{
@@ -905,7 +905,7 @@ internal static class ParkResumeSaveFile
 		return null;
 	}
 
-	private static void ValidateGuests( ParkResumeSnapshot snapshot )
+	internal static void ValidateGuests( ParkResumeSnapshot snapshot )
 	{
 		var guests = snapshot.Guests!;
 		foreach ( var problem in GuestSimulation.DisplayAgeProblems( guests ) )
@@ -1062,8 +1062,8 @@ internal static class ParkResumeSaveFile
 				$"guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap" );
 			foreach ( var problem in navigation.Problems( guest.Id, InBounds ) )
 				Require( false, problem );
-			// A walk keeps the stamp counter of its set-up; the layout's counter can only have grown since (WALK-007).
-			Require( navigation.OriginalWalk is not { } walk || !ParkCellMap.StampBelow( snapshot.Layout.Cells.StampCounter, walk.Stamp ),
+			// A walk keeps the stamp counter of its set-up; the layout's counter can only have grown since (WALK-007), or wrapped past 2^32 when it counts the simulation's calls
+			Require( navigation.OriginalWalk is not { } walk || ParkCellMap.StampMayStandBeside( snapshot.Layout.Cells.StampCounter, walk.Stamp, snapshot.Layout.Cells.SimulationStampCounter ),
 				$"guest {guest.Id} walk stamp {navigation.OriginalWalk?.Stamp} is above the layout's stamp counter {snapshot.Layout.Cells.StampCounter}" );
 			Require( InBounds( guest.CellX!.Value, guest.CellY!.Value ), $"guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the cell map" );
 			if ( guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0 )

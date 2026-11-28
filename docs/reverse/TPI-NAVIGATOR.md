@@ -220,7 +220,9 @@ counter still counts the edits only.
 **An unsigned dword.** The counter, the block stamps, a walk's `path_timestamp` and a stranded mark are the original's unsigned dwords and are compared unsigned (the route request's `jae` at
 `0x60B833`, follow_path's `jbe` at `0x63D0BF`, the stranded test's maximum). OpenTPW keeps their 32 bits in ints that wrap past 2^31 as the dword does, compares them unsigned
 (`ParkCellMap.StampBelow`) and saves and loads any 32 bits, so a session whose counter passes 2^31 still saves and loads. The consistency checks of a save (no block stamp and no walk's stamp
-above the counter) compare unsigned too; a session that wraps the counter past 2^32 (about 4.3 billion calls) would fail them, which no measured session approaches.
+above the counter) compare unsigned too, and only for an edit-only counter (`ParkCellMap.StampMayStandBeside`, since NV5): a counter of the simulation's calls wraps past 2^32 as the original's dword
+does, and OpenTPW keeps it across sessions where the original starts every process at 0, so after a wrap a stamp taken before it is above the counter and every 32 bits are a valid stamp; such a
+save loads.
 
 Every comparison of stored stamps is between values of distinct calls (a block stamp against a walk's stamp in follow_path, a block stamp against a mark, a mark against the next
 counter value) and the counter only grows, so counting every call changes no outcome: a Theme Park World map keeps counting the edits only (`NextStamp` answers the next value without

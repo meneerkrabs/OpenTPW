@@ -460,11 +460,13 @@ public static class ParkLayoutSnapshot
 		{
 			var blocks = (long)((cells.Width + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock) * ((cells.Height + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock);
 			Require( stamps.Length == blocks, $"the cell map has {stamps.Length} block stamps for {blocks} blocks" );
-			// unsigned dwords (ParkCellMap.StampCounter): a stamp past 2^31 is a negative int and valid
-			Require( Array.TrueForAll( stamps, stamp => !ParkCellMap.StampBelow( cells.StampCounter, stamp ) ), "a block stamp is above the stamp counter" );
+			// unsigned dwords (ParkCellMap.StampCounter): a stamp past 2^31 is a negative int and valid; a counter of the simulation's calls may have wrapped past 2^32 (ParkCellMap.StampMayStandBeside)
+			Require( Array.TrueForAll( stamps, stamp => ParkCellMap.StampMayStandBeside( cells.StampCounter, stamp, cells.SimulationStampCounter ) ), "a block stamp is above the stamp counter" );
 		}
 		else
 			Require( cells.StampCounter == 0 || cells.SimulationStampCounter, "the cell map has a stamp counter but no block stamps" );
+		// a counter of the simulation's calls is Theme Park Inc's navigator's (ParkCellMap.CountsSimulationCalls), and a Theme Park Inc park's layout always carries its land record (TpiUnowned)
+		Require( !cells.SimulationStampCounter || cells.TpiUnowned != null, "the cell map's stamp counter counts the simulation's calls, but it is not a Theme Park Inc park's map" );
 		if ( cells.Land is { } land )
 			ReadLand( land, cells.Width, cells.Height );
 		if ( cells.TpiUnowned is { } tpiUnowned )

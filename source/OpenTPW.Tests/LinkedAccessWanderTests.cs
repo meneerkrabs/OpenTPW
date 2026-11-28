@@ -365,4 +365,27 @@ public class LinkedAccessWanderTests
 		Assert.AreEqual( StaffThoughts.NoDestination, member.Thought, "his thought is the search's failure, not the guest's Confused" );
 		Assert.AreEqual( stamp, staffGrid.Cells.StampCounter, "nothing is stamped" );
 	}
+
+	/// <summary>
+	/// [BIN:TPW-EXE:0x004FA5F0 stranded gate] the route request to a point opens with the stranded gate of 0x004FA530: a stranded guest whose surroundings are still unstamped is refused before anything
+	/// is written (its walk and its mark kept), and a guest without a mark has the request made (the NV4 review: the gate was missing from RouteToPoint and RouteToStopPoint).
+	/// </summary>
+	[TestMethod]
+	public void ARouteToAPointRefusesAStrandedGuestAsTheRouteToACellDoes()
+	{
+		var guestGrid = AccessGrid( "4" );
+		guestGrid.Cells.SetType( Outside.X, Outside.Y, ParkCellTypes.Exit );
+		var (simulation, guest) = ImportDecidingGuest( guestGrid );
+		Assert.IsFalse( Wander( simulation, guest ) );
+		var mark = guest.StrandedMark;
+		Assert.AreNotEqual( 0, mark, "the guest is marked stranded" );
+		var route = typeof( GuestSimulation ).GetMethod( "RouteToPoint", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		var walk = (guest.Navigation.TargetX, guest.Navigation.TargetY, guest.Navigation.Count);
+		Assert.IsFalse( (bool)route.Invoke( simulation, [guest, guest.Navigation.Cell, 0x40, 0x40] )!, "a held mark refuses" );
+		Assert.AreEqual( (mark, walk), (guest.StrandedMark, (guest.Navigation.TargetX, guest.Navigation.TargetY, guest.Navigation.Count)), "nothing is written" );
+		guest.StrandedMark = 0;
+		route.Invoke( simulation, [guest, guest.Navigation.Cell, 0x40, 0x40] );
+		Assert.AreEqual( (0, ((guest.Navigation.Cell.X << 8) | 0x40, (guest.Navigation.Cell.Y << 8) | 0x40)), (guest.StrandedMark, (guest.AccurateDestX, guest.AccurateDestY)),
+			"without a mark the request writes its destination words and sets the walk up" );
+	}
 }

@@ -1502,3 +1502,7 @@ stranded mark, which his park save (and so the digest) holds; a Theme Park Inc w
 to his own point. A native guest's digest no longer hashes its heading floats, moving flag, previous cell and waypoint flag (derived or presentation). No draw is added or
 removed. No checked-in pin holds a Theme Park Inc run, so no pinned value changes; Theme Park World is unchanged (every `DeterminismTests` pin, the `BuildStepsTests` digests and the save-digest pins
 hold), and a Theme Park World save writes none of the new members.
+
+The route requests to a point of the arrival and leaving walks (`RouteToPoint`, `RouteToStopPoint`, tp.exe `0x4FA5F0`) now open with the stranded gate their original has, as the route request to a cell
+(`0x4FA530`) already did: a guest whose mark is set and still held is refused before anything is written, and the mark is cleared otherwise. Every Theme Park World pin, the `BuildStepsTests` digests,
+`GuestMeasurementTests`, the `PathBuilderTests` and `PathAssetTests` runs and the extension pins hold: no pinned run asks for one of these walks for a stranded guest.

@@ -238,6 +238,13 @@ public sealed partial class ParkCellMap
 	public static bool StampBelow( int a, int b ) => unchecked( (uint)a < (uint)b );
 
 	/// <summary>
+	/// Whether a saved block stamp or walk stamp <paramref name="stamp"/> can stand beside the saved counter <paramref name="counter"/>. An edit-only counter (a Theme Park World park) counts so few calls that
+	/// it never reaches 2^32, so a stamp is never above it. A counter of the simulation's calls (<paramref name="simulationCounter"/>, a Theme Park Inc park) wraps past 2^32 as the original's dword does, and
+	/// OpenTPW keeps it across sessions (the original starts every process at 0): after a wrap a stamp taken before it is above the counter as an unsigned value, so every 32 bits are a valid stamp there.
+	/// </summary>
+	public static bool StampMayStandBeside( int counter, int stamp, bool simulationCounter ) => simulationCounter || !StampBelow( counter, stamp );
+
+	/// <summary>
 	/// Whether the counter counts every simulation call of the counter routine (Game.exe <c>0x5D81F0</c>): the walk set-ups, the route requests, the wander's gates and its stranded mark, the
 	/// sprite placement's calls from the guest constructor, and the edits. True for a park with Theme Park Inc's navigator (<see cref="WalkEdgeRules.ThemeParkInc"/>, every Theme Park
 	/// Inc park), so the stamps a walk and a stranded guest hold are the original's own values (docs/reverse/TPI-NAVIGATOR.md, NV3); false for every other park, whose counter

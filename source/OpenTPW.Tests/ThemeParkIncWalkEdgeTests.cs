@@ -229,6 +229,66 @@ public class ThemeParkIncWalkEdgeTests
 			"counts the simulation's calls in a park without Theme Park Inc's navigator" );
 	}
 
+	/// <summary>A copy of a Theme Park World economy save that names the Theme Park Inc edition (the resume level's guest checks read only the edition).</summary>
+	private static ParkSaveFile.Data ThemeParkIncEconomy( ParkSaveFile.Data economy )
+	{
+		var copy = ParkResumeJson.Deserialize<ParkSaveFile.Data>( ParkResumeJson.Serialize( economy ) )!;
+		typeof( ParkSaveFile.Data ).GetProperty( nameof( ParkSaveFile.Data.Edition ) )!.SetValue( copy, GameEdition.ThemeParkInc );
+		return copy;
+	}
+
+	/// <summary>
+	/// A Theme Park Inc resume file made before NV4 (its guests walked by Theme Park World's rules, no navigator flag) or after NV4 but before NV5's walk storage is refused at the resume level with
+	/// the one message both phases share (ParkSaveFile.NativeWalkStorageMissing); the NV4 review asked for this test.
+	/// </summary>
+	[TestMethod]
+	public void AThemeParkIncResumeFileFromBeforeTheNativeWalkStorageIsRefused()
+	{
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		var tpi = snapshot with { Economy = ThemeParkIncEconomy( snapshot.Economy! ) };
+		Assert.AreEqual( ParkSaveFile.NativeWalkStorageMissing, Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkResumeSaveFile.ValidateGuests( tpi ) ).Message, "before NV4" );
+		var nv4 = tpi with { Guests = tpi.Guests! with { ThemeParkIncNativeWalk = true } };
+		Assert.AreEqual( ParkSaveFile.NativeWalkStorageMissing, Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkResumeSaveFile.ValidateGuests( nv4 ) ).Message, "after NV4, before NV5" );
+	}
+
+	/// <summary>The Theme Park Inc side of the counter check: a Theme Park Inc resume file whose layout counter counts the edits only is refused (the NV4 review).</summary>
+	[TestMethod]
+	public void AThemeParkIncResumeFileCannotCarryAnEditOnlyCounter()
+	{
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		var tpi = snapshot with
+		{
+			Economy = ThemeParkIncEconomy( snapshot.Economy! ),
+			Guests = snapshot.Guests! with { ThemeParkIncNativeWalk = true, ThemeParkIncWalkStorage = GuestSimulationSnapshot.CurrentThemeParkIncWalkStorage },
+			Layout = snapshot.Layout! with { Cells = snapshot.Layout.Cells! with { SimulationStampCounter = false } }
+		};
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkResumeSaveFile.ValidateGuests( tpi ) ).Message,
+			"counts the edits only in a park with Theme Park Inc's navigator" );
+	}
+
+	/// <summary>
+	/// A counter of the simulation's calls wraps past 2^32 as the original's dword does, and OpenTPW keeps it across sessions, so a block stamp above it is valid in a Theme Park Inc map; an edit-only
+	/// counter never wraps and a stamp above it is still refused. A counter of the simulation's calls outside a Theme Park Inc park's map (no land record) is refused (the NV4 review).
+	/// </summary>
+	[TestMethod]
+	public void AWrappedSimulationCounterKeepsItsStampsAndOnlyAThemeParkIncMapCountsCalls()
+	{
+		Assert.IsTrue( ParkCellMap.StampMayStandBeside( 5, unchecked( (int)0xFFFFFFF0u ), simulationCounter: true ), "a stamp from before the wrap" );
+		Assert.IsFalse( ParkCellMap.StampMayStandBeside( 5, 6, simulationCounter: false ), "an edit-only counter does not wrap" );
+		Assert.IsTrue( ParkCellMap.StampMayStandBeside( 6, 6, simulationCounter: false ) );
+		var map = new ParkCellMap( 16, 16 );
+		var stamps = map.CaptureBlockStamps() ?? new int[((map.Width + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock) * ((map.Height + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock)];
+		stamps[0] = unchecked( (int)0xFFFFFFF0u );
+		var layout = ParkLayoutSnapshot.CaptureSnapshot( map, new ParkObjects( null!, new SandboxParkGrid(), WorldSeed.Default ) );
+		var unowned = System.Convert.ToBase64String( new byte[(map.Width * map.Height + 7) / 8] );
+		var wrapped = layout with { Cells = layout.Cells with { StampCounter = 5, BlockStamps = stamps, SimulationStampCounter = true, TpiUnowned = unowned } };
+		Assert.AreEqual( unchecked( (int)0xFFFFFFF0u ), ParkLayoutSnapshot.RestoreCellMap( wrapped ).CaptureBlockStamps()![0], "a wrapped Theme Park Inc counter restores" );
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( wrapped with { Cells = wrapped.Cells with { SimulationStampCounter = false } } ) ).Message,
+			"a block stamp is above the stamp counter" );
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( wrapped with { Cells = wrapped.Cells with { TpiUnowned = null } } ) ).Message,
+			"not a Theme Park Inc park's map" );
+	}
+
 	[TestMethod]
 	public void AMapCopiedForAPredictionKeepsItsEdgeTest()
 	{

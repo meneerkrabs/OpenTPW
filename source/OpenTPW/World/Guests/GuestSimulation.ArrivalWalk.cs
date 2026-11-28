@@ -125,11 +125,13 @@ public sealed partial class GuestSimulation
 	private const int ArrivalRowByte = 0xC8;
 
 	/// <summary>A route request to the point of a cell with the given sub-cell bytes (tp.exe <c>0x004FA5F0</c>); false when the walk search fails and the walk stands arrived and stuck.</summary>
-	// [BIN:TPW-EXE:0x004FA5FE route counter] the request raises the stamp counter first (0x004D8C50; Game.exe's 0x60B8E0 at 0x60B8F4): counted in a park with Theme Park Inc's navigator
-	// (ParkCellMap.NextStamp), where the default path's guests run these states; a Theme Park World park counts the edits only, so the call changes nothing there
+	// [BIN:TPW-EXE:0x004FA5F0 route to a point] the stranded gate first (PassesStrandedGate: the counter 0x004D8C50 at 0x004FA5FE, Game.exe's 0x60B8E0 at 0x60B8F4, counted in a park with Theme Park
+	// Inc's navigator, ParkCellMap.NextStamp, where the default path's guests run these states; a held mark refuses), then the destination words +0x18/+0x1A and SetDest
 	private bool RouteToPoint( Guest guest, (int X, int Y) cell, int byteX, int byteY )
 	{
-		Grid.Cells.NextStamp();
+		if ( !PassesStrandedGate( guest ) )
+			return false;
+		(guest.AccurateDestX, guest.AccurateDestY) = ((cell.X << 8) | byteX, (cell.Y << 8) | byteY);
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
 		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
 		guest.HasWaypoint = true;

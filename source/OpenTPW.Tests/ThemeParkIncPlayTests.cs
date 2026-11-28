@@ -375,8 +375,8 @@ public class ThemeParkIncPlayTests
 	}
 
 	/// <summary>
-	/// Phase P3a of the native guest states (docs/reverse/TPI-GUESTS.md): native guests in the prebuilt Science park choose its rides by Theme Park Inc's score, walk to them, queue and board (through the
-	/// bridged state 16).
+	/// Phases P3a and P3b of the native guest states (docs/reverse/TPI-GUESTS.md): native guests in the prebuilt Science park choose its rides by Theme Park Inc's score, walk to them, queue, are loaded
+	/// (16), wait for the script (17), ride under its control (20) and are released (19) back to idle.
 	/// </summary>
 	[TestMethod]
 	public void NativeGuestsChooseQueueAndBoardTheScienceRides()
@@ -395,20 +395,26 @@ public class ThemeParkIncPlayTests
 		foreach ( var guest in guests )
 			(guest.Happiness, guest.ExitLevel) = (60, 100000);
 		var seen = new HashSet<int>();
-		var rode = false;
-		for ( var step = 0; step < 300 * FixedStepClock.TicksPerSecond && !(rode && seen.Contains( ThemeParkIncGuestStates.StandingInQueue )); step++ )
+		var rode = new HashSet<int>();
+		var released = false;
+		for ( var step = 0; step < 600 * FixedStepClock.TicksPerSecond && !released; step++ )
 		{
 			park.Step( FixedStepClock.TickDuration );
 			foreach ( var guest in guests )
 			{
-				if ( guest.Tpi is { } tpi )
-					seen.Add( tpi.State );
-				rode |= guest.State == GuestState.Using && guest.Tpi?.State == ThemeParkIncGuestStates.BeingLoaded;
+				if ( guest.Tpi is not { } tpi )
+					continue;
+				seen.Add( tpi.State );
+				if ( tpi.State == ThemeParkIncGuestStates.UnderObjectControl && guest.State == GuestState.Using )
+					rode.Add( guest.Id );
+				// a guest that rode, was let off (19) and is idle again
+				released |= rode.Contains( guest.Id ) && tpi.State is ThemeParkIncGuestStates.Idle or ThemeParkIncGuestStates.SpotAnimation && seen.Contains( ThemeParkIncGuestStates.BeingUnloaded );
 			}
 		}
-		CollectionAssert.IsSubsetOf( new[] { ThemeParkIncGuestStates.WalkingToMajor, ThemeParkIncGuestStates.TakingQueueStep, ThemeParkIncGuestStates.StandingInQueue }, seen.ToArray(),
-			$"the guests walk to the rides and queue (states seen: {string.Join( ", ", seen.OrderBy( state => state ) )})" );
-		Assert.IsTrue( rode, "a native guest boards a Science ride" );
+		CollectionAssert.IsSubsetOf( new[] { ThemeParkIncGuestStates.WalkingToMajor, ThemeParkIncGuestStates.TakingQueueStep, ThemeParkIncGuestStates.StandingInQueue,
+			ThemeParkIncGuestStates.BeingLoaded, ThemeParkIncGuestStates.WaitingToBeAdmitted, ThemeParkIncGuestStates.UnderObjectControl, ThemeParkIncGuestStates.BeingUnloaded }, seen.ToArray(),
+			$"the guests walk to the rides, queue, board, ride and are let off (states seen: {string.Join( ", ", seen.OrderBy( state => state ) )})" );
+		Assert.IsTrue( released, "a native guest boards a Science ride and is released" );
 	}
 
 	// ---- The money over the corpus (docs/THEME-PARK-INC.md, "Economy") --------------------

@@ -4068,6 +4068,7 @@ def tpi_wander_binary(sb: Sandbox, x: dict, log) -> tuple:
     """0x609f70 on one person: the answer, the draws (the generator's state), the thoughts, the counter, the mark +0x1b0, the target words
     +0x28 / +0x2a, the wander flag +0xe8, the walk mask +0x1a0 and the navigator's record."""
     base = tpi_person_world(sb, x)
+    sb.set_fpcw(TPI_X87_CONTROL_WORD)
     sb.write(base + TPI_WORLD_RNG, 'I', x['rng'])
     for address, (dx, dy) in TPI_WANDER_DIRECTIONS.items():
         sb.write(address, 'i', dx)

@@ -178,8 +178,8 @@ Theme Park World result moves now.
 
 A native guest stores the heading in its record's `Heading` (saved since P1); every walker's presentation vector is the word's (`ThemeParkIncWalkStep.Vector`). A staff member keeps the
 word in `SpriteAngle`, not saved yet (NV5 stores the person words). The guard's carry (`0x5D3B20`: state 0x1C) needs the guard's chase, which is not ported (`[EXT:tpi-capability-gates]`).
-The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the rigs of `ThemeParkIncNativeGuestTests` and `ThemeParkIncNativeIdleTests` walk with
-Theme Park Inc's navigator, as every Theme Park Inc park does since NV4.
+The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the rigs of `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`,
+`ThemeParkIncNativeQueueTests` and `ThemeParkIncNativeVisitTests` walk with Theme Park Inc's navigator, as every Theme Park Inc park does since NV4.
 
 **The speed step `0x60BC90`** [R, O] is Theme Park World's `0x4FA870` value for value (TPI adds +3.0 × `+0xDC` with `faddp` where tp.exe subtracts −3.0 × it; the same single):
 (`+0xD4` + `+0xD6` + `+0xD8`) / `[0x9CFB2C]` (100) + 3 × `+0xDC`, × 0.25, each operation a single; the caps `0x63EF90`; the boost × 99 / 100 as a word; mPreviousX/Y `+0x1A8/+0x1AC` = the
@@ -206,7 +206,7 @@ request's or the wander's gate and for a mark, `SetupStamp` for a set-up's succe
 | a guest's wander: entry gate, final route, off-path tries, the stranded mark | `0x609FBE`, `0x60A55F`, `0x60A6FB` / `0x60A83F`, `0x60A4A5` | `GuestSimulation.Wander` (Theme Park World's `0x4F9490` has the same calls at `0x4F94E2`, `0x4F9CB5`, `0x4F9983` / `0x4F9B2E`, `0x4F9DFC`) |
 | a staff member's wander and patrol: entry gate, off-path tries, the final staff route | `0x609FBE`, `0x60A6FB` / `0x60A83F`, `0x60A547` → `0x62EB10` | `ThemeParkIncPatrol.Destination` (NV4; the fallback `0x62C720` counts through its staff routes) |
 | the cell edits and the queue length change | `0x67CC50`, `0x67CE47`, `0x682FB3`, `0x5E06B3` | `ParkCellMap.SetType`, `StampBlockAt` (already counted) |
-| the sprite placement's simulation calls | `0x60CAC9` (guest constructor), `0x61A70B` (the state setter's entry for state 19) | `ThemeParkIncPlacementStamp` after the constructor's walk to the booth; state 19 is a later guest phase's |
+| the sprite placement's simulation calls | `0x60CAC9` (guest constructor), `0x61A70B` (the state setter's entry for state 19) | `ThemeParkIncPlacementStamp` after the constructor's walk to the booth, and in state 19's entry for a teleporting ride before its beam (guest phase P3b) |
 
 The guests of the default path (Theme Park World's states under `[EXT:tpi-twp-guest-rules]`, which still covers their decisions, not their walk) count through the same routines, as tp.exe's own
 states do at the same places: their route requests (`RequestRoute`, tp.exe `0x4FA530` with its counter call `0x4FA578`; `RouteToPoint` and `RouteToStopPoint`, `0x4FA5F0` at `0x4FA5FE`), their

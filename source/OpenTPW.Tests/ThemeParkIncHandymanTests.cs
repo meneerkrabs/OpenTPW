@@ -365,7 +365,7 @@ public class ThemeParkIncHandymanTests
 	}
 
 	/// <summary>
-	/// With Theme Park Inc's navigator rules (--tpi-native-walk) a placed member's walk is native: his save carries the navigator's record (GuestNavigation.NativeRecord), the restored
+	/// With Theme Park Inc's navigator rules (every Theme Park Inc park since NV4) a placed member's walk is native: his save carries the navigator's record (GuestNavigation.NativeRecord), the restored
 	/// member has every navigator member back, and both go on alike. The member's first walk is SetDestination's stand-still walk, so the record covers that kind of walk too.
 	/// </summary>
 	[TestMethod]

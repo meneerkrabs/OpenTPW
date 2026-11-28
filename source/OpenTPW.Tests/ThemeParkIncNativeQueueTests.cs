@@ -7,7 +7,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// Theme Park Inc's native guest states, phase P3a (docs/reverse/TPI-GUESTS.md): the attraction score 0x6101E0, the major decision 0x610080, the walk to a ride (state 13), the queue (state 14), the queue
-/// step (state 15), the queue functions and the bridged boarding of state 16. The rig is QueueTests' ride with its five queue cells up the column x = 2 and its back cell (2, 1) beside the path y = 0,
+/// step (state 15), the queue functions and, for phase P3b, the visit (states 16, 17, 20 and 19). The rig is QueueTests' ride with its five queue cells up the column x = 2 and its back cell (2, 1) beside the path y = 0,
 /// with the switch on and the ride offered as the attraction thing 40.
 /// </summary>
 [TestClass]
@@ -30,7 +30,8 @@ public sealed class ThemeParkIncNativeQueueTests
 	/// <summary>Score words that keep every generation's score (100 percent) and no weather change.</summary>
 	private static readonly ThemeParkIncScoreTerms Plain = new( 0, 0, false, 0, 0, 0, 0, 100, 100, 100 );
 
-	private static (QueueTests.Rig Rig, World World) Rig( ThemeParkIncScoreTerms? terms = null, int queueCells = 5, bool takesGuests = false, QueueParameters? parameters = null )
+	/// <summary>The queue rig with a native guest world; <paramref name="walk"/> (default <see cref="ThemeParkIncNativeGuestTests.NativeWalkByDefault"/>) walks with Theme Park Inc's navigator.</summary>
+	private static (QueueTests.Rig Rig, World World) Rig( ThemeParkIncScoreTerms? terms = null, int queueCells = 5, bool takesGuests = false, QueueParameters? parameters = null, bool? walk = null )
 	{
 		var rig = new QueueTests.Rig( queueCells: queueCells, takesGuests: takesGuests, parameters: parameters, configure: settings =>
 		{
@@ -40,6 +41,8 @@ public sealed class ThemeParkIncNativeQueueTests
 				DecisionVariables = new( 30, 5, 0 ), DecisionWeights = DecisionWeights.Shipped
 			};
 		} );
+		if ( walk ?? ThemeParkIncNativeGuestTests.NativeWalkByDefault )
+			rig.Grid.Cells.EdgeRules = WalkEdgeRules.ThemeParkInc;
 		var world = new World( rig.Ride, terms ?? Plain );
 		rig.Simulation.ThemeParkIncNativeGuests = true;
 		rig.Simulation.ThemeParkIncWorld = world;
@@ -109,11 +112,11 @@ public sealed class ThemeParkIncNativeQueueTests
 	[TestMethod]
 	public void TheX87ProductRoundsOnce()
 	{
-		Assert.AreEqual( 0.4f, ThemeParkIncX87Single.Multiply( 4, 0.1 ) );
-		Assert.AreEqual( (float)(3 * 0.1), ThemeParkIncX87Single.Multiply( 3, 0.1 ) );
-		Assert.AreEqual( -16777217f, ThemeParkIncX87Single.Multiply( -16777217, 1.0 ), "the exact product rounds to nearest even" );
-		Assert.AreEqual( 0, ThemeParkIncX87Single.Truncate( 0.99 ) );
-		Assert.AreEqual( -1, ThemeParkIncX87Single.Truncate( -1.5 ) );
+		Assert.AreEqual( 0.4f, ThemeParkIncX87.ProductOfDouble( 4, 0.1 ) );
+		Assert.AreEqual( (float)(3 * 0.1), ThemeParkIncX87.ProductOfDouble( 3, 0.1 ) );
+		Assert.AreEqual( -16777217f, ThemeParkIncX87.ProductOfDouble( -16777217, 1.0 ), "the exact product rounds to nearest even" );
+		Assert.AreEqual( 0, ThemeParkIncX87.Ftol( 0.99 ) );
+		Assert.AreEqual( -1, ThemeParkIncX87.Ftol( -1.5 ) );
 	}
 
 	[TestMethod]
@@ -128,11 +131,11 @@ public sealed class ThemeParkIncNativeQueueTests
 	}
 
 	[TestMethod]
-	public void StatesThirteenToSixteenRunInThisBuild()
+	public void StatesThirteenToTwentyButEighteenRunInThisBuild()
 	{
-		foreach ( var state in new[] { 13, 14, 15, 16 } )
+		foreach ( var state in new[] { 13, 14, 15, 16, 17, 19, 20 } )
 			Assert.IsTrue( ThemeParkIncGuestStates.RunsInThisBuild( state ), $"state {state}" );
-		foreach ( var state in new[] { 10, 11, 12, 17, 18, 19, 20, 21 } )
+		foreach ( var state in new[] { 10, 11, 12, 18, 21 } )
 			Assert.IsFalse( ThemeParkIncGuestStates.RunsInThisBuild( state ), $"state {state}" );
 	}
 
@@ -149,12 +152,12 @@ public sealed class ThemeParkIncNativeQueueTests
 		Assert.IsTrue( RunUntil( rig, () =>
 		{
 			seen.Add( tpi.State );
-			boarded |= guest.State == GuestState.Using;
-			return seen.Contains( ThemeParkIncGuestStates.BeingLoaded ) && tpi.State == ThemeParkIncGuestStates.Idle;
+			boarded |= guest.State == GuestState.Using && tpi.State == ThemeParkIncGuestStates.UnderObjectControl;
+			return seen.Contains( ThemeParkIncGuestStates.BeingUnloaded ) && tpi.State is ThemeParkIncGuestStates.Idle or ThemeParkIncGuestStates.SpotAnimation;
 		}, 2000 ), $"the guest rides and comes back idle (states {string.Join( ", ", seen )})" );
-		CollectionAssert.IsSubsetOf( new[] { 13, 14, 15, 16 }, seen.ToArray(), "the walk, the queue step, the queue and the bridged boarding" );
-		Assert.IsTrue( boarded && rig.Ride.BoardedTotal == 1, "the bridged boarding rides through the bridge" );
-		Assert.AreEqual( (0, 0, 0), (tpi.Target, guest.AttractionId, rig.Ride.QueueLength), "back idle, no target and out of the list" );
+		CollectionAssert.IsSubsetOf( new[] { 13, 14, 15, 16, 17, 20, 19 }, seen.ToArray(), "the walk, the queue step, the queue, being loaded, the script's admission, the ride and the unloading" );
+		Assert.IsTrue( boarded && rig.Ride.BoardedTotal == 1, "the ride takes the guest through the bridge" );
+		Assert.AreEqual( ((int)Thing, 0, 0), (tpi.Target, guest.AttractionId, rig.Ride.QueueLength), "back idle and out of the list; state 19's arrival keeps +0x204 (0x6184E5) until the next major decision" );
 		CollectionAssert.AreEqual( new[] { (int)Thing, 0, 0, 0 }, guest.UsedHistory,
 			"the use routine 0x6118D0 pushes the thing id, not Theme Park World's attraction id, into +0x20A" );
 	}
@@ -398,22 +401,20 @@ public sealed class ThemeParkIncNativeQueueTests
 		Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), "and runs the same" );
 	}
 
-	/// <summary>
-	/// A guest of the bridged boarding saved mid-ride (state 16 with Theme Park World's Using) restores and finishes the ride the same way: idle, out of the list and with the thing in its used history
-	/// (TPI-GUESTS.md, "Phases after P2": phase P3b maps such a save to state 20).
-	/// </summary>
+	/// <summary>A native guest saved mid-ride (state 20, the ride's rider) restores and finishes the ride the same way: let off (19), idle, out of the list and with the thing in its used history.</summary>
 	[TestMethod]
 	public void AGuestMidRideRoundTripsThroughTheSave()
 	{
 		var (rig, _) = Rig( takesGuests: true );
 		var (guest, tpi) = Native( rig );
 		SendToRide( rig, guest, tpi );
-		Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.BeingLoaded && guest.State == GuestState.Using, 2000 ), "the guest rides" );
+		Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.UnderObjectControl, 2000 ), "the guest rides" );
+		Assert.IsTrue( rig.Ride.HoldsGuest( guest.Id ) && rig.Ride.QueueLength == 0, "state 17 has left the list, the ride holds the guest" );
 		// through the save file's codec, with the ride script's own state (its heap holds the rider)
 		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( rig.Simulation.CaptureSnapshot() ) );
-		Assert.AreEqual( "", string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ), "a guest mid-ride in the bridged state 16 is restorable" );
+		Assert.AreEqual( "", string.Join( "; ", rig.Simulation.ValidateSnapshot( snapshot ).Errors ), "a guest in state 20 is restorable" );
 		var saved = snapshot.Guests.Single( item => item.Id == guest.Id );
-		Assert.AreEqual( (ThemeParkIncGuestStates.BeingLoaded, GuestState.Using), (saved.Tpi!.State, saved.State) );
+		Assert.AreEqual( (ThemeParkIncGuestStates.UnderObjectControl, GuestState.Using), (saved.Tpi!.State, saved.State) );
 		var script = ParkResumeJson.Deserialize<RideVMSnapshot>( ParkResumeJson.Serialize( rig.Script.CaptureSnapshot() ) );
 		var (copy, _) = Rig( takesGuests: true );
 		copy.Simulation.RestoreSnapshot( snapshot );
@@ -421,9 +422,35 @@ public sealed class ThemeParkIncNativeQueueTests
 		copy.Script.RestoreSnapshot( script );
 		Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), "the restored park hashes the same" );
 		var restored = copy.Simulation.Guests.Single( item => item.Id == guest.Id );
-		Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.Idle, 2000 ) );
-		Assert.IsTrue( RunUntil( copy, () => restored.Tpi!.State == ThemeParkIncGuestStates.Idle, 2000 ), "the restored guest finishes the ride" );
+		static bool Off( ThemeParkIncGuestRecord record, QueueTests.Rig on, int id ) => record.State is ThemeParkIncGuestStates.Idle or ThemeParkIncGuestStates.SpotAnimation && !on.Ride.HoldsGuest( id );
+		Assert.IsTrue( RunUntil( rig, () => Off( tpi, rig, guest.Id ), 2000 ) );
+		Assert.IsTrue( RunUntil( copy, () => Off( restored.Tpi!, copy, guest.Id ), 2000 ), "the restored guest finishes the ride" );
 		Assert.AreEqual( rig.Simulation.ComputeStateHash(), copy.Simulation.ComputeStateHash(), "and finishes the ride the same" );
-		CollectionAssert.AreEqual( new[] { (int)Thing, 0, 0, 0 }, restored.UsedHistory, "the restored guest's use pushes the thing id" );
+		CollectionAssert.AreEqual( new[] { (int)Thing, 0, 0, 0 }, restored.UsedHistory, "the use routine 0x6118D0 pushes the thing id" );
+	}
+
+	/// <summary>
+	/// A phase P3a save's rider of the bridged boarding (state word 16 with Theme Park World's WaitingToBoard, Using or ExitingRide) is refused: the native visit's roll, fee and mode were never saved
+	/// (TPI-GUESTS.md, "Save"; PARK-SAVES.md).
+	/// </summary>
+	[TestMethod]
+	public void APhaseP3aBridgedRiderIsRefused()
+	{
+		var (rig, _) = Rig( takesGuests: true );
+		var (guest, tpi) = Native( rig );
+		SendToRide( rig, guest, tpi );
+		Assert.IsTrue( RunUntil( rig, () => tpi.State == ThemeParkIncGuestStates.UnderObjectControl, 2000 ), "the guest rides" );
+		var snapshot = rig.Simulation.CaptureSnapshot();
+		// the bridged boarding of phase P3a saved its waiting guest, its rider and its leaving guest with the state word 16 and Theme Park World's state, and no roll, fee or mode of the visit
+		foreach ( var bridged in new[] { GuestState.WaitingToBoard, GuestState.Using, GuestState.ExitingRide } )
+		{
+			var legacy = snapshot with { Guests = snapshot.Guests.Select( item => item.Id == guest.Id ? item with { Tpi = item.Tpi! with { State = ThemeParkIncGuestStates.BeingLoaded, Fee = 0 }, State = bridged } : item ).ToArray() };
+			StringAssert.Contains( string.Join( "; ", rig.Simulation.ValidateSnapshot( legacy ).Errors ), "bridged boarding", $"{bridged}: refused, not migrated" );
+			var (copy, _) = Rig( takesGuests: true );
+			Assert.ThrowsException<System.IO.InvalidDataException>( () => copy.Simulation.RestoreSnapshot( legacy ) );
+		}
+		// a P3a guest in 16 with a projection its boarding never had is refused too
+		var wrong = snapshot with { Guests = snapshot.Guests.Select( item => item.Id == guest.Id ? item with { Tpi = item.Tpi! with { State = ThemeParkIncGuestStates.BeingLoaded }, State = GuestState.Queueing } : item ).ToArray() };
+		Assert.AreNotEqual( "", string.Join( "; ", rig.Simulation.ValidateSnapshot( wrong ).Errors ) );
 	}
 }

@@ -400,14 +400,16 @@ public sealed class ThemeParkIncNativeIdleTests
 	}
 
 	[TestMethod]
-	public void ABalloonInANativeBlockIsRefused()
+	public void ABalloonInANativeBlockRestoresWithinItsLife()
 	{
 		var (simulation, _, _, _) = Rig();
 		var save = simulation.CaptureSnapshot();
 		var block = save.Guests.Single().Tpi!;
 		Assert.IsFalse( block.Problems( 1 ).Any() );
-		Assert.IsTrue( (block with { HoldsBalloon = true }).Problems( 1 ).Any() );
-		Assert.IsTrue( (block with { BalloonCountdown = 5 }).Problems( 1 ).Any() );
+		Assert.IsFalse( (block with { HoldsBalloon = true, BalloonCountdown = 255, BalloonColour = 3 }).Problems( 1 ).Any(), "phase P3b's balloon shop gives balloons (0x612740)" );
+		Assert.IsTrue( (block with { BalloonCountdown = 256 }).Problems( 1 ).Any(), "the countdown never exceeds the balloon's life (0x9D0610)" );
+		Assert.IsTrue( (block with { SpriteCategory = 6 }).Problems( 1 ).Any(), "the costume's category comes with its variant" );
+		Assert.IsFalse( (block with { SpriteCategory = 6, SpriteVariant = 0 }).Problems( 1 ).Any() );
 	}
 
 	[TestMethod]

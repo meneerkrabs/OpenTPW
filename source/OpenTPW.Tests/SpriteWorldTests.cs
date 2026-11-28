@@ -45,8 +45,22 @@ public class SpriteWorldTests
 	{
 		// the jump table 0x004D95D4: kinds 1-5 the scripts 0x0074F050 + 0x28 x (kind - 1) (slots 0-4), kind 6 and any other kind the "Dodgy litter type" script (slot 5), vomit slot 6, stinkbomb slot 7
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 5, 6, 7 }, new[] { LitterType.None + 1, (LitterType)2, (LitterType)3, (LitterType)4, (LitterType)5, LitterType.Dodgy, LitterType.Vomit, LitterType.Stinkbomb }
-			.Select( LitterRenderer.Slot ).ToArray() );
+			.Select( type => LitterRenderer.Slot( type ) ).ToArray() );
 		Assert.AreEqual( 5, LitterRenderer.Slot( (LitterType)9 ), "an unknown kind falls to the dodgy script" );
+	}
+
+	[TestMethod]
+	public void ThemeParkIncsBurstBalloonsTakeTheSlotsEightToEleven()
+	{
+		// TPI Game.exe's table 0x5D8EFC: the types 1..0xC take the descriptors 0x9B09B8 + 0x24 x (type - 1) with the slot type - 1; its SPR_LI has the slots 0..11
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }, Enumerable.Range( 1, 12 ).Select( type => LitterRenderer.Slot( (LitterType)type, themeParkInc: true ) ).ToArray() );
+		Assert.AreEqual( 5, LitterRenderer.Slot( (LitterType)13, themeParkInc: true ), "past 0xC the default descriptor 0x9B0A6C (slot 5)" );
+		Assert.AreEqual( (LitterType.Stinkbomb, LitterType.BurstBalloon4), (ParkLitter.MaxTypeOf( false ), ParkLitter.MaxTypeOf( true )) );
+		var balloon = new[] { new LitterCell( 3, 4, LitterType.BurstBalloon2, 0, 0 ) };
+		var inc = new ParkLitter { ThemeParkInc = true };
+		inc.Restore( balloon );
+		Assert.AreEqual( LitterType.BurstBalloon2, inc.TypeAt( 3, 4 ), "a Theme Park Inc park restores its burst balloons" );
+		Assert.ThrowsException<System.IO.InvalidDataException>( () => new ParkLitter().Restore( balloon ), "a Theme Park World park has no type above 8" );
 	}
 
 	[TestMethod]

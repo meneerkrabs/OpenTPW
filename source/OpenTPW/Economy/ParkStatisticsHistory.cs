@@ -69,6 +69,12 @@ public sealed class HistoryRing
 	/// <summary>The word stored in a slot, read or not.</summary>
 	internal double Raw( int slot ) => data[slot];
 
+	/// <summary>
+	/// Whether the ring is in a fresh park's state: no entry and every slot word +0. An original save's unread words (Theme Park Inc's prebuilt
+	/// analyser keeps the <c>0xCDCDCDCD</c> fill) make an entry-less ring differ from a fresh one, because the save keeps those words.
+	/// </summary>
+	internal bool IsFresh => Head == -1 && !Wrapped && Array.TrueForAll( data, word => BitConverter.DoubleToInt64Bits( word ) == 0 );
+
 	/// <summary>The entries oldest first.</summary>
 	public IEnumerable<double> Oldest()
 	{
@@ -218,6 +224,12 @@ public sealed class ParkStatisticsHistory
 
 	/// <summary>Whether nothing has been recorded (a fresh park, or a save from before the history).</summary>
 	public bool IsEmpty => ArrivalsThisMonth == 0 && Arrivals.Count == 0 && Happiness.Count == 0 && Stay.Count == 0 && People.Count == 0 && Rating.Count == 0 && RecentStays.Count == 0;
+
+	/// <summary>
+	/// Whether the whole state equals a fresh park's, the raw slot words included: only then may a save leave the history out, since a restore
+	/// without it starts from a fresh history. <see cref="IsEmpty"/> alone is not enough: an imported original ring with no entry still keeps its saved words.
+	/// </summary>
+	public bool IsFresh => ArrivalsThisMonth == 0 && Arrivals.IsFresh && Happiness.IsFresh && Stay.IsFresh && People.IsFresh && Rating.IsFresh && RecentStays.IsFresh;
 
 	// ---- the graph's reads ---------------------------------------------------------------------------------------------------------
 

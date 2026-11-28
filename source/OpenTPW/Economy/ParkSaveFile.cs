@@ -878,7 +878,8 @@ public static class ParkSaveFile
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
-			StatisticsHistory = park.StatisticsHistory.IsEmpty && park.Ledger.History.Count == 0 ? null : park.StatisticsHistory.Capture(),
+			// a history only drops out when it equals a fresh park's, raw slot words included (an imported Theme Park Inc park keeps its 0xCDCDCDCD fill)
+			StatisticsHistory = park.StatisticsHistory.IsFresh && park.Ledger.History.Count == 0 ? null : park.StatisticsHistory.Capture(),
 			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed },
 			// [EXT:cheats-save] null for a park that never cheated, so its save and its hash keep their bytes
 			Cheats = park.Cheats.Capture()

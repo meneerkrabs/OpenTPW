@@ -246,6 +246,11 @@ other gameplay fields remain hashed. Synthetic coverage is in `StaffRoleOrderTes
   ride as the save holds it (no heuristic guesses which it was).
 - **The analyser's caches are saved outside the run hash.** The net worth and the litter/path block counts are cached with their
   turn stamps as the original's analyser keeps them; an older save without them counts afresh at the first read.
+- **The statistics history is left out only when it is a fresh park's.** The economy record omits `StatisticsHistory`
+  only when every ring has no entry and every slot word is +0 (bit for bit, so a -0 counts as data), the arrivals counter is zero and the ledger has no month.
+  An imported original analyser that has run no month still keeps its saved slot words (Theme Park Inc's prebuilt Science
+  analyser holds the `0xCDCDCDCD` fill), so its history is written; a restore without it would put zeros in their place.
+  A save written before this rule from such a park lacks the block and loads with a fresh history, as before.
 - **The save is pinned to the game data it was made with.** It carries a SHA-256 manifest of the
   simulation assets (the theme's object, balance and terrain files; see below). Load it with the
   same game files: when a simulation asset changed — another edition, modified data — loading is

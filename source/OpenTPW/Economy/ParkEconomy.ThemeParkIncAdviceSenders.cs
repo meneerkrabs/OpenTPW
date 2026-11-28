@@ -134,12 +134,13 @@ public sealed partial class ParkEconomy
 	}
 
 	/// <summary>
-	/// The mechanics' HQ hears a ride break down (<c>0x5DAEB0</c>, message kind 7): without mechanics it posts <c>0x41</c>; else, unless a mechanic already goes to the ride or one is free (no ride and
-	/// neither resting nor on strike), <c>0x42</c>.
+	/// The mechanics' HQ hears a ride break down (<c>0x5DAEB0</c>, message kind 7): without mechanics it posts <c>0x41</c>; a mechanic already going to the ride posts <c>0x43</c> unless the ride has asked
+	/// for maintenance; a free mechanic (no ride, neither resting nor on strike) posts nothing; else <c>0x42</c>.
 	/// </summary>
 	// [BIN:TPI-EXE:0x5DAEB0 breakdown advice] the HQ thing (class 10, 0x6379EE) takes kind 7 only; the mechanics' list (world +0x1EAB80) empty: 0x71A930(0x41, locate = the ride's handle, the ride's type +0x16,
-	// variant -1, bypass 0, score -1) -> 0x718820; else each mechanic in list order (+0x5D0): his ride +0x5D8 is the ride: nothing; his ride 0 and his display state (0x62B010) neither 3 nor 4: nothing; the list's
-	// end: 0x42 the same way. The HQ (thing 2) hears it before the advisor (3), which does not take kind 7
+	// variant -1, bypass 0, score -1) -> 0x718820; else each mechanic in list order (+0x5D0): his ride +0x5D8 is the ride: [BIN:TPI-EXE:0x5DB000 breakdown claimed] the ride's request +0x78 (0x5E3B70) unset
+	// posts 0x43 the same way (0x5DB06F), set nothing; his ride 0 and his display state (0x62B010) neither 3 nor 4: nothing; the list's end: 0x42 the same way. The HQ (thing 2) hears it before the
+	// advisor (3), which does not take kind 7
 	private void ThemeParkIncMechanicHqBreakdown( ParkObjectState item, ushort thing )
 	{
 		var mechanics = TpiStaff?.OfRole( ThemeParkIncStaffRole.Mechanic ).ToList() ?? new List<ThemeParkIncStaffMember>();
@@ -151,7 +152,11 @@ public sealed partial class ParkEconomy
 		foreach ( var mechanic in mechanics )
 		{
 			if ( mechanic.RideId == item.Id )
+			{
+				if ( !item.MaintenanceRequested )
+					PostThemeParkIncAdvice( 0x43, thing, unchecked( (ushort)item.InfoId ) );
 				return;
+			}
 			if ( mechanic.RideId == 0 && ThemeParkIncStaffWorld.DisplayCategory( mechanic ) is not (3 or 4) )
 				return;
 		}

@@ -14,9 +14,7 @@ import re
 import struct
 from pathlib import Path
 
-
-
-from x86_harness import Image, Sandbox, executable_path, x86
+from x86_harness import SENTINEL, Image, Sandbox, executable_path, x86
 
 TABLE = 0x9DE020
 ROW = 56
@@ -303,7 +301,8 @@ def check_enqueue_and_selection(arena, queue, clock, stops):
 
 def check_senders(image):
     """The P4 senders' native paths the managed tests repeat (ThemeParkIncAdvisorSenderTests): the history callbacks 0x727410 and
-    0x728580, the unread counter 0x54F1A0 and the stored-tutorial repeat 0x718AB0."""
+    0x728580, the unread counter 0x54F1A0 and the stored-tutorial repeat 0x718AB0. Returns the number of cases checked."""
+    cases = 0
     posts = []
     advisor_holder = {}
 
@@ -341,6 +340,7 @@ def check_senders(image):
             history_played(message, played)
             arena.executed = 0
             check(arena.call(callback, this=SCORER).eax, expected, f'callback {callback:#x} with {message:#x} played {played}')
+            cases += 1
 
     # The unread counter: total +0, threshold +4, the category counts at [+8]; the HUD panel 0xA6011C is absent
     counts = arena.object(16)
@@ -356,12 +356,14 @@ def check_senders(image):
                 seen.append(post[0])
                 check(post[1:], (0, 0, 0xFFFFFFFF, 0, 0xFFFFFFFF), 'locate 0, data 0, variant -1, bypass 0, score -1 (the descriptor\'s)')
         check(arena.read(counter, 'I'), letter, f'unread total after letter {letter}')
+        cases += 1
     check(seen, [0x198, 0x15D, 0x15D], 'the counter posts 0x198 at 3, then 0x15D at 6 and 12')
     check(arena.read(counter + 4, 'I'), 24, 'the threshold doubles')
     posts.clear()
     arena.executed = 0
     arena.call(0x54F1A0, (2, 1), this=counter)
     check(posts, [], 'a silent count (a load) posts nothing')
+    cases += 1
 
     # The stored-tutorial repeat: nothing stored refuses; a stored record takes HelpMessage.ContextHelpScore (0xC656C0), its explicit and bypass bytes
     arena.write(advisor + 0x100, 'B', 0)
@@ -376,6 +378,7 @@ def check_senders(image):
     check(posts, [('enqueue', advisor + 0xEC)], 'the stored record itself goes to 0x718820')
     check((arena.read(advisor + 0xEC + 0x10, 'i'), arena.read(advisor + 0xEC + 0x15, 'B'), arena.read(advisor + 0xEC + 0x16, 'B')), (900, 1, 1),
           'score, bypass and explicit bytes')
+    cases += 2
     # The challenge senders' cancels: the time-out 0x5C2150 cancels word 4 of the sender's row at 0x9CD000, the uncalled 0x5C2100 word 1
     cancels = []
 
@@ -389,8 +392,221 @@ def check_senders(image):
         for sender in range(2, 7):
             challenge.executed = 0
             challenge.call(entry, (sender,))
+            cases += 1
         check(tuple(cancels), expected, f'{entry:#x} cancels by sender 2 to 6')
-    return 4 + 12 + 1 + 2 + 10
+    return cases
+
+
+ROLES = {'Handyman': 0, 'Mechanic': 1, 'Entertainer': 2, 'Guard': 3, 'Researcher': 4, 'Gardener': 5}
+# The message kinds' first virtual functions (mov eax, kind; ret) and their vtables.
+KIND_VTABLES = {0x11: 0x93A334, 0x17: 0x93A370, 0x08: 0x93A2EC, 0x07: 0x93A2E0, 0x13: 0x93A34C}
+KIND_FUNCTIONS = ((0x409C4B, 0x435A20), (0x40ADCB, 0x435CE0), (0x406E51, 0x435740), (0x40B0A5, 0x4356C0), (0x4085A8, 0x435B20))
+
+
+def rows_of(text, method):
+    """The DataRows of the C# test method `method`, as lists of their argument texts."""
+    match = re.search(r'((?:\s*\[DataRow\([^\r\n]*\)\]\s*)+)public void ' + method + r'\(', text)
+    if match is None:
+        raise AssertionError(f'{method} has no DataRows')
+    return [[part.strip() for part in row.split(',')] for row in re.findall(r'\[DataRow\(([^\r\n]*)\)\]', match.group(1))]
+
+
+def number(value):
+    value = value.rstrip('f')
+    return ROLES[value.split('.')[-1]] if value.startswith('ThemeParkIncStaffRole.') else {'true': 1, 'false': 0}.get(value) if value in ('true', 'false') \
+        else float(value) if '.' in value else int(value, 0)
+
+
+def check_senders_b(image, test_text):
+    """The P5 senders' native paths with arithmetic or a table (docs/reverse/TPI-ADVISOR.md section 9.3), against the DataRows of
+    ThemeParkIncAdvisorSenderBTests: the requirements-met and lake callbacks, the status refresh 0x54D660, the advisor's message
+    handler 0x719470 for kinds 0x11, 0x13, 0x17 and 8, the mechanics' HQ 0x5DAEB0 for kind 7, the wear tick's imminent test and
+    the special rides' activation advice. Returns the number of cases checked."""
+    cases = 0
+    posts = []
+    holder = {}
+
+    def record(arena):
+        record_at = arena.uc.reg_read(x86.UC_X86_REG_ECX)
+        posts.append((arena.arg(0), arena.read(arena.uc.reg_read(x86.UC_X86_REG_ESP) + 8, 'H'), arena.arg(2), arena.arg(3), arena.arg(4), arena.arg(5)))
+        arena.write(record_at + 0xC, 'I', arena.arg(0))
+        return record_at, 0x18
+
+    def enqueue(_):
+        return 1, 4
+
+    def ignore(_):
+        return 0, 0
+
+    common = {0x4077F2: lambda _: (holder['advisor'], 0), 0x40A592: record, 0x40A600: enqueue, 0x403E45: ignore, 0x401983: ignore}
+    thunks = (0x40694C, 0x406753, 0x40B528, 0x40C1F3, 0x4041B0, 0x402F40, 0x40A457, 0x40A268, 0x406CAD, 0x402B7B)
+
+    # The requirements-met callbacks 0x726FA0 (0x1C7) and 0x726F50 (0x1E3) and the lake's 0x729020 (0x26D)
+    met = {'value': 0}
+    callbacks = Sandbox(image, [
+        (0x726F50, 0x726F8B), (0x726FA0, 0x726FDB), (0x729020, 0x729049), (0x723250, 0x723257), (0x71B4F0, 0x71B506), (0x71B520, 0x71B536),
+        (0x42A3B0, 0x42A41D), *((address, address + 5) for address in thunks),
+    ], stubs={**common, 0x4051AA: lambda _: (met['value'], 0)}, budget=10_000)
+    career = callbacks.object(0x4740)
+    callbacks.write(CAREER_GLOBAL, 'I', career)
+    holder['advisor'] = callbacks.object(0x118)
+    for callback, message in ((0x726FA0, 0x1C7), (0x726F50, 0x1E3)):
+        for word in (0, 7, 0x40000001, 0x7FFFFFFF):
+            callbacks.write(SCORER + 0x7B8, 'i', word if word < 0x80000000 else word - 0x100000000)
+            for flag in (0, 1):
+                for played in (0, 1):
+                    met['value'] = flag
+                    callbacks.write(career + HISTORY + 20 * message + 8, 'B', played)
+                    callbacks.executed = 0
+                    expected = 0 if played or not flag else (word << 1) & 0xFFFFFFFF
+                    check(callbacks.call(callback, this=SCORER).eax & 0xFFFFFFFF, expected, f'{callback:#x}: word {word:#x}, met {flag}, played {played}')
+                    cases += 1
+    for played, expected in ((0, 10_000), (1, 0)):
+        callbacks.write(career + HISTORY + 20 * 0x26D + 8, 'B', played)
+        callbacks.executed = 0
+        check(callbacks.call(0x729020, this=SCORER).eax, expected, f'0x729020 with 0x26D played {played}')
+        cases += 1
+
+    # The status refresh 0x54D660: the requirements (0x55A620) and the career's counter +0x105C pick the advice
+    refresh = Sandbox(image, [(0x54D660, 0x54D72D), (0x42A3B0, 0x42A41D), (0x4313D0, 0x4313DD), *((address, address + 5) for address in thunks)],
+                      stubs={**common, 0x4051AA: lambda _: (met['value'], 0), 0x402D3D: ignore}, budget=10_000)
+    status_career = refresh.object(0x4740)
+    refresh.write(CAREER_GLOBAL, 'I', status_career)
+    refresh.write(0xA1465C, 'B', 0x16)  # the interface's branch to 0x7BAE30 (presentation)
+    holder['advisor'] = refresh.object(0x118)
+    for row in rows_of(test_text, 'TheStatusRefreshPicksTheCountersAdvice'):
+        counter, expected = (number(value) for value in row)
+        for flag in (1, 0):
+            met['value'] = flag
+            refresh.write(status_career + 0x105C, 'I', counter)
+            posts.clear()
+            refresh.executed = 0
+            refresh.call(0x54D660)
+            check([post[0] for post in posts], [expected] if flag else [], f'0x54D660 at counter {counter}, met {flag}')
+            if flag:
+                check(posts[0][1:], (0, 0, 0xFFFFFFFF, 0, 0xFFFFFFFF), 'locate 0, data 0, variant -1, bypass 0, score -1')
+            cases += 1
+
+    # The advisor's message handler 0x719470 for the kinds 0x11, 0x13, 0x17 and 8
+    handler = Sandbox(image, [
+        (0x719470, 0x71A40B), (0x7190A0, 0x7191E4), (0x719270, 0x7192F9), (0x4313D0, 0x4313DD), (0x42A3B0, 0x42A41D), (0x4F9420, 0x4F9436),
+        (0x62B7D0, 0x62B7E4), *((function, function + 6) for _, function in KIND_FUNCTIONS), *((thunk, thunk + 5) for thunk, _ in KIND_FUNCTIONS),
+        *((address, address + 5) for address in thunks),
+    ], stubs=common, budget=50_000)
+    advisor = handler.object(0x118)
+    holder['advisor'] = advisor
+    handler_career = handler.object(0x4740)
+    handler.write(CAREER_GLOBAL, 'I', handler_career)
+    handler.write(0xC64DC7, 'B', 1)  # The scorer is constructed (no Advisor.sam load).
+    handler.write(0xC64DBE, 'B', 1)  # The game object 0xC65B80 is constructed.
+    world = handler.object(0x1EAB90)
+    handler.write(WORLD_GLOBAL, 'I', world)
+    handler.write(0xAA131C, 'I', handler.object(4, {0: ('I', world)}))
+    mechanic = handler.object(0x600)
+    handler.write(0xAA18B0 + 20 * 7, 'I', mechanic)
+
+    def message(kind, word8, dword_c=0, dword_10=0):
+        return handler.object(0x14, {0: ('I', KIND_VTABLES[kind]), 8: ('I', word8), 0xC: ('I', dword_c), 0x10: ('I', dword_10)})
+
+    def handle(item):
+        posts.clear()
+        handler.executed = 0
+        handler.call(0x719470, (item,), this=advisor)
+        return [post[0] for post in posts]
+
+    for row in rows_of(test_text, 'TheResearchCompletionAdviceFollowsTheCategory'):
+        category, upgrader, played, expected = (number(value) for value in row)
+        handler.write(world + 0x1EAB80, 'H', 7 if upgrader else 0)
+        handler.write(mechanic + 0x218, 'I', 1)
+        handler.write(mechanic + 0x5D0, 'H', 0)
+        handler.write(handler_career + HISTORY + 20 * 0x18C + 8, 'B', played)
+        check(handle(message(0x11, 1160, category & 0xFFFFFFFF)), [] if expected == -1 else [expected], f'kind 0x11, category {category}, upgrader {upgrader}, played {played}')
+        if expected != -1:
+            check(posts[0][1:3], (0, 1160), 'locate 0, the object as locate dword')
+        cases += 1
+    for row in rows_of(test_text, 'TheStrikeAdviceIsTheReasonsOrTheKindsPlusTheRolesWord'):
+        role, kind, reason, expected = (number(value) for value in row)
+        check(handle(message(0x17, role, kind, reason)), [] if expected == -1 else [expected], f'kind 0x17, role {role}, kind {kind}, reason {reason}')
+        cases += 1
+    for sub, mode, expected in ((2, 0, [0x66]), (3, 0, [0x77]), (4, 0, [0x78]), (0, 0, []), (0, 2, [0xFF]), (1, 0, []), (5, 0, []), (6, 0, []), (9, 0, [])):
+        handler.write(0xC65B80, 'I', mode)
+        check(handle(message(0x13, sub)), expected, f'kind 0x13 case {sub}, mode {mode}')
+        cases += 1
+    handler.write(0xC65B80, 'I', 0)
+    check(handle(message(0x08, 0x2A)), [0xDB], 'kind 8: the condemned ride')
+    check(posts[0][1:3], (0x2A, 0), 'the ride as locate word')
+    cases += 1
+
+    # The mechanics' HQ 0x5DAEB0 for kind 7: 0x41 without mechanics, else 0x42 unless one goes to the ride or is free
+    hq = Sandbox(image, [(0x5DAEB0, 0x5DB076), (0x62B010, 0x62B078), (0x5E3B70, 0x5E3B74), (0x4313D0, 0x4313DD), (0x4356C0, 0x4356C6), (0x40B0A5, 0x40B0AA),
+                         (0x4086AC, 0x4086B1),
+                         *((address, address + 5) for address in thunks)], stubs=common, budget=20_000)
+    holder['advisor'] = hq.object(0x118)
+    hq_world = hq.object(0x1EAB90)
+    hq.write(WORLD_GLOBAL, 'I', hq_world)
+    ride = hq.object(0x100, {0x16: ('H', 1101)})
+    # the 0x43 branch reads the request through the thunk 0x4086AC
+    hq.write(0xAA18B0 + 20 * 0x2A, 'I', ride)
+    worker = hq.object(0x600)
+    hq.write(0xAA18B0 + 20 * 9, 'I', worker)
+    broken = hq.object(0x14, {0: ('I', KIND_VTABLES[0x07]), 8: ('I', 0x2A)})
+    for mechanics, target, state, requested, expected in ((0, 0, 0, 0, [0x41]), (1, 0x2A, 21, 0, [0x43]), (1, 0x2A, 21, 1, []), (1, 0, 0, 0, []), (1, 0, 2, 0, [0x42]),
+                                                          (1, 0, 4, 0, [0x42]), (1, 0x30, 0, 0, [0x42]), (1, 0, 0x22, 0, [])):
+        hq.write(ride + 0x78, 'I', requested)
+        hq.write(hq_world + 0x1EAB80, 'H', 9 if mechanics else 0)
+        hq.write(worker + 0x5D8, 'H', target)
+        hq.write(worker + 0x1B4, 'I', state)
+        hq.write(worker + 0x5D0, 'H', 0)
+        posts.clear()
+        hq.executed = 0
+        hq.call(0x5DAEB0, (broken,), this=hq.object(0x100))
+        check([post[0] for post in posts], expected, f'0x5DAEB0: mechanics {mechanics}, target {target:#x}, state {state:#x}, requested {requested}')
+        if expected:
+            check(posts[0][1:3], (0x2A, 1101), 'the ride as locate word, its type as locate dword')
+        cases += 1
+
+    # The wear tick's imminent test (0x5E276E..0x5E27A2, at the 24-bit control word): the post path or the two returns
+    outcome = {}
+
+    def mark(name):
+        def stub(arena):
+            outcome['path'] = name
+            arena.write(arena.uc.reg_read(x86.UC_X86_REG_ESP), 'I', SENTINEL)
+            return 0, 0
+        return stub
+    wear = Sandbox(image, [(0x5E276E, 0x5E27A2), (0x86FAB0, 0x86FAD7)],
+                   stubs={0x5E27A2: mark('post'), 0x5E27F3: mark('none'), 0x5E27F5: mark('none')}, budget=1_000)
+    item = wear.object(0x100)
+    kind = wear.object(0x400)
+    for row in rows_of(test_text, 'TheImminentAdviceNeedsTheRepairByteToCrossItsLine') + [['39', '0.99999994f', '40f', 'true'], ['39', '1f', 'NaN', 'false']]:
+        repair, worn = number(row[0]), number(row[1])
+        imminent = float('nan') if row[2] == 'NaN' else number(row[2])
+        expected = number(row[3])
+        wear.write(item + 0x54, 'f', float(repair))
+        wear.write(kind + 0x3C8, 'f', imminent)
+        wear.executed = 0
+        wear.reset()
+        wear.set_fpcw(0x7F)
+        wear.write(item + 0x54, 'f', float(repair))
+        wear.write(kind + 0x3C8, 'f', imminent)
+        wear.call(0x5E276E, (0, 0, 0, struct.unpack('<I', struct.pack('<f', worn))[0], 0, 0, 0, 0), regs={'esi': item, 'ebx': kind})
+        check(outcome.pop('path') == 'post', bool(expected), f'imminent test: byte {repair}, wear {worn}, line {imminent}')
+        cases += 1
+
+    # The special rides' activation advice (0x6240D0..0x624127): 0x21F for a type record whose +0x10 is 0x488, else 0x1E7
+    record_of = {}
+    special = Sandbox(image, [(0x6240D0, 0x624127), (0x4313D0, 0x4313DD), (0x40C1F3, 0x40C1F8)],
+                      stubs={**common, 0x4022F2: lambda _: (record_of['record'], 0)}, budget=1_000)
+    holder['advisor'] = special.object(0x118)
+    for row in rows_of(test_text, 'ASpecialRideReadyToActivateNamesItsAdvice'):
+        info, expected = (number(value) for value in row)
+        record_of['record'] = special.object(0x20, {0x10: ('I', info)})
+        posts.clear()
+        special.executed = 0
+        special.call(0x6240D0, (0, 0, 0, 0, 0, 0, 0, 0), stop=0x624127)
+        check([post[0] for post in posts], [expected], f'0x6240D0 for Info.Id {info}')
+        cases += 1
+    return cases
 
 
 def cases_from(path):
@@ -435,6 +651,7 @@ def main():
     parser.add_argument('--write-table', type=Path)
     parser.add_argument('--table', type=Path, default=Path('content/data/tpi-advisor-descriptors.toml'))
     parser.add_argument('--check', type=Path, default=Path('source/OpenTPW.Tests/ThemeParkIncAdvisorTests.cs'))
+    parser.add_argument('--senders', type=Path, default=Path('source/OpenTPW.Tests/ThemeParkIncAdvisorSenderBTests.cs'))
     args = parser.parse_args()
 
     image, arena, clock, stops = build_arena()
@@ -474,8 +691,9 @@ def main():
         check(acceptance(queue, case), case[-1], f'acceptance case {case}')
     check_enqueue_and_selection(arena, queue, clock, stops)
     senders = check_senders(image)
+    senders_b = check_senders_b(image, args.senders.read_text(encoding='utf-8'))
     print(f'{len(rows)} descriptor rows ({constants} constant scores, {fields} field getters), {len(cases)} acceptance cases, '
-          f'3 enqueue, 6 selection and 3 cancel scenarios and {senders} sender cases match')
+          f'3 enqueue, 6 selection and 3 cancel scenarios, {senders} P4 sender cases and {senders_b} P5 sender cases match')
 
 
 if __name__ == '__main__':

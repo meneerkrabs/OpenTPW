@@ -186,7 +186,11 @@ public sealed class ThemeParkIncAdvisorSenderBTests : ThemeParkIncScienceTestBas
 		economy.CancelThemeParkIncAdvice( 0x42 );
 		mechanic.RideId = ride.Id;
 		economy.ThemeParkIncRideStateAdvice( ride, RideObjectStates.BrokenDown );
-		Assert.IsFalse( economy.TpiAdvisor.Queue.Any( item => item.Valid && item.Message == 0x42 ), "a mechanic going to the ride: nothing" );
+		Assert.IsFalse( economy.TpiAdvisor.Queue.Any( item => item.Valid && item.Message == 0x42 ), "a mechanic going to the ride: no 0x42" );
+		Assert.AreEqual( 1, economy.TpiAdvisor.Queue.Count( item => item.Valid && item.Message == 0x43 ), "0x5DB000: the ride has not asked for maintenance: 0x43" );
+		ride.MaintenanceRequested = true;
+		economy.ThemeParkIncRideStateAdvice( ride, RideObjectStates.BrokenDown );
+		Assert.AreEqual( 1, economy.TpiAdvisor.Queue.Count( item => item.Valid && item.Message == 0x43 ), "a requested ride: nothing" );
 	}
 
 	[TestMethod]

@@ -392,8 +392,8 @@ appear point and asked to walk to the cell beyond the exit (Theme Park World's E
 
 **State 19 `0x618380`, being unloaded.** The entry `0x61A69D` gives the body back (mode 1 when a ride that draws it kept it), plays a teleporting ride's beam and gives a balloon kept through the
 ride back, unless a balloon shop has just given one. Before a teleporting ride's beam (`0x61A716`) the entry calls the sprite placement `0x60AE00(0)` (`0x61A70B`), which also raises the stamp
-counter `0x5D81F0` (`0x60AFFD`) and clears the stranded mark `+0x1B0` when the raised value is below it (`0x60B002`): with Theme Park Inc's navigator (every Theme Park Inc park
-since navigator phase NV4) that is `ThemeParkIncPlacementStamp`, as at the constructor's placement (TPI-NAVIGATOR.md). The handler walks; stuck, the target is cleared and the guest is idle. Arrived:
+counter `0x5D81F0` (`0x60AFFD`) and clears the stranded mark `+0x1B0` when the raised value is below it (`0x60B002`): with Theme Park Inc's navigator (every Theme Park Inc park since NV4) that is
+`ThemeParkIncPlacementStamp`, as at the constructor's placement (TPI-NAVIGATOR.md); Theme Park World's walk counts the edits only and takes nothing here. The handler walks; stuck, the target is cleared and the guest is idle. Arrived:
 - a photo booth word `+0x208`: the booth becomes the target (`+0x208` is kept, bug-compatible); a route to its back cell sends the guest there (13); a target that is not an attraction is cleared;
 - the old major destination `+0x206`: it becomes the target and `+0x206` is cleared; an umbrella shop for a guest with an umbrella or a balloon shop for one with a balloon is dropped ("trapped"); a
   route to its back cell sends the guest there (13), else the target is cleared;
@@ -471,7 +471,7 @@ The level reads these settings (`GuestSettings.TpiNative`) only when the switch 
   handler `0x61A21D`), 20's entry (`0x61A77E`), 19 (`0x618380`) and the use routine `0x6118D0` with its payment step, its outcome `0x612740` and the match step `0x611DA0` (the meters, the words,
   the bookings, the records and the draws; the gated rings and counters recorded but not compared): no mismatch over 40 rounds (1,000 cases each).
 - `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`, `ThemeParkIncNativeQueueTests`, `ThemeParkIncNativeVisitTests` and `ThemeParkIncGuestSettingsTests` cover the rig behaviour
-  (all four native rigs walk with Theme Park Inc's navigator, as every Theme Park Inc park does since navigator phase NV4),
+  (all four native rigs walk with Theme Park Inc's navigator since NV4),
   the draws, the saves (a guest saved mid-ride, a phase P3a rider refused) and the shipped values; the visit tests hold the oracle's reading of the use routine for a balloon shop, a sideshow won
   and lost, a costume put on and taken off, an umbrella shop and a relief visit (fresh, worn and ill); `ThemeParkIncPlayTests.NativeGuestsChooseQueueAndBoardTheScienceRides` runs native guests in the
   prebuilt Science park until one has boarded, ridden and been let off;

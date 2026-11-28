@@ -365,8 +365,8 @@ public class ThemeParkIncHandymanTests
 	}
 
 	/// <summary>
-	/// A placed member's walk is native: his save carries the native walk storage (navigator phase NV5: the person words and the navigator's record, ThemeParkIncStaffWorldSnapshot.Walk) and nothing of
-	/// OpenTPW's own walk, the restored member has every navigator member back, and both go on alike.
+	/// With Theme Park Inc's navigator rules (every Theme Park Inc park since NV4) a placed member's walk is native: his save carries the native walk storage (navigator phase NV5: the person words and
+	/// the navigator's record, ThemeParkIncStaffWorldSnapshot.Walk) and nothing of OpenTPW's own walk, the restored member has every navigator member back, and both go on alike.
 	/// </summary>
 	[TestMethod]
 	public void ANativeHandymanSurvivesASaveWithHisNavigatorRecord()

@@ -177,7 +177,7 @@ tp.exe at the harness's 0x37F; the interval only paces the body sprite and is in
 Theme Park World result moves now.
 
 A native guest stores the heading in its record's `Heading` (saved since P1); every walker's presentation vector is the word's (`ThemeParkIncWalkStep.Vector`). A staff member keeps the
-word in `SpriteAngle`, not saved yet (NV5 stores the person words). The guard's carry (`0x5D3B20`: state 0x1C) needs the guard's chase, which is not ported (`[EXT:tpi-capability-gates]`).
+word in `SpriteAngle`, saved since NV5 with the person words (below). The guard's carry (`0x5D3B20`: state 0x1C) needs the guard's chase, which is not ported (`[EXT:tpi-capability-gates]`).
 The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the rigs of `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`,
 `ThemeParkIncNativeQueueTests` and `ThemeParkIncNativeVisitTests` walk with Theme Park Inc's navigator, as every Theme Park Inc park does since NV4.
 

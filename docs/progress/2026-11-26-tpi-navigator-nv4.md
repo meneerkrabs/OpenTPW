@@ -10,6 +10,6 @@ The fourth phase of the Theme Park Inc navigator port (NV4). Theme Park Inc's st
 
 No new approximation or label is added, and no C runtime `rand()` is reached from the wander or the patrol.
 
-Verified with a new x86 oracle target that runs the original wander on 200 guests and staff members of every kind, with marks, rectangles of every shape and the park open and closed, all agreeing with the port, and Theme Park World's rules differing on 86 of them; unit tests that hold the original's results; the full test suites with the Theme Park Inc and Theme Park World data; and the silent, offscreen Science smoke with and without the native guests.
+Verified with a new x86 oracle target that runs the original wander on 200 guests and staff members of every kind, with marks, rectangles of every shape and the park open and closed, all agreeing with the oracle's reading of the port, and Theme Park World's rules differing on 86 of them; unit tests that hold the original's results for the C# itself (14 golden wanders and the route-request sets); the full test suites with the Theme Park Inc and Theme Park World data; and the silent, offscreen Science smoke with and without the native guests.
 
 The original game was not launched, and no binary or data is included.

@@ -110,12 +110,12 @@ public static class ThemeParkIncAttractionScore
 			if ( input.AgeDays <= variables.NewRideDays )
 				score *= variables.NewRideMultiplier;
 			if ( input.GoldenTicketCost > 0 )
-				score = (uint)ThemeParkIncX87Single.Truncate( (float)(GoldenTicketFactor( input.GoldenTicketCost ) * (double)(int)score) );
+				score = (uint)ThemeParkIncX87.Ftol( (float)(GoldenTicketFactor( input.GoldenTicketCost ) * (double)(int)score) );
 			else if ( input.UpgradeCost != 0 )
 			{
 				var q = (float)input.UpgradeCost * UpgradeCostScale;
 				if ( q > 1.0f )
-					score = (uint)ThemeParkIncX87Single.Truncate( (float)((float)(q * 0.1f + 1.0f) * (double)(int)score) );
+					score = (uint)ThemeParkIncX87.Ftol( (float)((float)(q * 0.1f + 1.0f) * (double)(int)score) );
 			}
 			var weatherPercentage = input.Weather switch
 			{
@@ -150,51 +150,5 @@ public static class ThemeParkIncAttractionScore
 
 	/// <summary>The golden-ticket factor <c>(cost + 1) × 0.1 + 1.0</c>: the double <c>0.1</c> (<c>0x93E398</c>) times the exact integer, then plus the double 1.0, each rounded to the 24-bit significand.</summary>
 	// [BIN:TPI-EXE:0x610949 golden ticket] fildl, fmull 0x93E398 (the double 0.1), faddl 0x93B858 (the double 1.0), fimull the score: at control word 0x7F every product and sum rounds to 24 bits
-	private static float GoldenTicketFactor( int cost ) => (float)(ThemeParkIncX87Single.Multiply( unchecked( cost + 1 ), 0.1 ) + 1.0);
-}
-
-/// <summary>
-/// Theme Park Inc's game thread runs its x87 at a 24-bit significand (control word <c>0x7F</c>): every product and sum of extended operands rounds once to a single. These helpers give the single rounding
-/// where C#'s double arithmetic would round twice.
-/// </summary>
-// [EXT:hardware-d3d-path] the game thread's precision control (Direct3D sets 24 bits): C# rounds each step to a single where the x87 does, once
-public static class ThemeParkIncX87Single
-{
-	/// <summary>The exact product of an integer and a double, rounded once to a single (round to nearest even), as <c>fild</c> then <c>fmull</c> at 24 bits.</summary>
-	public static float Multiply( long integer, double value )
-	{
-		if ( integer == 0 || value == 0 || double.IsNaN( value ) || double.IsInfinity( value ) )
-			return (float)(integer * value);
-		var bits = BitConverter.DoubleToInt64Bits( value );
-		var exponent = (int)((bits >> 52) & 0x7FF);
-		var mantissa = bits & 0xFFFFFFFFFFFFFL;
-		if ( exponent == 0 )
-			exponent = 1;
-		else
-			mantissa |= 1L << 52;
-		var negative = (bits < 0) ^ (integer < 0);
-		var magnitude = (UInt128)(ulong)Math.Abs( integer ) * (ulong)mantissa;
-		// value = magnitude × 2^(exponent − 1075); round magnitude to 24 significant bits (nearest even)
-		var length = 128 - (int)UInt128.LeadingZeroCount( magnitude );
-		var shift = length - 24;
-		var scale = exponent - 1075;
-		if ( shift > 0 )
-		{
-			var half = (UInt128)1 << (shift - 1);
-			var remainder = magnitude & (((UInt128)1 << shift) - 1);
-			magnitude >>= shift;
-			if ( remainder > half || remainder == half && (magnitude & 1) != 0 )
-				magnitude++;
-			scale += shift;
-		}
-		var result = Math.ScaleB( (double)(ulong)magnitude, scale );
-		return (float)(negative ? -result : result);
-	}
-
-	/// <summary>
-	/// <c>_ftol</c> (<c>0x86FAB0</c>): truncation toward zero of the x87 value, as a 32-bit integer: the low dword of <c>fistp qword</c>, whose invalid result (a NaN, an infinity or a value beyond 2^63) is the
-	/// integer indefinite 0x8000000000000000, so 0.
-	/// </summary>
-	public static int Truncate( double value ) =>
-		double.IsNaN( value ) || Math.Abs( value ) >= 9.2233720368547758E18 ? 0 : unchecked( (int)(long)Math.Truncate( value ) );
+	private static float GoldenTicketFactor( int cost ) => (float)(ThemeParkIncX87.ProductOfDouble( unchecked( cost + 1 ), 0.1 ) + 1.0);
 }

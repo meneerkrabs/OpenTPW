@@ -75,7 +75,7 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 				economy.RecordRideUse( instance );
 			var admitted = economy.TryAdmitVisit( instance, guestMoney, out pricePaid, out won );
 			// [EXT:tpi-twp-guest-rules] Theme Park Inc's boarding of a Theme Park World guest stands in for the native guest's admission (state 20, 0x61A77E), which follows the price test (0x61243A
-			// refuses before it): only an admitted guest posts its challenge events; the native guests' state 20 (guest plan P3) takes this call over
+			// refuses before it): only an admitted guest posts its challenge events; a native guest posts them from its own state 20 (ThemeParkIncRideAdmitted) and never boards through here
 			if ( admitted && attraction.Kind == RideVisitorKind.Ride )
 				economy.ThemeParkIncRideAdmitted( instance );
 			return admitted;
@@ -92,6 +92,36 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 				economy.RecordRideUse( instance );
 				return economy.TryPayRideFare( instance, guestMoney, out pricePaid );
 		}
+	}
+
+	public ThemeParkIncThingWords? ThemeParkIncThing( IRideVisitorBridge attraction ) =>
+		instances.TryGetValue( attraction.AttractionId, out var instance ) ? Economy().ThemeParkIncThingWordsOf( instance ) : null;
+
+	public void ThemeParkIncTakings( IRideVisitorBridge attraction, int fee )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().ThemeParkIncTakings( instance, fee );
+	}
+
+	public void ThemeParkIncCustomer( IRideVisitorBridge attraction )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().RecordCustomer( instance );
+	}
+
+	public void ThemeParkIncCostBooked( IRideVisitorBridge attraction, int amount )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().ThemeParkIncCostBooked( instance, amount );
+	}
+
+	public int ThemeParkIncGoodsCost( IRideVisitorBridge attraction ) =>
+		instances.TryGetValue( attraction.AttractionId, out var instance ) ? Economy().ThemeParkIncGoodsCostOf( instance ) : 0;
+
+	public void ThemeParkIncRideAdmitted( IRideVisitorBridge attraction )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().ThemeParkIncRideAdmitted( instance );
 	}
 
 	public bool SettlesAtExit => Economy().Rules.ThemeParkInc;

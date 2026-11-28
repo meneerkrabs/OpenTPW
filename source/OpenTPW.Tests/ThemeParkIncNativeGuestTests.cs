@@ -66,7 +66,9 @@ public sealed class ThemeParkIncNativeGuestTests
 		ThirstWeather = [new( 2, 0, 0, -1 ), new( 2, 0, 0, -1 ), new( 3, 0, 0, -1 )],
 		HungerWeather = [new( -1, 0, 0, 1 ), new( -1, 0, 0, 1 ), new( -1, 0, 0, 1 )],
 		NumTicketBooths = 2, TicketBooths = [(10, 13, 512), (11, 13, 1536), (0, 0, 0)],
-		BusStopA = (10, 5), BusStopB = (16, 5), BusStopC = (18, 5), EntranceA = (10, 17), EntranceB = (11, 17), FirstHourMinutes = 120
+		BusStopA = (10, 5), BusStopB = (16, 5), BusStopC = (18, 5), EntranceA = (10, 17), EntranceB = (11, 17), FirstHourMinutes = 120,
+		RideVomitDivisor = 10, SatisfactionWeightForPhoto = 2, DistanceWeightForPhoto = 1, PhotoThreshold = 115, HappyDiffForVGood = 24, HappyDiffForGood = 14, HappyDiffForPoor = 5,
+		HappyDiffForVPoor = 1, PerfectExcitementMatch = 5, GoodExcitementMatch = 15, OkExcitementMatch = 40, PerfectRide = 25, GoodRide = 15, OkRide = 5, ComplainAboutThisQuality = 20
 	};
 
 	/// <summary>
@@ -635,13 +637,13 @@ public sealed class ThemeParkIncNativeGuestTests
 			var guest = save.Guests.Single();
 			return save with { Guests = [guest with { Tpi = guest.Tpi! with { State = state, Saved = saved }, State = ThemeParkIncGuestStates.Projection( state ) }] };
 		}
-		foreach ( var state in new[] { 10, 11, 12, 17, 18, 19, 20, 21, 24, 25, 26 } )
+		foreach ( var state in new[] { 10, 11, 12, 18, 21, 24, 25, 26 } )
 			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state}" );
-		// phase P3a runs the queue states, and the cross-references refuse a guest in one that no ride's list holds
-		foreach ( var state in new[] { 14, 15 } )
+		// phases P3a and P3b run the queue and visit states, and the cross-references refuse a guest in one that no ride's list or riders hold
+		foreach ( var state in new[] { 14, 15, 16, 17, 20 } )
 			Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( state, 6 ) ), $"state {state} outside every list" );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => Rig().Simulation.RestoreSnapshot( With( 8, 14 ) ), "a spot animation that returns to a queue no list holds" );
-		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 22, 23, 27, 28, 29, 30 } )
+		foreach ( var state in new[] { 0, 2, 3, 4, 5, 6, 7, 8, 9, 13, 19, 22, 23, 27, 28, 29, 30 } )
 			Rig().Simulation.RestoreSnapshot( With( state, 6 ) );
 		Rig().Simulation.RestoreSnapshot( With( 8, 27 ) );
 	}
@@ -740,6 +742,37 @@ public sealed class ThemeParkIncNativeGuestTests
 			}
 			Assert.AreEqual( UmbrellaRules.StateClosed, guest.UmbrellaState, $"weather {weather}: carried out" );
 		}
+	}
+
+	/// <summary>
+	/// The rain's balloon (<c>0x614010</c>, the drop at <c>0x61413A</c>): a due open loses a held balloon with its litter on the guest's cell, the type by the colour (<c>0x9D0614</c>), the world
+	/// generator reseeded with the cell word and drawn twice (<c>0x5D8C80</c>).
+	/// </summary>
+	[TestMethod]
+	public void ADueOpenInTheRainDropsTheBalloonsLitterAndReseedsTheWorldGenerator()
+	{
+		var (simulation, _, _) = Rig();
+		var litter = new ParkLitter { ThemeParkInc = true, World = () => simulation.World };
+		simulation.Litter = litter;
+		var guest = simulation.SpawnInPark( 12, 17 );
+		guest.ExitLevel = 100000;
+		var tpi = guest.Tpi!;
+		simulation.ArrivalWeatherState = () => UmbrellaRules.WeatherStorm;
+		simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateOpening );
+		guest.UmbrellaDueTurn = 0;
+		(tpi.HoldsBalloon, tpi.BalloonCountdown, tpi.BalloonColour) = (true, 200, 2);
+		uint? atTheDrop = null;
+		(int X, int Y)? cell = null;
+		litter.Changed += ( x, y, _ ) => (atTheDrop, cell) = (simulation.World.State, (x, y));
+		BeforePhase( simulation, guest.Id & 3 );
+		simulation.Tick( Tick );
+		Assert.AreEqual( UmbrellaRules.StateOpen, guest.UmbrellaState );
+		Assert.IsFalse( tpi.HoldsBalloon );
+		Assert.IsNotNull( cell, "the balloon's litter dropped" );
+		Assert.AreEqual( LitterType.BurstBalloon3, litter.TypeAt( cell!.Value.X, cell.Value.Y ), "colour 2: the type 0xB (0x9D0614)" );
+		var mirror = new WorldRng( 0 );
+		ParkLitter.ThemeParkIncSpriteOffset( mirror, cell.Value.X, cell.Value.Y );
+		Assert.AreEqual( mirror.State, atTheDrop, "the reseed 0x649430(cell word) and the draws 0x5D8E14, 0x5D8E42" );
 	}
 
 	[TestMethod]

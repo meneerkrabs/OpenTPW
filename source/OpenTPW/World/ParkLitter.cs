@@ -8,7 +8,16 @@ public enum LitterType : byte
 	/// <summary>The fallback of the sprite switch ("Dodgy litter type"); nothing drops it.</summary>
 	Dodgy = 6,
 	Vomit = 7,
-	Stinkbomb = 8
+	Stinkbomb = 8,
+	// 9..12: Theme Park Inc's burst balloons (TPI Game.exe), the litter a lost balloon leaves through the colour table 0x9D0614 (colours 0..3 give 9, 0xC, 0xB and 0xA); Theme Park World has none
+	/// <summary>Theme Park Inc's burst balloon of colour 0 (the descriptor <c>0x9B0AD8</c>, sprite slot 8).</summary>
+	BurstBalloon1 = 9,
+	/// <summary>Theme Park Inc's burst balloon of colour 3 (the descriptor <c>0x9B0AFC</c>, sprite slot 9).</summary>
+	BurstBalloon2 = 10,
+	/// <summary>Theme Park Inc's burst balloon of colour 2 (the descriptor <c>0x9B0B20</c>, sprite slot 10).</summary>
+	BurstBalloon3 = 11,
+	/// <summary>Theme Park Inc's burst balloon of colour 1 (the descriptor <c>0x9B0B44</c>, sprite slot 11).</summary>
+	BurstBalloon4 = 12
 }
 
 /// <summary>
@@ -71,6 +80,13 @@ public sealed class ParkLitter
 	/// (<see cref="ThemeParkIncSpriteOffset(WorldRng, int, int)"/>) rather than 1 to 9.
 	/// </summary>
 	public bool ThemeParkInc { get; set; }
+
+	/// <summary>The highest litter type a cell of this park can hold: Theme Park Inc's burst balloons (<see cref="LitterType.BurstBalloon4"/>), else the stinkbomb.</summary>
+	public LitterType MaxType => MaxTypeOf( ThemeParkInc );
+
+	/// <summary>The highest litter type of an edition: Theme Park Inc's descriptor table <c>0x5D8EFC</c> has twelve entries (TPI Game.exe), Theme Park World's eight (tp.exe <c>0x004D95D4</c>).</summary>
+	// [BIN:TPI-EXE:0x5D8D05 litter switch] type − 1 above 0xB takes the default descriptor 0x9B0A6C; 1..0xC their own (0x9B09B8 + 0x24 × (type − 1), the sprite slot type − 1)
+	public static LitterType MaxTypeOf( bool themeParkInc ) => themeParkInc ? LitterType.BurstBalloon4 : LitterType.Stinkbomb;
 
 	/// <summary>The park's world generator (the economy's), which a drop reseeds and draws from; null: the litter draws nothing (a standalone litter map).</summary>
 	public Func<WorldRng>? World { get; set; }
@@ -335,7 +351,7 @@ public sealed class ParkLitter
 		Count = 0;
 		foreach ( var cell in cells )
 		{
-			if ( !InBounds( cell.X, cell.Y ) || cell.Type is LitterType.None or > LitterType.Stinkbomb )
+			if ( !InBounds( cell.X, cell.Y ) || cell.Type == LitterType.None || cell.Type > MaxType )
 				throw new InvalidDataException( $"Litter at ({cell.X}, {cell.Y}) of type {(int)cell.Type} does not fit the map." );
 			var index = Index( cell.X, cell.Y );
 			if ( types[index] != 0 )

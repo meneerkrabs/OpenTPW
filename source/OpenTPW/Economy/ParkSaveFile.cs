@@ -1347,7 +1347,7 @@ public static class ParkSaveFile
 			&& (data.Objectives.Current is not { } running || running.DeadlineSeconds is >= 0 and <= MaximumParkSeconds), "challenge times" );
 		var littered = new HashSet<(int, int)>();
 		foreach ( var cell in data.Litter )
-			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
+			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type >= 1 && cell.Type <= (int)ParkLitter.MaxTypeOf( data.Edition == GameEdition.ThemeParkInc )
 				&& cell.Collector >= 0 && littered.Add( (cell.X, cell.Y) ), $"litter at ({cell.X}, {cell.Y})" );
 		// A claim belongs to a handyman: in a world his own search takes it again (the original keeps a claim after a failed walk); without one he
 		// must be sweeping it, or nothing would end the claim.

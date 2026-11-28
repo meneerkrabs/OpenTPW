@@ -499,7 +499,7 @@ toggle's own help texts (`[EXT:tpi-text-hud]`).
 Gated (`[EXT:tpi-capability-gates]`):
 
 - the trigger's `+0x12D` branch (a target that is not special): `mHasBeenOpenedAtSomePoint` is not kept, and every retail row targets a special ride;
-- the activation's camera fly-over and track tool (`0x5E82B2..0x5E890D`), and the advisor's lines when a ride can be activated (`0x6240C4`: 0x21F or 0x1E7);
+- the activation's camera fly-over and track tool (`0x5E82B2..0x5E890D`) (the advisor's lines when a ride can be activated, `0x6240C4`: 0x21F or 0x1E7, are posted: TPI-ADVISOR.md §9.3);
 - type 48 and 56's satisfaction (`0x5E6D80` reads the mood rings of the visit outcome `0x612740`, the guests' P3), 50 and 55's top three thoughts (`0x5B0830`,
   Theme Park Inc's thought pick `0x60FC60`, the guests' P1), 53 and 56's rating byte (`0x5E3DF0`'s track-ride handle and coaster branches), 51 (its target 3180 is never
   placed: new zones place no special ride, `0x647BF0`'s special branch is not ported, and the coaster count `0x5B70E0` reads the track record's `+0x108`), and 57

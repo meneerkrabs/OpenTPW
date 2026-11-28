@@ -33,19 +33,18 @@ public sealed partial class ParkEconomy
 	{
 		if ( TpiAdvisor == null || TpiCareer is not { } career || !ThemeParkIncMissionMet )
 			return;
-		switch ( career.MissionCounter )
-		{
-			case 0:
-				Log.Trace( "Theme Park Inc advice 0x20F (mission requirements met, first mission) is not posted: its score reads the first-hour clock, which is not ported." );
-				break;
-			case 1:
-				PostThemeParkIncAdvice( 0x1C7 );
-				break;
-			default:
-				PostThemeParkIncAdvice( 0x1E3 );
-				break;
-		}
+		var message = StatusAdvice( career.MissionCounter );
+		if ( message == FirstMissionStatusAdvice )
+			Log.Trace( "Theme Park Inc advice 0x20F (mission requirements met, first mission) is not posted: its score reads the first-hour clock, which is not ported." );
+		else
+			PostThemeParkIncAdvice( message );
 	}
+
+	/// <summary>The requirements-met advice of the career's mission counter (<c>0x54D6B8</c>): <c>0x20F</c> at 0, <c>0x1C7</c> at 1, <c>0x1E3</c> after.</summary>
+	public static int StatusAdvice( int counter ) => counter switch { 0 => FirstMissionStatusAdvice, 1 => 0x1C7, _ => ThemeParkIncMissionController.RequirementsMetAdvice };
+
+	/// <summary>The first mission's requirements-met advice (<c>0x20F</c>), which waits for the first-hour clock (P7).</summary>
+	public const int FirstMissionStatusAdvice = 0x20F;
 
 	/// <summary>The research advice a research completion's message 0x11 asks of the advisor (<c>0x7194C7</c>), or null for none.</summary>
 	/// <param name="category">The project's category (the message's <c>+0xC</c>).</param>
@@ -70,7 +69,7 @@ public sealed partial class ParkEconomy
 	/// </summary>
 	// [BIN:TPI-EXE:0x7194DA research advice post] 0x71A930(message, locate 0, the message's word +8 (the object), variant -1, bypass 0, score -1) -> 0x718820 on the advisor; the dispatcher 0x436DD0 calls the
 	// kind's listeners in ascending thing handle order (the tree 0x437EF0), and the advisor (thing 3) comes before the analyser (5), the lab (6, 0x61DC20) and the challenge system (11)
-	private void ThemeParkIncResearchAdvice( int type, int category )
+	internal void ThemeParkIncResearchAdvice( int type, int category )
 	{
 		if ( TpiAdvisor == null || TpiCareer is not { } career )
 			return;

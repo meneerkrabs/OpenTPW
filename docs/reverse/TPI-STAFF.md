@@ -355,7 +355,7 @@ reaches.
 (variable 5) 0 gives the wear 0, else `0x5E21A0`: riders clamped to `0..MaxCapacity`; `s = 0.9 × speed / MaxSpeed` (the script's speed `+0xC0`, `0x6B0C30`), then `s + 0.1`, or
 `(s + 1.1) × 0.5` at or above `RedLineSpeed`; `c = 0.9 × riders / MaxCapacity`, then `c + 0.1`, or `(c + 1.1) × 0.5` when `RedLineCapacity <= riders × 0.1`; the wear is
 `(c + s) × WearRate × 0.5`. Repair loses the wear and life `0.02 ×` the wear unless the type is special, each clamped to 0..100; a repair byte below `WarnPlayer` writes `VAR_WORN` = 1;
-below `Imminent` with the byte plus the wear not below it posts advice 0x40 (not posted: the advisor queue takes only the forecasts and the letters so far). No random number is drawn. The world
+below `Imminent` with the byte plus the wear not below it posts advice 0x40 (TPI-ADVISOR.md §9.3). No random number is drawn. The world
 update runs at the 24-bit x87 precision the Direct3D device sets (`[EXT:hardware-d3d-path]`); the port rounds every step to a single.
 
 **Mechanic.** Kind 4, constructor `0x5D9B50` (the person and member start `0x626190`, sprite category 0xA in template 3, `+0x5D8` and `+0x5D4` 0, the setter's state 0, the removal

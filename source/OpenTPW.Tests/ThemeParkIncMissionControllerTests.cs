@@ -42,6 +42,8 @@ internal sealed class TestMissionHost : IThemeParkIncMissionHost
 	public void PostObjectiveLetter( int completed ) => Calls.Add( $"letter {completed}" );
 	public void PostIntroductionLetter() => Calls.Add( "introduction" );
 	public void StatusChanged() => Broadcasts++;
+	public int StatusRefreshes { get; private set; }
+	public void StatusAdvice() => StatusRefreshes++;
 	public List<string> Advice { get; } = new();
 	public HashSet<int> Played { get; } = new();
 	public bool PostAdvice( int message )
@@ -91,6 +93,18 @@ public class ThemeParkIncMissionControllerTests
 
 	private static string Statistic( int index, int type, int target, int zone = 1, int time = 0 ) =>
 		$"ExitStatistic[{index}].Type {type}\nExitStatistic[{index}].TargetValue {target}\nExitStatistic[{index}].InTheme {zone}\nExitStatistic[{index}].TargetTime {time}\n";
+
+	[TestMethod]
+	public void ANewMissionsStatisticsBroadcastWithoutTheRefreshAndClearTheRequirementsAdvice()
+	{
+		var (controller, career, host) = Controller( Statistic( 0, 1, 1 ) );
+		Assert.AreEqual( (1, 0), (host.Broadcasts, host.StatusRefreshes), "0x5EF25E: message 0x27 without 0x54D660" );
+		career.SetAdviceHistory( ThemeParkIncMissionController.RequirementsMetAdvice, career.AdviceHistory( ThemeParkIncMissionController.RequirementsMetAdvice ) with { Played = true } );
+		controller.InitExitStatistics( 10 );
+		Assert.IsFalse( career.AdviceHistory( 0x1E3 ).Played, "0x5EF367: the history byte +8 of 0x1E3 is cleared" );
+		controller.Promotion( career.Rank + 1 );
+		Assert.AreEqual( (3, 1), (host.Broadcasts, host.StatusRefreshes), "the message switch's end: message 0x27, then 0x54D660 (0x5F12DB)" );
+	}
 
 	[TestMethod]
 	public void EachExitTypeIsMeasuredFromThePark()
@@ -372,9 +386,9 @@ public class ThemeParkIncMissionControllerTests
 
 		controller.Promotion( 3 );
 		Assert.AreEqual( 3, career.Rank );
-		var broadcasts = host.Broadcasts;
+		var (broadcasts, refreshes) = (host.Broadcasts, host.StatusRefreshes);
 		controller.ChallengeWon();
-		Assert.AreEqual( broadcasts + 1, host.Broadcasts, "a won challenge only broadcasts the status" );
+		Assert.AreEqual( (broadcasts + 1, refreshes + 1), (host.Broadcasts, host.StatusRefreshes), "a won challenge only broadcasts the status, then 0x5F12DB refreshes it (0x54D660)" );
 	}
 
 	[TestMethod]

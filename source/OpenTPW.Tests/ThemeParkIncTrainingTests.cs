@@ -152,6 +152,8 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( ((ushort)500, -1), rooms.Occupancy[^1] );
 		Assert.IsNotNull( member.Sprite.Source, "shown again" );
 		Assert.IsTrue( world.TrainingNotices.Single() is { Finished: true, Ability: 7 } );
+		Assert.AreEqual( (10_000, false, (ushort)0, 0), economy.TpiAdvisor!.Queue.Where( slot => slot.Valid && slot.Message == 0x175 )
+			.Select( slot => (slot.Score, slot.ExplicitScore, slot.Locate, slot.LocateData) ).Single(), "0x62AAAC: the advice 0x175, locate 0, with its descriptor's score" );
 		Assert.AreEqual( ThemeParkIncTrainingChoice.AlreadyTrained, world.ChooseAbility( economy, member, 7, confirmed: false, turn ) );
 		Assert.AreEqual( ThemeParkIncTrainingChoice.NeedsConfirmation, world.ChooseAbility( economy, member, 8, confirmed: false, turn ) );
 		Assert.IsTrue( career.Abilities[7] == 1 );
@@ -176,6 +178,7 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( 0, member.LearningAbility );
 		Assert.AreNotEqual( 8, member.State, "set idle and looked for work" );
 		Assert.IsTrue( world.TrainingNotices.Single() is { Finished: false, Ability: 7 } );
+		Assert.AreEqual( 1, economy.TpiAdvisor!.Queue.Count( slot => slot.Valid && slot.Message == 0x1C9 && slot.Score == 10_000 ), "0x62E892: the advice 0x1C9" );
 		Assert.AreEqual( 0, member.Ability, "nothing learnt" );
 
 		// a room no route reaches, even off the paths (its entrance cell of type 2 blocks every walk mask): the staff route and the cell steer 0x60B7F0 both fail, the walk is stuck and each update

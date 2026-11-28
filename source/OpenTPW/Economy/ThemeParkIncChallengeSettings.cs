@@ -76,6 +76,11 @@ public sealed class ThemeParkIncChallengeSettings
 		{
 			if ( row >= RowCount )
 				throw new InvalidDataException( $"ChallengesInThisLevel names Challenges[{row}], past the {RowCount} rows Theme Park Inc's parser holds." );
+			// [BIN:TPI-EXE:0x9CD000 challenge senders] a challenge the level loads (a positive row number of a row with a type) cancels its sender's advice when accepted or timed out
+			// (ThemeParkIncChallenges.SenderAdvice): senders 2 to 6 name theirs, the others the no-message id 0x285, whose cancel would write outside the player's history. The retail file names 2 to 6;
+			// a row with another sender, or without the Sender key (read as 0), is refused when the file loads rather than when its advice is cancelled
+			if ( row > 0 && rows[row].Type != 0 && !ThemeParkIncChallenges.HasSenderAdvice( rows[row].Sender ) )
+				throw new InvalidDataException( $"Challenges[{row}] names sender {rows[row].Sender}, whose row of the sender table (0x9CD000) names no advice; Theme Park Inc's senders are 2 to 6." );
 		}
 		return new ThemeParkIncChallengeSettings( standard.GetInt( "Challenges.DaysBetweenOffers", 0, optional: true ), standard.GetInt( "Challenges.MissionNumberForFirstChallenge", 0, optional: true ),
 			levelRows, rows );

@@ -810,8 +810,8 @@ public sealed partial class GuestSimulation
 	/// number and state 6.
 	/// </summary>
 	// [BIN:TPI-EXE:0x616790 state 5] 0x64FA30 nonzero or 0x64FA50 != 1: the block 0x6168D6, then setter(3); else 0x60B440 nonzero returns; arrived: +0x200 = 0x650560(), the first hour's tips, setter(6)
-	// [EXT:tpi-capability-gates] the tutorial's two tips (advice 0x207 and 0x208 at the census New.ADVISORSTUTWELLDONE1NUMVIS and ADVISORSTUTVISITORINFONUMVIS within the first FirstHour.Minutes,
-	// 0x650890) are not posted: Theme Park Inc's advisor queue takes only the forecasts and the letters so far (the other senders come with P4 and P5); they draw nothing
+	// [EXT:tpi-capability-gates] the tutorial's two tips (advice 0x207 and 0x208 at the census New.ADVISORSTUTWELLDONE1NUMVIS and ADVISORSTUTVISITORINFONUMVIS, unless played, 0x6168AA) are posted
+	// only within the first hour (0x650890: the counter 0xBFCC4C / 60 below FirstHour.Minutes), a clock OpenTPW does not tick yet (P7), so they are not posted; they draw nothing
 	private void UpdateTpiWalkingToEntrance( Guest guest, ThemeParkIncGuestRecord tpi )
 	{
 		var settings = NativeTpi!;

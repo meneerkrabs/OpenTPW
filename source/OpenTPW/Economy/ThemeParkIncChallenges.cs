@@ -518,8 +518,8 @@ public sealed class ThemeParkIncChallenges
 	// [esp+0x18], word 4 (0x5C216E). Two more copies, 0x5C2100 (thunk 0x40398B, word 1) and 0x5C8790 (thunk 0x406249, word 4 at 0x5C87FC), have no caller in the executable. Rows 0, 1, 7 and 8
 	// hold 0x285: the cancel's playing test reads 0x285 for no playing advice (0x718A30), so outside a window it would stop the speech, write the history entry of 0x285 past the career's 0x284
 	// entries (career +0x4754, past its 0x4740 bytes) and zero the window; a sender past row 8 would read the next table (0x9CD144). The retail Challenges.sam names senders 2 to 6 only, so OpenTPW
-	// refuses the others rather than write outside the history
-	public static int SenderAdvice( int sender, int word = 1 ) => (sender, word) switch
+	// refuses the others when Challenges.sam loads (ThemeParkIncChallengeSettings.Read) and in a save (IsValid), rather than write outside the history
+	public static int SenderAdvice( int sender, int word = 1 ) => HasSenderAdvice( sender ) || word is not (1 or 4) ? (sender, word) switch
 	{
 		(2, 1) => 0x239,
 		(3, 1) => 0x25C,
@@ -531,9 +531,11 @@ public sealed class ThemeParkIncChallenges
 		(4, 4) => 0x246,
 		(5, 4) => 0x266,
 		(6, 4) => 0x256,
-		(_, 1 or 4) => throw new NotSupportedException( $"Theme Park Inc challenge sender {sender}: its row of the sender table (0x9CD000) names no advice, and its cancel writes outside the player's history." ),
 		_ => throw new ArgumentOutOfRangeException( nameof( word ), "The challenge code cancels the sender row's word 1 or 4 only." )
-	};
+	} : throw new InvalidOperationException( $"Theme Park Inc challenge sender {sender}: its row of the sender table (0x9CD000) names no advice; Challenges.sam and the save refuse such a challenge." );
+
+	/// <summary>Whether challenge sender <paramref name="sender"/> names its own advice (2 to 6); the others name the no-message id, which the load refuses.</summary>
+	public static bool HasSenderAdvice( int sender ) => sender is >= 2 and <= 6;
 
 	/// <summary>The sender row's word the accept cancels (<c>0x5C84EB</c>) and the one the time-out cancels (<c>0x5C216E</c>).</summary>
 	public const int AcceptCancelWord = 1, TimeOutCancelWord = 4;
@@ -635,7 +637,7 @@ public sealed class ThemeParkIncChallenges
 			&& (slot.Status is not (ThemeParkIncChallengeStatus.Offered or ThemeParkIncChallengeStatus.Grace or ThemeParkIncChallengeStatus.Running) || IsPorted( slot.Type ))
 			// an idle slot latched as due would be offered by 0x5C8140, which does not test the type: only a ported type ever latches (CalcAvailTime)
 			&& (slot.Status != ThemeParkIncChallengeStatus.Idle || slot.Type == 0 || !slot.OfferTimeSet || IsPorted( slot.Type ))
-			&& slot.ChallengeLost >= 0 && (slot.Type == 0 || slot.GTPrize >= 1) );
+			&& slot.ChallengeLost >= 0 && (slot.Type == 0 || slot.GTPrize >= 1 && HasSenderAdvice( slot.Sender )) );
 
 	internal void Restore( ThemeParkIncChallengesSnapshot state )
 	{

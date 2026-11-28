@@ -107,7 +107,7 @@ target thing's camera seat 1 while the thing's own script plays its animation:
   (`0x50B4E0`) and rides the thing's seat 1 (`0x5E5B20(0, 1)`, then `0x4668C0`, Theme Park World's `0x42A560`: the first dummy record with type bit `0x1000` and value 1); an
   ordinary attraction also gets script variable 12 = 1 there, an obstacle (`IsObstacle`, info `+0x4C`) or a camera path (`+0x60`) does not. The park clock's rate becomes the
   mode's (`0x41C000`: 1.0, or 0.7 in mode 1) and the speed word 100 is only stored, so the rate is not re-derived from it until the end. The interface is locked and a full-screen
-  input window opens. The trigger goes into the thing's script variable 0 (`0x6B0780` through `0x6B0740`, "playing anim %d"). The 1703 lake opens panel 0x26D.
+  input window opens. The trigger goes into the thing's script variable 0 (`0x6B0780` through `0x6B0740`, "playing anim %d"). The 1703 lake posts the advice 0x26D (TPI-ADVISOR.md §9.3).
 - **The script.** The camera paths' `camera.RSE` waits for variable 0, plays its `M` clip (`cameram.MD2`, 500 ticks) with `WAITANIM 5 0`, then sets variable 1 and clears
   variable 0 in the same slice and parks. The obstacles' scripts map the trigger to their clips (1 researched, 2 removed). So a flight lasts the clip's `WAITANIM` wait (16.4 s for
   the Science camera path at rate 1.0) plus up to one thing update.

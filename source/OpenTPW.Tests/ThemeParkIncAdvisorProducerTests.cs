@@ -9,22 +9,26 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// <c>content/data/tpi-advisor-producers.toml</c> (docs/reverse/TPI-ADVISOR.md §9): the producer of each of Theme Park Inc's 606 advisor messages. The inventory must classify every message of the
-/// descriptor table exactly once, agree with the table on the scan rows, and call a message wired exactly when OpenTPW posts it. GPU-free; reads the shipped data only.
+/// <c>source/OpenTPW.Tests/Data/tpi-advisor-producers.toml</c> (docs/reverse/TPI-ADVISOR.md §9): the producer of each of Theme Park Inc's 606 advisor messages. The inventory must classify every
+/// message of the descriptor table exactly once, agree with the table on the scan rows, and call a message wired exactly when OpenTPW posts it. GPU-free; reads the inventory (test data, not
+/// shipped) and the shipped tables only.
 /// </summary>
 [TestClass]
 public sealed class ThemeParkIncAdvisorProducerTests
 {
-	private const string RelativePath = "content/data/tpi-advisor-producers.toml";
+	private const string RelativePath = "source/OpenTPW.Tests/Data/tpi-advisor-producers.toml";
 
 	private static readonly string[] Kinds = { "scan", "scan-zero", "event", "help", "unused" };
 
 	/// <summary>
 	/// The messages OpenTPW posts: the forecasts and the letters (P1), the unread mail, the window help of the tag tube, mission and wage windows, the mission controller's advice, the mission
-	/// window's close advice and the lost challenge's second post (P4).
+	/// window's close advice and the lost challenge's second post (P4); the staff's, the research completion's, the bank's, the strikes', the rides' and mechanics', the special rides' and the
+	/// cutscene's advice (P5).
 	/// </summary>
-	private static readonly int[] Wired = { 0x154, 0x157, 0x15A, 0x15B, 0x1A2, 0x1A3, 0x198, 0x15D, 0x1AF, 0x1B0, 0x1B1, 0x1B6, 0x277, 0x1FA, 0x19B, 0x172, 0x1EB, 0x1EC,
-		0x1ED, 0x1EE, 0x173, 0x21D, 0x1A4, 0x26C };
+	private static readonly int[] Wired = new[] { 0x154, 0x157, 0x15A, 0x15B, 0x1A2, 0x1A3, 0x198, 0x15D, 0x1AF, 0x1B0, 0x1B1, 0x1B6, 0x277, 0x1FA, 0x19B, 0x172, 0x1EB, 0x1EC,
+		0x1ED, 0x1EE, 0x173, 0x21D, 0x1A4, 0x26C,
+		0x1C8, 0x175, 0x1C9, 0x1C7, 0x1E3, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x11B, 0x176, 0x18C, 0x66, 0xDB, 0x40, 0x41, 0x42, 0x43, 0x1E7, 0x21F, 0x26D }
+		.Concat( Enumerable.Range( 0x22, 0x18 ) ).Concat( Enumerable.Range( 0x1D1, 6 ) ).Concat( Enumerable.Range( 0x1DD, 6 ) ).ToArray();
 
 	private static readonly Regex MessageRow = new(
 		@"^\s*\{ message = 0x([0-9a-f]+), kind = ""([^""]*)"", status = ""([^""]*)"", evidence = ""([^""]*)"", producer = ""([^""]*)"" \},?\s*$", RegexOptions.CultureInvariant );
@@ -128,6 +132,9 @@ public sealed class ThemeParkIncAdvisorProducerTests
 				Assert.IsNotNull( response, $"message 0x{message:X} response {row.Response + variant}" );
 				// the speech refuses the level bank and the presenter's voices (the mission panel's 0x223 to 0x234 have them, so they stay gated)
 				Assert.IsFalse( response.Value.LevelBank || ThemeParkIncAdviceResponse.PresenterGroup( response.Value.Voice ) >= 0, $"message 0x{message:X}" );
+				// a caption's tag has its record, so the tag system files its row as the original's does (0x637000)
+				Assert.IsTrue( response.Value.Tag == ThemeParkIncAdviceResponse.NoTag || ThemeParkIncAdviceTag.For( response.Value.Tag ) != null,
+					$"message 0x{message:X} response {row.Response + variant}: tag {response.Value.Tag} has a record" );
 			}
 		}
 		Assert.AreEqual( "help", inventory[0x1AF].Kind );

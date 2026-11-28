@@ -170,7 +170,7 @@ public sealed class ThemeParkIncAdvisorSenderTests : ThemeParkIncScienceTestBase
 		CollectionAssert.AreEqual( new[] { 0x23A, 0x25D, 0x246, 0x266, 0x256 },
 			Enumerable.Range( 2, 5 ).Select( sender => ThemeParkIncChallenges.SenderAdvice( sender, ThemeParkIncChallenges.TimeOutCancelWord ) ).ToArray(), "word 4, which the time-out cancels (0x5C216E)" );
 		foreach ( var sender in new[] { 0, 1, 7, 8, 9 } )
-			Assert.ThrowsException<NotSupportedException>( () => ThemeParkIncChallenges.SenderAdvice( sender ), $"sender {sender}" );
+			Assert.ThrowsException<InvalidOperationException>( () => ThemeParkIncChallenges.SenderAdvice( sender ), $"sender {sender}" );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => ThemeParkIncChallenges.SenderAdvice( 2, 2 ) );
 	}
 

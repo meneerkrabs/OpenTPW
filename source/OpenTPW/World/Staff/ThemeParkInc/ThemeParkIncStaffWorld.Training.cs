@@ -137,15 +137,17 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// <summary>
 	/// State 8's tick (<c>0x62AA50</c>): the training's progress; at its end the advisor's line, the finish (message 0x2B, the room, state 0), the reward and a look for work.
 	/// </summary>
-	// [BIN:TPI-EXE:0x62AA50 training tick] ThemeParkIncTraining.Tick; the end: the advisor text 0x175 with the new ability (0x4313D0, 0x71A930, 0x718820), 0x62AB90, ThemeParkIncTraining.Reward, the staff panel's
-	// refresh 0x54D660 (presentation), then 0x62D810
+	// [BIN:TPI-EXE:0x62AA50 training tick] ThemeParkIncTraining.Tick; the end: the advice 0x175 (0x62AAAC: 0x71A930(0x175, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820; the new ability pushed
+	// below the locate word is overwritten by 0x4313D0(0)), 0x62AB90, ThemeParkIncTraining.Reward, the mission status refresh 0x54D660 (0x62AB36: its requirements-met advice), then 0x62D810
 	private void UpdateTraining( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		if ( !ThemeParkIncTraining.Tick( member, settings ) )
 			return;
 		Notice( new ThemeParkIncTrainingNotice( member, true, member.Ability ) );
+		economy.PostThemeParkIncAdvice( 0x175 );
 		FinishTraining( economy, member, turn );
 		ThemeParkIncTraining.Reward( member, settings );
+		economy.ThemeParkIncMissionStatusAdvice();
 		LookForWork( economy, settings, member, turn );
 	}
 
@@ -176,7 +178,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	/// the room is shown again, the advisor's line and the letter go out, and he is set idle and looks for work.
 	/// </summary>
 	// [BIN:TPI-EXE:0x62E7A0 training cancel] +0x220 == 0: "Not learning..." and return; ab = +0x220, +0x220 = 0 (+0x224 kept); a training room: its script variable 0 -= 1; state 8: 0x5D1000(3, ...); the
-	// advisor text 0x1C9 (0x5AEF20, 0x64EA00, 0x718820); message 0x19 with the letter 0x5CEFB0(0xD, member, ab); 0x628180(0); 0x62D810
+	// advice 0x1C9 (0x62E892: 0x71A930(0x1C9, locate 0, 0, variant -1, bypass 0, score -1), 0x5AEF20, 0x64EA00 -> 0x718820); message 0x19 with the letter 0x5CEFB0(0xD, member, ab); 0x628180(0); 0x62D810
 	internal void CancelTraining( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		if ( member.LearningAbility == 0 )
@@ -188,6 +190,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( member.State == ThemeParkIncTraining.Training )
 			ShowAgain( member );
 		Notice( new ThemeParkIncTrainingNotice( member, false, ability ) );
+		economy.PostThemeParkIncAdvice( 0x1C9 );
 		economy.FileThemeParkIncTrainingLetter( member, finished: false, ability );
 		SetState( economy, member, Idle, turn );
 		LookForWork( economy, economy.TpiStaff!.Settings, member, turn );

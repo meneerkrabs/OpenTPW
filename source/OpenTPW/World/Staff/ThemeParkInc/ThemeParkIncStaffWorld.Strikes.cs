@@ -66,7 +66,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		_ = economy.World.NextWord();
 		var staff = economy.TpiStaff!;
 		if ( !economy.IsParkOpen && economy.ThemeParkIncGuestsInPark == 0 && staff.EndStrike( member.Role, quiet: false ) is { } over )
-			economy.TpiStrikeMessages.Add( over );
+			economy.ThemeParkIncStrikeMessage( over );
 		if ( staff.OnStrike( member.Role ) )
 			return;
 		var entrance = staff.Settings.EntranceA;

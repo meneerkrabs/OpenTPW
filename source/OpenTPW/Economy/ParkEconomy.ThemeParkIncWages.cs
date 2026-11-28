@@ -7,37 +7,12 @@ public sealed partial class ParkEconomy
 	public const int ThemeParkIncWageDemandAdvice = 0x1C8;
 
 	/// <summary>
-	/// The advisor messages the staff posted since the client last took them: the wage demand's <see cref="ThemeParkIncWageDemandAdvice"/>. Theme Park Inc's advisor queue takes only the forecasts and the letters so far, so the
-	/// client notes them (<c>[EXT:tpi-capability-gates]</c>).
-	/// </summary>
-	internal List<int> TpiStaffAdvice { get; } = new();
-
-	/// <summary>The strike messages (type 0x17) the staff HQ and the strikers posted since the client last took them; their only listener is the advisor (<c>0x7176E0</c>), which does not say them.</summary>
-	internal List<ThemeParkIncStaff.StrikeMessage> TpiStrikeMessages { get; } = new();
-
-	/// <summary>The staff's advisor messages since the last call, oldest first.</summary>
-	internal IReadOnlyList<int> TakeThemeParkIncStaffAdvice()
-	{
-		var taken = TpiStaffAdvice.ToArray();
-		TpiStaffAdvice.Clear();
-		return taken;
-	}
-
-	/// <summary>The strike messages since the last call, oldest first.</summary>
-	internal IReadOnlyList<ThemeParkIncStaff.StrikeMessage> TakeThemeParkIncStrikeMessages()
-	{
-		var taken = TpiStrikeMessages.ToArray();
-		TpiStrikeMessages.Clear();
-		return taken;
-	}
-
-	/// <summary>
-	/// The day's wage demands, in the members' handle order: the member's older demand rows go, the advisor's message 0x1C8 is posted and the tag system files the demand's row (unread).
+	/// The day's wage demands, in the members' handle order: the member's older demand rows go, the advisor's advice 0x1C8 is posted and the tag system files the demand's row (unread).
 	/// </summary>
 	// [BIN:TPI-EXE:0x628D4F demand filed] 0xAA07F4 = the day; 0x6375C0 (the handle), 0x64EA60 (the tag system) and 0x636C90(0x90, handle): the member's unflagged rows of tag 0x90 are flagged; the
 	// advisor message 0x1C8 (0x71A930, 0x64EA00 -> 0x718820); the grievance and the age give the kind; new(0x2C), 0x5CEFB0(kind, member, +0x270) and 0x435DC0 posts it as the type-0x19 letter,
 	// which the tag system files at once (0x436DD0 -> 0x637970 case 0xC -> 0x635D80); then +0x26C = +0x270 = 0 (ThemeParkIncStaff.EndDay)
-	// [EXT:tpi-capability-gates] the message 0x1C8 is noted, not posted: the advisor's queue (ThemeParkIncAdvisor) takes the forecasts and the letters so far; the staff senders come with P5
+	// [BIN:TPI-EXE:0x628D93 wage demand advice] 0x71A930(0x1C8, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820 on the world's advisor thing, between the rows' flag and the letter
 	internal void FileThemeParkIncWageDemands( IEnumerable<ThemeParkIncStaff.WageDemand> demands )
 	{
 		foreach ( var demand in demands )
@@ -46,7 +21,7 @@ public sealed partial class ParkEconomy
 			if ( demand.Member.ThingId == 0 )
 				continue;
 			TpiTagTube?.DeleteTagged( ThemeParkIncTagLetter.WageDemandTag, (ushort)demand.Member.ThingId );
-			TpiStaffAdvice.Add( ThemeParkIncWageDemandAdvice );
+			PostThemeParkIncAdvice( ThemeParkIncWageDemandAdvice );
 			FileThemeParkIncLetter( ThemeParkIncTagLetter.WageDemand( demand.Type, demand.Member.ThingId, demand.Shortfall, Turn ) );
 		}
 	}
@@ -148,12 +123,12 @@ public sealed partial class ParkEconomy
 	/// The staff HQ's month message (<c>0x632C20</c>): every role's strike is considered (a strike ends, a grievance escalates); the messages go to the advisor.
 	/// </summary>
 	// [BIN:TPI-EXE:0x632C20 strike month] the staff HQ is thing 1 of the prebuilt park, so it hears the month message (0x0C) before the analyser (5), the bank (9) and the members (their reviews change
-	// the meters the grievance reads); [EXT:tpi-capability-gates] the messages (type 0x17, 0x435CA0 posted by 0x436DD0) reach only the advisor's listener 0x7176E0, whose speech is not ported: the client
-	// notes them
+	// the meters the grievance reads); the messages (type 0x17, 0x435CA0 posted by 0x436DD0) reach only the advisor's listener 0x7176E0, at once (ThemeParkIncStrikeMessage)
 	internal void ConsiderThemeParkIncStrikes()
 	{
 		if ( TpiStaff is not { } staff )
 			return;
-		TpiStrikeMessages.AddRange( staff.ConsiderStrikes( Turn ) );
+		foreach ( var message in staff.ConsiderStrikes( Turn ) )
+			ThemeParkIncStrikeMessage( message );
 	}
 }

@@ -142,17 +142,18 @@ public class ThemeParkIncCutsceneTests
 	public void TheClockRateFollowsTheModeAndTheLakeAsksForItsPanel()
 	{
 		var flights = ScienceFlights();
-		var cutscene = new ThemeParkIncCutscene( _ => { } ) { World = flights };
+		var posted = new List<int>();
+		var cutscene = new ThemeParkIncCutscene( _ => { } ) { World = flights, PostAdvice = posted.Add };
 		Assert.IsTrue( cutscene.Play( 30, 1, ThemeParkIncCutscene.IntroMode ) );
 		Assert.AreEqual( (double)0.7f, cutscene.ClockRate );
 		Assert.IsFalse( cutscene.Skippable );
-		CollectionAssert.AreEqual( new[] { 0x26D }, cutscene.PanelRequests, "the 1703 lake's start opens panel 0x26D" );
+		CollectionAssert.AreEqual( new[] { 0x26D }, posted, "the 1703 lake's start posts the advice 0x26D" );
 		cutscene.ForceSkip();
 		cutscene.Update();
 		Assert.IsNull( cutscene.ClockRate );
 		Assert.IsTrue( cutscene.Play( 29, 1, 0 ) );
 		Assert.AreEqual( 1.0, cutscene.ClockRate );
-		Assert.AreEqual( 1, cutscene.PanelRequests.Count );
+		Assert.AreEqual( 1, posted.Count );
 		var headless = new ThemeParkIncCutscene( _ => { } );
 		Assert.IsTrue( headless.Play( 5, 1, 0 ), "without a world the flight keeps its state" );
 		headless.Update();
@@ -278,7 +279,7 @@ public class ThemeParkIncCutsceneTests
 		// message 0x24 (the remove button or the window's complete button): state 2, the camera on the lake with its clip 2, panel 0x26D
 		missions.RemoveObstacle( world.CurrentObstacle );
 		Assert.AreEqual( (ThemeParkIncMissionState.ObstacleRemoved, (ushort)30, 2), (missions.State, cutscene.AnimThing, flights.ScriptOf( 30 )!.Variables[0]) );
-		CollectionAssert.AreEqual( new[] { 0x26D }, cutscene.PanelRequests );
+		Assert.IsTrue( economy.TpiAdvisor!.Queue.Any( slot => slot.Valid && slot.Message == 0x26D ), "the lake's start posted 0x26D" );
 		for ( var elapsed = 0.0; cutscene.Flying && elapsed < 60; elapsed += Step )
 		{
 			flights.Simulate( Step );

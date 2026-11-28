@@ -328,7 +328,7 @@ public sealed class ThemeParkIncResearch
 
 	/// <summary>The lab's active flag (<c>0x61E4E0</c>): the park has researchers. True when it changed.</summary>
 	// [BIN:TPI-EXE:0x61E4E0 lab active] park+0x1EAB84 (the first researcher) != 0 -> 0x61E320 (0 -> 1 and message 0x435AF0(5)) else 0x61E400 (1 -> 0 and message 6); called by both researcher constructors
-	// and the removal 0x61B520; messages 5 and 6 reach the advisor, whose reaction is not ported
+	// and the removal 0x61B520; messages 5 and 6 (kind 0x13) reach the advisor, whose handler (0x7190A0, byte table 0x7191FC) does nothing for them
 	public bool UpdateLabActive( bool hasResearchers )
 	{
 		if ( LabActive == hasResearchers )

@@ -25,13 +25,11 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		return ThemeParkIncAdvisorTable.Parse( rain.Replace( text, $"${1}group = {group}${2}duplicates = {limit}${3}count = {count}, variant = {rule}", 1 ) );
 	}
 
-	private static ThemeParkIncAdvisorSettings Settings( int group = 0, uint first = 0, uint second = 0, uint third = 0, uint later = 0, bool once = false, int slaps = 0, int minimum = 10 ) =>
-		ThemeParkIncAdvisorSettings.Reset with
-		{
-			MinimumScore = minimum,
-			Groups = Enumerable.Range( 0, ThemeParkIncAdvisorSettings.GroupCount )
-				.Select( index => index == group ? new ThemeParkIncAdvisorGroup( first, second, third, later, once, slaps ) : default ).ToArray()
-		};
+	private static ThemeParkIncAdvisorSettings Settings( int group = 0, uint first = 0, uint second = 0, uint third = 0, uint later = 0, bool once = false, int slaps = 0, int minimum = 10,
+		int panelDelay = 0 ) =>
+		ThemeParkIncAdvisorSettings.Bind( System.Text.Encoding.ASCII.GetBytes( $"GeneralAdvisor.MinScoreForConsideration {minimum}\nGeneralAdvisor.UIPanelDelay {panelDelay}\n"
+			+ $"MessageGroups[{group}].MinTimeSameMessage1 {first}\nMessageGroups[{group}].MinTimeSameMessage2 {second}\nMessageGroups[{group}].MinTimeSameMessage3 {third}\n"
+			+ $"MessageGroups[{group}].MinTimeSameMessageX {later}\nMessageGroups[{group}].SayOnlyOnce {(once ? 1 : 0)}\nMessageGroups[{group}].DiscardAfterSlaps {slaps}\n" ) );
 
 	private static ThemeParkIncCareer Career() => new( new TestCareerFiles(), TestCareerFiles.ShippedFiringLines );
 
@@ -272,7 +270,7 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 	public void ADelayedHelpMessageIsPostedOnceThePanelDelayHasPassed()
 	{
 		var career = Career();
-		var advisor = new ThemeParkIncAdvisor( Settings() with { PanelDelay = 3_000 }, ThemeParkIncAdvisorTable.Shipped );
+		var advisor = new ThemeParkIncAdvisor( Settings( panelDelay: 3_000 ), ThemeParkIncAdvisorTable.Shipped );
 		advisor.PostDelayed( Rain );
 		UpdateAt( advisor, 12, career, default, _ => 0 );
 		Assert.IsTrue( advisor.DelayedFromPanel, "2976 ms of the 3000 have passed" );

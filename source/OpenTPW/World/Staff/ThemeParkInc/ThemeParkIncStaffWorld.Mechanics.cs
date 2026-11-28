@@ -89,7 +89,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x5DA650 to the ride] the claimant 0x5E37F0 of table[+0x5D8] against his thing id (0x6375C0): another one logs "UNUSUAL INCIDENT!! Mechanic: didn't get to breakdown in time,
 	// someone else assigned", +0x5D8 = 0 and the search (0x5DA740); the walk step 0x60B440: 1 returns, 2 clears +0x5D8 and searches, 0 with the ride in state 1 (0x5E3950) or 2 (0x5E3B90) or its
 	// request +0x78 set (0x5E3B70) sets 22 (0x5DA6DF), else "Arrived at ride but it's not broken down" and the search with +0x5D8 kept (0x5DA749); the thought request 0x1D (0x638960) and, after
-	// the setter, the clearing of the advisor's queued notices 6..9 about the ride (0x64EA60 -> 0x636D10) are presentation ([EXT:tpi-capability-gates]: the advisor's other messages)
+	// the setter (presentation) and [BIN:TPI-EXE:0x5DA6E8 ride notices cleared] after the setter the tag system's rows of tags 6, 7, 8 and 9 keyed by the ride (+0x5D8) are flagged (0x64EA60 ->
+	// 0x636D10(4, {6, 7, 8, 9}, ride)): the captions of the advice 0x40, 0x41 and 0x42 about it
 	private void UpdateToRide( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		var claimant = economy.TryGetObject( member.RideId, out var ride ) ? Claimant( economy, ride, turn ) : 0;
@@ -111,6 +112,7 @@ public sealed partial class ThemeParkIncStaffWorld
 		if ( ParkEconomy.ObjectState( ride ) is RideObjectStates.BrokenDown or RideObjectStates.Upgrading || ride.MaintenanceRequested )
 		{
 			SetState( economy, member, Repairing, turn );
+			economy.DeleteThemeParkIncRideNotices( ride );
 			return;
 		}
 		Search( economy, member, turn );
@@ -147,7 +149,7 @@ public sealed partial class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x5DA3D0 mechanic search] 0x62BBA0 nonzero returns; tired (0x62B3B0, "Too tired to fix rides") goes to the tail; +0x5D8 = the finder 0x5DAAD0 (on the HQ thing of the world word
 	// +0x1EAB4E, 0x64E9A0) whatever follows; 0 goes to the tail; the patrol-area test 0x62C6B0 false goes to the tail silently; "Mechanic: found a ride that needs repairing"; the route 0x62EAC0 to
 	// the ride's entrance word +0x46 (0x62EAC0 turns the word into the cell bytes with the point 0x80, 0x80 and calls the staff route 0x62EB10: StaffRoute) failing logs "couldn't reach broken ride" and goes to the tail; else the claim 0x5E3780; a ride neither requested
-	// (0x5E3B70) nor upgrading (0x5E3B90) posts advice 0x43 (not posted: [EXT:tpi-capability-gates], the advisor's other messages; it draws nothing); a ride not in state 1 (0x5E3950), not
+	// (0x5E3B70) nor upgrading (0x5E3B90) posts advice 0x43 (ParkEconomy.ThemeParkIncMechanicClaimAdvice; it draws nothing); a ride not in state 1 (0x5E3950), not
 	// requested and below its line (0x5E28A0) gets the request 0x5E3400(1); then the setter 0x5DA150(0x15); the tail: the patrol destination 0x609F70 sets 1, none ("Couldn't even move to random
 	// dest") sets 0
 	private void SearchMechanic( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
@@ -163,6 +165,8 @@ public sealed partial class ThemeParkIncStaffWorld
 				&& ObjectCells?.Invoke( found ) is { Entrance: { } entrance } && StaffRoute( economy, member, entrance, GuestWander.CentreByte, GuestWander.CentreByte ) )
 			{
 				economy.ClaimThemeParkInc( ride, member.ThingId, turn );
+				if ( !ride.MaintenanceRequested && ParkEconomy.ObjectState( ride ) != RideObjectStates.Upgrading )
+					economy.ThemeParkIncMechanicClaimAdvice( ride );
 				if ( ParkEconomy.ObjectState( ride ) != RideObjectStates.BrokenDown && !ride.MaintenanceRequested && economy.BelowThemeParkIncRepairLine( ride ) )
 					economy.RequestThemeParkIncMaintenance( ride );
 				SetState( economy, member, ToRide, turn );

@@ -31,11 +31,24 @@ public sealed partial class ThemeParkIncHud
 		CloseHudWindow();
 		ThemeParkIncTagTubeWindow? window = null;
 		var addressee = strings.Entry( ThemeParkIncText.NewPlayer );
-		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee, MemberName ),
+		window = new ThemeParkIncTagTubeWindow( strings, new TagTubeWorld( economy ), tagTubeSession, row => ThemeParkIncTagTubeLetters.Compose( row, TextsOrLanguage, strings, addressee, MemberName,
+			AdviceName ),
 			() => RemoveTagTube( window ), RunTubeGoto ) { Advice = economy.TpiWindowAdvice };
 		TagTubeWindow = window;
 		Stack.Push( window.Build() );
 		return true;
+	}
+
+	/// <summary>
+	/// The name an advice row's body takes: a ride's (formatter 2, the row's key is its thing) or a type's (formatter 3, the go-to argument), as the park has them now; empty when the park has none.
+	/// </summary>
+	private string AdviceName( ThemeParkIncTagTubeRow row )
+	{
+		if ( level.Park?.Economy is not { } economy || ThemeParkIncAdviceTag.For( row.Argument ) is not { } tag )
+			return "";
+		if ( tag.Formatter == ThemeParkIncAdviceTag.ThingNameBody )
+			return level.Objects.Objects.FirstOrDefault( item => !item.IsDeleted && item.ThingId == row.Key )?.Name ?? "";
+		return economy.Catalog.TryGet( unchecked( (ushort)row.GotoArgument ), out var info ) ? info.Name : "";
 	}
 
 	/// <summary>Closes the tag tube window as the HUD's message 5 does (the shown row is read first).</summary>

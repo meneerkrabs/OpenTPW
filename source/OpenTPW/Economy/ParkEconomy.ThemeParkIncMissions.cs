@@ -75,7 +75,8 @@ public sealed partial class ParkEconomy
 		TpiCutscene = new ThemeParkIncCutscene( ThemeParkIncCameraFinished )
 		{
 			ArrivalEnded = () => TpiMissions?.IntroductionEnded(),
-			ViewedZone = () => new ThemeParkIncMissionHost( this ).ViewedZone
+			ViewedZone = () => new ThemeParkIncMissionHost( this ).ViewedZone,
+			PostAdvice = message => PostThemeParkIncAdvice( message )
 		};
 	}
 
@@ -249,6 +250,9 @@ public sealed partial class ParkEconomy
 			economy.TpiMissionRevision++;
 			economy.RegisterThemeParkIncObstacleResearch();
 		}
+
+		// [BIN:TPI-EXE:0x5F12DB status advice] the message switch's end and the daily evaluation (0x5EFC7F) call 0x54D660 after the message 0x27 broadcast
+		public void StatusAdvice() => economy.ThemeParkIncMissionStatusAdvice();
 
 		private IThemeParkIncMissionWorld World( string action ) =>
 			economy.TpiMissionWorld ?? throw new InvalidOperationException( $"The mission controller cannot {action} in a park without a world." );

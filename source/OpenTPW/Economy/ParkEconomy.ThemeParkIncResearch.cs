@@ -45,8 +45,11 @@ public sealed partial class ParkEconomy
 	/// </summary>
 	// [BIN:TPI-EXE:0x61DCF9 researched message] 0x43C700(type) (dropped); the career 0x74D740(type); category (+0xC) 5: message 0x23 with the current obstacle (0x4360C0(park+0x1EAB6E), 0x61DD86) to the queue;
 	// then the level project 0x61FE70
+	// [BIN:TPI-EXE:0x436DD0 message 0x11 listeners] the dispatcher calls the kind's listeners in ascending thing handle order: the advisor (thing 3) answers first (ThemeParkIncResearchAdvice), then the analyser
+	// (5) and this handler of the lab (6)
 	private void OnThemeParkIncResearched( int type, int category )
 	{
+		ThemeParkIncResearchAdvice( type, category );
 		TpiCareer?.InformResearched( type );
 		if ( category == 5 )
 			ThemeParkIncObstacleResearched();

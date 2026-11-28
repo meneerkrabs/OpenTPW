@@ -61,9 +61,16 @@ public sealed partial class ParkEconomy
 
 	/// <summary>Message 0x2B's special-ride half (<c>0x623FB0</c>): the member whose training finished takes a slot of a special ride that asks for him.</summary>
 	// [BIN:TPI-EXE:0x6325AA training finished] after the HQ's 0x634B00 the handler calls 0x623FB0 with the member's id; 0x6346C0, the other caller, has no caller of its own (its thunk 0x4019E7 is never called)
-	// [BIN:TPI-EXE:0x6240C4 activation advice] a slot taken whose ride 0x6243C0 now answers true posts the advisor's 0x21F (a type whose object record +0x10 is 0x488) or 0x1E7 (0x71A930 -> 0x718820)
-	// [EXT:tpi-capability-gates] the advice is not posted yet: Theme Park Inc's advisor queue (ThemeParkIncAdvisor) takes the forecasts and letters so far; the other senders come with the advisor's P4/P5
-	internal void ThemeParkIncTrainingFinishedSpecialRides( ThemeParkIncStaffMember member ) => TpiSpecialRides?.Assign( member, OnUnownedLand );
+	// [BIN:TPI-EXE:0x6240C4 activation advice] a slot taken whose ride 0x6243C0 now answers true posts the advisor's 0x21F when the ride's type record (0x5DF6D0) +0x10, its Info.Id, is 0x488 (1160, the
+	// Science water ride), else 0x1E7: 0x71A930(message, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820
+	internal void ThemeParkIncTrainingFinishedSpecialRides( ThemeParkIncStaffMember member )
+	{
+		if ( TpiSpecialRides?.Assign( member, OnUnownedLand ) is { } instance && CanActivateThemeParkIncSpecialRide( instance ) && TryGetObject( instance, out var ride ) )
+			PostThemeParkIncAdvice( ActivationAdvice( ride.InfoId ) );
+	}
+
+	/// <summary>The advice a special ride that can now be activated asks for (<c>0x6240E5</c>): <c>0x21F</c> for the Science water ride (Info.Id 1160), <c>0x1E7</c> for any other.</summary>
+	public static int ActivationAdvice( int infoId ) => infoId == 0x488 ? 0x21F : 0x1E7;
 
 	/// <summary>The staff HQ's release's special-ride half (<c>0x6241B0</c>, from <c>0x634730</c> for a member with an ability): he leaves the special-ride slot he fills.</summary>
 	internal void ThemeParkIncReleaseSpecialRides( ThemeParkIncStaffMember member )

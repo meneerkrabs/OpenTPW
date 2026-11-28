@@ -78,8 +78,11 @@ public sealed class ThemeParkIncCutscene
 	/// <summary>The zone switches the 1750 gate's end asked for (<c>0x6A26B0(2, 0)</c>), which a later package performs. Not saved.</summary>
 	public List<int> ZoneSwitchRequests { get; } = new();
 
-	/// <summary>The panels the flight asked for (0x26D at the 1703 lake's start), for the mission window's package. Not saved.</summary>
-	public List<int> PanelRequests { get; } = new();
+	/// <summary>
+	/// Posts an advice to the world's advisor thing (<c>0x71A930</c>, <c>0x64EA00</c> -> <c>0x718820</c>): the 1703 lake's start posts <c>0x26D</c> with the flight already playing. Null: a cutscene without
+	/// an advisor posts nothing.
+	/// </summary>
+	public Action<int>? PostAdvice { get; set; }
 
 	/// <summary>Called at a mode-2 end before message 0x29: the mission controller's <c>0x5F1760</c> (the first briefing after the intro).</summary>
 	public Action? ArrivalEnded { get; set; }
@@ -96,7 +99,8 @@ public sealed class ThemeParkIncCutscene
 	// kept in +0x18/+0x1C/+0x20; +0x24 = mode; mode 1: fog (550, 599), 0xBE2104 = 600, rate 0.7 (float 0x3F333333); mode 2: fog (135, 150), 0xBE2104 = 450, 0xA9D255 = 1, rate 1.0; else fog (135, 150), 450, rate 1.0;
 	// 0xA03BC0's rate set (0x41C000) with the speed word kept in 0xA9D256 and 0xA10210 = 100 ("It was: %f", "It is now: %f"); the interface locked (0x50AF20, 0x503BA0, 0x7BAE30), the input window
 	// 0x84BE91(1, 1, 0xB71B07, 0, 0, 0x7FF, 0x5FF) in +0x28 with the procedure 0x5D03B0 when skippable; "playing anim %d"; 0x6B0780(0x6B0740(thing+0x2C), 0, trigger); the 1703 lake (0x647850(0x6A7) == thing) opens
-	// panel 0x26D; returns true
+	// [BIN:TPI-EXE:0x5D0671 lake advice] the advice 0x26D: 0x71A930(0x26D, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820 after 0xA9D230 and +0x24 are set, so its class 6 is scored against this
+	// flight; returns true
 	public bool Play( ushort thing, int trigger, int mode )
 	{
 		if ( AnimThing != 0 )
@@ -123,7 +127,7 @@ public sealed class ThemeParkIncCutscene
 		Log?.Trace( $"playing anim {trigger}" );
 		SetVariable( World?.ScriptOf( thing ), 0, trigger );
 		if ( World?.TypeOf( thing ) == 1703 )
-			PanelRequests.Add( 0x26D );
+			PostAdvice?.Invoke( 0x26D );
 		return true;
 	}
 

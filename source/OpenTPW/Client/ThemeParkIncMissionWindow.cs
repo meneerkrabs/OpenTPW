@@ -579,13 +579,15 @@ internal sealed class ThemeParkIncMissionWindow
 	internal void CloseFromHud() => Close();
 
 	// [BIN:TPI-EXE:0x55BB0A close] message 5 and every button that closes (and the tick's rebuild, 0x55BC1D): 0x85049F(window, 4), whose destroy (message 0x14, 0x55BB48) cancels the help
-	// 0x503B40(0x1B6), 0x503B40(0x277) and the mission's own advice 0x718990(0x93CE1C[career +0x105C]); then 0x501CD0(0) and 0x71A930(0x1FA, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820
+	// 0x503B40(0x1B6), 0x503B40(0x277) and the mission's own advice 0x718990(0x93CE1C[career +0x105C]), then 0x7BAE30 (presentation) and [BIN:TPI-EXE:0x55BBC6 window status advice] the mission status
+	// refresh 0x54D660; then 0x501CD0(0) and 0x71A930(0x1FA, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820
 	private void Close()
 	{
 		close();
 		Advice?.CancelHelp( HelpMessage );
 		Advice?.CancelHelp( DelayedHelpMessage );
 		Advice?.Cancel( PanelAdvice( Career.MissionCounter ) );
+		Advice?.MissionStatus();
 		Advice?.Post( ClosedMessage );
 	}
 }

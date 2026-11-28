@@ -12,14 +12,14 @@ public readonly record struct ThemeParkIncAdvisorGroup( uint First, uint Second,
 }
 
 /// <summary>
-/// The advisor scorer's <c>Advisor.sam</c> controls: <c>GeneralAdvisor</c> and the ten <c>MessageGroups</c> the queue reads, and every other word of the scorer, which the score callbacks read
-/// (<see cref="Word"/>), bound through the executable's own schema (<c>content/data/tpi-advisor-schema.toml</c>) and parser (<see cref="ThemeParkIncSamObject"/>), with its reset defaults for a
-/// key the file does not set (the shipped file has no group 8, whose words stay 0).
+/// The advisor scorer's <c>Advisor.sam</c> words, bound through the executable's own schema (<c>content/data/tpi-advisor-schema.toml</c>) and parser (<see cref="ThemeParkIncSamObject"/>), with its
+/// reset defaults for a key the file does not set (the shipped file has no group 8, whose words stay 0): <c>GeneralAdvisor</c> and the ten <c>MessageGroups</c> the queue reads, and every
+/// other word, which the score callbacks read (<see cref="Word"/>). Every control is read from the bound words, so an instance is immutable and two instances are equal when their words are.
 /// </summary>
 // [BIN:TPI-EXE:0x71B6B0 scorer constructor] the scorer at 0xC65220 binds its SAM object at +0xC (0x418F60, schema 0x97C180) and loads "Advisor\Advisor.sam" with 0x419B20(path, 0); a failure
 // is logged and the reset values stay. Slot n is the scorer's +0x14 + 4n: +0x18 MinTimeAnyMessage, +0x20 MinScoreForConsideration, +0x24 UIPanelDelay, +0x28 UISelectionModeMessageFilter,
 // MessageGroups[g] from +0x2C with six words per group (count dword +0x11C), then GroupTimes and the condition keys (HelpMessage.Score +0x49C, TutorialUIPanel.Score +0x770, ...)
-public sealed record ThemeParkIncAdvisorSettings( int MinimumScore, int PanelDelay, int SelectionModeFilter, IReadOnlyList<ThemeParkIncAdvisorGroup> Groups )
+public sealed class ThemeParkIncAdvisorSettings : IEquatable<ThemeParkIncAdvisorSettings>
 {
 	public const string Path = "/Advisor/Advisor.sam";
 	public const string SchemaPath = "content/data/tpi-advisor-schema.toml";
@@ -27,21 +27,14 @@ public sealed record ThemeParkIncAdvisorSettings( int MinimumScore, int PanelDel
 	/// <summary>The schema's records before its end record (<c>0x97C180</c>).</summary>
 	public const int SchemaRecords = 1006;
 
-	// the leading records the queue reads, which a missing schema file falls back to
-	private static readonly ThemeParkIncSamRecord[] Prefix =
-	{
-		new( ThemeParkIncSamKind.StructBegin, "" ), new( ThemeParkIncSamKind.NonNegativeInt, "MinTimeAnyMessage" ), new( ThemeParkIncSamKind.NonNegativeInt, "MinTimeSameMessage" ),
-		new( ThemeParkIncSamKind.NonNegativeInt, "MinScoreForConsideration" ), new( ThemeParkIncSamKind.Int, "UIPanelDelay" ), new( ThemeParkIncSamKind.Int, "UISelectionModeMessageFilter" ),
-		new( ThemeParkIncSamKind.StructEnd, "GeneralAdvisor" ), new( ThemeParkIncSamKind.ArrayBegin, "" ), new( ThemeParkIncSamKind.NonNegativeInt, "MinTimeSameMessage1" ),
-		new( ThemeParkIncSamKind.NonNegativeInt, "MinTimeSameMessage2" ), new( ThemeParkIncSamKind.NonNegativeInt, "MinTimeSameMessage3" ),
-		new( ThemeParkIncSamKind.NonNegativeInt, "MinTimeSameMessageX" ), new( ThemeParkIncSamKind.IntRange, "SayOnlyOnce", 0, 2 ),
-		new( ThemeParkIncSamKind.NonNegativeInt, "DiscardAfterSlaps" ), new( ThemeParkIncSamKind.ArrayEnd, "MessageGroups", Count: GroupCount ), new( ThemeParkIncSamKind.End, "" )
-	};
-
 	private static readonly Regex SchemaRow = new( @"^\s*\{ kind = (\d+), name = ""([^""]*)""(?:, minimum = (-?\d+), maximum = (-?\d+))?(?:, count = (\d+))? \},?\s*$", RegexOptions.CultureInvariant );
 	private static ThemeParkIncSamRecord[]? schema;
+	private static ThemeParkIncAdvisorSettings? reset;
 
-	/// <summary>The scorer's schema shipped with OpenTPW, loaded on first use; the queue's leading records when the file is missing or damaged.</summary>
+	/// <summary>
+	/// The scorer's schema shipped with OpenTPW, loaded on first use. A missing or damaged file is refused (<see cref="InvalidDataException"/>): without it the score callbacks that read a scorer
+	/// word could not be answered, so no Theme Park Inc advisor is built.
+	/// </summary>
 	public static IReadOnlyList<ThemeParkIncSamRecord> Schema => schema ??= LoadSchema();
 
 	private static ThemeParkIncSamRecord[] LoadSchema()
@@ -53,8 +46,8 @@ public sealed record ThemeParkIncAdvisorSettings( int MinimumScore, int PanelDel
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 		{
-			Log.Warning( $"Theme Park Inc advisor schema unavailable ({path}): {exception.Message}; only the queue's keys are bound." );
-			return Prefix;
+			Log.Error( $"Theme Park Inc advisor schema unavailable ({path}): {exception.Message}" );
+			throw new InvalidDataException( $"The Theme Park Inc advisor's Advisor.sam schema ({SchemaPath}) is missing or damaged: {exception.Message}", exception );
 		}
 	}
 
@@ -89,10 +82,33 @@ public sealed record ThemeParkIncAdvisorSettings( int MinimumScore, int PanelDel
 		return records.ToArray();
 	}
 
-	private IReadOnlyList<int> words = Array.Empty<int>();
+	// the SAM object's words: slot n (object +8 + 4n) is the scorer's +0x14 + 4n
+	private readonly int[] words;
+
+	private ThemeParkIncAdvisorSettings( int[] words )
+	{
+		this.words = words;
+		var groups = new ThemeParkIncAdvisorGroup[GroupCount];
+		for ( var group = 0; group < GroupCount; group++ )
+		{
+			var at = 0x2C + 24 * group;
+			groups[group] = new( unchecked( (uint)Word( at ) ), unchecked( (uint)Word( at + 4 ) ), unchecked( (uint)Word( at + 8 ) ), unchecked( (uint)Word( at + 0xC ) ),
+				Word( at + 0x10 ) != 0, Word( at + 0x14 ) );
+		}
+		Groups = Array.AsReadOnly( groups );
+	}
+
+	/// <summary><c>GeneralAdvisor.MinScoreForConsideration</c> (<c>+0x20</c>).</summary>
+	public int MinimumScore => Word( 0x20 );
+	/// <summary><c>GeneralAdvisor.UIPanelDelay</c> (<c>+0x24</c>).</summary>
+	public int PanelDelay => Word( 0x24 );
+	/// <summary><c>GeneralAdvisor.UISelectionModeMessageFilter</c> (<c>+0x28</c>).</summary>
+	public int SelectionModeFilter => Word( 0x28 );
+	/// <summary><c>MessageGroups[g]</c> (<c>+0x2C + 24·g</c>).</summary>
+	public IReadOnlyList<ThemeParkIncAdvisorGroup> Groups { get; }
 
 	/// <summary>The settings of a scorer whose file did not load: every word 0.</summary>
-	public static readonly ThemeParkIncAdvisorSettings Reset = Bind( null );
+	public static ThemeParkIncAdvisorSettings Reset => reset ??= Bind( null );
 
 	/// <summary>The mounted game's file, or the reset values when no game data is mounted or the file is missing.</summary>
 	public static ThemeParkIncAdvisorSettings Load()
@@ -113,34 +129,30 @@ public sealed record ThemeParkIncAdvisorSettings( int MinimumScore, int PanelDel
 	{
 		var sam = new ThemeParkIncSamObject( records );
 		sam.Load( file, overlay: false );
-		// the scorer's +0x14 + 4n is the SAM object's +8 + 4n (the object sits at the scorer's +0xC)
-		int Word( int scorerOffset ) => sam[scorerOffset - 0xC];
-		var groups = new ThemeParkIncAdvisorGroup[GroupCount];
-		for ( var group = 0; group < GroupCount; group++ )
-		{
-			var at = 0x2C + 24 * group;
-			groups[group] = new( unchecked( (uint)Word( at ) ), unchecked( (uint)Word( at + 4 ) ), unchecked( (uint)Word( at + 8 ) ), unchecked( (uint)Word( at + 0xC ) ),
-				Word( at + 0x10 ) != 0, Word( at + 0x14 ) );
-		}
-		return new ThemeParkIncAdvisorSettings( Word( 0x20 ), Word( 0x24 ), Word( 0x28 ), groups ) { words = sam.Words.ToArray() };
+		return new ThemeParkIncAdvisorSettings( sam.Words.ToArray() );
 	}
 
 	/// <summary>
-	/// The scorer's word at <paramref name="scorerOffset"/> (<c>0xC65220 + offset</c>), as a score callback that reads it (<c>mov eax, [ecx + offset]; ret</c>) returns it; the queue's three
-	/// <c>GeneralAdvisor</c> words come from this record's properties.
+	/// The scorer's word at <paramref name="scorerOffset"/> (<c>0xC65220 + offset</c>), as a score callback that reads it (<c>mov eax, [ecx + offset]; ret</c>) returns it.
 	/// </summary>
 	public int Word( int scorerOffset )
 	{
-		switch ( scorerOffset )
-		{
-			case 0x20: return MinimumScore;
-			case 0x24: return PanelDelay;
-			case 0x28: return SelectionModeFilter;
-		}
 		// the SAM object's slot n (object +8 + 4n) is the scorer's +0x14 + 4n
 		var slot = (scorerOffset - 0x14) / 4;
-		if ( scorerOffset % 4 != 0 || slot < 1 || slot >= words.Count )
+		if ( scorerOffset % 4 != 0 || slot < 1 || slot >= words.Length )
 			throw new ArgumentOutOfRangeException( nameof( scorerOffset ), $"Scorer offset {scorerOffset:X} is not a word the schema binds." );
 		return words[slot];
+	}
+
+	public bool Equals( ThemeParkIncAdvisorSettings? other ) => other is not null && words.AsSpan().SequenceEqual( other.words );
+
+	public override bool Equals( object? obj ) => Equals( obj as ThemeParkIncAdvisorSettings );
+
+	public override int GetHashCode()
+	{
+		var hash = new HashCode();
+		foreach ( var word in words )
+			hash.Add( word );
+		return hash.ToHashCode();
 	}
 }

@@ -244,7 +244,7 @@ public sealed class ThemeParkIncAdvisorPresentationTests : ThemeParkIncScienceTe
 	private static ThemeParkIncCareer Career() => new( new TestCareerFiles(), TestCareerFiles.ShippedFiringLines );
 
 	private static ThemeParkIncAdvisor Advisor( IThemeParkIncAdvisorSpeechData speech, uint seed = 1 ) =>
-		new( ThemeParkIncAdvisorSettings.Reset with { MinimumScore = 10 }, ThemeParkIncAdvisorTable.Shipped, speech, seed );
+		new( ThemeParkIncAdvisorSettings.Bind( System.Text.Encoding.ASCII.GetBytes( "GeneralAdvisor.MinScoreForConsideration 10\n" ) ), ThemeParkIncAdvisorTable.Shipped, speech, seed );
 
 	[TestMethod]
 	public void TheDefaultSessionSeedStartsTheStreamWhereTheRuntimeStartsRand()

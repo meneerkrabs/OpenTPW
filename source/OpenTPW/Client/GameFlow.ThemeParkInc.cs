@@ -166,12 +166,6 @@ internal sealed partial class GameFlow
 			// a mail that comes while a letter is open waits for it: what the tag system does with a second notification then is not read (docs/reverse/TPI-BANK-MAIL.md)
 			if ( !hud.LetterOpen && tpiEconomy.TakeTpiMail() is { } mail )
 				PresentThemeParkIncMail( hud, tpiEconomy, mail );
-			// [BIN:TPI-EXE:0x628D93 wage demand advice] the daily routine posts advisor message 0x1C8 with each wage demand; [BIN:TPI-EXE:0x7176E0 strike messages] the HQ's and the strikers' type-0x17
-			// messages reach only the advisor's listener. [EXT:tpi-capability-gates] neither is posted (the staff senders come with P5): they are noted
-			foreach ( var advice in tpiEconomy.TakeThemeParkIncStaffAdvice() )
-				Log.Trace( $"Theme Park Inc staff advice {advice:X} is not said: the advisor's message path is not ported." );
-			foreach ( var message in tpiEconomy.TakeThemeParkIncStrikeMessages() )
-				Log.Trace( $"Theme Park Inc strike message (role {message.Role}, kind {message.Kind}, reason {message.Reason}) is not said: the advisor's message path is not ported." );
 			foreach ( var advice in tpiEconomy.TakeThemeParkIncAdvice() )
 				Log.Trace( $"Theme Park Inc advice {advice.Message:X}: response {advice.Response}." );
 			if ( tpiEconomy.TpiAdvisor is { } tpiAdvisor )

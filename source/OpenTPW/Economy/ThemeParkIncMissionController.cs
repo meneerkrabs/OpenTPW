@@ -63,8 +63,13 @@ public interface IThemeParkIncMissionHost
 	void PostObjectiveLetter( int completed );
 	/// <summary>The first briefing after the zone arrival's flyover (<c>0x5CD6E0(0x5C, 5, 1)</c>).</summary>
 	void PostIntroductionLetter();
-	/// <summary>The controller's status broadcast (message 0x27, then <c>0x54D660</c>).</summary>
+	/// <summary>The controller's status broadcast (message 0x27).</summary>
 	void StatusChanged();
+	/// <summary>
+	/// The mission status refresh (<c>0x54D660</c>) the message switch's end (<c>0x5F12DB</c>) and the daily evaluation (<c>0x5EFC7F</c>) call after message 0x27: its requirements-met advice; a host without
+	/// an advisor ignores it.
+	/// </summary>
+	void StatusAdvice() { }
 	/// <summary>Posts advice <paramref name="message"/> with its descriptor's score to the advisor thing (<c>0x71A930</c>, <c>0x718820</c>); a host without an advisor ignores it.</summary>
 	bool PostAdvice( int message ) => false;
 	/// <summary>Cancels advice <paramref name="message"/> on the advisor thing (<c>0x718990</c>); a host without an advisor ignores it.</summary>
@@ -114,7 +119,8 @@ public sealed class ThemeParkIncMissionController
 	/// </summary>
 	// [BIN:TPI-EXE:0x5EEF60 init exit statistics] for i = 0..4: status +0x20 (zone) == 0x42A340() (the viewed zone, 0xA06558 +0x14) or == 4, and state +0 == 0; then by type (jump table 0x5EF394):
 	// 1 and 2 the bank balance 0x5C0740, 5 the guests 0x5B2060(4), 4 the analyser's 0x5B9880, 3/6/7/8 zero, any other type is not started; 0x74C620(i, 0x6089C0() the clock now, baseline);
-	// then message 0x27 (0x5EF25E), the tech level (0x5EF30B) and panel 0x1E3's byte +8 = 0 (presentation)
+	// then message 0x27 (0x5EF25E), the tech level (0x5EF30B) and [BIN:TPI-EXE:0x5EF367 requirements advice reset] the advisor history entry of 0x1E3 (0x64EA00 -> 0x71B4F0) +8 = 0: the
+	// requirements-met advice 0x1E3 is unplayed again for the new mission, so its callback 0x726F50 scores it and its group's SayOnlyOnce lets it through
 	// [EXT:tpi-capability-gates] type 4's baseline is 0x5B9880 (see Measure), which OpenTPW cannot read exactly: a type-4 statistic is left unstarted and never measured. No shipped mission uses type 4
 	public void InitExitStatistics( long turn )
 	{
@@ -136,7 +142,11 @@ public sealed class ThemeParkIncMissionController
 		}
 		host.StatusChanged();
 		career.RaiseTechLevel();
+		career.SetAdviceHistory( RequirementsMetAdvice, career.AdviceHistory( RequirementsMetAdvice ) with { Played = false } );
 	}
+
+	/// <summary>The requirements-met advice of the missions after the first two (<c>0x1E3</c>, posted by the status refresh <c>0x54D660</c>), whose played byte a new mission clears.</summary>
+	public const int RequirementsMetAdvice = 0x1E3;
 
 	/// <summary>
 	/// The value of exit statistic <paramref name="index"/> as the daily evaluation measures it (<c>0x5EFF00</c>), or null for a type OpenTPW cannot measure (4, last month's takings). Any other
@@ -262,6 +272,7 @@ public sealed class ThemeParkIncMissionController
 					career.SetStatusState( index, 3 );
 			}
 			host.StatusChanged();
+			host.StatusAdvice();
 		}
 	}
 
@@ -415,6 +426,7 @@ public sealed class ThemeParkIncMissionController
 	{
 		ObstacleResearchComplete = true;
 		host.StatusChanged();
+		host.StatusAdvice();
 	}
 
 	/// <summary>Message 0x24 with the obstacle thing <paramref name="thing"/>: the player removes it; the camera flies to it, and its end opens it and completes the mission.</summary>
@@ -433,6 +445,7 @@ public sealed class ThemeParkIncMissionController
 		if ( career.MissionCounter == 1 )
 			host.PostAdvice( 0x21D );
 		host.StatusChanged();
+		host.StatusAdvice();
 	}
 
 	/// <summary>Message 0x25: a promotion to <paramref name="rank"/>.</summary>
@@ -444,12 +457,17 @@ public sealed class ThemeParkIncMissionController
 		var read = career.Promote( rank );
 		host.PostAdvice( 0x1A4 );
 		host.StatusChanged();
+		host.StatusAdvice();
 		return read;
 	}
 
 	/// <summary>Message 0x26: a challenge was won; the controller has no case for it and only broadcasts its status.</summary>
 	// [BIN:TPI-EXE:0x5F0F86 message switch] 0x26 falls to the default of the jump table 0x5F12F4: only the closing 0x27 broadcast (0x5F126B)
-	public void ChallengeWon() => host.StatusChanged();
+	public void ChallengeWon()
+	{
+		host.StatusChanged();
+		host.StatusAdvice();
+	}
 
 	/// <summary>
 	/// Message 0x29, posted at the end of every camera flight: in state 2 or 3 the shown obstacle opens and the mission completes, in state 4 the saved thing is destroyed and the mission completes;
@@ -475,6 +493,7 @@ public sealed class ThemeParkIncMissionController
 		foreach ( var message in FlightCancels )
 			host.CancelAdvice( message );
 		host.StatusChanged();
+		host.StatusAdvice();
 	}
 
 	/// <summary>The advice the end of a camera flight cancels (<c>0x5F11F8</c>..<c>0x5F1266</c>), in that order.</summary>

@@ -139,7 +139,8 @@ public class ThemeParkIncWageTests
 		var row = economy.TpiTagTube.Listed.First();
 		Assert.AreEqual( (ThemeParkIncLetterSource.WageDemand, 0x90, 0x97, 0xE, 25, member.ThingId, 2, 5, false, 0),
 			(row.Source, row.Tag, row.Kind, row.GotoKind, row.GotoArgument, row.Key, row.Category, row.Picture, row.Read, row.ExpiryUnits) );
-		CollectionAssert.AreEqual( new[] { ParkEconomy.ThemeParkIncWageDemandAdvice }, economy.TakeThemeParkIncStaffAdvice().ToArray() );
+		Assert.AreEqual( (10_000, false), economy.TpiAdvisor!.Queue.Where( slot => slot.Valid && slot.Message == ParkEconomy.ThemeParkIncWageDemandAdvice ).Select( slot => (slot.Score, slot.ExplicitScore) ).Single(),
+			"0x628D93: the advice 0x1C8 with its descriptor's score" );
 		Assert.AreSame( member, economy.ThemeParkIncMemberOfRow( row ), "the go-to 0xE opens the window on the row's member" );
 		Assert.IsNull( economy.ThemeParkIncMemberOfRow( ThemeParkIncTagLetter.Introduction( 0 ) ) );
 
@@ -250,7 +251,7 @@ public class ThemeParkIncWageTests
 		economy.ClosePark();
 		world.Update( economy, member, economy.Turn + 1 );
 		Assert.IsFalse( staff.OnStrike( ThemeParkIncStaffRole.Handyman ) );
-		CollectionAssert.AreEqual( new[] { new ThemeParkIncStaff.StrikeMessage( ThemeParkIncStaffRole.Handyman, 5, 0 ) }, economy.TakeThemeParkIncStrikeMessages().ToArray() );
+		Assert.IsTrue( economy.TpiAdvisor!.Queue.Any( slot => slot.Valid && slot.Message == 0x35 ), "the strike's end (role handyman, kind 5) posts 0x34 + 1 (0x719270)" );
 		// 0x62EB10 refuses the entrance cells (47, 17) and (48, 17) of a closed park, so the striker cannot walk back: "couldn't find park entrance" and 0x628180(0)
 		Assert.AreEqual( ThemeParkIncStaffWorld.Idle, member.State );
 	}
@@ -416,12 +417,13 @@ public class ThemeParkIncWageTests
 			(member.Energy, member.Happiness, member.Motivation) = (100f, 100f, staff.Settings.MotivationPercentToStrike + 1);
 			member.Salary = 0;
 		}
-		economy.TakeThemeParkIncStrikeMessages();
+		int StrikeAdvice() => economy.TpiAdvisor!.Queue.Count( slot => slot.Valid && slot.Message is >= 0x22 and <= 0x39 or >= 0x1D1 and <= 0x1D6 or >= 0x1DD and <= 0x1E2 );
+		var before = StrikeAdvice();
 		economy.Advance( ParkCalendar.TickOfTurn( boundary ) - economy.Tick );
 		Assert.IsTrue( members.All( member => ((int)member.Motivation & 0xFF) <= staff.Settings.MotivationPercentToStrike ), "the payday's review lowered the motivation" );
 		Assert.AreEqual( 0, staff.Strikes[(int)ThemeParkIncStaffRole.Handyman].Level, "the HQ (thing 1) considered the meters before the paydays: no grievance yet" );
 		Assert.AreEqual( economy.Turn, staff.Strikes[(int)ThemeParkIncStaffRole.Handyman].Turn, "the month considered the role" );
-		Assert.AreEqual( 0, economy.TakeThemeParkIncStrikeMessages().Count );
+		Assert.AreEqual( before, StrikeAdvice(), "no strike message, so no strike advice" );
 	}
 
 	[TestMethod]

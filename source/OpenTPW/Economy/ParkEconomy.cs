@@ -1190,8 +1190,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( !item.BrokenStatePending )
 			return;
 		item.BrokenStatePending = false;
-		if ( item.StateWord.IsBroken )
-			Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+		if ( !item.StateWord.IsBroken )
+			return;
+		Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+		// [BIN:TPI-EXE:0x5E5160 set state] Theme Park Inc's SetState(1) and SetState(4) post the ride's message kind 7 and 8, which the mechanics' HQ and the advisor answer (ThemeParkIncRideStateAdvice)
+		if ( Rules.ThemeParkInc )
+			ThemeParkIncRideStateAdvice( item, item.StateWord.Current );
 	}
 
 	/// <summary>Notes a change of the ride's state word for <see cref="PublishRideState"/>: only the entry into state 1 or 4.</summary>
@@ -1625,11 +1629,17 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// only when the player closes the letter it leads to (0x649E92, LoseThemeParkIncPark)
 			if ( !Rules.ThemeParkInc )
 				HandleBankruptcyMessage();
-			else if ( !IsBankrupt )
+			else
+			{
+				// [BIN:TPI-EXE:0x71912A red six months advice] the dispatcher calls the event's listeners in ascending thing handle order, so the advisor (thing 3) hears it before the bank (thing 9):
+				// its handler's kind 0x13 case 2 (0x7190A0, byte table 0x7191FC) posts 0x71A930(0x66, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820, whatever the world state
+				PostThemeParkIncAdvice( 0x66 );
 				// [BIN:TPI-EXE:0x5C091F red-month notification] the bank's own handler receives the event value 2 and posts a type-25
 				// notification, which only the tag system consumes: one mail a month from the sixth on, carrying advice 0x1A2, unless the
 				// world state is already 4 (the park lost)
-				PostThemeParkIncMail( ThemeParkIncAdviceMail.RedSixMonths );
+				if ( !IsBankrupt )
+					PostThemeParkIncMail( ThemeParkIncAdviceMail.RedSixMonths );
+			}
 		}
 		if ( Rules.ThemeParkInc )
 		{

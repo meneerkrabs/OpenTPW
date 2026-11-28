@@ -140,7 +140,7 @@ public sealed class ThemeParkIncAdvisorViewTests : ThemeParkIncScienceTestBase
 	}
 
 	private static ThemeParkIncAdvisor Advisor( IThemeParkIncAdvisorSpeechData speech ) =>
-		new( ThemeParkIncAdvisorSettings.Reset with { MinimumScore = 10 }, ThemeParkIncAdvisorTable.Shipped, speech, 1 );
+		new( ThemeParkIncAdvisorSettings.Bind( System.Text.Encoding.ASCII.GetBytes( "GeneralAdvisor.MinScoreForConsideration 10\n" ) ), ThemeParkIncAdvisorTable.Shipped, speech, 1 );
 
 	[TestMethod]
 	public void TheDisplayClockRunsThroughTheTicksSpan()

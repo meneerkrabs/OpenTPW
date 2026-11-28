@@ -171,6 +171,14 @@ public sealed class ThemeParkIncTagTube
 	// [BIN:TPI-EXE:0x636C90 tube delete by tag] walks the list: +0 == tag, the word +0xE14 == key and +0xE28 == 0: +0xE28 = 1, this+0x825 = 1; any flagged: the window dirty (0x552CD0)
 	internal int DeleteTagged( int tag, ushort key ) => Flag( row => row.Tag == tag && (ushort)row.Key == key );
 
+	/// <summary>
+	/// The delete by tags and key (<c>0x636D10</c>): every unflagged row whose key is <paramref name="key"/> and whose tag is one of <paramref name="tags"/> is flagged; the next pass unlinks them. The
+	/// count flagged.
+	/// </summary>
+	// [BIN:TPI-EXE:0x636D10 tube delete by tags] (count, tags, key): walks the list: the word +0xE14 == key, +0 among the count tags and +0xE28 == 0: +0xE28 = 1, this+0x825 = 1; any flagged: the window
+	// dirty (0x552CD0)
+	internal int DeleteTagged( IReadOnlyCollection<int> tags, ushort key ) => Flag( row => (ushort)row.Key == key && tags.Contains( row.Tag ) );
+
 	/// <summary>The delete by key (<c>0x636B10</c>): every unflagged row whose key is <paramref name="key"/> (a removed thing) is flagged. The count flagged.</summary>
 	// [BIN:TPI-EXE:0x636B10 tube delete by key] walks the list: the word +0xE14 == key and +0xE28 == 0: +0xE28 = 1, this+0x825 = 1; any flagged: the window dirty (0x552CD0)
 	internal int DeleteKeyed( ushort key ) => Flag( row => (ushort)row.Key == key );

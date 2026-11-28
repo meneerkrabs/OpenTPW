@@ -14,7 +14,9 @@ internal static class ThemeParkIncTagTubeLetters
 	// [BIN:TPI-EXE:0x9D42E0 briefing tag record] {0x5C, 0x97, 0xA2, 0, 0, 0, 0, 0xAE, 0xA1, 0}: body 162, sender 174, subject 161 ("Welcome!")
 	public const int IntroductionBody = 0xA2, IntroductionSender = 0xAE, IntroductionSubject = 0xA1;
 
-	public static ThemeParkIncLetterWindow.Letter Compose( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, UiStringTable strings, string addressee, Func<ThemeParkIncTagTubeRow, string>? memberName = null )
+	/// <param name="adviceName">The name an advice row's body formatter takes (<see cref="ThemeParkIncAdviceTag.Formatter"/> 2: the thing of its key, 3: the type of its go-to argument).</param>
+	public static ThemeParkIncLetterWindow.Letter Compose( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, UiStringTable strings, string addressee, Func<ThemeParkIncTagTubeRow, string>? memberName = null,
+		Func<ThemeParkIncTagTubeRow, string>? adviceName = null )
 	{
 		var date = ThemeParkIncLetterWindow.FormatDate( strings, row.Date );
 		return row.Source switch
@@ -23,7 +25,7 @@ internal static class ThemeParkIncTagTubeLetters
 			ThemeParkIncLetterSource.Introduction => Introduction( texts, addressee, date, row.Picture ),
 			ThemeParkIncLetterSource.Notification => Notification( ThemeParkIncTagLetter.NotificationMail( row.Argument ), texts, addressee, date ),
 			ThemeParkIncLetterSource.WageDemand => WageDemand( row, texts, addressee, date, memberName?.Invoke( row ) ?? "" ),
-			ThemeParkIncLetterSource.Advice => Advice( row, texts, addressee, date ),
+			ThemeParkIncLetterSource.Advice => Advice( row, texts, addressee, date, adviceName ),
 			ThemeParkIncLetterSource.Training => Training( row, texts, addressee, date, memberName?.Invoke( row ) ?? "", strings.Ability( row.Ability ) ),
 			_ => throw new InvalidOperationException( $"A tag tube row has the unknown letter source {row.Source}." )
 		};
@@ -40,13 +42,15 @@ internal static class ThemeParkIncTagTubeLetters
 	}
 
 	/// <summary>An advice's caption (<c>0x635D80</c>, branch 0x18): the tag record's subject and sender, the player, and the body without a signature.</summary>
-	// [BIN:TPI-EXE:0x63632C advice row texts] sender TAG_SYSTEM[record +0x1C], addressee the player (0x622130), subject TAG_SYSTEM[record +0x20], body 0x6365A0 (record +0x18 = 0: the plain
-	// TAG_SYSTEM[record +8], 0x6365A0 case 0)
-	private static ThemeParkIncLetterWindow.Letter Advice( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, string addressee, string date )
+	// [BIN:TPI-EXE:0x63632C advice row texts] sender TAG_SYSTEM[record +0x1C], addressee the player (0x622130), subject TAG_SYSTEM[record +0x20], body 0x6365A0: record +0x18 = 0 the plain
+	// TAG_SYSTEM[record +8], 2 and 3 the same entry with the name of the row's thing (0x5E7C20) or type (0x43C810) as its string argument of index 0
+	private static ThemeParkIncLetterWindow.Letter Advice( ThemeParkIncTagTubeRow row, IThemeParkIncTexts texts, string addressee, string date, Func<ThemeParkIncTagTubeRow, string>? adviceName )
 	{
 		string Tag( int entry ) => texts.Format( ThemeParkIncTable.TagSystem, entry );
 		var tag = ThemeParkIncAdviceTag.For( row.Argument ) ?? throw new InvalidOperationException( $"A tag tube advice row has the unknown tag {row.Argument}." );
-		return new ThemeParkIncLetterWindow.Letter( Tag( tag.Subject ), Tag( tag.Sender ), addressee, date, Tag( tag.Body ), row.Picture - 1, row.GotoKind, row.GotoArgument );
+		var body = tag.Formatter == ThemeParkIncAdviceTag.PlainBody ? Tag( tag.Body )
+			: texts.Format( ThemeParkIncTable.TagSystem, tag.Body, new Dictionary<int, string> { [0] = adviceName?.Invoke( row ) ?? "" } );
+		return new ThemeParkIncLetterWindow.Letter( Tag( tag.Subject ), Tag( tag.Sender ), addressee, date, body, row.Picture - 1, row.GotoKind, row.GotoArgument );
 	}
 
 	/// <summary>A notification letter (<c>0x5CEE50</c>, vtable <c>0x93DFA8</c>), as <see cref="ThemeParkIncLetterWindow.Compose"/> composes it for the letter window.</summary>

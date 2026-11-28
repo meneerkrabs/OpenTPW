@@ -12,6 +12,8 @@ public interface IThemeParkIncWindowAdvice
 	bool CancelHelp( int message );
 	bool Post( int message );
 	bool Cancel( int message );
+	/// <summary>The mission status refresh (<c>0x54D660</c>) a window calls: its requirements-met advice.</summary>
+	void MissionStatus() { }
 }
 
 public sealed partial class ParkEconomy
@@ -27,6 +29,7 @@ public sealed partial class ParkEconomy
 		public bool CancelHelp( int message ) => economy.CancelThemeParkIncHelp( message );
 		public bool Post( int message ) => economy.PostThemeParkIncAdvice( message );
 		public bool Cancel( int message ) => economy.CancelThemeParkIncAdvice( message );
+		public void MissionStatus() => economy.ThemeParkIncMissionStatusAdvice();
 	}
 
 	/// <summary>
@@ -52,7 +55,7 @@ public sealed partial class ParkEconomy
 	{
 		if ( Rules.ThemeParkInc )
 			TpiAdvisor = new ThemeParkIncAdvisor( ThemeParkIncAdvisorSettings.Load(), ThemeParkIncAdvisorTable.Shipped, new ThemeParkIncAdvisorSpeech( Settings.Theme ),
-				PresentationSeed( seed ) );
+				PresentationSeed( seed ) ) { World = new ThemeParkIncAdviceWorld( this ) };
 	}
 
 	/// <summary>
@@ -69,9 +72,12 @@ public sealed partial class ParkEconomy
 	// single-player career OpenTPW runs (ThemeParkIncChallenges)
 	internal ThemeParkIncAdviceContext TpiAdviceContext => new( 0, false, false, TpiCutscene?.AnimThing ?? 0, TpiCutscene?.Mode ?? 0 );
 
-	/// <summary>Posts advice <paramref name="message"/> with its descriptor's score, as a sender's <c>0x71A930</c> and <c>0x718820</c> do; false when the queue refused it.</summary>
-	internal bool PostThemeParkIncAdvice( int message ) =>
-		TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.Post( message, career, Turn, TpiAdviceContext );
+	/// <summary>
+	/// Posts advice <paramref name="message"/> with its descriptor's score and the locate word and dword its caption carries, as a sender's <c>0x71A930</c> and <c>0x718820</c> do; false when the
+	/// queue refused it.
+	/// </summary>
+	internal bool PostThemeParkIncAdvice( int message, ushort locate = 0, int locateData = 0 ) =>
+		TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.Post( message, career, Turn, TpiAdviceContext, locate, locateData );
 
 	/// <summary>Cancels advice <paramref name="message"/> (<c>0x718990</c> on the advisor thing): its pending records go and a playing one stops; false when nothing was cancelled.</summary>
 	internal bool CancelThemeParkIncAdvice( int message ) => TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.Cancel( message, career, out _ );

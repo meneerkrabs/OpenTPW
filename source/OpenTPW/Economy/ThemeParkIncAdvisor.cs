@@ -202,8 +202,13 @@ public sealed class ThemeParkIncAdvisor
 		return Callback( row, career );
 	}
 
-	// the callbacks that read state besides the scorer; a callback that reads game state is the condition scan's (P3) or a later sender's (P5), which nothing posts yet
-	private static int Callback( ThemeParkIncAdvisorDescriptor row, ThemeParkIncCareer? career )
+	/// <summary>
+	/// The park state the ported score callbacks read besides the scorer and the history (<see cref="IThemeParkIncAdviceWorld"/>); the economy sets it. Null: a callback that reads it throws.
+	/// </summary>
+	internal IThemeParkIncAdviceWorld? World { get; set; }
+
+	// the callbacks that read state besides the scorer; a callback that reads game state is the condition scan's (P3) or a later sender's, which nothing posts yet
+	private int Callback( ThemeParkIncAdvisorDescriptor row, ThemeParkIncCareer? career )
 	{
 		switch ( row.Callback )
 		{
@@ -213,16 +218,32 @@ public sealed class ThemeParkIncAdvisor
 			// [BIN:TPI-EXE:0x728580 0x21D score] (thunk 0x407CB6) the history entry of 0x21D (0x71B4F0) +8, the played byte: set 0, else 10000
 			case 0x407CB6:
 				return Played( 0x21D ) ? 0 : 10_000;
+			// [BIN:TPI-EXE:0x729020 0x26D score] (thunk 0x40C7F7) the history entry of 0x26D (0x71B4F0) +8: neg, sbb, and 0xFFFFD8F0, add 0x2710: set 0, else 10000
+			case 0x40C7F7:
+				return Played( 0x26D ) ? 0 : 10_000;
+			// [BIN:TPI-EXE:0x726FA0 0x1C7 score] (thunk 0x40CA77) the history byte of 0x1C7 (0x71B520) set: 0; else the mission's requirements met (0x55A620 on 0xA61810): the scorer word +0x7B8
+			// (0x723250) shifted left by one, else 0
+			case 0x40CA77:
+				return Played( 0x1C7 ) ? 0 : RequirementsMet() ? unchecked( settings.Word( RequirementsScoreOffset ) << 1 ) : 0;
+			// [BIN:TPI-EXE:0x726F50 0x1E3 score] (thunk 0x406195) the same with the history byte of 0x1E3
+			case 0x406195:
+				return Played( 0x1E3 ) ? 0 : RequirementsMet() ? unchecked( settings.Word( RequirementsScoreOffset ) << 1 ) : 0;
 			default:
 				throw new NotSupportedException( $"Theme Park Inc advisor message {row.Message:X}: its score callback {row.Callback:X} is not ported." );
 		}
 
 		bool Played( int message ) => (career ?? throw new InvalidOperationException( $"Theme Park Inc advisor message {row.Message:X}: its score reads the career's history." ) )
 			.AdviceHistory( message ).Played;
+
+		bool RequirementsMet() => (World ?? throw new InvalidOperationException( $"Theme Park Inc advisor message {row.Message:X}: its score reads the mission's requirements." ) )
+			.MissionRequirementsMet;
 	}
 
+	/// <summary>The scorer word the requirements-met advice <c>0x1C7</c> and <c>0x1E3</c> score twice (<c>0x723250</c>: <c>mov eax, [ecx + 0x7B8]</c>).</summary>
+	public const int RequirementsScoreOffset = 0x7B8;
+
 	/// <summary>Whether OpenTPW runs the score callback of <paramref name="row"/>: a constant, a scorer word or one of the ported callbacks.</summary>
-	public static bool Scores( ThemeParkIncAdvisorDescriptor row ) => row.ConstantScore != null || row.Field != null || row.Callback is 0x404BD3 or 0x407CB6;
+	public static bool Scores( ThemeParkIncAdvisorDescriptor row ) => row.ConstantScore != null || row.Field != null || row.Callback is 0x404BD3 or 0x407CB6 or 0x40C7F7 or 0x40CA77 or 0x406195;
 
 	/// <summary>Whether the context admits a descriptor class (<c>0x71BDC0</c>).</summary>
 	// [BIN:TPI-EXE:0x71BDC0 class check] mode word 3 admits class 3 only; else the game object's +0x2E class 5, its +0x2F class 7; else a playing cutscene admits class 6, 5 or 4 by its mode

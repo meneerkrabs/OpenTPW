@@ -624,7 +624,7 @@ public static class ParkSaveFile
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public int Mask { get; init; }
 		/// <summary>
-		/// Theme Park Inc's native navigator (<see cref="GuestNavigation.Native"/>, the hidden switch <c>--tpi-native-walk</c>): the walk's 177-byte record, carrying the members the fields
+		/// Theme Park Inc's native navigator (<see cref="GuestNavigation.Native"/>, every Theme Park Inc park): the walk's 177-byte record, carrying the members the fields
 		/// above do not (<see cref="GuestNavigationSnapshot.NativeRecord"/>). Written only for a native walk.
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
@@ -662,7 +662,7 @@ public static class ParkSaveFile
 			&& (OriginalWalk is { } walk
 				? Waypoints is { Length: 2 * GuestNavigation.BufferedWaypoints } waypoints && waypoints.All( value => value is >= 0 and < ParkLitter.MapSize )
 					&& walk.PathCount is >= 0 and <= 0xFC && Count == Math.Min( walk.PathCount, GuestNavigation.BufferedWaypoints ) && !OffGrid
-					&& walk.Stamp >= 0 && walk.Total >= 0 && walk.Ahead >= 0 && walk.Beyond >= 0 && walk.Progress <= Fixed16.One && Cursor <= route.Length / 2
+					&& walk.Total >= 0 && walk.Ahead >= 0 && walk.Beyond >= 0 && walk.Progress <= Fixed16.One && Cursor <= route.Length / 2
 				: Waypoints is null && Cursor <= route.Length / 2 - Count)
 			&& (NativeRecord is null || RestoreFields().NativeProblem( NativeRecord, Waypoints != null ? GuestNavigation.BufferedWaypoints : Count ) == null);
 

@@ -2469,7 +2469,18 @@ position into mPreviousX/Y and the sprite commit `0x5d1080` (agree 500/500). `tp
 of every kind (none, above the counter, held or not by the block stamps of the nine cells around the person's cell or its queue's back, the queue links `0x5e0a50` stubbed from
 the input): the answer, the counter, the mark, the target words and the record agree 200/200, and the edit-only counter of a Theme Park World park differs on all 200 (the raised
 stamps). `tpi-exe-staff-route` runs `0x62eb10`: the park-closed refusal of the entrance cells and the walk mask from the type-0 test, then `0x60b8e0` (agree 200/200). The C# meets
-Game.exe's walk steps of a kid, a grown-up guest, a guard and a handyman on two walks directly (`ThemeParkIncWalkStepTests`, from `tpi_walk_step_golden.py`).
+Game.exe's walk steps of a kid, a grown-up guest, a guard and a handyman on two walks directly (`ThemeParkIncWalkStepTests`, from `tpi_walk_step_golden.py`), through the pure step
+parts and, since NV4, through the guests' and the staff's whole walk steps (`StepThemeParkInc`, `ThemeParkIncStaffWorld.Walk`).
+
+**The wander and patrol destination (NV4).** `tpi-exe-wander` runs Game.exe's `0x609f70` on a person record of the same layout with its patrol rectangle at `+0x24c..+0x258`, the world
+generator `0x6493e0` (state at world `+0x1eab3c`) run in the sandbox, the counter, the stranded test `0x60bb50`, the mark setter `0x60b9a0`, the rectangle test `0x62c610`, the fallback
+`0x62c720`, the staff route `0x62eb10` and the route search; the thought object `0x638960` and the thing id `0x6375c0` are stubbed and logged, the debug prints `0x4d15a0` and `0x4d15c0`
+are empty, and the direction table `0xa9d308..` holds what its initialiser `0x5d95d5..` writes. 200 persons (guests and the staff kinds 4, 5, 6, 7, 8 and the gardener 0x14; held and stale
+marks; starts on paths, queues and cells without links; rectangles of the whole map, around and away from the start, with corners in either order, reversed by two or more, one cell; the park
+open and closed): the answer, the generator's state after the draws, the thoughts, the counter, the mark, the target words, the wander flag `+0xe8`, the walk mask and the navigator's record
+agree 200/200 with `walk_reading.py`'s `Wanderer`; tp.exe's rules on the same persons (no gardener kind, no ordered corners, a staff member's final route a guest's, the fallback's route to the
+cell and thought 0x16) differ on 86. Corners one cell apart and reversed divide by zero in `0x62c720` (a CPU exception in the sandbox, as in the game); the inputs avoid them.
+`ThemeParkIncWanderTests` holds Game.exe's results for 14 wanders and 7 sets of route requests on the navigator tests' map (`tpi_wander_golden.py`).
 
 **Fixed in C#.** Guests walking the park's cells use this walk (WALK-002 and WALK-009 retired; WALK-004 .. WALK-008 narrowed, WALK-006 later retired). Its
 limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and a park resumed from an old save has the link byte of its entrance and exit cells laid at load (`[EXT:legacy-save-access-links]`; WALK-006 retired), so a refused stand-point search is the original's dismissal; walks restored from older saves keep the route walk (`[EXT:legacy-save-route-walk]`).

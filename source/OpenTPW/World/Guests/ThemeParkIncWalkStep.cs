@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// Theme Park Inc's walk step <c>0x60B460</c> (through <c>0x60B440</c>) around the steering step, shared by the guests (<c>GuestSimulation.StepThemeParkInc</c>) and the staff
-/// (<c>ThemeParkIncStaffWorld.Walk</c>) of a park with Theme Park Inc's navigator (the hidden switch <c>--tpi-native-walk</c>, docs/reverse/TPI-NAVIGATOR.md, NV3). The order of the routine:
+/// (<c>ThemeParkIncStaffWorld.Walk</c>) of a park with Theme Park Inc's navigator (every Theme Park Inc park, docs/reverse/TPI-NAVIGATOR.md, NV3). The order of the routine:
 /// the walk position, the steering step <c>0x63EEF0</c>, the position again, <c>mX/mY</c> = position &gt;&gt; 8 with the cell chain <c>0x637B70</c>, the stranded mark <c>+0x1B0</c> = 0; then 2
 /// when mCantReachDest is set, 0 when the progress is ONE (with the heading, D1), else the heading, the run flag (D2), the walk or run template and the sprite interval, and 1. These are the
 /// pure parts; the callers own the steering, the chain and the sprite.

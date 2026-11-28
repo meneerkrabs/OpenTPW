@@ -1,0 +1,15 @@
+## Theme Park Inc: the wander and patrol destination, and the navigator by default (November 26, 2026)
+
+The fourth phase of the Theme Park Inc navigator port (NV4). Theme Park Inc's staff now find their patrol and wander destination as the original does, and every Theme Park Inc park walks its guests and staff with Theme Park Inc's own navigator: the hidden `--tpi-native-walk` switch of the earlier phases is gone.
+
+- **The patrol.** A staff member's wander keeps to his patrol rectangle as in the original: the gardener is one of the staff kinds, the rectangle's corners are ordered before the test, a member outside his rectangle or whose every step leaves it walks to a random path cell inside it, and the final walk goes through the staff route with its walk mask and its closed-park refusal. The step count is drawn before the rectangle, as the original draws it. Reversed corners are ported as the original computes them; corners one cell apart and reversed would crash the original, so a save holding them is refused.
+- **The counter.** The staff's wander and patrol now count their calls of the stamp counter. The documentation lists every call that counts, for the native guests, the staff and the guests of the default path. The counter is the original's unsigned 32-bit value: a long session past 2^31 still saves and loads, and a park save whose counter is of the other park kind is refused.
+- **The switch flip.** Theme Park Inc's edge test, walk step, route requests, stamp counter and wander are now the only walk of a Theme Park Inc park. The walk scope of `[EXT:tpi-twp-guest-rules]` is retired; the label still covers the default path's guest decisions, the thought bubble timing and the bridged boarding. Theme Park World is unchanged.
+- **Saves.** A Theme Park Inc save records the navigator, as before. Science saves made before this phase (their walkers followed Theme Park World's rules) are refused with a message that says so. The next phase (NV5) changes the save format again; releasing both together keeps it to one refusal for players.
+- **Review follow-ups from NV3.** C# tests now hold the original's results for whole wanders, route requests, staff routes and the guests' and staff's own walk steps; a layout counter of the wrong kind is refused; and the Theme Park World sprite interval's precision is documented against the original's code.
+
+No new approximation or label is added, and no C runtime `rand()` is reached from the wander or the patrol.
+
+Verified with a new x86 oracle target that runs the original wander on 200 guests and staff members of every kind, with marks, rectangles of every shape and the park open and closed, all agreeing with the oracle's reading of the port, and Theme Park World's rules differing on 86 of them; unit tests that hold the original's results for the C# itself (14 golden wanders and the route-request sets); the full test suites with the Theme Park Inc and Theme Park World data; and the silent, offscreen Science smoke with and without the native guests.
+
+The original game was not launched, and no binary or data is included.

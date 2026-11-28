@@ -1479,3 +1479,16 @@ Round 11, package J (UI text, buttons, graphs, locator, November 4, 2026): the I
 ## Message tube, pause window and UI particles (round 11, package N, November 4, 2026)
 
 No pin moved: `BuildStepsTests` (Instant Action `A1B57700E80FAE09`, Full Simulation `D2F1349AA44D6545`), the save-digest pins and every `DeterminismTests` pin are unchanged. The tube's rows, timers and particles are HUD state outside the hash, drawn on the UI clock and from the particle pool's own stream; the P window is drawing and input routing. The resume save's tube rows keep their shape: an offer row may now carry a tag and its context (validated), a row's read flag is no longer written (the original's record has none), and an original save's tube is imported; older saves and command logs load as before.
+
+## Theme Park Inc navigator, NV4 (November 26, 2026)
+
+Every Theme Park Inc park now walks its guests and staff with Theme Park Inc's navigator ([TPI-NAVIGATOR.md](reverse/TPI-NAVIGATOR.md)): the hidden switch `--tpi-native-walk` of phases
+NV1 to NV3 is gone, so a Theme Park Inc park's walks, wanders, patrols and stamp counter are the ported ones, and its state hash gains the navigator's members and the counter (as the switch
+did in NV2 and NV3). This is the single move of Theme Park Inc's results that decision N-3 planned: a Theme Park Inc run of this version differs from the same run of the previous one wherever a
+guest or a staff member walks. No checked-in pin holds a Theme Park Inc run (the with-data suite with the Theme Park Inc data passes unchanged; its Theme Park Inc tests pin rules and states, not
+walk digests), so no pinned value changes. A Theme Park Inc Science save made before this version is refused ([PARK-SAVES.md](PARK-SAVES.md)).
+
+Theme Park World is unchanged: every `DeterminismTests` pin, the `BuildStepsTests` digests and the save-digest pins hold. The shared code that changed reads the same for a Theme Park World park:
+the stamp-counter comparisons are unsigned (`ParkCellMap.StampBelow`; no Theme Park World value reaches 2^31), the two Theme Park World route requests that lacked the counter call
+(`RouteToPoint`, `RouteToStopPoint`, tp.exe's `0x4FA5F0`) now ask for the next value, which raises nothing in a park that counts the edits only, and the wander's step count may be drawn by the
+caller first (`GuestWander.PickAfterCount`), which Theme Park World's callers do not do. No draw is added to or removed from a Theme Park World run.

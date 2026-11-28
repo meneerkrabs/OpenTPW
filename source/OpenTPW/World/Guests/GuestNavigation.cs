@@ -247,7 +247,7 @@ public sealed class GuestNavigation
 	/// </summary>
 	public int BufferSlotsWritten;
 	/// <summary>
-	/// The walk runs Theme Park Inc's native navigator (<see cref="WalkEdgeRules.ThemeParkInc"/>, the hidden switch <c>--tpi-native-walk</c>): the members above join the digest and the
+	/// The walk runs Theme Park Inc's native navigator (<see cref="WalkEdgeRules.ThemeParkInc"/>, every Theme Park Inc park): the members above join the digest and the
 	/// snapshots (<see cref="CaptureNative"/>), and the whole progress history word <see cref="History"/> is kept. Set when a walk on such a map is set up or stepped.
 	/// </summary>
 	public bool Native { get; internal set; }

@@ -1,10 +1,10 @@
 namespace OpenTPW;
 
-// Theme Park Inc's walk step for the guests of a park with Theme Park Inc's navigator (the hidden switch --tpi-native-walk, docs/reverse/TPI-NAVIGATOR.md, NV3): every guest's walk step, a native
+// Theme Park Inc's walk step for the guests of a park with Theme Park Inc's navigator (every Theme Park Inc park, docs/reverse/TPI-NAVIGATOR.md, NV3): every guest's walk step, a native
 // guest's (TpiWalk) and a Theme Park World-rule guest's in a Theme Park Inc park alike, is 0x60B460 (ThemeParkIncWalkStep); the staff take the same routine (ThemeParkIncStaffWorld.Walk).
 public sealed partial class GuestSimulation
 {
-	/// <summary>Whether the park walks with Theme Park Inc's navigator (<see cref="ParkCellMap.EdgeRules"/>, the hidden switch <c>--tpi-native-walk</c>): the walk step is then <see cref="StepThemeParkInc"/>.</summary>
+	/// <summary>Whether the park walks with Theme Park Inc's navigator (<see cref="ParkCellMap.EdgeRules"/>, every Theme Park Inc park): the walk step is then <see cref="StepThemeParkInc"/>.</summary>
 	private bool WalksThemeParkInc => Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc;
 
 	/// <summary>
@@ -57,7 +57,7 @@ public sealed partial class GuestSimulation
 	// [BIN:TPI-EXE:0x60AFF1 placement stamp] 0x5D81F0 below +0x1B0 (jae) clears it; while it is nonzero the debug marker 0x687970 is queued (shown only with the flag 0x9D6C28)
 	private void ThemeParkIncPlacementStamp( Guest guest )
 	{
-		if ( Grid.Cells.NextStamp() < guest.StrandedMark )
+		if ( ParkCellMap.StampBelow( Grid.Cells.NextStamp(), guest.StrandedMark ) )
 			guest.StrandedMark = 0;
 	}
 }

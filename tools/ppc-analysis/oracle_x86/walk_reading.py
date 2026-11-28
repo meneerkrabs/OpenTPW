@@ -810,3 +810,211 @@ class Person:
         m = self.walk.m
         self.walk.mask = 1 if m.t(*self.cell) == 0 or m.t((xw >> 8) & 0xFF, (yw >> 8) & 0xFF) == 0 else 0
         return self.route_point(xw, yw)
+
+
+# NV4: the wander and patrol destination 0x609f70 with the patrol rectangle test 0x62c610 and the patrol fallback 0x62c720
+STAFF_KINDS = (4, 5, 6, 8, 7, 0x14)                   # 0x60a052..0x60a068: the staff kinds; 0x14 (the gardener) is Theme Park Inc's (W1)
+WANDER_LINKS = ((0x10, (0, 1)), (4, (1, 0)), (1, (0, -1)), (0x40, (-1, 0)))   # the slots +0x40..+0x46: link 16, 4, 1, 64 (the table 0xa9d308..)
+
+
+def world_draw(state):
+    """0x6493e0: state = ror(state * 0x19660d + 0x3c6ef35f, 13); the answer is its absolute value as a signed dword (0x80000000 stays)."""
+    s = (state * 0x19660D + 0x3C6EF35F) & M32
+    s = ((s >> 13) | (s << 19)) & M32
+    return s, ((-s) & M32 if s & 0x80000000 else s)
+
+
+class Wanderer(Person):
+    """A person with the class byte +2 (`kind`), the patrol rectangle +0x24c..+0x258 (`rect`, four signed dwords), the world generator's state
+    (world +0x1eab3c) and the park-closed word, for the wander 0x609f70."""
+
+    def __init__(self, walk, cell, mark, behind, kind, rect, rng, closed, tpi=True):
+        super().__init__(walk, cell, mark, behind)
+        self.kind, self.rect, self.rng, self.closed, self.tpi = kind, rect, rng, closed, tpi
+        self.thoughts, self.draws, self.wandered = [], 0, 0
+
+    def draw(self):
+        self.rng, value = world_draw(self.rng)
+        self.draws += 1
+        return value
+
+    def in_rect(self, word):
+        """0x62c610: the cell of the word ((w - 1) & 0x7f, (w - 1) >> 7) inside the rectangle, each corner pair ordered first (W3), signed."""
+        w = ((word & 0xFFFF) - 1) & M32
+        x, y = w & 0x7F, w >> 7
+        x0, y0, x1, y1 = (s32(v) for v in self.rect)
+        if self.tpi:
+            x0, x1 = min(x0, x1), max(x0, x1)
+            y0, y1 = min(y0, y1), max(y0, y1)
+        return x0 <= x <= x1 and y0 <= y <= y1
+
+    def fallback(self):
+        """0x62c720: the corner words 0x4a63f0(x0, y0) and (x1, y1); width and height from their cells as x1 - x0 + 1 and y1 - y0 + 1, unordered
+        (W4: reversed corners give a negative width, an unsigned divisor of 2^32 less it); 30 tries of x = R % width + x0, y = R % height + y0, a cell
+        inside the map (0x5d7260) of type 1 (0x67f5b0) and the staff route 0x62eb10 to its centre; after 30 the thought 0x1e and 0."""
+        x0, y0, x1, y1 = self.rect
+        a = ((y0 << 7) + x0 + 1) & 0xFFFF
+        b = ((y1 << 7) + x1 + 1) & 0xFFFF
+        a1, b1 = (a - 1) & M32, (b - 1) & M32
+        width = ((b1 & 0x7F) - (a1 & 0x7F) + 1) & M32
+        height = ((b1 >> 7) - (a1 >> 7) + 1) & M32
+        for _ in range(30):
+            if width == 0 or height == 0:
+                raise ZeroDivisionError('0x62c7cf divides by zero')
+            x = (self.draw() % width + (a1 & 0x7F)) & M32
+            y = (self.draw() % height + (a1 >> 7)) & M32
+            if s32(x) < 0 or s32(y) < 0 or s32(x) >= 0x80 or s32(y) >= 0x80:
+                continue
+            if self.walk.m.t(x, y) != 1:
+                continue
+            word = ((y << 7) + x + 1) & 0xFFFF
+            w = (word - 1) & M32
+            if self.tpi and self.staff_route(((w & 0x7F) << 8) | 0x80, (((w >> 7) & 0xFF) << 8) | 0x80, self.closed):
+                return 1
+            if not self.tpi and self.route_cell(word):
+                return 1
+        self.thoughts.append(0x1E if self.tpi else 0x16)
+        return 0
+
+    def gate(self):
+        """The stranded gate of the wander's routes: the counter raised, below the mark the mark cleared; True while a mark is held (0x60bb50)."""
+        walk = self.walk
+        walk.counter = (walk.counter + 1) & M32
+        if walk.counter < self.mark:
+            self.mark = 0
+        return bool(self.mark) and stranded_holds(walk.m, walk.stamps, self.cell, self.mark, self.behind)
+
+    def set_dest(self, xw, yw):
+        """+0x28, +0x2a = the words and SetDest 0x63ee80 to the signed words << 8."""
+        self.words = (xw & 0xFFFF, yw & 0xFFFF)
+        sw = lambda w: (w & 0xFFFF) - 0x10000 if w & 0x8000 else w & 0xFFFF
+        return 1 if self.walk.setup(s32(sw(xw) << 8), s32(sw(yw) << 8), False) else 0
+
+    def wander(self):
+        """0x609f70; returns 0 or 1 (a walk set). The order: the entry gate (a held mark: thought 0x11, 0), the mark cleared, R % 5 steps; a staff
+        member (STAFF_KINDS) outside his rectangle tries 0x62c720 (1 on success) and else wanders without the rectangle; a start cell without links
+        takes the off-path search; else the steps and the two sub-cell bytes, then a staff member's staff route 0x62eb10 or a guest's gate, the mark
+        cleared (0x60b9a0(0)) and SetDest; a set walk sets +0xe8."""
+        m, walk = self.walk.m, self.walk
+        cx, cy = self.cell
+        start = ((cy << 7) + cx + 1) & 0xFFFF
+        staff = self.kind in (STAFF_KINDS if self.tpi else STAFF_KINDS[:5])
+        if self.gate():
+            self.thoughts.append(0x11)
+            return 0
+        self.mark = 0
+        remaining = self.draw() % 5
+        outside = 0
+        if staff and not self.in_rect(start):
+            if self.fallback():
+                return 1
+            outside = 1
+        cell_of = lambda word: (((word - 1) & M32) & 0x7F, ((word - 1) & M32) >> 7)
+        link_count = lambda c: bin(m.l(*c) & 0x55).count('1')
+        if link_count((cx, cy)) <= 0:
+            return self.off_path(start)
+        current, back = start, 9999
+        while True:
+            cell = cell_of(current)
+            links = m.l(*cell) & 0x55
+            counter = link_count(cell)
+            slots = [((current + (dy << 7) + dx) & 0xFFFF) if links & bit else 0 for bit, (dx, dy) in WANDER_LINKS]
+            if staff and not outside:
+                for i in range(4):
+                    if slots[i] and not self.in_rect(slots[i]):
+                        slots[i] = 0
+                        counter -= 1
+                        if counter == 0:
+                            return self.fallback()
+            kind = m.t(*cell)
+            if kind == 1:
+                for i in range(4):
+                    if slots[i] and m.t(*cell_of(slots[i])) in (3, 9):
+                        slots[i] = 0
+                        counter -= 1
+            if kind == 3:
+                own = {1: 2, 0x10: 0, 4: 1, 0x40: 3}.get(m.q(*cell))
+                if own is not None:
+                    slots[own] = 0
+                    counter -= 1
+            for i in range(4):
+                if slots[i] and m.t(*cell_of(slots[i])) == 10:
+                    slots[i] = 0
+                    counter -= 1
+            if counter < 2:
+                chosen = next((i for i in range(4) if slots[i]), None)
+                if chosen is None:
+                    if staff:
+                        return self.fallback()
+                    self.thoughts.append(0x11)
+                    walk.counter = (walk.counter + 1) & M32
+                    self.mark = walk.counter
+                    return 0
+            else:
+                first = self.draw() & 3
+                chosen = first
+                for offset in range(4):
+                    chosen = (first + offset) & 3
+                    if slots[chosen] and chosen != back:
+                        break
+                else:
+                    chosen = first
+            current = slots[chosen]
+            back = (chosen - 2) & 3
+            if current == start and remaining == 0:
+                remaining = 1
+            if remaining == 0:
+                break
+            remaining -= 1
+        bx = min(max(self.draw() & 0x7F, 5), 0x7B)
+        by = min(max(self.draw() & 0x7F, 5), 0x7B)
+        x, y = cell_of(current)
+        xw, yw = ((x & 0x7F) << 8) | bx, ((y & 0xFF) << 8) | by
+        if staff and self.tpi:
+            result = self.staff_route(xw, yw, self.closed)
+        elif self.gate():
+            result = 0
+        else:
+            self.mark = 0
+            result = self.set_dest(xw, yw)
+        if result:
+            self.wandered = 1
+        return 1 if result else 0
+
+    def off_path(self, start):
+        """0x60a5ef: the eight patterns at t = 0..3 (0x60a8dc), each a cell inside the map (0x5d7260) of type 1 (0x67f5b0) through the gate, the
+        mark cleared and SetDest to its centre; then five tries of R % 11 - 5 in x and y (no type test), the mark cleared without 0x60b9a0; 0 when
+        none sets a walk (no mark)."""
+        m = self.walk.m
+        patterns = [lambda t: (0, 0), lambda t: (t, t), lambda t: (t, 0), lambda t: (t, -t), lambda t: (0, -t), lambda t: (-t, -t),
+                    lambda t: (-t, 0), lambda t: (-t, t)]
+        for pattern in patterns:
+            for t in range(4):
+                dx, dy = pattern(t)
+                word = ((dy << 7) + dx + start) & 0xFFFF
+                w = (word - 1) & M32
+                x, y = w & 0x7F, w >> 7
+                if y >= 0x80 or m.t(x, y) != 1:
+                    continue
+                if self.gate():
+                    continue
+                self.mark = 0
+                if self.set_dest((x << 8) | 0x80, (y << 8) | 0x80):
+                    self.wandered = 1
+                    return 1
+        s = (start - 1) & M32
+        for _ in range(5):
+            dx = s32((self.draw() % 11) - 5)
+            dy = s32((self.draw() % 11) - 5)
+            x, y = (s & 0x7F) + dx, (s >> 7) + dy
+            if x < 0 or y < 0 or x >= 0x80 or y >= 0x80:
+                continue
+            word = ((y << 7) + x + 1) & 0xFFFF
+            w = (word - 1) & M32
+            if self.gate():
+                continue
+            self.mark = 0
+            if self.set_dest(((w & 0x7F) << 8) | 0x80, (((w >> 7) & 0xFF) << 8) | 0x80):
+                self.wandered = 1
+                return 1
+        return 0

@@ -1,6 +1,6 @@
 # Theme Park Inc: the navigator (guest and staff walks)
 
-Status: phases NV1, NV2 and NV3 of the navigator port. Static reading of the identified no-CD `Game.exe`; the game was never run. Addresses are `Game.exe` virtual addresses
+Status: phases NV1 to NV4 of the navigator port; every Theme Park Inc park walks with it since NV4. Static reading of the identified no-CD `Game.exe`; the game was never run. Addresses are `Game.exe` virtual addresses
 unless marked as tp.exe's. Tags: [R] read in the listing, [O] confirmed by the x86 oracle (docs/reverse/ORACLE.md section 7.19).
 
 ## What the navigator is
@@ -13,14 +13,19 @@ Theme Park Inc's navigator is Theme Park World's (docs/GUESTS.md, "Walking"; ORA
 - the route search `0x640C50` (tp.exe `0x511420`): the line search `0x640CC0`, the line set-up `0x63FA50`, the tracer `0x63FB80` (both directions; tp.exe inlines one),
   the head-on test `0x6400A0`, the shortcuts `0x6401C0` / `0x63FE80` and the refinement `0x640320`. TPI passes the result buffer through the global `0xAA0F70`.
 
-OpenTPW's `GuestNavigation`, `WalkSearch` and `WalkEdges` are therefore Theme Park Inc's navigator apart from the differences below. The port proceeds in
-phases (NV1 to NV5) behind one hidden switch, so that Theme Park Inc's determinism pins move once, when the last phase turns it on:
+OpenTPW's `GuestNavigation`, `WalkSearch` and `WalkEdges` are therefore Theme Park Inc's navigator apart from the differences below. The port proceeded in
+phases (NV1 to NV5). NV1 to NV3 sat behind the hidden switch `--tpi-native-walk` (decision N-3), so that Theme Park Inc's determinism pins moved once; **NV4 turned it on
+for good and retired it** (docs/DETERMINISM.md, "Theme Park Inc navigator, NV4"):
 
-- `--tpi-native-walk` (`GuestSimulation.ThemeParkIncNativeWalkRequested`), off by default. A Theme Park Inc level reads it once when it builds its cell map and
-  sets `ParkCellMap.EdgeRules` (`Level.ApplyParkEdgeRules`), which selects Theme Park Inc's edge test, walk step and stamp counter. Without it the Theme Park Inc walkers keep Theme Park World's rules under `[EXT:tpi-twp-guest-rules]`, as before; Theme Park World
-  parks never read it. A Science save records it (the guest snapshot's optional member `ThemeParkIncNativeWalk`, written only when the switch is on) and a save
-  whose setting differs from the running game's is refused in both directions: a walk set up under one edge test cannot continue under the other (a staff member
-  who stepped off the paths with mask 1 under Theme Park World's rules may stand on unowned land that `0x5D7D0D` refuses).
+- A Theme Park Inc level gives its cell map Theme Park Inc's rules (`WalkEdges.RulesForNewPark`, read once by `Level.ApplyParkEdgeRules`), which select Theme Park Inc's edge test, walk
+  step and stamp counter; a Theme Park World level keeps Theme Park World's. There is no way back to Theme Park World's walk in a Theme Park Inc park: the walk scope of
+  `[EXT:tpi-twp-guest-rules]` (the walk step, the route search, the wander and patrol destination and the speed step of the guests and the staff) is retired.
+- **Saves.** The guest snapshot's optional member `ThemeParkIncNativeWalk` records the rules: true in every Theme Park Inc save, absent in a Theme Park World one. A restore refuses a save
+  whose value differs from the park's (`GuestSimulation.RestoreSnapshot`, and the resume file's validation), so every Theme Park Inc Science save made before NV4 (the switch off by default) is
+  refused (the standing policy for a change of the Theme Park Inc simulation): a walk set up under one edge test cannot continue under the other (a staff member who stepped off the paths with
+  mask 1 under Theme Park World's rules may stand on unowned land that `0x5D7D0D` refuses). The layout's `SimulationStampCounter` must agree with it (a counter of simulation calls in a Theme
+  Park World park, or an edit-only counter in a Theme Park Inc one, is refused). NV5's schema bump refuses those saves again; the navigator plan prefers one refusal for the player, so NV4
+  and NV5 are best released together.
 
 ## The edge test `0x5D7B60` (NV1)
 
@@ -99,7 +104,7 @@ is the original's navigator for Theme Park World and Theme Park Inc alike:
 | `+0x20`, `+0x28` | local_xaxis, local_yaxis | 0 | the steering step after the commit: `0x63E150` (unit velocity) and `0x63E300` (perpendicular (−y, x)) | `LocalXAxis*`, `LocalYAxis*` |
 | `+0x30` | (unnamed seek target) | 0 | none; the loader zeroes it, only unregistered behaviours read it | not modelled |
 | `+0x38`, `+0x40` | formation_pos, force | 0 | none (research note NV0 §1): the file's value passes through | `FormationPos*`, `Force*` |
-| `+0x48` | path_timestamp | not written | the set-up: the raised stamp counter | `Stamp` (the native counter under the switch since NV3, else the edit counter) |
+| `+0x48` | path_timestamp | not written | the set-up: the raised stamp counter | `Stamp` (the native counter in every Theme Park Inc park since NV4; Theme Park World parks keep the edit counter) |
 | `+0x64` | subpath_buffer[5] | zeroed by `0x63D820` | the set-up: the buffered cell centres | `Buffer` (cells) and `BufferSlotsWritten` (the slots written; the rest stay zero) |
 | `+0x8C` | subpath_dist[5] | not written | the set-up: slot i = the octile segment from waypoint i to i + 1, for i below the count − 1 | `SubpathDist` |
 | `+0xB0` | path_stuck_buffer | 0 | the step: shifted left without a mask; follow_path counts bits 0..14 | `History` (the whole word) |
@@ -137,11 +142,11 @@ carries indeterminate bytes there; tp.exe's saves show its debug heap's `0xCDCDC
 comparison with `+0x48` and its subtraction of a slot come only after a successful set-up, and a stale slot's subtraction is overwritten by the refill), so any value there is a
 possible original outcome. OpenTPW starts them at 0, the value of fresh arena memory, and NV5's native writer will emit 0 there.
 
-**Under the switch.** With `--tpi-native-walk` a Theme Park Inc walk is native (`GuestNavigation.Native`): its new members join the digest; a guest starts with the constructor's caps
+**In a Theme Park Inc park** (the switch `--tpi-native-walk` of NV2 and NV3, the default since NV4) a walk is native (`GuestNavigation.Native`): its new members join the digest; a guest starts with the constructor's caps
 (0x3333, 0x6666) until its first speed step; and the guest and staff snapshots carry the walk's record in the optional member `NativeRecord`, written for a native walk of either
 kind: the original keeps one navigator object and saves it whole, so a walk to the walker's own point (`SetDestination`: standing, riding, placed on the grid) keeps the last set-up's
 stamp, lengths and slots, which a later failed set-up still reads. A restore takes from it the members the snapshot's own fields do not hold and refuses a record that disagrees
-with them, a record without the switch (a guest's in the guests' restore, a staff member's in the resume file's validation), or a guest record whose caps are not the guest's. Without the switch nothing changes: no member joins the digest, no save gains a field, and the default walk is as before.
+with them, a record in a park without Theme Park Inc's navigator (a guest's in the guests' restore, a staff member's in the resume file's validation), or a guest record whose caps are not the guest's. A Theme Park World park is unchanged: no member joins the digest and no save gains a field.
 
 **Verified.** The x86 oracle (docs/reverse/ORACLE.md section 7.19) runs Game.exe's constructor, set-up and steering step through 40 whole walks and compares the whole record after
 every set-up and step (`tpi-exe-walk-steering`), avoid_walls (`tpi-exe-walk-avoid-walls`), the root (`tpi-exe-navigator-root`) and both halves of the serializer
@@ -151,7 +156,7 @@ navigator as well.
 
 ## The walk step, the speed step and the route requests (NV3)
 
-Under the switch the guests (`GuestSimulation.StepThemeParkInc`, so a native guest's `TpiWalk` and a Theme Park World-rule guest's walk in a Theme Park Inc park alike) and the staff
+In a Theme Park Inc park the guests (`GuestSimulation.StepThemeParkInc`, so a native guest's `TpiWalk` and a Theme Park World-rule guest's walk alike) and the staff
 (`ThemeParkIncStaffWorld.Walk`) take Theme Park Inc's walk step `0x60B460` (through `0x60B440`), whose pure parts are `ThemeParkIncWalkStep` [R, O]:
 
 1. the walk position (`0x63EF10`), the steering step (`0x63EEF0` → `0x63DD20`), the position again;
@@ -166,10 +171,15 @@ Under the switch the guests (`GuestSimulation.StepThemeParkInc`, so a native gue
    interval `0x5D10F0` and 1. The interval runs at the game thread's 24 bits: the root of the 32-bit squared step and its product with `0x93E5B4` are singles, doubled without the run,
    62.0 / speed rounded to a single, `_ftol`, clamped to 0..0xFA; a step that did not move gives 0, which queues no interval.
 
+tp.exe's interval (`0x4FA3F8` → `0x4D41D0`) is the same code: the root, its product (stored as a float) and the quotient 62.0 / speed handed to `_ftol` without a store, so at the game thread's
+control word 0x7F the root and the quotient round to singles there too. OpenTPW's Theme Park World interval (`GuestSimulation.BodyIntervalForStep`) keeps them in double precision, which is
+tp.exe at the harness's 0x37F; the interval only paces the body sprite and is in no digest, and it follows the Theme Park World walk's own 0x7F reading (navigator plan, "Follow-ups"), so no
+Theme Park World result moves now.
+
 A native guest stores the heading in its record's `Heading` (saved since P1); every walker's presentation vector is the word's (`ThemeParkIncWalkStep.Vector`). A staff member keeps the
 word in `SpriteAngle`, not saved yet (NV5 stores the person words). The guard's carry (`0x5D3B20`: state 0x1C) needs the guard's chase, which is not ported (`[EXT:tpi-capability-gates]`).
-The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the native-guest tests pass with both switches on
-(`OPENTPW_TEST_TPI_NATIVE_WALK=1` runs every rig of `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`, `ThemeParkIncNativeQueueTests` and `ThemeParkIncNativeVisitTests` that way).
+The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the rigs of `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`,
+`ThemeParkIncNativeQueueTests` and `ThemeParkIncNativeVisitTests` walk with Theme Park Inc's navigator, as every Theme Park Inc park does since NV4.
 
 **The speed step `0x60BC90`** [R, O] is Theme Park World's `0x4FA870` value for value (TPI adds +3.0 × `+0xDC` with `faddp` where tp.exe subtracts −3.0 × it; the same single):
 (`+0xD4` + `+0xD6` + `+0xD8`) / `[0x9CFB2C]` (100) + 3 × `+0xDC`, × 0.25, each operation a single; the caps `0x63EF90`; the boost × 99 / 100 as a word; mPreviousX/Y `+0x1A8/+0x1AC` = the
@@ -183,40 +193,100 @@ and the largest block stamp (`0x5D8260`) of the nine cells around it (the pairs 
 The stranded mark `0x60B9A0` stores the raised counter for a nonzero argument and 0 otherwise; its only callers (the wander, `0x60A588` and `0x60A72B`) pass 0. OpenTPW's
 `RequestRoute`, `RouteToTpiPoint` and `StrandedHolds` are these, tp.exe's `0x4FA530`, `0x4FA5F0` and `0x4FA770` being the same code. **The staff route `0x62EB10`** (`StaffRoute`,
 ported in the staff phase) refuses the entrance cells (0x2F, 0x11) and (0x30, 0x11) while the park is closed, sets the walk mask to 1 when the member's cell or the target's is empty
-(type 0), else 0, and calls `0x60B8E0`; a staff member's mark is never set. The patrol still bypasses it (gap 7 of the plan): the staff's wander is NV4.
+(type 0), else 0, and calls `0x60B8E0`; a staff member's mark is never set. Since NV4 the patrol's final route takes it too (W2, which closes gap 7 of the plan).
 
 **The stamp counter `0x5D81F0`** [R, O]. One process-wide dword (`0xA9D2E8`), raised and returned by each call, never reset and not saved. A park with Theme Park Inc's navigator
-counts every simulation call of its native routes (`ParkCellMap.CountsSimulationCalls`; `NextStamp` for a gate or a mark, `SetupStamp` for a set-up's success), in the original's order. Theme Park World-rule walkers in such a park (`[EXT:tpi-twp-guest-rules]`, until NV4) route through Theme Park World's requests, which raise nothing:
+(every Theme Park Inc park since NV4; `ParkCellMap.CountsSimulationCalls`) counts every simulation call OpenTPW makes of the routines that call it, in the original's order: `NextStamp` for a
+request's or the wander's gate and for a mark, `SetupStamp` for a set-up's success. Nothing else raises it. The calls, by caller:
 
 | Caller | Address | OpenTPW |
 | --- | --- | --- |
-| the route requests | `0x60B828`, `0x60B8F4` | `RequestRoute`, `RouteToTpiPoint`, `StaffRoute`, the training walk's fallback cell steer (`EnterToTrainingRoom`) |
-| the walk set-up's success | `0x63E79B` | `GuestNavigation.Setup` (a failed set-up keeps its stamp and raises nothing) |
-| the wander: entry gate, a guest's final route, the off-path tries, the stranded mark | `0x609FBE`, `0x60A55F`, `0x60A6FB` / `0x60A83F`, `0x60A4A5` | `Wander` (the guests'; Theme Park World's `0x4F9490` has the same calls) |
+| the route requests | `0x60B828`, `0x60B8F4` | `RequestRoute`, `RouteToTpiPoint`, `StaffRoute` (`ThemeParkIncPatrol`), the training walk's fallback cell steer (`EnterToTrainingRoom`) |
+| the walk set-up's success | `0x63E79B` | `GuestNavigation.Setup`, behind every `Navigate` (a failed set-up keeps its stamp and raises nothing) |
+| a guest's wander: entry gate, final route, off-path tries, the stranded mark | `0x609FBE`, `0x60A55F`, `0x60A6FB` / `0x60A83F`, `0x60A4A5` | `GuestSimulation.Wander` (Theme Park World's `0x4F9490` has the same calls at `0x4F94E2`, `0x4F9CB5`, `0x4F9983` / `0x4F9B2E`, `0x4F9DFC`) |
+| a staff member's wander and patrol: entry gate, off-path tries, the final staff route | `0x609FBE`, `0x60A6FB` / `0x60A83F`, `0x60A547` → `0x62EB10` | `ThemeParkIncPatrol.Destination` (NV4; the fallback `0x62C720` counts through its staff routes) |
 | the cell edits and the queue length change | `0x67CC50`, `0x67CE47`, `0x682FB3`, `0x5E06B3` | `ParkCellMap.SetType`, `StampBlockAt` (already counted) |
 | the sprite placement's simulation calls | `0x60CAC9` (guest constructor), `0x61A70B` (the state setter's entry for state 19) | `ThemeParkIncPlacementStamp` after the constructor's walk to the booth, and in state 19's entry for a teleporting ride before its beam (guest phase P3b) |
 
+The guests of the default path (Theme Park World's states under `[EXT:tpi-twp-guest-rules]`, which still covers their decisions, not their walk) count through the same routines, as tp.exe's own
+states do at the same places: their route requests (`RequestRoute`, tp.exe `0x4FA530` with its counter call `0x4FA578`; `RouteToPoint` and `RouteToStopPoint`, `0x4FA5F0` at `0x4FA5FE`), their
+wander and their set-ups. In a Theme Park World park none of these calls raises the counter (`NextStamp` answers the next value without raising it, `SetupStamp` the counter itself), so its
+counter still counts the edits only.
+
 `[EXT:tpi-stamp-counter-sim-only]` (user-approved 2026-11-25, decision N-5): the sprite placement `0x60AE00` also raises the counter once per person per rendered frame (the render pass
 `0x64E270` from the frame loops), which makes the original's stored stamps depend on the frame rate; OpenTPW counts only its simulation calls. The advisor's condition scan reaches the
-"is stranded" query `0x60BA30` (once per person examined, `0x722A90` → `0x5B7860`); that scan is not ported, so nothing raises the counter there (decision N-2). The staff's patrol
-wander comes with NV4, so under the switch the counter counts none of its calls until then.
+"is stranded" query `0x60BA30` (once per person examined, `0x722A90` → `0x5B7860`); that scan is not ported, so nothing raises the counter there (decision N-2).
+
+**An unsigned dword.** The counter, the block stamps, a walk's `path_timestamp` and a stranded mark are the original's unsigned dwords and are compared unsigned (the route request's `jae` at
+`0x60B833`, follow_path's `jbe` at `0x63D0BF`, the stranded test's maximum). OpenTPW keeps their 32 bits in ints that wrap past 2^31 as the dword does, compares them unsigned
+(`ParkCellMap.StampBelow`) and saves and loads any 32 bits, so a session whose counter passes 2^31 still saves and loads. The consistency checks of a save (no block stamp and no walk's stamp
+above the counter) compare unsigned too; a session that wraps the counter past 2^32 (about 4.3 billion calls) would fail them, which no measured session approaches.
 
 Every comparison of stored stamps is between values of distinct calls (a block stamp against a walk's stamp in follow_path, a block stamp against a mark, a mark against the next
 counter value) and the counter only grows, so counting every call changes no outcome: a Theme Park World map keeps counting the edits only (`NextStamp` answers the next value without
 raising it), and `ThemeParkIncWalkStepTests.AThemeParkWorldRunIsTheSameUnderBothCountingModes` runs a Theme Park World guest park with path edits and stranded marks under both modes, tick
-for tick alike. With the switch the counter joins the digest even while no block is stamped, and the layout writes it with the optional `SimulationStampCounter` (docs/PARK-SAVES.md).
+for tick alike. In a Theme Park Inc park the counter joins the digest even while no block is stamped, and the layout writes it with the optional `SimulationStampCounter` (docs/PARK-SAVES.md),
+which a resume refuses in a Theme Park World park (and its absence in a Theme Park Inc one). A Theme Park Inc layout checkpoint (`ThemeParkIncLayoutCheckpoint`, a fresh session) restores the
+counter it saved and counts on from it; one written before NV4 holds the edit counter, at or above every block stamp it saved, so counting on from it changes no comparison.
 The re-route after a save and after a load (`0x609B55`, decision N-1) raises the counter too; it is NV5's.
 
 **Verified.** `tpi-exe-walk-step`, `tpi-exe-speed-step`, `tpi-exe-route-request` and `tpi-exe-staff-route` (ORACLE.md section 7.19) agree with `walk_reading.py`; the C# meets Game.exe's
 walk steps directly (`ThemeParkIncWalkStepTests`), and the navigator tests now compare path_timestamp too.
 
+## The wander and patrol destination (NV4)
+
+`0x609F70` (thiscall person → 1 when a walk is set) is tp.exe's `0x4F9490` with four differences, all of them the staff's [R, O]. Its order:
+
+1. **The gate** (`0x609FBE`): the stamp counter raised; a counter below the mark `+0x1B0` clears it; a mark still set and held (`0x60BB50`) asks for the thought 0x11 (`0x638960`) and
+   answers 0 before any draw; else the mark is cleared (`0x60A004`).
+2. **The step count** `R % 5` (`0x60A010`, the world generator `0x6493E0`), before anything else draws.
+3. **The patrol rectangle.** A staff member (the kinds 4, 5, 6, 8, 7 and, **W1**, the gardener 0x14) whose start cell's word fails the rectangle test `0x62C610` tries the fallback `0x62C720`:
+   success answers 1 (without the wander flag `+0xE8`); failure clears the rectangle out of the walk (the flag `[esp+0x2C]`).
+4. **The off-path search** for a start cell without links (`0x65CBF0` below 1, `0x60A5EF`): the eight patterns at distances 0 to 3, a path cell inside the map each through the gate (the counter
+   raised at `0x60A6FB`), the mark cleared (`0x60B9A0(0)`) and SetDest to its centre; then five tries of `R % 11 − 5` in x and y (`0x60A7A5`, `0x60A7BE`; no type test), each through the gate
+   (`0x60A83F`); none answers 0 without a mark. The same for a guest and a staff member: no staff route here.
+5. **The steps.** tp.exe's random walk over the cell links (`GuestWander`): every link bit in the order +Y, +X, −Y, −X less the four removals, a counter of them, the first candidate when it
+   is below two, else the first from `R & 3` (`0x60A34C`) that is neither empty nor the way back; one more step each time a step ends on the start with the count at 0. Removal 1 is the
+   rectangle: a staff member with the flag clear drops each candidate whose word fails `0x62C610`, and the drop that leaves the counter at 0 calls `0x62C720` at once (`0x60A401`).
+   A step with no candidate left: a staff member calls `0x62C720` (`0x60A472`), a guest asks for the thought 0x11 and sets the mark to the raised counter (`0x60A4A5`, not through
+   `0x60B9A0`) and answers 0.
+6. **The point**: two draws `R & 0x7F` clamped to 5..123 (`0x60A3DA`, `0x60A3EA`), the sub-cell bytes of the last cell.
+7. **The final route.** A staff member takes the staff route `0x62EB10` to (x << 8 | bx, y << 8 | by) (**W2**: its walk mask from the type-0 test, the closed park's refusal of the entrance cells,
+   the counter raised inside `0x60B8E0`); tp.exe's staff take a guest's route. A guest goes through the gate (`0x60A55F`), the mark is cleared and SetDest runs with the words << 8.
+   A walk set raises the wander flag `+0xE8` (`0x60A5D2`), which only a guest's state 7 reads.
+
+**The rectangle test `0x62C610`** (**W3**): the word's cell ((w − 1) & 0x7F, (w − 1) >> 7) against the four dwords `+0x24C`, `+0x250`, `+0x254`, `+0x258` (x0, y0, x1, y1), each pair ordered
+first, inclusive, signed. tp.exe's `0x506ED0` reads two corner words and orders nothing. The setter `0x62C3C0` stores the two corners as given, so reversed corners occur in the original.
+
+**The fallback `0x62C720`** (**W4**): the corner words of (x0, y0) and (x1, y1) (`0x4A63F0`), width = x1 − x0 + 1 and height = y1 − y0 + 1 from their cells, **not ordered**; up to 30 tries of
+x = `R % width` + x0 and y = `R % height` + y0 with **unsigned** divisions (`div`), a cell inside the map (`0x5D7260`, signed) of type 1 and the staff route to its centre; after 30 the thought
+0x1E and 0 (tp.exe's `0x506F30` routes to the cell through `0x4FA530` and asks for 0x16). Reversed corners give a negative width, an unsigned divisor of 2^32 less it, which is above every draw
+(at most 2^31), so x = R + x0 and nearly every try leaves the map: a member with reversed corners walks into his rectangle only by the walk. OpenTPW ports this as written
+(`ThemeParkIncPatrol.Fallback`). Corners one cell apart and reversed make the width or height **zero**, a divide error at `0x62C7CF` or `0x62C7DC`: a crash in the original. No OpenTPW setter writes
+such a rectangle (Theme Park Inc's patrol tool is not ported; a member's rectangle is the whole map unless restored), and a restore refuses it (`ThemeParkIncStaffMember.IsValidWorld`).
+
+**OpenTPW.** `ThemeParkIncPatrol.Destination` is the staff's `0x609F70`, with `GuestWander.PickAfterCount` for the steps (the step count drawn before the rectangle, as `0x60A010` does) and
+`GuestWander.OffPath` for the off-path search; `GuestSimulation.Wander` is a guest's, the calls and draws of tp.exe's `0x4F9490`. `ThemeParkIncStaffWorld.Patrol` runs the first for every
+role's patrol. The thoughts are presentation: a staff member's thought object is not modelled, and a guest's goes through Theme Park World's bubbles (`[EXT:tpi-twp-guest-rules]`, the thought
+timing). OpenTPW's candidate walk drops a link that leaves the map or crosses a pool bridge (`[EXT:pools-cell-type]`); no park cell links out of the map.
+
+Draw order: the gate draws nothing; `R % 5`; the fallback's two draws per try (when the start is outside the rectangle); the off-path tries' two draws each, or `R & 3` per step with two or
+more candidates; the two byte draws; the fallback's draws again when the walk runs out of candidates. Theme Park World's staff (`StaffWorldSimulation.Patrol`) draw `R % 5` after their
+`0x506F30` instead of before it; that is a Theme Park World follow-up (its oracle `tpw-exe-wander-destination` runs guests only), untouched here.
+
+**Verified.** The oracle target `tpi-exe-wander` (ORACLE.md section 7.19) runs `0x609F70` with the world generator, the counter, the stranded test, the mark setter, the rectangle test, the
+fallback, the staff route and the route search on 200 persons (guests and every staff kind, the gardener included; held and stale marks, starts without links, rectangles around and away
+from the start, reversed, one cell; the park open and closed): all agree with `walk_reading.py`'s `Wanderer`, and tp.exe's rules on the same persons differ on 86. `ThemeParkIncWanderTests` holds
+Game.exe's results on the navigator tests' map for 14 wanders (`GuestSimulation.Wander` and `ThemeParkIncPatrol.Destination`: the answer, the generator's state, the counter, the mark, the mask
+and the whole record) and for 7 sets of route requests (`RequestRoute`, `RouteToTpiPoint`, `ThemeParkIncPatrol.StaffRoute`), from `tools/ppc-analysis/oracle_x86/tpi_wander_golden.py`.
+
 ## Random numbers
 
 No world draw and no C runtime `rand()` (`0x870D38`) is reached from the edge test, the commit, the search or the neighbour query [R], nor from the constructor, the set-up, the
 steering step, the speed setter or the serializer [R, O: the oracle allows none of them], nor from the walk step, the speed step, the route requests, the stranded test or the staff
-route [R, O: the NV3 targets allow neither routine].
+route [R, O: the NV3 targets allow neither routine]. The wander and the fallback draw the world generator `0x6493E0` only (the draws above) and never `rand()` [R, O: `tpi-exe-wander` runs
+the generator and allows no `rand()`].
 
 ## Later phases
 
-- NV4: the wander and patrol destination `0x609F70`; the switch turns on and the walk scope of `[EXT:tpi-twp-guest-rules]` retires.
 - NV5: the native walk storage and load semantics.

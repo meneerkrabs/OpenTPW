@@ -74,6 +74,76 @@ public class ThemeParkIncWalkStepTests
 		Assert.IsTrue( Steps( 1, 1, 0, 25 ).Last().StartsWith( "0:" ) && !Steps( 1, 1, 0, 25 ).Last().StartsWith( "0:-" ) );
 	}
 
+	private const int Unwritten = 0x7777;
+
+	/// <summary>
+	/// The steps of one walk through the guests' own walk step (<c>GuestSimulation.StepThemeParkInc</c>, a guest with a Theme Park Inc record of the given generation and the bonus word) or the staff's
+	/// (<c>ThemeParkIncStaffWorld.Walk</c>, a guard for kind 7, else a handyman), in the golden's text: the heading word, the template and the interval each read back from what the step wrote.
+	/// </summary>
+	private static List<string> WholeSteps( int walk, int kind, int generation, int bonus )
+	{
+		var (x, y, vx, vy, mask, speed, force, tx, ty, count) = ThemeParkIncNavigatorTests.Walks[walk];
+		var map = ThemeParkIncNavigatorTests.Map();
+		var fresh = new GuestNavigation { X = x, Y = y, VelocityX = vx, VelocityY = vy, Mask = mask, MaxSpeed = speed, MaxForce = force };
+		var steps = new List<string>();
+		static string Show( int value ) => value == Unwritten ? "-" : $"{value:x}";
+		if ( kind == ThemeParkIncWalkStep.GuestKind )
+		{
+			var simulation = new GuestSimulation( new GuestPathGrid( map ), GuestTests.CreateSettings(), 7 );
+			var guest = simulation.SpawnInPark( 40, 40 );
+			guest.Navigation.LoadRecord( fresh.ToRecord() );
+			map.RestoreBlockStamps( 0, null );
+			guest.Navigation.Navigate( map, tx, ty );
+			guest.ToiletBonus = bonus;
+			var tpi = new ThemeParkIncGuestRecord { Generation = generation };
+			guest.Tpi = tpi;
+			var step = typeof( GuestSimulation ).GetMethod( "StepThemeParkInc", BindingFlags.NonPublic | BindingFlags.Instance )!;
+			for ( var index = 0; index < count; index++ )
+			{
+				tpi.Heading = Unwritten;
+				guest.BodySprite.ResetForNewPerson();
+				var result = (WalkResult)step.Invoke( simulation, [guest] )!;
+				var walking = result == WalkResult.Walking;
+				steps.Add( $"{(int)result}:{Show( tpi.Heading )}:{(walking ? $"{(int)guest.BodySprite.PendingTemplate!:x}" : "-")}:{(walking ? $"{guest.BodySprite.PendingInterval:x}" : "-")}" );
+			}
+			return steps;
+		}
+		var world = new ThemeParkIncStaffWorld( new GuestPathGrid( map ) );
+		var member = new ThemeParkIncStaffMember( 1, kind == ThemeParkIncWalkStep.GuardKind ? ThemeParkIncStaffRole.Guard : ThemeParkIncStaffRole.Handyman, 0, 0, 0, 0, 0 )
+		{
+			Navigation = fresh,
+			SpeedBonus = bonus
+		};
+		fresh.Navigate( map, tx, ty );
+		var walkStep = typeof( ThemeParkIncStaffWorld ).GetMethod( "Walk", BindingFlags.NonPublic | BindingFlags.Instance )!;
+		for ( var index = 0; index < count; index++ )
+		{
+			member.SpriteAngle = Unwritten;
+			member.Template = Unwritten;
+			member.Sprite.Reset();
+			var result = (int)walkStep.Invoke( world, [member] )!;
+			var walking = result == 1;
+			steps.Add( $"{result}:{Show( member.SpriteAngle )}:{(walking ? Show( member.Template ) : "-")}:{(walking ? $"{member.Sprite.PendingInterval:x}" : "-")}" );
+		}
+		return steps;
+	}
+
+	/// <summary>
+	/// The guests' walk step and the staff's, run whole on a guest and on a member, write what Game.exe's walk step <c>0x60B460</c> wrote: the result, the heading word (on arrival too), the template
+	/// (only a kid or a guard with a bonus runs) and the interval, for each golden walk and person (the lead's NV3 review).
+	/// </summary>
+	[TestMethod]
+	public void TheGuestsAndTheStaffsWalkStepsFollowGameExe()
+	{
+		foreach ( var golden in Expected )
+		{
+			var steps = WholeSteps( golden.Walk, golden.Kind, golden.Generation, golden.Bonus );
+			var what = $"walk {golden.Walk}, kind {golden.Kind}, generation {golden.Generation}";
+			Assert.AreEqual( golden.First, string.Join( ',', steps.Take( 12 ) ), what );
+			Assert.AreEqual( golden.Digest, Convert.ToHexStringLower( SHA256.HashData( Encoding.ASCII.GetBytes( string.Join( ',', steps ) ) ) ), what );
+		}
+	}
+
 	[TestMethod]
 	public void OnlyKidsAndGuardsRun()
 	{
@@ -166,6 +236,32 @@ public class ThemeParkIncWalkStepTests
 		return text.ToString();
 	}
 
+	/// <summary>
+	/// The counter is the original's unsigned dword (the lead's NV3 review): past 2^31 it wraps into negative ints, compares unsigned against stamps and marks, and a layout holding such values
+	/// saves, validates and restores.
+	/// </summary>
+	[TestMethod]
+	public void TheCounterIsAnUnsignedDwordPastTwoToTheThirtyFirst()
+	{
+		var inc = new ParkCellMap( 32, 32 ) { EdgeRules = WalkEdgeRules.ThemeParkInc };
+		inc.RestoreBlockStamps( int.MaxValue - 1, null );
+		Assert.AreEqual( int.MaxValue, inc.NextStamp() );
+		Assert.AreEqual( int.MinValue, inc.NextStamp(), "the dword passes 0x7FFFFFFF to 0x80000000" );
+		inc.SetType( 3, 3, ParkCellType.Path );
+		Assert.AreEqual( int.MinValue + 1, inc.BlockStamp( 0, 0 ) );
+		Assert.IsTrue( ParkCellMap.StampBelow( int.MaxValue, int.MinValue ), "0x7FFFFFFF is below 0x80000000 unsigned" );
+		Assert.IsFalse( ParkCellMap.StampBelow( int.MinValue, int.MaxValue ) );
+		// follow_path's unsigned test: a walk set up now is stamped above the block, so it does not search again
+		var walk = new GuestNavigation { X = (3 << 16) + 0x8000, Y = (3 << 16) + 0x8000, MaxSpeed = 13107, MaxForce = 26214 };
+		walk.Navigate( inc, (3 << 16) + 0x8000, (3 << 16) + 0x8000 );
+		Assert.IsFalse( ParkCellMap.StampBelow( walk.Stamp, inc.BlockStamp( 0, 0 ) ) );
+
+		var data = ParkLayoutSnapshot.CaptureSnapshot( inc, new ParkObjects( null!, new SandboxParkGrid() ) );
+		Assert.IsTrue( data.Cells.StampCounter < 0 && data.Cells.BlockStamps!.Any( stamp => stamp < 0 ), "saved as the dword's bits" );
+		var restored = ParkLayoutSnapshot.RestoreCellMap( ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( data ) ) );
+		Assert.AreEqual( (inc.StampCounter, inc.BlockStamp( 0, 0 )), (restored.StampCounter, restored.BlockStamp( 0, 0 )) );
+	}
+
 	[TestMethod]
 	public void ACountingMapKeepsItsCounterInTheLayoutAndAThemeParkWorldMapWritesNothingNew()
 	{
@@ -193,43 +289,33 @@ public class ThemeParkIncWalkStepTests
 
 	// ---- The level's switch ---------------------------------------------------------------------------------------------------------------------------------
 
-	/// <summary>The level reads the hidden switch once and gives a Theme Park Inc park's cell map Theme Park Inc's edge test and counter; a Theme Park World level ignores the switch.</summary>
+	/// <summary>A Theme Park Inc level gives its park's cell map Theme Park Inc's edge test and counter (the default since NV4, read once); a Theme Park World level keeps Theme Park World's.</summary>
 	[TestMethod]
-	public void TheLevelGivesAThemeParkIncParkTheNavigatorAndThemeParkWorldIgnoresTheSwitch()
+	public void TheLevelGivesAThemeParkIncParkTheNavigatorAndThemeParkWorldItsOwnRules()
 	{
 		var edition = GameEditions.Current;
-		var requested = GuestSimulation.ThemeParkIncNativeWalkRequested;
 		try
 		{
 			GameEditions.Select( GameEdition.ThemeParkInc );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
 			var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 			var cells = new ParkCellMap( 16, 16 );
 			level.ApplyParkEdgeRules( cells );
 			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, cells.EdgeRules );
 			Assert.IsTrue( cells.CountsSimulationCalls );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = false;
+			GameEditions.Select( GameEdition.ThemeParkWorld );
 			var later = new ParkCellMap( 16, 16 );
 			level.ApplyParkEdgeRules( later );
-			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, later.EdgeRules, "the level read the switch once" );
+			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, later.EdgeRules, "the level read the edition's rules once" );
 
-			var plain = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
-			var off = new ParkCellMap( 16, 16 );
-			plain.ApplyParkEdgeRules( off );
-			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, off.EdgeRules, "off by default" );
-
-			GameEditions.Select( GameEdition.ThemeParkWorld );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
 			var world = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
 			var worldCells = new ParkCellMap( 16, 16 );
 			world.ApplyParkEdgeRules( worldCells );
-			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, worldCells.EdgeRules, "a Theme Park World level ignores the switch" );
+			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, worldCells.EdgeRules, "a Theme Park World level walks with Theme Park World's rules" );
 			Assert.IsFalse( worldCells.CountsSimulationCalls );
 		}
 		finally
 		{
 			GameEditions.Select( edition );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = requested;
 		}
 	}
 }

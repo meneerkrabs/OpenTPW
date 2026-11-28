@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// </summary>
 /// <remarks>
 /// A tired gardener rests as the other roles do (the states 2, 3 and 0x23, ThemeParkIncStaffWorld.Rest.cs). The facing the watering state asks for (<c>0x609E60</c>: the heading word +0x2C from the
-/// queue link byte of the gardener's cell, 1000, 1500, 500 or 2000 in the 2048 units of <c>0x91E074</c>) is presentation and not ported: the gardener keeps the heading of his walk's last step
-/// (<c>[EXT:tpi-twp-guest-rules]</c>, D1). The destructor's claim release (<c>0x5D2430</c> → <c>0x5E37B0</c>) waits for the firing of Theme Park Inc staff, which is not ported.
+/// queue link byte of the gardener's cell, 1000, 1500, 500 or 2000 in the 2048 units of <c>0x91E074</c>) only turns the sprite, and the heading word is neither saved nor hashed yet (the native
+/// person words are the navigator plan's NV5), so it is not ported: the gardener keeps the heading his walk step wrote (D1). The destructor's claim release (<c>0x5D2430</c> → <c>0x5E37B0</c>) waits for the firing of Theme Park Inc staff, which is not ported.
 /// </remarks>
 public sealed partial class ThemeParkIncStaffWorld
 {

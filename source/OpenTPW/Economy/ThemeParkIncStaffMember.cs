@@ -287,7 +287,7 @@ public sealed class ThemeParkIncStaffMember
 	public float HeadingX { get; internal set; }
 	public float HeadingY { get; internal set; } = 1f;
 	/// <summary>
-	/// The heading word <c>+0x2C</c> the walk step writes with Theme Park Inc's navigator (<see cref="ThemeParkIncWalkStep.Heading"/>, the switch <c>--tpi-native-walk</c>); <see cref="HeadingX"/>
+	/// The heading word <c>+0x2C</c> the walk step writes with Theme Park Inc's navigator (<see cref="ThemeParkIncWalkStep.Heading"/>, every Theme Park Inc park); <see cref="HeadingX"/>
 	/// and <see cref="HeadingY"/> are then its vector. Not saved or hashed yet: the native walk storage (navigator plan NV5) stores it with the person words.
 	/// </summary>
 	internal int SpriteAngle { get; set; }
@@ -349,7 +349,7 @@ public sealed class ThemeParkIncStaffMember
 	internal static bool IsValidWorld( ThemeParkIncStaffRole role, ThemeParkIncStaffWorldSnapshot? world ) => world == null || IsPortedState( role, world.State )
 		&& world.ThingId is >= 1 and <= ThingPool.Capacity && world.LitterCell is >= 0 and <= ParkLitter.MapSize * ParkLitter.MapSize && world.BaseSpeed is >= 0 and <= ushort.MaxValue
 		&& world.SpeedBonus is >= 0 and <= ushort.MaxValue && world.Boost is >= 0 and <= ushort.MaxValue && float.IsFinite( world.SmoothedSpeed ) && world.IdleStamp >= 0 && world.WorkStamp >= 0
-		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && world.CellSerial >= 0 && world.Navigation is { IsValid: true }
+		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && IsWalkableRectangle( area ) && world.CellSerial >= 0 && world.Navigation is { IsValid: true }
 		&& role switch
 		{
 			ThemeParkIncStaffRole.Mechanic => world.RideId is >= 0 && world.JobTimer is >= 0 and <= uint.MaxValue && world.PlantId == null && world.LitterCell == 0 && world.WorkStamp == 0 && world.EffectCell == null && world.EffectRadius == null
@@ -363,6 +363,12 @@ public sealed class ThemeParkIncStaffMember
 				&& IsValidEffect( world ) && area is [0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1],
 			_ => world.RideId == null && world.JobTimer == null && world.PlantId == null && world.EffectCell == null && world.EffectRadius == null && world.Template is 1 or 2 or 3 or 0xF or 0x19 or ThemeParkIncStaffWorld.StrikeTemplate
 		};
+
+	/// <summary>
+	/// Whether the patrol fallback <c>0x62C720</c> can run on the rectangle: its width x1 − x0 + 1 and height y1 − y0 + 1 (corners as stored, unordered) are not zero. Corners one cell apart and reversed
+	/// make one of them zero, a divide error at <c>0x62C7CF</c> or <c>0x62C7DC</c> (a crash in the original); no OpenTPW setter writes such a rectangle, and a restore refuses it.
+	/// </summary>
+	private static bool IsWalkableRectangle( int[] area ) => area[2] - area[0] != -1 && area[3] - area[1] != -1;
 
 	/// <summary>An entertainer's or a guard's cell effect: a cell word of the map and a radius that is the writer's 16-bit argument.</summary>
 	private static bool IsValidEffect( ThemeParkIncStaffWorldSnapshot world ) =>

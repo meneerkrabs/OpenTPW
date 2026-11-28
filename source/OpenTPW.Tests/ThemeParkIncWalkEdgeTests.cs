@@ -185,20 +185,21 @@ public class ThemeParkIncWalkEdgeTests
 		ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( simulation.CaptureSnapshot() ) )!;
 
 	[TestMethod]
-	public void ASaveRecordsTheSwitchAndARestoreRefusesTheOtherSetting()
+	public void ASaveRecordsTheRulesAndARestoreRefusesTheOtherRules()
 	{
 		var walkSave = SaveOf( Park( WalkEdgeRules.ThemeParkInc ) );
-		Assert.IsTrue( walkSave.ThemeParkIncNativeWalk, "the save records the switch" );
+		Assert.IsTrue( walkSave.ThemeParkIncNativeWalk, "the save records the navigator's rules" );
 		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkWorld ).RestoreSnapshot( walkSave ) ).Message,
-			"navigator rules on (--tpi-native-walk)" );
+			"made with Theme Park Inc's navigator rules" );
 		Park( WalkEdgeRules.ThemeParkInc ).RestoreSnapshot( walkSave );
 
 		var plainSave = SaveOf( Park( WalkEdgeRules.ThemeParkWorld ) );
 		Assert.IsFalse( plainSave.ThemeParkIncNativeWalk );
 		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( plainSave ) ).Contains( nameof( GuestSimulationSnapshot.ThemeParkIncNativeWalk ) ),
-			"a switch-off save does not write the member: its bytes are unchanged" );
+			"a Theme Park World save does not write the member: its bytes are unchanged" );
+		// a Theme Park Inc save made before NV4 (the switch off) is refused by every Theme Park Inc park now
 		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => Park( WalkEdgeRules.ThemeParkInc ).RestoreSnapshot( plainSave ) ).Message,
-			"without Theme Park Inc's navigator rules" );
+			"made before Theme Park Inc's own navigator" );
 		Park( WalkEdgeRules.ThemeParkWorld ).RestoreSnapshot( plainSave );
 	}
 
@@ -212,6 +213,16 @@ public class ThemeParkIncWalkEdgeTests
 			"only a Theme Park Inc park walks with Theme Park Inc's navigator rules" );
 	}
 
+	/// <summary>A Theme Park World resume file whose layout counter counts the simulation's calls is refused (the lead's NV3 review: it is Theme Park Inc's navigator's alone).</summary>
+	[TestMethod]
+	public void AThemeParkWorldResumeFileCannotCarryASimulationCounter()
+	{
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		var counted = snapshot with { Layout = snapshot.Layout! with { Cells = snapshot.Layout.Cells! with { SimulationStampCounter = true, StampCounter = 12 } } };
+		StringAssert.Contains( Assert.ThrowsException<System.IO.InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( counted ) ).Message,
+			"counts the simulation's calls in a park without Theme Park Inc's navigator" );
+	}
+
 	[TestMethod]
 	public void AMapCopiedForAPredictionKeepsItsEdgeTest()
 	{
@@ -221,31 +232,25 @@ public class ThemeParkIncWalkEdgeTests
 	}
 }
 
-/// <summary>The hidden switch <c>--tpi-native-walk</c> reaches a new park's edge test in Theme Park Inc and nowhere else (<see cref="WalkEdges.RulesForNewPark"/>).</summary>
+/// <summary>A new park's edge test is Theme Park Inc's in Theme Park Inc and Theme Park World's elsewhere (<see cref="WalkEdges.RulesForNewPark"/>; the default since NV4).</summary>
 [TestClass]
 [DoNotParallelize]
-public class ThemeParkIncWalkSwitchTests
+public class ThemeParkIncWalkRulesTests
 {
 	[TestMethod]
-	public void TheSwitchSelectsTheIncEdgeTestInAThemeParkIncParkOnly()
+	public void ThemeParkIncParksWalkWithTheIncEdgeTestAndThemeParkWorldParksWithTheirOwn()
 	{
 		var edition = GameEditions.Current;
-		var requested = GuestSimulation.ThemeParkIncNativeWalkRequested;
 		try
 		{
 			GameEditions.Select( GameEdition.ThemeParkInc );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
 			Assert.AreEqual( WalkEdgeRules.ThemeParkInc, WalkEdges.RulesForNewPark() );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = false;
-			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, WalkEdges.RulesForNewPark(), "off by default: Theme Park Inc keeps Theme Park World's walk" );
 			GameEditions.Select( GameEdition.ThemeParkWorld );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = true;
-			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, WalkEdges.RulesForNewPark(), "a Theme Park World park ignores the switch" );
+			Assert.AreEqual( WalkEdgeRules.ThemeParkWorld, WalkEdges.RulesForNewPark() );
 		}
 		finally
 		{
 			GameEditions.Select( edition );
-			GuestSimulation.ThemeParkIncNativeWalkRequested = requested;
 		}
 	}
 }

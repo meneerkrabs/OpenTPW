@@ -520,8 +520,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return guest;
 	}
 
-	// [EXT:tpi-twp-guest-rules] the constructor's profile, meters, base speed and appearance are Theme Park Inc's; the guest then walks, decides and animates by the shared
-	// Theme Park World update wherever Theme Park Inc's has not been ported
+	// [EXT:tpi-twp-guest-rules] the constructor's profile, meters, base speed and appearance are Theme Park Inc's; the guest then walks with Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md) and
+	// decides and animates by the shared Theme Park World update wherever Theme Park Inc's has not been ported
 	private Guest CreateThemeParkIncGuest( int id, ThemeParkIncGuestStartSettings settings )
 	{
 		// [BIN:TPI-EXE:0x60C58F guest profile] The unforced constructor uses four profile draws,
@@ -535,7 +535,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			ToiletBonus = GuestSpeed.ToiletBonus, TpiPrankCode = meters.Prank,
 			Tpi = NativeTpi != null ? NewThemeParkIncRecord( profile ) : null
 		};
-		// [BIN:TPI-EXE:0x0063ED10 navigator constructor] Theme Park Inc's native walk (--tpi-native-walk) starts the person's navigator (+0xEC, called at 0x608F83) with the constructor's caps
+		// [BIN:TPI-EXE:0x0063ED10 navigator constructor] Theme Park Inc's native walk (every Theme Park Inc park) starts the person's navigator (+0xEC, called at 0x608F83) with the constructor's caps
 		// 0x3333 and 0x6666; the speed step sets them before the first walk step
 		if ( Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc )
 			(guest.MaxSpeed, guest.MaxForce) = (GuestNavigation.ConstructorMaxSpeed, GuestNavigation.ConstructorMaxForce);
@@ -1520,7 +1520,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		var navigation = guest.Navigation;
 		// the counter is raised first, whatever the mark (0x60B828: a park counting the simulation's calls, ParkCellMap.NextStamp)
-		if ( Grid.Cells.NextStamp() < guest.StrandedMark )
+		if ( ParkCellMap.StampBelow( Grid.Cells.NextStamp(), guest.StrandedMark ) )
 			guest.StrandedMark = 0;
 		if ( guest.StrandedMark != 0 && StrandedHolds( guest, (guest.CellX, guest.CellY) ) )
 			return false;
@@ -1829,10 +1829,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>A route request to a random point of <paramref name="cell"/> (the two sub-cell bytes are world draws in tp.exe, <c>0x00516330</c>); false when the walk search fails.</summary>
 	// [BIN:TPW-EXE:0x00500BD0 stop walk draws] the cell pick and the two sub-cell bytes (0x00500AD0, 0x00500BD0) are world draws (0x00516330), taken here from the park's one world generator (WorldRng) in the original's order: the pick, then x, then y
+	// [BIN:TPW-EXE:0x00500BAE stop walk request] the route request 0x004FA5F0, whose counter call (0x004FA5FE) counts in a park with Theme Park Inc's navigator (ParkCellMap.NextStamp)
 	private bool RouteToStopPoint( Guest guest, (int X, int Y) cell )
 	{
 		var byteX = (int)(random.NextWord() & 0xFF);
 		var byteY = (int)(random.NextWord() & 0xFF);
+		Grid.Cells.NextStamp();
 		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
 		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
 		guest.HasWaypoint = true;
@@ -2444,7 +2446,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var cells = Grid.Cells;
 		// [BIN:TPW-EXE:0x004F94C6 stranded hold] a guest that found no way on is marked with the stamp counter (+0x198): while no block around its cell (the queue's tail for a queue cell) has been stamped above the mark (0x004FA770) the wander thinks "Confused" (0x0050BE80, 0x11) and returns before any draw
 		// [BIN:TPI-EXE:0x609FBE wander gate] the counter raised first, whatever the mark (ParkCellMap.NextStamp)
-		if ( cells.NextStamp() < guest.StrandedMark )
+		if ( ParkCellMap.StampBelow( cells.NextStamp(), guest.StrandedMark ) )
 			guest.StrandedMark = 0;
 		if ( guest.StrandedMark != 0 && StrandedHolds( guest, start ) )
 		{
@@ -2517,16 +2519,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 		}
 		var id = (ushort)(cell.Y * 128 + cell.X + 1);
-		var largest = 0;
+		var largest = 0u;
 		for ( var dy = -1; dy <= 1; dy++ )
 		{
 			for ( var dx = -1; dx <= 1; dx++ )
 			{
 				var offset = (uint)(ushort)(id + dy * 128 + dx) - 1;
-				largest = Math.Max( largest, Grid.Cells.BlockStamp( (int)((offset & 0x7F) >> 4), (int)(offset >> 11) ) );
+				largest = Math.Max( largest, unchecked( (uint)Grid.Cells.BlockStamp( (int)((offset & 0x7F) >> 4), (int)(offset >> 11) ) ) );
 			}
 		}
-		return largest < guest.StrandedMark;
+		return largest < unchecked( (uint)guest.StrandedMark );
 	}
 
 	/// <summary>Presentation-only gate, absent for standalone simulations. It neither changes thoughts nor clears existing bubbles and is never saved or hashed.</summary>
@@ -4373,11 +4375,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Error( snapshot.ThemeParkIncNativeGuests
 				? "The save was made with Theme Park Inc's native guest states on (--tpi-native-guests), which this park runs without."
 				: "The save was made without Theme Park Inc's native guest states, which this park runs (--tpi-native-guests)." );
-		// so must the walk's switch: the park's edge test is the save's (docs/reverse/TPI-NAVIGATOR.md)
+		// so must the walk's rules: the park's edge test is the save's (docs/reverse/TPI-NAVIGATOR.md). Every Theme Park Inc park walks with Theme Park Inc's navigator since phase NV4, so a Theme Park Inc
+		// save made before it (the walk of Theme Park World's rules, [EXT:tpi-twp-guest-rules]'s retired walk scope) is refused, as is the navigator's flag in a Theme Park World park
 		if ( snapshot.ThemeParkIncNativeWalk != (Grid.Cells.EdgeRules == WalkEdgeRules.ThemeParkInc) )
 			Error( snapshot.ThemeParkIncNativeWalk
-				? "The save was made with Theme Park Inc's navigator rules on (--tpi-native-walk), which this park runs without."
-				: "The save was made without Theme Park Inc's navigator rules, which this park runs (--tpi-native-walk)." );
+				? "The save was made with Theme Park Inc's navigator rules, which this park runs without."
+				: "The save was made before Theme Park Inc's own navigator (its guests and staff walked by Theme Park World's rules); this version cannot continue it." );
 		if ( snapshot.VisitorCount < 0 )
 			Error( $"VisitorCount {snapshot.VisitorCount} is negative." );
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
@@ -4646,8 +4649,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} QueueCellIndex {guest.QueueCellIndex} is negative." );
 			if ( guest.RideWalkCount is < 0 or > 11 )
 				Error( $"Guest {guest.Id} RideWalkCount {guest.RideWalkCount} is outside 0..11 (the byte +0x2C resets past 11)." );
-			if ( guest.StrandedMark < 0 )
-				Error( $"Guest {guest.Id} StrandedMark {guest.StrandedMark} is negative." );
+			// the stranded mark is an unsigned dword of the stamp counter (ParkCellMap.StampCounter): any 32 bits are valid
 			// [EXT:pools-swim] a swim session names the changing room it started at and holds its own state; a guest outside one holds none of it
 			var swimming = guest.State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity;
 			if ( swimming && guest.AttractionId == 0 )
@@ -4842,7 +4844,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
 		foreach ( var problem in navigation.Problems( guest.Id, Grid.InBounds ) )
 			error( char.ToUpperInvariant( problem[0] ) + problem[1..] + "." );
-		// a native navigator record only with Theme Park Inc's navigator (--tpi-native-walk), and with the guest's own caps
+		// a native navigator record only with Theme Park Inc's navigator (every Theme Park Inc park), and with the guest's own caps
 		if ( navigation.NativeRecord is { Length: SaveNavigation.Bytes } nativeRecord )
 		{
 			if ( Grid.Cells.EdgeRules != WalkEdgeRules.ThemeParkInc )
@@ -5023,7 +5025,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.BoothWait = Math.Clamp( snapshot.BoothWait, 0, GateWaitMaximum );
 		guest.Paid = snapshot.Paid;
 		guest.VisitorNumber = Math.Max( 0, snapshot.VisitorNumber );
-		guest.StrandedMark = Math.Max( 0, snapshot.StrandedMark );
+		guest.StrandedMark = snapshot.StrandedMark;
 		guest.CellSerial = Math.Max( 0, snapshot.CellSerial );
 		guest.SwimHeading = snapshot.SwimHeading;
 		guest.SwimTurns = snapshot.SwimTurns;

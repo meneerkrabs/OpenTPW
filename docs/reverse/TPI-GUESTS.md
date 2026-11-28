@@ -8,7 +8,8 @@ The port runs on the shared `Guest` records inside the shared `GuestSimulation` 
 (`--tpi-native-guests`) or from a test. The switch is **off by default**. With it off, Theme Park Inc guests keep Theme Park World's rules
 (`[EXT:tpi-twp-guest-rules]`), and Theme Park World and the default Theme Park Inc park behave exactly as before. Phase P4 turns the switch on by default.
 
-The walk step, the route search, the wander and the speed stay Theme Park World's under `[EXT:tpi-twp-guest-rules]`, as for the staff.
+The walk step, the route requests, the wander and the speed step are Theme Park Inc's navigator (docs/reverse/TPI-NAVIGATOR.md; the default since its phase NV4, for the native guests,
+the default path's guests and the staff alike); `[EXT:tpi-twp-guest-rules]` no longer covers the walk.
 
 ## Files
 
@@ -201,7 +202,7 @@ the cell word (`0x5D8DCF`) and drawn twice (`0x5D8E14`, `0x5D8E42`). The countdo
 `+0x230` and state 8, which restores the saved state ten turns later.
 
 **State 7 `0x61A179`.** The walk; arrived or stuck, a world draw with `G & 3 == 0` and a new wander destination keep the guest wandering, anything else makes it idle. The wander
-destination is Theme Park World's (`[EXT:tpi-twp-guest-rules]`); a walk it sets raises the wander flag `+0xE8`, which state 7's entry reads.
+destination is Theme Park Inc's `0x609F70` (for a guest the calls and draws of tp.exe's `0x4F9490`; TPI-NAVIGATOR.md, NV4); a walk it sets raises the wander flag `+0xE8`, which state 7's entry reads.
 
 **State 9 `0x616F10`.** The walk. Arrived at a bin: the bin counts a customer (`0x5E5DA0`); unless its `VAR_CONTENTS` (4) reaches `VAR_CAPACITY` (3) or `VAR_ONFIRE` (5) is set,
 its `VAR_USE` (0) becomes 1. Otherwise (no bin, a full or burning bin, a stuck walk): a draw and litter `D % 5 + 1` on the cell. The urge is emptied and the guest is idle.
@@ -391,7 +392,7 @@ appear point and asked to walk to the cell beyond the exit (Theme Park World's E
 
 **State 19 `0x618380`, being unloaded.** The entry `0x61A69D` gives the body back (mode 1 when a ride that draws it kept it), plays a teleporting ride's beam and gives a balloon kept through the
 ride back, unless a balloon shop has just given one. Before a teleporting ride's beam (`0x61A716`) the entry calls the sprite placement `0x60AE00(0)` (`0x61A70B`), which also raises the stamp
-counter `0x5D81F0` (`0x60AFFD`) and clears the stranded mark `+0x1B0` when the raised value is below it (`0x60B002`): with Theme Park Inc's navigator (`--tpi-native-walk`) that is
+counter `0x5D81F0` (`0x60AFFD`) and clears the stranded mark `+0x1B0` when the raised value is below it (`0x60B002`): with Theme Park Inc's navigator (every Theme Park Inc park since NV4) that is
 `ThemeParkIncPlacementStamp`, as at the constructor's placement (TPI-NAVIGATOR.md); Theme Park World's walk counts the edits only and takes nothing here. The handler walks; stuck, the target is cleared and the guest is idle. Arrived:
 - a photo booth word `+0x208`: the booth becomes the target (`+0x208` is kept, bug-compatible); a route to its back cell sends the guest there (13); a target that is not an attraction is cleared;
 - the old major destination `+0x206`: it becomes the target and `+0x206` is cleared; an umbrella shop for a guest with an umbrella or a balloon shop for one with a balloon is dropped ("trapped"); a
@@ -470,7 +471,7 @@ The level reads these settings (`GuestSettings.TpiNative`) only when the switch 
   handler `0x61A21D`), 20's entry (`0x61A77E`), 19 (`0x618380`) and the use routine `0x6118D0` with its payment step, its outcome `0x612740` and the match step `0x611DA0` (the meters, the words,
   the bookings, the records and the draws; the gated rings and counters recorded but not compared): no mismatch over 40 rounds (1,000 cases each).
 - `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`, `ThemeParkIncNativeQueueTests`, `ThemeParkIncNativeVisitTests` and `ThemeParkIncGuestSettingsTests` cover the rig behaviour
-  (with `OPENTPW_TEST_TPI_NATIVE_WALK=1` all four native rigs walk with Theme Park Inc's navigator),
+  (all four native rigs walk with Theme Park Inc's navigator since NV4),
   the draws, the saves (a guest saved mid-ride, a phase P3a rider refused) and the shipped values; the visit tests hold the oracle's reading of the use routine for a balloon shop, a sideshow won
   and lost, a costume put on and taken off, an umbrella shop and a relief visit (fresh, worn and ill); `ThemeParkIncPlayTests.NativeGuestsChooseQueueAndBoardTheScienceRides` runs native guests in the
   prebuilt Science park until one has boarded, ridden and been let off;

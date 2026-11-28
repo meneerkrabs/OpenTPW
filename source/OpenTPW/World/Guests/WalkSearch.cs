@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// </summary>
 public enum WalkEdgeRules : byte
 {
-	/// <summary>Theme Park World's edge test <c>0x4D8750</c> (every Theme Park World park, and Theme Park Inc parks while the hidden switch <c>--tpi-native-walk</c> is off).</summary>
+	/// <summary>Theme Park World's edge test <c>0x4D8750</c> (every Theme Park World park).</summary>
 	ThemeParkWorld = 0,
 	/// <summary>Theme Park Inc's edge test <c>0x5D7B60</c>: an obstacle's walkway cell is no fast path, unowned land blocks, and terrain holes (type 8) block.</summary>
 	ThemeParkInc = 1,
@@ -24,11 +24,10 @@ public enum WalkEdgeRules : byte
 public static class WalkEdges
 {
 	/// <summary>
-	/// The edge test a park built now walks with: Theme Park Inc's when Theme Park Inc is the edition and the hidden switch <c>--tpi-native-walk</c> is on
-	/// (<see cref="GuestSimulation.ThemeParkIncNativeWalkRequested"/>), else Theme Park World's. A Theme Park World park ignores the switch.
+	/// The edge test a park built now walks with: Theme Park Inc's in Theme Park Inc (its navigator, docs/reverse/TPI-NAVIGATOR.md; the default since phase NV4, which retired the hidden switch
+	/// <c>--tpi-native-walk</c> and with it the walk scope of <c>[EXT:tpi-twp-guest-rules]</c>), else Theme Park World's.
 	/// </summary>
-	public static WalkEdgeRules RulesForNewPark() =>
-		GameEditions.IsThemeParkInc && GuestSimulation.ThemeParkIncNativeWalkRequested ? WalkEdgeRules.ThemeParkInc : WalkEdgeRules.ThemeParkWorld;
+	public static WalkEdgeRules RulesForNewPark() => GameEditions.IsThemeParkInc ? WalkEdgeRules.ThemeParkInc : WalkEdgeRules.ThemeParkWorld;
 
 	/// <summary>The original map's last cell coordinate (the edge test's hard-coded 0x7F).</summary>
 	public const int LastCell = 127;

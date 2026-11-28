@@ -170,11 +170,21 @@ public static class GuestWander
 	/// (<paramref name="trail"/> receives at most its length of them; a walk longer than that reports its last ones). The walk, its draws and its result are the original's, whether the caller wants the trail or not:
 	/// the trail is only a copy of cells the search already visited (docs/SMARTER-GUESTS.md, phase 6). <paramref name="trailCount"/> is 0 for a start without links, which has no walk.
 	/// </summary>
-	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool stranded, Span<(int X, int Y)> trail, out int trailCount )
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool stranded, Span<(int X, int Y)> trail, out int trailCount ) =>
+		PickAfterCount( grid, start, draw() % 5, draw, inArea, out stranded, trail, out trailCount );
+
+	/// <summary>
+	/// <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?, out bool)"/> with the step count's draw <c>R % 5</c> (<paramref name="remaining"/>) already taken by the caller: Theme Park
+	/// Inc's staff wander draws it before the patrol rectangle's test and fallback (<c>0x60A010</c>, then <c>0x62C610</c> and <c>0x62C720</c>), whose draws then come between it and the walk's.
+	/// </summary>
+	public static Destination? PickAfterCount( GuestPathGrid grid, (int X, int Y) start, uint remaining, Func<uint> draw, Func<int, int, bool>? inArea, out bool stranded ) =>
+		PickAfterCount( grid, start, remaining, draw, inArea, out stranded, default, out _ );
+
+	private static Destination? PickAfterCount( GuestPathGrid grid, (int X, int Y) start, uint remaining, Func<uint> draw, Func<int, int, bool>? inArea, out bool stranded, Span<(int X, int Y)> trail,
+		out int trailCount )
 	{
 		stranded = false;
 		trailCount = 0;
-		var remaining = draw() % 5;
 		// [BIN:TPW-EXE:0x004F95B9 start without links] the link count of the start cell (0x00522810) below 1 takes the off-path search (0x004F9A05), whatever the cell's type
 		if ( (grid.LinksAt( start.X, start.Y ) & AllLinks) == 0 )
 			return null;

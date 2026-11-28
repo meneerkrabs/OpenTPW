@@ -220,6 +220,13 @@ public sealed partial class ParkEconomy
 
 		public void LoadExtent( int index ) => economy.TpiMissionWorld?.LoadExtent( index );
 
+		// [BIN:TPI-EXE:0x64EA00 advisor thing] the controller's advice goes to the world's advisor thing (0x408EE5 -> 0x4077F2)
+		public bool PostAdvice( int message ) => economy.PostThemeParkIncAdvice( message );
+
+		public void CancelAdvice( int message ) => economy.CancelThemeParkIncAdvice( message );
+
+		public bool AdvicePlayed( int message ) => economy.ThemeParkIncAdvicePlayed( message );
+
 		public void PlayCamera( ThemeParkIncCameraRequest request )
 		{
 			AddTpiMissionNotice( economy.TpiCameraRequests, request );

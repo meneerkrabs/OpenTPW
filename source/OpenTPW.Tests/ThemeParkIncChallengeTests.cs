@@ -48,7 +48,8 @@ public class ThemeParkIncChallengeTests
 
 	private static ThemeParkIncChallengeRow Row( int type, int targetTime = 30, int targetVal = 10, int targetVal2 = 0, int targetObj = 0, int cash = 0, int tickets = 0,
 		int checkAtEnd = 0, int min = 0, int max = 0, int delay = 0, int trigger = 0, int grace = 0, int script = 0, int mission = 0, int followup = 0 ) =>
-		new( type, followup, targetTime, targetVal, targetVal2, targetObj, 0, 0, cash, tickets, 0, 0, 0, checkAtEnd, min, max, delay, trigger, grace, 0, 0, script, mission, 0 );
+		// sender 2, as every retail row names one of the senders 2 to 6 (ThemeParkIncChallenges.SenderAdvice refuses the others)
+		new( type, followup, targetTime, targetVal, targetVal2, targetObj, 0, 0, cash, tickets, 0, 0, 0, checkAtEnd, min, max, delay, trigger, grace, 0, 2, script, mission, 0 );
 
 	private static ThemeParkIncChallengeSettings Settings( IReadOnlyDictionary<int, ThemeParkIncChallengeRow> rows, int[] level, int daysBetween = 20, int mission = 0 )
 	{
@@ -386,10 +387,11 @@ public class ThemeParkIncChallengeTests
 		+ "Challenges.DaysBetweenOffers 20\nChallenges.MissionNumberForFirstChallenge 0\n"
 		+ "ChallengesInThisLevel[0].ChallengeType 2\nChallengesInThisLevel[1].ChallengeType 5\nChallengesInThisLevel[2].ChallengeType 8\n";
 
+	// every challenge names sender 2, as the retail rows name the senders 2 to 6 (ThemeParkIncChallenges.SenderAdvice)
 	private const string ChallengesSam =
-		"Challenges[2].Type 2\nChallenges[2].TargetTime 60\nChallenges[2].TargetVal 3\nChallenges[2].CashPrize 5000\nChallenges[2].GTPrize 2\nChallenges[2].ScriptIndex 2\n"
-		+ "Challenges[5].Type 25\nChallenges[5].TriggerData 3\nChallenges[5].TargetTime 30\nChallenges[5].TargetVal 30\nChallenges[5].CheckAtEndOnly 1\nChallenges[5].GracePeriodLimit 10\nChallenges[5].ScriptIndex 5\n"
-		+ "Challenges[8].Type 17\nChallenges[8].TargetObj 1160\nChallenges[8].TargetVal 20\nChallenges[8].ScriptIndex 8\n";
+		"Challenges[2].Type 2\nChallenges[2].TargetTime 60\nChallenges[2].TargetVal 3\nChallenges[2].CashPrize 5000\nChallenges[2].GTPrize 2\nChallenges[2].ScriptIndex 2\nChallenges[2].Sender 2\n"
+		+ "Challenges[5].Type 25\nChallenges[5].TriggerData 3\nChallenges[5].TargetTime 30\nChallenges[5].TargetVal 30\nChallenges[5].CheckAtEndOnly 1\nChallenges[5].GracePeriodLimit 10\nChallenges[5].ScriptIndex 5\nChallenges[5].Sender 2\n"
+		+ "Challenges[8].Type 17\nChallenges[8].TargetObj 1160\nChallenges[8].TargetVal 20\nChallenges[8].ScriptIndex 8\nChallenges[8].Sender 2\n";
 
 	private static readonly EconomyObjectInfo HotDogs = new( 1207, "Hot dogs", ParkObjectKind.Shop, ResearchCategory.Shop, 0,
 		new[] { new UpgradeLevelInfo( 0, 500, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, 10, 2, null, 2, 1, 0, 0, 0, 0, "/x" );
@@ -472,9 +474,12 @@ public class ThemeParkIncChallengeTests
 		challenges.Slots[1].Status = ThemeParkIncChallengeStatus.Offered;
 		economy.AcceptThemeParkIncChallenge( 1 );
 		economy.ClosePark();
+		var plays = career.AdviceHistory( ThemeParkIncAdviceMail.ChallengeLost.Message ).Plays;
 		economy.Advance( ParkCalendar.TickOfTurn( economy.Turn + 1 ) - economy.Tick );
 		Assert.AreEqual( 0, career.FiringLine );
 		Assert.AreEqual( ThemeParkIncAdviceMail.ChallengeLost, economy.TakeTpiMail(), "the loss that empties the line posts the firing letter" );
+		Assert.AreEqual( 2, economy.TpiAdvisor!.Queue.Count( slot => slot.Valid && slot.Message == ThemeParkIncAdviceMail.ChallengeLost.Message )
+			+ career.AdviceHistory( ThemeParkIncAdviceMail.ChallengeLost.Message ).Plays - plays, "0x5C4979: the letter's row builder and the lost branch each post 0x1A3" );
 		economy.OpenPark();
 		economy.AcceptThemeParkIncChallenge( 0 );
 		economy.ClosePark();

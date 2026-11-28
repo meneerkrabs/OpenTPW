@@ -14,7 +14,9 @@ import re
 import struct
 from pathlib import Path
 
-from x86_harness import Image, Sandbox, executable_path
+
+
+from x86_harness import Image, Sandbox, executable_path, x86
 
 TABLE = 0x9DE020
 ROW = 56
@@ -33,7 +35,7 @@ TEST_ROW = 0x9E3E30
 
 ROW_PATTERN = re.compile(
     r'^\s*\{ row = (\d+), kind = (\d), message = 0x([0-9a-f]+), group = (\d+), class = (\d+), callback = 0x([0-9a-f]+), '
-    r'duplicates = (\d+), response = (\d+), count = (\d+), variant = (\d+)(?:, score = (-?\d+))? \},?$')
+    r'duplicates = (\d+), response = (\d+), count = (\d+), variant = (\d+)(?:, score = (-?\d+))?(?:, field = 0x([0-9a-f]+))? \},?$')
 CASE_PATTERN = re.compile(r'^\s*\[DataRow\(([^\r\n]+)\)\]\s*$', re.MULTILINE)
 
 
@@ -62,6 +64,15 @@ def constant_score(image, callback):
     return target, None
 
 
+def getter_field(image, callback):
+    """The scorer offset a callback returns when it is `mov eax, [ecx + imm32]; ret`, else None."""
+    target = thunk_target(image, callback)
+    code = image_bytes(image, target, 7)
+    if code[:2] == b'\x8b\x81' and code[6] == 0xC3:
+        return target, struct.unpack_from('<I', code, 2)[0]
+    return target, None
+
+
 def native_rows(arena):
     count = arena.read(COUNT_WORD, 'I')
     check(count, 665, 'descriptor rows including the terminator')
@@ -77,9 +88,10 @@ def table_lines(image, rows):
     lines = []
     for index, row in enumerate(rows):
         _, score = constant_score(image, row[4] & 0xFFFFFFFF)
+        _, field = getter_field(image, row[4] & 0xFFFFFFFF)
         line = (f'  {{ row = {index}, kind = {row[0]}, message = 0x{row[1]:x}, group = {row[2]}, class = {row[3]}, '
                 f'callback = 0x{row[4] & 0xFFFFFFFF:x}, duplicates = {row[8] & 0xFF}, response = {row[9]}, count = {row[10]}, '
-                f'variant = {row[11]}{"" if score is None else f", score = {score}"} }},')
+                f'variant = {row[11]}{"" if score is None else f", score = {score}"}{"" if field is None else f", field = 0x{field:x}"} }},')
         lines.append(line)
     return lines
 
@@ -93,7 +105,8 @@ HEADER = '''# Advisor message descriptors of Theme Park Inc (no-CD Game.exe, SHA
 # 1 code posts the message; message: message id (+4); group: message group (+8); class: the advice context class
 # (+0xC); callback: the score callback's address (+0x10); duplicates: pending duplicates allowed (+0x20);
 # response: first response id (+0x24); count: responses (+0x28); variant: the variant rule (+0x2C); score: the
-# callback's constant result where the callback is a constant (mov eax, imm32; ret).
+# callback's constant result where the callback is a constant (mov eax, imm32; ret); field: the scorer offset the
+# callback returns where it reads one word of the scorer (mov eax, [ecx + imm32]; ret), an Advisor.sam key.
 
 messages = ['''
 
@@ -104,6 +117,22 @@ def check_table(image, rows, path):
     check(len(lines), len(expected), f'{path} rows')
     for index, (line, native) in enumerate(zip(lines, expected)):
         check(line.rstrip(','), native.rstrip(','), f'{path} row {index}')
+
+
+def check_getters(arena, image, rows):
+    """Each field getter runs on a synthetic scorer whose words are their own offsets."""
+    scorer = arena.object(0x1000)
+    for offset in range(0, 0x1000, 4):
+        arena.write(scorer + offset, 'I', 0x5A000000 | offset)
+    seen = 0
+    for row in rows:
+        _, field = getter_field(image, row[4] & 0xFFFFFFFF)
+        if field is None:
+            continue
+        arena.executed = 0
+        check(arena.call(row[4] & 0xFFFFFFFF, this=scorer).eax, 0x5A000000 | field, f'callback {row[4]:#x} field')
+        seen += 1
+    return seen
 
 
 def check_constants(arena, image, rows):
@@ -272,6 +301,98 @@ def check_enqueue_and_selection(arena, queue, clock, stops):
     arena.write(TEST_ROW + 8, 'I', rain_group)
 
 
+def check_senders(image):
+    """The P4 senders' native paths the managed tests repeat (ThemeParkIncAdvisorSenderTests): the history callbacks 0x727410 and
+    0x728580, the unread counter 0x54F1A0 and the stored-tutorial repeat 0x718AB0."""
+    posts = []
+    advisor_holder = {}
+
+    def record(arena):
+        # 0x71A930(message, locate word, locate data, variant, bypass, score) on the record at ecx: capture and build it
+        record_at = arena.uc.reg_read(x86.UC_X86_REG_ECX)
+        posts.append(tuple(arena.arg(index) for index in range(6)))
+        arena.write(record_at + 0xC, 'I', arena.arg(0))
+        return record_at, 0x18
+
+    def enqueue(arena):
+        posts.append(('enqueue', arena.arg(0)))
+        return 1, 4
+
+    arena = Sandbox(image, [
+        (0x727410, 0x727436), (0x728580, 0x7285A9), (0x71B4F0, 0x71B506), (0x71B520, 0x71B536), (0x42A3B0, 0x42A41D),
+        (0x54F1A0, 0x54F2C8), (0x4313D0, 0x4313DD), (0x718AB0, 0x718B13),
+        *((address, address + 5) for address in (0x40694C, 0x406753, 0x40B528, 0x40C1F3)),
+    ], stubs={
+        0x4077F2: lambda _: (advisor_holder['advisor'], 0),  # 0x64EA00: the world's advisor thing
+        0x40A592: record,
+        0x40A600: enqueue,
+    }, budget=200_000)
+    career = arena.object(0x4740)
+    arena.write(CAREER_GLOBAL, 'I', career)
+    arena.write(0xC64DC7, 'B', 1)  # The scorer is constructed (no Advisor.sam load).
+    advisor = arena.object(0x118)
+    advisor_holder['advisor'] = advisor
+
+    def history_played(message, played):
+        arena.write(career + HISTORY + 20 * message + 8, 'B', played)
+
+    for callback, message in ((0x727410, 0x1FA), (0x728580, 0x21D)):
+        for played, expected in ((0, 10_000), (1, 0)):
+            history_played(message, played)
+            arena.executed = 0
+            check(arena.call(callback, this=SCORER).eax, expected, f'callback {callback:#x} with {message:#x} played {played}')
+
+    # The unread counter: total +0, threshold +4, the category counts at [+8]; the HUD panel 0xA6011C is absent
+    counts = arena.object(16)
+    counter = arena.object(12, {0: ('I', 0), 4: ('I', 3), 8: ('I', counts)})
+    arena.write(0xA6011C, 'I', 0)
+    seen = []
+    for letter in range(1, 13):
+        posts.clear()
+        arena.executed = 0
+        arena.call(0x54F1A0, (2, 0), this=counter)
+        for post in posts:
+            if post[0] != 'enqueue':
+                seen.append(post[0])
+                check(post[1:], (0, 0, 0xFFFFFFFF, 0, 0xFFFFFFFF), 'locate 0, data 0, variant -1, bypass 0, score -1 (the descriptor\'s)')
+        check(arena.read(counter, 'I'), letter, f'unread total after letter {letter}')
+    check(seen, [0x198, 0x15D, 0x15D], 'the counter posts 0x198 at 3, then 0x15D at 6 and 12')
+    check(arena.read(counter + 4, 'I'), 24, 'the threshold doubles')
+    posts.clear()
+    arena.executed = 0
+    arena.call(0x54F1A0, (2, 1), this=counter)
+    check(posts, [], 'a silent count (a load) posts nothing')
+
+    # The stored-tutorial repeat: nothing stored refuses; a stored record takes HelpMessage.ContextHelpScore (0xC656C0), its explicit and bypass bytes
+    arena.write(advisor + 0x100, 'B', 0)
+    arena.executed = 0
+    check(arena.call(0x718AB0, this=advisor).eax & 0xFF, 0, 'nothing stored')
+    arena.write(advisor + 0x100, 'B', 1)
+    arena.write(advisor + 0xEC + 0xC, 'I', 0x1FA)
+    arena.write(0xC656C0, 'I', 900)
+    posts.clear()
+    arena.executed = 0
+    check(arena.call(0x718AB0, this=advisor).eax & 0xFF, 1, 'a stored record is offered')
+    check(posts, [('enqueue', advisor + 0xEC)], 'the stored record itself goes to 0x718820')
+    check((arena.read(advisor + 0xEC + 0x10, 'i'), arena.read(advisor + 0xEC + 0x15, 'B'), arena.read(advisor + 0xEC + 0x16, 'B')), (900, 1, 1),
+          'score, bypass and explicit bytes')
+    # The challenge senders' cancels: the time-out 0x5C2150 cancels word 4 of the sender's row at 0x9CD000, the uncalled 0x5C2100 word 1
+    cancels = []
+
+    def cancel(arena_):
+        cancels.append(arena_.arg(0))
+        return 0, 4
+    challenge = Sandbox(image, [(0x5C2100, 0x5C213D), (0x5C2150, 0x5C218D)],
+                        stubs={0x4077F2: lambda _: (advisor, 0), 0x4092AF: cancel}, budget=10_000)
+    for entry, expected in ((0x5C2150, (0x23A, 0x25D, 0x246, 0x266, 0x256)), (0x5C2100, (0x239, 0x25C, 0x245, 0x265, 0x255))):
+        cancels.clear()
+        for sender in range(2, 7):
+            challenge.executed = 0
+            challenge.call(entry, (sender,))
+        check(tuple(cancels), expected, f'{entry:#x} cancels by sender 2 to 6')
+    return 4 + 12 + 1 + 2 + 10
+
+
 def cases_from(path):
     cases = []
     for match in CASE_PATTERN.finditer(Path(path).read_text(encoding='utf-8')):
@@ -320,9 +441,12 @@ def main():
     arena.call(0x729530)
     rows = native_rows(arena)
     targets = {}
+    getters = {}
     for row in rows:
         target, _ = constant_score(image, row[4] & 0xFFFFFFFF)
         targets[row[4] & 0xFFFFFFFF] = target
+        if getter_field(image, row[4] & 0xFFFFFFFF)[1] is not None:
+            getters[row[4] & 0xFFFFFFFF] = target
     if args.write_table:
         args.write_table.write_text(HEADER + '\n' + '\n'.join(table_lines(image, rows)) + '\n]\n', encoding='utf-8')
         print(f'{len(rows)} rows written to {args.write_table}')
@@ -337,6 +461,10 @@ def main():
                              budget=200_000)
     constant_arena.call(0x729530)
     constants = check_constants(constant_arena, image, rows)
+    getter_arena = Sandbox(image, [*((target, target + 7) for target in set(getters.values())),
+                                   *((callback, callback + 5) for callback, target in getters.items() if callback != target)],
+                           budget=200_000)
+    fields = check_getters(getter_arena, image, rows)
 
     queue = Queue(arena)
     cases = cases_from(args.check)
@@ -345,8 +473,9 @@ def main():
     for case in cases:
         check(acceptance(queue, case), case[-1], f'acceptance case {case}')
     check_enqueue_and_selection(arena, queue, clock, stops)
-    print(f'{len(rows)} descriptor rows ({constants} constant scores), {len(cases)} acceptance cases, '
-          '3 enqueue, 6 selection and 3 cancel scenarios match')
+    senders = check_senders(image)
+    print(f'{len(rows)} descriptor rows ({constants} constant scores, {fields} field getters), {len(cases)} acceptance cases, '
+          f'3 enqueue, 6 selection and 3 cancel scenarios and {senders} sender cases match')
 
 
 if __name__ == '__main__':

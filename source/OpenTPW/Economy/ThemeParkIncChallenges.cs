@@ -234,6 +234,11 @@ public interface IThemeParkIncChallengeHost
 	void Won( int index, ThemeParkIncChallengeSlot slot );
 	/// <summary>The lost branch's park effects (<c>0x5C47D0</c>): the firing line on a first loss and the letter once the line is spent; the slot is already state 1.</summary>
 	void Lost( int index, ThemeParkIncChallengeSlot slot, bool firstLoss );
+	/// <summary>
+	/// Cancels word <paramref name="word"/> of challenge sender <paramref name="sender"/>'s row on the advisor thing (<c>0x718990</c>, <see cref="ThemeParkIncChallenges.SenderAdvice"/>); a host without
+	/// an advisor ignores it.
+	/// </summary>
+	void CancelSenderAdvice( int sender, int word ) { }
 }
 
 /// <summary>
@@ -384,7 +389,8 @@ public sealed class ThemeParkIncChallenges
 				UpdateCurrentValue( slot, host );
 				if ( DaysLeft( slot, turn ) == 0 )
 				{
-					// type 42 (its shops' reopening, 0x5C73D0) is never offered (IsPorted); the sender's advice (0x5C2150) is the advisor's, which the slice does not run
+					// type 42 (its shops' reopening, 0x5C73D0) is never offered (IsPorted); then word 4 of the sender's row is cancelled (0x5C2150)
+					host.CancelSenderAdvice( slot.Sender, TimeOutCancelWord );
 					if ( slot.DidThisWinIt( atEnd: true, host.AnyRoleOnStrike() ) )
 						Win( index, host );
 					else
@@ -504,10 +510,39 @@ public sealed class ThemeParkIncChallenges
 	}
 
 	/// <summary>
+	/// The advice of a challenge's sender that the accept and the time-out cancel: word <paramref name="word"/> of its 36-byte row at <c>0x9CD000</c> (word 1 the offer's advice, which the accept
+	/// cancels; word 4 the next mail's, which the time-out cancels). Senders 2 to 6 have their own; a row of the no-message id is refused (see below).
+	/// </summary>
+	// [BIN:TPI-EXE:0x9CD000 challenge senders] nine rows of nine words; by sender, word 1: 0x285, 0x285, 0x239, 0x25C, 0x245, 0x265, 0x255, 0x285, 0x285; word 4: 0x285, 0x285, 0x23A, 0x25D, 0x246,
+	// 0x266, 0x256, 0x285, 0x285. The accept 0x5C84C0 copies the row to esp+0x24 and cancels [esp+0x28], word 1 (0x5C84EB); the time-out 0x5C2150 (from 0x5C7AC2) copies it to esp+8 and cancels
+	// [esp+0x18], word 4 (0x5C216E). Two more copies, 0x5C2100 (thunk 0x40398B, word 1) and 0x5C8790 (thunk 0x406249, word 4 at 0x5C87FC), have no caller in the executable. Rows 0, 1, 7 and 8
+	// hold 0x285: the cancel's playing test reads 0x285 for no playing advice (0x718A30), so outside a window it would stop the speech, write the history entry of 0x285 past the career's 0x284
+	// entries (career +0x4754, past its 0x4740 bytes) and zero the window; a sender past row 8 would read the next table (0x9CD144). The retail Challenges.sam names senders 2 to 6 only, so OpenTPW
+	// refuses the others rather than write outside the history
+	public static int SenderAdvice( int sender, int word = 1 ) => (sender, word) switch
+	{
+		(2, 1) => 0x239,
+		(3, 1) => 0x25C,
+		(4, 1) => 0x245,
+		(5, 1) => 0x265,
+		(6, 1) => 0x255,
+		(2, 4) => 0x23A,
+		(3, 4) => 0x25D,
+		(4, 4) => 0x246,
+		(5, 4) => 0x266,
+		(6, 4) => 0x256,
+		(_, 1 or 4) => throw new NotSupportedException( $"Theme Park Inc challenge sender {sender}: its row of the sender table (0x9CD000) names no advice, and its cancel writes outside the player's history." ),
+		_ => throw new ArgumentOutOfRangeException( nameof( word ), "The challenge code cancels the sender row's word 1 or 4 only." )
+	};
+
+	/// <summary>The sender row's word the accept cancels (<c>0x5C84EB</c>) and the one the time-out cancels (<c>0x5C216E</c>).</summary>
+	public const int AcceptCancelWord = 1, TimeOutCancelWord = 4;
+
+	/// <summary>
 	/// The accept (<c>0x5C84C0</c>): the values reset, then a challenge without a grace period starts its timed phase (state 3, <c>TargetTime</c> days), one with a grace period starts it
 	/// (state 2, <c>GracePeriodLimit</c> days). The routine tests neither the state nor the other slots: the mail view's control is enabled only in state 1 with the park open.
 	/// </summary>
-	// [BIN:TPI-EXE:0x5C84C0 accept] the sender's advice is stopped and sound 0xC6 plays (presentation); mValue = mValue2 = 0 (0x5C8520, 0x5C852A); the challenge mails of kind 0x91 are marked;
+	// [BIN:TPI-EXE:0x5C84C0 accept] the sender's advice is cancelled (ParkEconomy.AcceptThemeParkIncChallenge, SenderAdvice) and sound 0xC6 plays (presentation); mValue = mValue2 = 0 (0x5C8520, 0x5C852A); the challenge mails of kind 0x91 are marked;
 	// GracePeriodLimit == 0: state 3, +0x8E = 0, +0x78 = clock, mFinishTIme = clock + TargetTime (sign-extended) × day (0x5C8557..0x5C8607), type 42 closes its shops (never offered here);
 	// else state 2, +0x78 = clock, mFinishTIme = clock + GracePeriodLimit (sign-extended) × day (0x5C8642..0x5C86E7)
 	public void Accept( int index, long turn )

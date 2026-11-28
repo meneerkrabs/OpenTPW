@@ -16,7 +16,25 @@ public sealed partial class ParkEconomy
 	/// Files a letter as the message centre's type-0x19 post does: the tag system builds its row at once (<c>0x436DD0</c> calls the receivers in place, <c>0x637970</c> case 0xC).
 	/// </summary>
 	// [BIN:TPI-EXE:0x637A1A tag system receiver] the receiver of class 0xC is the tag system, whose handler is the row builder 0x635D80
-	private void FileThemeParkIncLetter( ThemeParkIncTagTubeRow row ) => TpiTagTube?.Insert( row, unchecked( (uint)Turn ), load: false );
+	private void FileThemeParkIncLetter( ThemeParkIncTagTubeRow row )
+	{
+		if ( TpiTagTube is not { } tube )
+			return;
+		tube.Insert( row, unchecked( (uint)Turn ), load: false );
+		PostThemeParkIncUnreadAdvice( tube );
+	}
+
+	// [BIN:TPI-EXE:0x54F1A0 unread advice] the counter posts 0x198 (threshold 3) or 0x15D (a later threshold) inside the insert, at once: 0x71A930(message, locate 0, 0, variant -1, bypass 0, score
+	// -1) -> 0x718820 on the advisor thing 0x64EA00 (descriptor scores 10000, group 0, limit 1)
+	private void PostThemeParkIncUnreadAdvice( ThemeParkIncTagTube tube )
+	{
+		if ( tube.AdviceRequests.Count == 0 )
+			return;
+		var requests = tube.AdviceRequests.ToArray();
+		tube.AdviceRequests.Clear();
+		foreach ( var message in requests )
+			PostThemeParkIncAdvice( message );
+	}
 
 	/// <summary>
 	/// A notification letter (the bank's red-month letter, the challenge system's firing letter): the tag system files its row, read, and the client opens the letter window on it
@@ -46,16 +64,6 @@ public sealed partial class ParkEconomy
 	/// <summary>The tag thing's update, once per world pass (<c>0x635AB0</c>), not in a lost park.</summary>
 	// [BIN:TPI-EXE:0x63770E tag system update] the world pass's thing-class dispatch sends class 12 to 0x635AB0
 	internal void UpdateThemeParkIncTagTube( long turn ) => TpiTagTube?.Update( unchecked( (uint)turn ) );
-
-	/// <summary>The tube's unread-mail advisor messages since the last call, oldest first (<see cref="ThemeParkIncTagTube.FirstUnreadAdvice"/>, <see cref="ThemeParkIncTagTube.UnreadAdvice"/>).</summary>
-	internal IReadOnlyList<int> TakeThemeParkIncTubeAdvice()
-	{
-		if ( TpiTagTube is not { AdviceRequests.Count: > 0 } tube )
-			return Array.Empty<int>();
-		var taken = tube.AdviceRequests.ToArray();
-		tube.AdviceRequests.Clear();
-		return taken;
-	}
 
 	/// <summary>The tube window's delete (<c>0x636A40</c>).</summary>
 	internal void DeleteThemeParkIncTubeRow( ThemeParkIncTagTubeRow row ) => TpiTagTube?.Delete( row );

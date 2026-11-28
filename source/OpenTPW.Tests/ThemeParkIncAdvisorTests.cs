@@ -312,7 +312,7 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 	public void ASaveWithARecordWhoseScoreCannotBeComputedIsInvalid()
 	{
 		var table = ThemeParkIncAdvisorTable.Shipped;
-		var computed = table.Descriptors.First( row => row.ConstantScore == null ).Message;
+		var computed = table.Descriptors.First( row => !ThemeParkIncAdvisor.Scores( row ) ).Message;
 		var advisor = new ThemeParkIncAdvisor( Settings(), table );
 		var state = advisor.Capture();
 		var slots = new ThemeParkIncAdviceRecord[ThemeParkIncAdvisor.Slots];
@@ -354,16 +354,33 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
-	public void TheSettingsBindThroughTheSchemaAndStopAtTheFirstUnboundKey()
+	public void TheSettingsBindThroughTheWholeSchemaAndStopAtTheFirstUnknownKey()
 	{
 		var settings = ThemeParkIncAdvisorSettings.Bind( Encoding.ASCII.GetBytes(
 			"GeneralAdvisor.MinScoreForConsideration 10\nGeneralAdvisor.UIPanelDelay 3000\nMessageGroups[1].MinTimeSameMessage2 7\nMessageGroups[1].SayOnlyOnce 1\n"
-			+ "MessageGroups[1].DiscardAfterSlaps 2\nGroupTimes[0].MinTimeForMessage 5\nMessageGroups[2].MinTimeSameMessage1 9\n" ) );
+			+ "MessageGroups[1].DiscardAfterSlaps 2\nGroupTimes[0].MinTimeForMessage 5\nMessageGroups[2].MinTimeSameMessage1 9\nHelpMessage.Score 1234\n"
+			+ "NoSuchKey.Score 1\nHelpMessage.ContextHelpScore 99\n" ) );
 		Assert.AreEqual( (10, 3000), (settings.MinimumScore, settings.PanelDelay) );
 		Assert.AreEqual( new ThemeParkIncAdvisorGroup( 0, 7, 0, 0, true, 2 ), settings.Groups[1] );
-		Assert.AreEqual( default, settings.Groups[2], "the parse stopped at the key the prefix schema does not bind" );
+		Assert.AreEqual( new ThemeParkIncAdvisorGroup( 9, 0, 0, 0, false, 0 ), settings.Groups[2], "the whole schema binds the keys after GroupTimes" );
 		Assert.AreEqual( 7u, settings.Groups[1].RepeatInterval( 1 ) );
+		// HelpMessage.Score is the scorer's +0x49C, which the window help's callback 0x71FE90 returns; the parse stops at a key the schema does not have
+		Assert.AreEqual( 1234, settings.Word( 0x49C ) );
+		Assert.AreEqual( 0, settings.Word( ThemeParkIncAdvisor.ContextHelpScoreOffset ), "the parse stopped before HelpMessage.ContextHelpScore" );
+		Assert.AreEqual( 10, settings.Word( 0x20 ) );
 		Assert.AreEqual( 0, ThemeParkIncAdvisorSettings.Bind( null ).MinimumScore );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => settings.Word( 0x10 ) );
+	}
+
+	[TestMethod]
+	public void TheShippedSchemaIsTheExecutables()
+	{
+		var schema = ThemeParkIncAdvisorSettings.Schema;
+		Assert.AreEqual( ThemeParkIncAdvisorSettings.SchemaRecords + 1, schema.Count );
+		Assert.AreEqual( new ThemeParkIncSamRecord( ThemeParkIncSamKind.ArrayEnd, "MessageGroups", Count: 10 ), schema[14] );
+		Assert.AreEqual( new ThemeParkIncSamRecord( ThemeParkIncSamKind.IntRange, "SayOnlyOnce", 0, 2 ), schema[12] );
+		Assert.AreEqual( ThemeParkIncSamKind.End, schema[^1].Kind );
+		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncAdvisorSettings.ParseSchema( "records = [\n  { kind = 12, name = \"\" },\n]\n" ) );
 	}
 
 	[TestMethod]
@@ -375,6 +392,9 @@ public sealed class ThemeParkIncAdvisorTests : ThemeParkIncScienceTestBase
 		Assert.AreEqual( new ThemeParkIncAdvisorGroup( 120, 300, 600, 1800, false, 0 ), settings.Groups[0] );
 		Assert.AreEqual( new ThemeParkIncAdvisorGroup( 0, 0, 0, 0, true, 2 ), settings.Groups[1] );
 		Assert.AreEqual( default, settings.Groups[8], "the file has no group 8" );
+		// the keys after MessageGroups bind too: the window help's score and the F1 repeat's
+		Assert.AreEqual( (1000, 1000, 110), (settings.Word( 0x49C ), settings.Word( ThemeParkIncAdvisor.ContextHelpScoreOffset ), settings.Word( 0x770 )),
+			"HelpMessage.Score, HelpMessage.ContextHelpScore, TutorialUIPanel.Score" );
 	}
 
 	[TestMethod]

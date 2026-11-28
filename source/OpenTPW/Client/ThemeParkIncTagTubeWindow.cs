@@ -84,6 +84,15 @@ internal sealed class ThemeParkIncTagTubeWindow
 		this.goTo = goTo;
 	}
 
+	/// <summary>The advisor the window's help and go-to hint reach; null: no advisor (the window still works).</summary>
+	internal IThemeParkIncWindowAdvice? Advice { get; set; }
+
+	/// <summary>The window's help (<c>0x1AF</c>): said after the panel delay when it opens, by its help button, and cancelled when it goes.</summary>
+	public const int HelpMessage = 0x1AF;
+
+	/// <summary>The go-to hint (<c>0x211</c>) the details queue for a row with a go-to; cancelled when the window goes.</summary>
+	public const int GotoHintMessage = 0x211;
+
 	/// <summary>The window's millisecond clock (<c>0x41B760</c>), advanced by its updates.</summary>
 	public double Now { get; private set; }
 
@@ -221,9 +230,11 @@ internal sealed class ThemeParkIncTagTubeWindow
 		// [BIN:TPI-EXE:0x551977 tube close] the b_close 3001 and the b_okay 3002 read the shown row (0x553480), unregister the window (0x501CD0(0)) and destroy it
 		var okay = Button( "ok", table.Control( 0xBBA ), Close );
 		Button( "close", table.Control( 0xBB9 ), Close );
-		// [BIN:TPI-EXE:0x551A14 tube help] the b_help 3021 calls 0x503A40(0x1AF), the advisor panel's help, which is not ported
-		Button( "help", table.Control( 0xBCD ), null );
+		// [BIN:TPI-EXE:0x551A14 tube help] the b_help 3021 calls 0x503A40(0x1AF): the advisor's help button
+		Button( "help", table.Control( 0xBCD ), () => Advice?.HelpButton( HelpMessage ) );
 		Refresh();
+		// [BIN:TPI-EXE:0x5523E6 tube delayed help] the builder ends with 0x503AD0(0x1AF): the advisor says the window's help once the panel delay has passed
+		Advice?.DelayedHelp( HelpMessage );
 		screen.Updating += context => Tick( context.Delta * 1000 );
 		screen.Focus( okay );
 		return screen;
@@ -390,7 +401,8 @@ internal sealed class ThemeParkIncTagTubeWindow
 	/// <summary>The details (<c>0x553100</c>): To, From, Subject and the body of <paramref name="row"/>; the go-to shows when it has a target; Delete is enabled; no row empties them.</summary>
 	// [BIN:TPI-EXE:0x553100 tube details] a row: +0x44 = +0xA06, +0x48 = +0x808, +0x4C = +0xC04, the body +0x8 (0x552E30); +0xE10 != 0 shows the go-to 3019 and the footer 3018 and queues
 	// advisor message 0x211 (0x71A930, 0x718820), else hides both; Delete on. No row: the three fields "" (0xA0B714), no body, the go-to hidden, Delete off
-	// [EXT:tpi-capability-gates] the advisor's message 0x211 (descriptor 0x9E5B80, group 1, response 862) is not posted: Theme Park Inc's advisor queue takes only the forecasts and the letters so far
+	// [EXT:tpi-capability-gates] the advisor's message 0x211 (descriptor 0x9E5B80, group 1, response 862) is not posted: its score callback 0x727E60 is 10000 only within the first hour
+	// (0x650890: the counter 0xBFCC4C / 60 below FirstHour.Minutes), a clock OpenTPW does not tick yet (phase P7); the window's destroy still cancels it (Destroy)
 	private void Fill( ThemeParkIncTagTubeRow? row )
 	{
 		if ( row == null )
@@ -452,7 +464,7 @@ internal sealed class ThemeParkIncTagTubeWindow
 			return;
 		var row = listed[index];
 		Read( Selected );
-		close();
+		Destroy();
 		goTo( row );
 	}
 
@@ -461,7 +473,16 @@ internal sealed class ThemeParkIncTagTubeWindow
 	public void Close()
 	{
 		Read( Selected );
+		Destroy();
+	}
+
+	// [BIN:TPI-EXE:0x5517E0 tube destroy] the window's message 0x14: the window object's words cleared, 0x503B40(0x1AF) (the help's delay dropped and the help cancelled) and 0x718990(0x211) (the go-to
+	// hint cancelled), in that order
+	private void Destroy()
+	{
 		close();
+		Advice?.CancelHelp( HelpMessage );
+		Advice?.Cancel( GotoHintMessage );
 	}
 
 	private ThemeParkIncLetterWindow.Letter Letter( ThemeParkIncTagTubeRow row )

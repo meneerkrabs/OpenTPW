@@ -109,6 +109,29 @@ internal sealed class ThemeParkIncMissionWindow
 	/// <summary>Proceed (<c>0xCEC68</c>) is enabled: the requirements were met at the last refresh.</summary>
 	public bool ProceedEnabled { get; private set; }
 
+	/// <summary>The advisor the window's advice reaches; null: no advisor (the window still works).</summary>
+	internal IThemeParkIncWindowAdvice? Advice { get; set; }
+
+	/// <summary>The window's help button's advice (<c>0x1B6</c>).</summary>
+	public const int HelpMessage = 0x1B6;
+	/// <summary>The window's help said after the panel delay when it opens (<c>0x277</c>).</summary>
+	public const int DelayedHelpMessage = 0x277;
+	/// <summary>The advice every close of the window posts (<c>0x1FA</c>).</summary>
+	public const int ClosedMessage = 0x1FA;
+
+	/// <summary>
+	/// The mission's own advice (<c>0x93E3E0[counter]</c>, the mission panel <c>0x5F16C0</c>), which the window posts when it opens and its destroy cancels (<c>0x93CE1C[counter]</c>, the same
+	/// words): <c>0x223</c> plus the counter for missions 0 to 17, message 0 for 18 and 19.
+	/// </summary>
+	// [BIN:TPI-EXE:0x93E3E0 mission panel advice] 20 words: 0x223..0x234, 0, 0 (0x93CE1C holds the same); a counter of 20 or more would read past them (the next table), which no career reaches
+	// (the last mission, 17, ends the game without an advance)
+	public static int PanelAdvice( int counter ) => counter switch
+	{
+		>= 0 and <= 17 => 0x223 + counter,
+		18 or 19 => 0,
+		_ => throw new NotSupportedException( $"Theme Park Inc mission counter {counter} lies past the mission panel's advice table (0x93E3E0, 20 words)." )
+	};
+
 	/// <summary>Builds the window: its controls and their texts, then the first refresh.</summary>
 	public UiScreen Build()
 	{
@@ -116,6 +139,11 @@ internal sealed class ThemeParkIncMissionWindow
 		var career = Career;
 		// [BIN:TPI-EXE:0x55A860 career flag] the builder clears the career's byte +0x27
 		career.ClearMissionWindowFlag();
+		// [BIN:TPI-EXE:0x55A879 mission panel] then 0x5F16C0 on the mission controller (0x64EBA0): 0x71A930(0x93E3E0[career +0x105C], locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820.
+		// [EXT:tpi-capability-gates] that advice is not posted: its responses (880 to 897) speak the presenter's voices 1000 to 1017 (0x54D3E0 group 0), whose speech path (0x54D4D0, the presenter
+		// windows 0xA65008 and 0xA5EB30) the presentation does not port (ThemeParkIncAdvisorPresentation refuses them); the destroy's cancel of it (Close) finds nothing
+		// [BIN:TPI-EXE:0x55A87E mission delayed help] then 0x503AD0(0x277), the delayed help, before the window is created
+		Advice?.DelayedHelp( DelayedHelpMessage );
 		Page = 0;
 		screen = new UiScreen( ScreenName ) { Back = Close };
 		var counter = career.MissionCounter;
@@ -216,8 +244,8 @@ internal sealed class ThemeParkIncMissionWindow
 		// [BIN:TPI-EXE:0x55B5BA proceed sparkle] when the requirements are met the builder starts a screen particle burst at the button (0x500B70 -> 0x7BACC0), which OpenTPW's interface does not draw
 		var proceed = proceedButton = Button( "proceed", table.Control( 0xCEC68 ), Proceed, enabled: false );
 		TextOn( "proceedText", table.Control( 0xCEC68 ), () => strings.Entry( ProceedText ), new RgbaByte( 0xC8, 0xC8, 0xDC, 0xFF ) );
-		// [BIN:TPI-EXE:0x55BEAD help] the help button only plays sound 0x1B6 (0x503A40); Theme Park Inc's interface sounds are not ported
-		Button( "help", table.Control( 0xCEC6B ), null, enabled: true );
+		// [BIN:TPI-EXE:0x55BEAD help] the help button 0xCEC6B calls 0x503A40(0x1B6): the advisor's help button
+		Button( "help", table.Control( 0xCEC6B ), () => Advice?.HelpButton( HelpMessage ), enabled: true );
 		// [BIN:TPI-EXE:0x55BD35 close] the close and the cancel button share the id -2: both close the window and clear 0xA61814
 		Button( "close", table.Model( "b_close" ), Cancel, enabled: true );
 		Button( "cancel", table.Model( "b_cancel" ), Cancel, enabled: true );
@@ -533,7 +561,7 @@ internal sealed class ThemeParkIncMissionWindow
 	/// </summary>
 	// [BIN:TPI-EXE:0x55BD79 proceed] 0x55A620 false: nothing; 0x5F0190 (HasObstacle): message 0x24 with the thing park+0x1EAB6E (0x436140, vtable 0x93A3D0) through the dispatcher 0xA09728
 	// (0x436DD0 calls its listeners at once in ascending thing handle order: the staff HQ's rebuild 0x634D20, then the controller's handler 0x5F0F96; ParkEconomy.PressThemeParkIncMissionComplete); else
-	// 0x64ED00 -> 0x5F0770; then 0x85049F(window, 4), 0x501CD0(0) and the advisor panel 0x1FA (presentation)
+	// 0x64ED00 -> 0x5F0770; then 0x85049F(window, 4), 0x501CD0(0) and the advice 0x1FA (Close)
 	internal void Proceed()
 	{
 		if ( !world.PressComplete() )
@@ -547,6 +575,17 @@ internal sealed class ThemeParkIncMissionWindow
 		Close();
 	}
 
-	// [BIN:TPI-EXE:0x55BB0A close] message 5 and every button that closes: 0x85049F(window, 4), 0x501CD0(0) and the advisor panel 0x1FA (presentation)
-	private void Close() => close();
+	/// <summary>Closes the window as the HUD's message 5 does (<c>0x55BB0A</c>): the same as its own close.</summary>
+	internal void CloseFromHud() => Close();
+
+	// [BIN:TPI-EXE:0x55BB0A close] message 5 and every button that closes (and the tick's rebuild, 0x55BC1D): 0x85049F(window, 4), whose destroy (message 0x14, 0x55BB48) cancels the help
+	// 0x503B40(0x1B6), 0x503B40(0x277) and the mission's own advice 0x718990(0x93CE1C[career +0x105C]); then 0x501CD0(0) and 0x71A930(0x1FA, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820
+	private void Close()
+	{
+		close();
+		Advice?.CancelHelp( HelpMessage );
+		Advice?.CancelHelp( DelayedHelpMessage );
+		Advice?.Cancel( PanelAdvice( Career.MissionCounter ) );
+		Advice?.Post( ClosedMessage );
+	}
 }

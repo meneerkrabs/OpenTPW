@@ -37,8 +37,10 @@ public readonly record struct ThemeParkIncAdviceResponse( int Response, uint Voi
 	/// <summary>The rows OpenTPW plays.</summary>
 	public static IReadOnlyList<ThemeParkIncAdviceResponse> All { get; } = Array.AsReadOnly( Known );
 
-	/// <summary>The row of <paramref name="response"/>, or null for a response OpenTPW cannot play yet.</summary>
-	public static ThemeParkIncAdviceResponse? For( int response ) => Array.FindIndex( Known, row => row.Response == response ) is var index and >= 0 ? Known[index] : null;
+	/// <summary>The row of <paramref name="response"/> in the shipped response table (<see cref="ThemeParkIncAdviceResponseTable"/>), or null for none; the rows above when the table is missing.</summary>
+	public static ThemeParkIncAdviceResponse? For( int response ) => ThemeParkIncAdviceResponseTable.Shipped.Responses.Count > 0
+		? ThemeParkIncAdviceResponseTable.Shipped.Find( response )
+		: Array.FindIndex( Known, row => row.Response == response ) is var index and >= 0 ? Known[index] : null;
 
 	/// <summary>The forecast message the weather posts for a spell kind (1 heatwave, 2 rain, 3 storm, 4 snow), 0 for none.</summary>
 	// [BIN:TPI-EXE:0x6420AF forecast dispatch] the newly rolled spell's kind picks 0x154, 0x157, 0x15B or 0x15A
@@ -70,11 +72,14 @@ public readonly record struct ThemeParkIncAdviceResponse( int Response, uint Voi
 public readonly record struct ThemeParkIncAdviceTag( int Tag, int Kind, int Body, int GotoKind, int ExpiryUnits, int Formatter, int Sender, int Subject, int Category )
 {
 	// [BIN:TPI-EXE:0x9D3E30 forecast tag records] tags 62, 65, 68, 71: {t, 0x97, 0x7F/0x82/0x85/0x9C, 0, 0, 0, 0, 0xC0, 0xF7, 0}; [BIN:TPI-EXE:0x9D4330 letter tag records] tags 0x5E, 0x5F:
-	// {t, 0x97, 0xA6/0xA7, 0, 0, 0, 0, 0xC0, 0xC1, 0}
+	// {t, 0x97, 0xA6/0xA7, 0, 0, 0, 0, 0xC0, 0xC1, 0}; [BIN:TPI-EXE:0x9D4380 obstacle panel tag records] tags 0x60..0x63 (responses 823..826, the researched-obstacle advice 0x1EB..0x1EE):
+	// {t, t, 0x9D..0xA0, 0, 0, 0, 0, 0xC0, 0xFA, 0}: their kind word is the tag itself, so a new row supersedes the older row of the same tag
 	private static readonly ThemeParkIncAdviceTag[] Known =
 	{
 		new( 62, 0x97, 127, 0, 0, 0, 0xC0, 0xF7, 0 ), new( 65, 0x97, 130, 0, 0, 0, 0xC0, 0xF7, 0 ), new( 68, 0x97, 133, 0, 0, 0, 0xC0, 0xF7, 0 ),
 		new( 71, 0x97, 156, 0, 0, 0, 0xC0, 0xF7, 0 ), new( 0x5E, 0x97, 0xA6, 0, 0, 0, 0xC0, 0xC1, 0 ), new( 0x5F, 0x97, 0xA7, 0, 0, 0, 0xC0, 0xC1, 0 ),
+		new( 0x60, 0x60, 0x9D, 0, 0, 0, 0xC0, 0xFA, 0 ), new( 0x61, 0x61, 0x9E, 0, 0, 0, 0xC0, 0xFA, 0 ), new( 0x62, 0x62, 0x9F, 0, 0, 0, 0xC0, 0xFA, 0 ),
+		new( 0x63, 0x63, 0xA0, 0, 0, 0, 0xC0, 0xFA, 0 ),
 	};
 
 	/// <summary>The sender row of the advice rows: key 8 of <c>0x9CD6D8</c>, whose name and title are both <c>0xC0</c> and whose picture word is 8.</summary>

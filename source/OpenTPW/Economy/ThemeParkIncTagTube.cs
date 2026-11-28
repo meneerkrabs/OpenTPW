@@ -112,7 +112,7 @@ public sealed class ThemeParkIncTagTube
 	/// <summary>Bumped whenever the window's dirty byte (<c>0xA60188</c>) is set (<c>0x552CD0</c>): by an insert, a delete and the auto-delete check.</summary>
 	public int Revision { get; private set; }
 
-	/// <summary>The advisor messages the counter posted (<see cref="FirstUnreadAdvice"/>, <see cref="UnreadAdvice"/>), oldest first; the client takes them.</summary>
+	/// <summary>The advisor messages the counter posted (<see cref="FirstUnreadAdvice"/>, <see cref="UnreadAdvice"/>), oldest first; the economy posts them to the advisor after each insert.</summary>
 	internal List<int> AdviceRequests { get; } = new();
 
 	/// <summary>

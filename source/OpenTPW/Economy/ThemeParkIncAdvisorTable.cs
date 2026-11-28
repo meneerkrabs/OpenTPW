@@ -5,10 +5,11 @@ namespace OpenTPW;
 
 /// <summary>
 /// One row of Theme Park Inc's advisor descriptor table (<c>0x9DE020</c>, 56-byte rows filled by <c>0x729530</c>): <see cref="Scan"/> rows are the condition scan's (kind 0),
-/// the others are posted by code (kind 1). <see cref="ConstantScore"/> is the score of a callback that is a constant (<c>mov eax, imm32; ret</c>), null for every other callback.
+/// the others are posted by code (kind 1). <see cref="ConstantScore"/> is the score of a callback that is a constant (<c>mov eax, imm32; ret</c>), null for every other callback;
+/// <see cref="Field"/> is the scorer offset a callback returns when it reads one scorer word (<c>mov eax, [ecx + imm32]; ret</c>, an <c>Advisor.sam</c> key), null for every other callback.
 /// </summary>
 public readonly record struct ThemeParkIncAdvisorDescriptor( int Row, bool Scan, int Message, int Group, int Class, uint Callback, byte Duplicates, int Response, int Count,
-	int VariantRule, int? ConstantScore );
+	int VariantRule, int? ConstantScore, int? Field = null );
 
 /// <summary>
 /// The descriptor table shipped with OpenTPW (<c>content/data/tpi-advisor-descriptors.toml</c>): the 664 rows of the executable before its terminator, copied for interoperability by
@@ -22,7 +23,7 @@ public sealed class ThemeParkIncAdvisorTable
 	public const int Rows = 664;
 	/// <summary>The id the scan returns for no message (<c>0x285</c>); no lookup accepts it.</summary>
 	public const int NoMessage = 0x285;
-	private static readonly Regex Row = new( @"^\s*\{ row = (\d+), kind = ([01]), message = 0x([0-9a-f]+), group = (\d+), class = (\d+), callback = 0x([0-9a-f]+), duplicates = (\d+), response = (\d+), count = (\d+), variant = (\d+)(?:, score = (-?\d+))? \},?\s*$", RegexOptions.CultureInvariant );
+	private static readonly Regex Row = new( @"^\s*\{ row = (\d+), kind = ([01]), message = 0x([0-9a-f]+), group = (\d+), class = (\d+), callback = 0x([0-9a-f]+), duplicates = (\d+), response = (\d+), count = (\d+), variant = (\d+)(?:, score = (-?\d+))?(?:, field = 0x([0-9a-f]+))? \},?\s*$", RegexOptions.CultureInvariant );
 	private static ThemeParkIncAdvisorTable? shipped;
 	private readonly Dictionary<int, ThemeParkIncAdvisorDescriptor> first = new();
 
@@ -85,7 +86,7 @@ public sealed class ThemeParkIncAdvisorTable
 			if ( Value( 1 ) != rows.Count || Value( 7 ) > byte.MaxValue || Hex( 3 ) >= ThemeParkIncGlobalSave.HistoryEntries || Value( 4 ) >= ThemeParkIncAdvisorSettings.GroupCount )
 				throw new InvalidDataException( $"Theme Park Inc advisor descriptor row {Value( 1 )} is out of order or out of range." );
 			rows.Add( new ThemeParkIncAdvisorDescriptor( Value( 1 ), Value( 2 ) == 0, Hex( 3 ), Value( 4 ), Value( 5 ), (uint)Hex( 6 ), (byte)Value( 7 ), Value( 8 ), Value( 9 ), Value( 10 ),
-				match.Groups[11].Success ? Value( 11 ) : null ) );
+				match.Groups[11].Success ? Value( 11 ) : null, match.Groups[12].Success ? Hex( 12 ) : null ) );
 		}
 		if ( state != 2 || rows.Count != Rows )
 			throw new InvalidDataException( $"Theme Park Inc advisor descriptors hold {rows.Count} rows in {(state == 2 ? "a closed" : "no closed")} 'messages' array; the executable's table has {Rows}." );

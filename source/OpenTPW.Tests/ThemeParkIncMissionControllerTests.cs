@@ -42,6 +42,15 @@ internal sealed class TestMissionHost : IThemeParkIncMissionHost
 	public void PostObjectiveLetter( int completed ) => Calls.Add( $"letter {completed}" );
 	public void PostIntroductionLetter() => Calls.Add( "introduction" );
 	public void StatusChanged() => Broadcasts++;
+	public List<string> Advice { get; } = new();
+	public HashSet<int> Played { get; } = new();
+	public bool PostAdvice( int message )
+	{
+		Advice.Add( $"post {message:X}" );
+		return true;
+	}
+	public void CancelAdvice( int message ) => Advice.Add( $"cancel {message:X}" );
+	public bool AdvicePlayed( int message ) => Played.Contains( message );
 }
 
 [TestClass]
@@ -303,6 +312,37 @@ public class ThemeParkIncMissionControllerTests
 		Assert.AreEqual( (ThemeParkIncMissionState.CutsceneObject, (ushort)0), (cutscene.State, cutscene.CutsceneObject), "state 4 does not record the thing" );
 		cutscene.CameraFinished( 1 );
 		Assert.AreEqual( ("destroy 0", 1), (cutsceneHost.Calls[0], cutsceneCareer.MissionCounter), "the end destroys the recorded thing (none) and completes" );
+	}
+
+	[TestMethod]
+	public void TheControllerSaysAndCancelsItsAdvice()
+	{
+		var host = new TestMissionHost { CurrentObstacle = 55, ObstacleStaffSlotsFilled = true };
+		var (controller, career, _) = Controller( "Obstacle.Type 1703\nObstacleStaff[0].Ability 10\nObstacleStaff[0].Number 1\nCompletion.EndingTheme 1\n", host );
+		controller.Update( 1 );
+		controller.ObstacleResearched();
+		controller.Update( 2 );
+		CollectionAssert.AreEqual( new[] { "post 19B" }, host.Advice, "0x5EF6E2: counter 0 and 0x19B not played" );
+		controller.CameraFinished( 3 );
+		CollectionAssert.AreEqual( new[] { "cancel 172", "cancel 19B", "cancel 1E3", "cancel 20F", "cancel 210" }, host.Advice.Skip( 1 ).ToArray(), "0x5F11F8: the flight's end" );
+		host.Advice.Clear();
+		controller.RemoveObstacle( 55 );
+		CollectionAssert.AreEqual( Array.Empty<string>(), host.Advice, "0x19C not played and counter 0: neither 0x173 nor 0x21D" );
+		controller.CameraFinished( 4 );
+		Assert.AreEqual( 1, career.MissionCounter );
+		host.Advice.Clear();
+		host.Played.Add( 0x19C );
+		controller.RemoveObstacle( 55 );
+		CollectionAssert.AreEqual( new[] { "post 173", "post 21D" }, host.Advice, "0x19C played posts 0x173 before the flight; counter 1 posts 0x21D after it" );
+		host.Advice.Clear();
+		controller.Promotion( 3 );
+		CollectionAssert.AreEqual( new[] { "post 1A4" }, host.Advice, "0x5F10F7" );
+
+		var openedHost = new TestMissionHost();
+		openedHost.Attractions[1703] = 9;
+		var (opened, _, _) = Controller( "Completion.ObstacleOpened 1703\nCompletion.EndingTheme 1\n", openedHost );
+		Assert.IsTrue( opened.OnMissionComplete( 0 ) );
+		CollectionAssert.AreEqual( new[] { "post 26C" }, openedHost.Advice, "0x5F0827: counter 0, after the flight started" );
 	}
 
 	[TestMethod]

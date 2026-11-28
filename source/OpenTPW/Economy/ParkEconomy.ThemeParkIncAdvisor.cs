@@ -1,7 +1,34 @@
 namespace OpenTPW;
 
+/// <summary>
+/// What a Theme Park Inc window asks of the advisor thing (<c>0x64EA00</c>): its help said after the panel delay when it opens (<c>0x503AD0</c>), its help button (<c>0x503A40</c>), its help
+/// cancelled when it goes (<c>0x503B40</c>), and the window's own advice posted (<c>0x71A930</c>, <c>0x718820</c>) or cancelled (<c>0x718990</c>).
+/// </summary>
+// [EXT:tpi-advisor-tick-clock] (D-2: window state is simulation input) the client's windows call it between world ticks, as the original's window procedures run between them
+public interface IThemeParkIncWindowAdvice
+{
+	void DelayedHelp( int message );
+	bool HelpButton( int message );
+	bool CancelHelp( int message );
+	bool Post( int message );
+	bool Cancel( int message );
+}
+
 public sealed partial class ParkEconomy
 {
+	/// <summary>The advisor as Theme Park Inc's windows reach it (<see cref="IThemeParkIncWindowAdvice"/>); every call does nothing in a park without an advisor.</summary>
+	public IThemeParkIncWindowAdvice TpiWindowAdvice => tpiWindowAdvice ??= new ThemeParkIncWindowAdvice( this );
+	private IThemeParkIncWindowAdvice? tpiWindowAdvice;
+
+	private sealed class ThemeParkIncWindowAdvice( ParkEconomy economy ) : IThemeParkIncWindowAdvice
+	{
+		public void DelayedHelp( int message ) => economy.ThemeParkIncDelayedHelp( message );
+		public bool HelpButton( int message ) => economy.ThemeParkIncHelpButton( message );
+		public bool CancelHelp( int message ) => economy.CancelThemeParkIncHelp( message );
+		public bool Post( int message ) => economy.PostThemeParkIncAdvice( message );
+		public bool Cancel( int message ) => economy.CancelThemeParkIncAdvice( message );
+	}
+
 	/// <summary>
 	/// Theme Park Inc's advisor thing (docs/reverse/TPI-ADVISOR.md): the single queue every advice goes through (the forecasts and the notification letters so far), updated once per world
 	/// tick at its place in the thing pass. Null in Theme Park World.
@@ -45,6 +72,30 @@ public sealed partial class ParkEconomy
 	/// <summary>Posts advice <paramref name="message"/> with its descriptor's score, as a sender's <c>0x71A930</c> and <c>0x718820</c> do; false when the queue refused it.</summary>
 	internal bool PostThemeParkIncAdvice( int message ) =>
 		TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.Post( message, career, Turn, TpiAdviceContext );
+
+	/// <summary>Cancels advice <paramref name="message"/> (<c>0x718990</c> on the advisor thing): its pending records go and a playing one stops; false when nothing was cancelled.</summary>
+	internal bool CancelThemeParkIncAdvice( int message ) => TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.Cancel( message, career, out _ );
+
+	/// <summary>Whether the player's history has advice <paramref name="message"/> played (<c>0x71B520</c>, the entry's byte <c>+8</c>); false without a career.</summary>
+	internal bool ThemeParkIncAdvicePlayed( int message ) => TpiCareer?.AdviceHistory( message ).Played ?? false;
+
+	/// <summary>A window's help button (<c>0x503A40</c>, <see cref="ThemeParkIncAdvisor.HelpButton"/>); false when the queue refused it or the park has no advisor.</summary>
+	// [EXT:tpi-advisor-tick-clock] (D-2: window state is simulation input) the client's window calls it between world ticks, as the original's window procedure runs between them
+	public bool ThemeParkIncHelpButton( int message ) =>
+		TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.HelpButton( message, career, Turn, TpiAdviceContext );
+
+	/// <summary>A window's help said after the panel delay (<c>0x503AD0</c>, <see cref="ThemeParkIncAdvisor.PostDelayed"/>).</summary>
+	public void ThemeParkIncDelayedHelp( int message ) => TpiAdvisor?.PostDelayed( message );
+
+	/// <summary>A window's or a panel's help said at once (<c>0x5039F0</c>, <see cref="ThemeParkIncAdvisor.PanelHelp"/>).</summary>
+	public bool ThemeParkIncPanelHelp( int message ) =>
+		TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.PanelHelp( message, career, Turn, TpiAdviceContext );
+
+	/// <summary>A window's help cancelled when the window goes (<c>0x503B40</c>, <see cref="ThemeParkIncAdvisor.CancelHelp"/>).</summary>
+	public bool CancelThemeParkIncHelp( int message ) => TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.CancelHelp( message, career );
+
+	/// <summary>The stored tutorial advice said again (<c>0x718AB0</c>: the F1 key, <see cref="ThemeParkIncAdvisor.RepeatTutorial"/>); false with none stored.</summary>
+	public bool RepeatThemeParkIncTutorial() => TpiAdvisor is { } advisor && TpiCareer is { } career && advisor.RepeatTutorial( career, Turn );
 
 	/// <summary>The advisor thing's update (<c>0x718190</c>), once per world pass and not in a lost park.</summary>
 	// [BIN:TPI-EXE:0x6376C7 advisor update] the thing pass's class switch sends model 11 to 0x637704 -> 0x718190 (skipped while the mode word is 1, an online game)

@@ -185,15 +185,44 @@ public sealed class ThemeParkIncAdvisor
 
 	private static uint Milliseconds( long microseconds ) => unchecked( (uint)(microseconds / 1000) );
 
-	/// <summary>The score of <paramref name="message"/> in the context (<c>0x71B7E0</c>): -1 for no row, the no-message id, or a class the context does not admit.</summary>
+	/// <summary>
+	/// The score of <paramref name="message"/> in the context (<c>0x71B7E0</c>): -1 for no row, the no-message id, or a class the context does not admit; else its row's callback, which
+	/// <paramref name="career"/>'s history feeds where the callback reads it.
+	/// </summary>
 	// [BIN:TPI-EXE:0x71B7E0 advice score] the first row of the message, the class check 0x71BDC0, then the row's callback with this = scorer + row+0x14 (0 in every row)
-	public int Score( int message, ThemeParkIncAdviceContext context )
+	public int Score( int message, ThemeParkIncAdviceContext context, ThemeParkIncCareer? career = null )
 	{
 		if ( table.Find( message ) is not { } row || !Admits( row.Class, context ) )
 			return -1;
-		// a callback that reads game state is the condition scan's (P3) or a sender's (P4, P5); only constant callbacks are reached by the messages posted so far
-		return row.ConstantScore ?? throw new NotSupportedException( $"Theme Park Inc advisor message {message:X}: its score callback {row.Callback:X} is not ported." );
+		if ( row.ConstantScore is { } constant )
+			return constant;
+		// [BIN:TPI-EXE:0x71FE90 field score] 194 callbacks return one word of the scorer (mov eax, [ecx + offset]; ret), an Advisor.sam key: HelpMessage.Score (+0x49C) for the window help
+		if ( row.Field is { } field )
+			return settings.Word( field );
+		return Callback( row, career );
 	}
+
+	// the callbacks that read state besides the scorer; a callback that reads game state is the condition scan's (P3) or a later sender's (P5), which nothing posts yet
+	private static int Callback( ThemeParkIncAdvisorDescriptor row, ThemeParkIncCareer? career )
+	{
+		switch ( row.Callback )
+		{
+			// [BIN:TPI-EXE:0x727410 0x1FA score] (thunk 0x404BD3) the advisor thing's history byte of 0x1FA (0x71B520: +8, played): set 0, else 10000
+			case 0x404BD3:
+				return Played( 0x1FA ) ? 0 : 10_000;
+			// [BIN:TPI-EXE:0x728580 0x21D score] (thunk 0x407CB6) the history entry of 0x21D (0x71B4F0) +8, the played byte: set 0, else 10000
+			case 0x407CB6:
+				return Played( 0x21D ) ? 0 : 10_000;
+			default:
+				throw new NotSupportedException( $"Theme Park Inc advisor message {row.Message:X}: its score callback {row.Callback:X} is not ported." );
+		}
+
+		bool Played( int message ) => (career ?? throw new InvalidOperationException( $"Theme Park Inc advisor message {row.Message:X}: its score reads the career's history." ) )
+			.AdviceHistory( message ).Played;
+	}
+
+	/// <summary>Whether OpenTPW runs the score callback of <paramref name="row"/>: a constant, a scorer word or one of the ported callbacks.</summary>
+	public static bool Scores( ThemeParkIncAdvisorDescriptor row ) => row.ConstantScore != null || row.Field != null || row.Callback is 0x404BD3 or 0x407CB6;
 
 	/// <summary>Whether the context admits a descriptor class (<c>0x71BDC0</c>).</summary>
 	// [BIN:TPI-EXE:0x71BDC0 class check] mode word 3 admits class 3 only; else the game object's +0x2E class 5, its +0x2F class 7; else a playing cutscene admits class 6, 5 or 4 by its mode
@@ -214,7 +243,7 @@ public sealed class ThemeParkIncAdvisor
 	/// <summary>Builds a record with the descriptor's score (<c>0x71A930</c> with score -1) and offers it to the queue (<c>0x718820</c>).</summary>
 	// [BIN:TPI-EXE:0x71A930 advice record] a score below 0 asks the descriptor (0x71B7E0) and clears +0x16; a given score sets it; +0x14 = 1
 	public bool Post( int message, ThemeParkIncCareer career, long turn, ThemeParkIncAdviceContext context, ushort locate = 0, int locateData = 0, int variant = -1, bool bypass = false )
-		=> Enqueue( new ThemeParkIncAdviceRecord( locate, locateData, variant, message, Score( message, context ), true, bypass, false ), career, turn );
+		=> Enqueue( new ThemeParkIncAdviceRecord( locate, locateData, variant, message, Score( message, context, career ), true, bypass, false ), career, turn );
 
 	/// <summary>Builds a record with a given score of 0 or more (the explicit path, <c>+0x16</c> = 1) and offers it to the queue.</summary>
 	public bool PostScored( int message, int score, ThemeParkIncCareer career, long turn, ushort locate = 0, int locateData = 0, int variant = -1, bool bypass = false )
@@ -352,6 +381,55 @@ public sealed class ThemeParkIncAdvisor
 		(DelayedFromPanel, DelayStart, DelayedMessage) = (true, Now, message);
 	}
 
+	/// <summary>
+	/// A window's help button (<c>0x503A40</c>): the delayed help is dropped and the message posted with its descriptor's score while <see cref="FromHelpButton"/> is set, so it bypasses the
+	/// group, once-only and slap checks and becomes the help button's message. True when the queue took it.
+	/// </summary>
+	// [BIN:TPI-EXE:0x503A40 help button] advisor +0x10D = 0, +0x10C = 1, 0x71A930(message, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820, then +0x10C = 0
+	public bool HelpButton( int message, ThemeParkIncCareer career, long turn, ThemeParkIncAdviceContext context )
+	{
+		DelayedFromPanel = false;
+		FromHelpButton = true;
+		try
+		{
+			return Post( message, career, turn, context );
+		}
+		finally
+		{
+			FromHelpButton = false;
+		}
+	}
+
+	/// <summary>A window's or a panel's help that the advisor says at once (<c>0x5039F0</c>): the message with its descriptor's score.</summary>
+	// [BIN:TPI-EXE:0x5039F0 panel help] 0x71A930(message, locate 0, 0, variant -1, bypass 0, score -1) -> 0x718820; the delayed help is left as it is
+	public bool PanelHelp( int message, ThemeParkIncCareer career, long turn, ThemeParkIncAdviceContext context ) => Post( message, career, turn, context );
+
+	/// <summary>A window's help cancelled when the window goes (<c>0x503B40</c>): the delayed help is dropped and the message cancelled (<see cref="Cancel"/>).</summary>
+	// [BIN:TPI-EXE:0x503B40 help cancel] advisor +0x10D = 0, then 0x718990(message)
+	public bool CancelHelp( int message, ThemeParkIncCareer career )
+	{
+		DelayedFromPanel = false;
+		return Cancel( message, career, out _ );
+	}
+
+	/// <summary>
+	/// Says the stored tutorial advice again (<c>0x718AB0</c>, the F1 key): a valid stored record takes <c>HelpMessage.ContextHelpScore</c> as its given score and its bypass byte and is offered
+	/// to the queue. False with no stored record.
+	/// </summary>
+	// [BIN:TPI-EXE:0x718AB0 repeat tutorial] +0x100 (the stored record's valid byte) clear: false; else the scorer is built when it is not (0xC64DC7), the record +0xEC gets the score [0xC656C0]
+	// (scorer +0x4A0, HelpMessage.ContextHelpScore) at +0x10, +0x16 = 1 and +0x101 (its bypass byte +0x15) = 1, and goes to 0x718820 (which copies a tutorial-group record to +0xEC again); true
+	public bool RepeatTutorial( ThemeParkIncCareer career, long turn )
+	{
+		if ( !StoredTutorial.Valid )
+			return false;
+		StoredTutorial = StoredTutorial with { Score = settings.Word( ContextHelpScoreOffset ), ExplicitScore = true, Bypass = true };
+		Enqueue( StoredTutorial, career, turn );
+		return true;
+	}
+
+	/// <summary>The scorer offset of <c>HelpMessage.ContextHelpScore</c> (<c>0xC656C0</c>).</summary>
+	public const int ContextHelpScoreOffset = 0x4A0;
+
 	/// <summary>The tags the playback broadcast since the last call (kind 0x18), oldest first; the tag system files them.</summary>
 	public IReadOnlyList<ThemeParkIncAdviceBroadcast> TakeBroadcasts()
 	{
@@ -422,7 +500,7 @@ public sealed class ThemeParkIncAdvisor
 		var row = table.Find( message )!.Value;
 		var history = career.AdviceHistory( message );
 		var variant = slots[index].Variant >= 0 ? slots[index].Variant : NextVariant( row, history, message );
-		if ( (slots[index].ExplicitScore ? PlayExplicit( index, variant, speech ) : PlayDefault( index, variant, context, speech )) is not { } duration )
+		if ( (slots[index].ExplicitScore ? PlayExplicit( index, variant, speech ) : PlayDefault( index, variant, context, career, speech )) is not { } duration )
 			return;
 		LastStart = now;
 		LastWindow = unchecked( duration + AfterSpeech );
@@ -457,11 +535,11 @@ public sealed class ThemeParkIncAdvisor
 	// fails; nonzero locate words replace the record's; the response is the base plus a variant below the count, else the base; 0x3F6 fails with no duration; the help button's message records
 	// its response (0x9DDBE8) else 0x3F6 is stored; the speech (0x716230) gives the duration; the group gate timer is reset (0x73D3F0, P3); a tag that is not 0x97 is broadcast (kind 0x18).
 	// The locate words the second score writes (0x71AA9E-0x71AAB3) are not modelled: the constant callbacks posted so far write none, and the callbacks that do come with P3 and P4
-	private uint? PlayDefault( int index, int variant, ThemeParkIncAdviceContext context, Func<int, uint> speech )
+	private uint? PlayDefault( int index, int variant, ThemeParkIncAdviceContext context, ThemeParkIncCareer career, Func<int, uint> speech )
 	{
 		var slot = slots[index];
 		slots[index] = slot with { Valid = false };
-		if ( Score( slot.Message, context ) < settings.MinimumScore )
+		if ( Score( slot.Message, context, career ) < settings.MinimumScore )
 			return null;
 		var response = ResponseOf( slot.Message, variant );
 		if ( response == NoResponse )
@@ -512,9 +590,9 @@ public sealed class ThemeParkIncAdvisor
 	/// </summary>
 	public static bool IsValid( ThemeParkIncAdvisorSnapshot? state, ThemeParkIncAdvisorTable table ) =>
 		state is { Slots.Length: Slots, ClockMicroseconds: >= 0 }
-		&& state.Slots.Append( state.StoredTutorial ).All( slot => !slot.Valid || table.Find( slot.Message ) is { } row && (slot.ExplicitScore || row.ConstantScore != null) )
+		&& state.Slots.Append( state.StoredTutorial ).All( slot => !slot.Valid || table.Find( slot.Message ) is { } row && (slot.ExplicitScore || Scores( row )) )
 		&& (state.Playing == ThemeParkIncAdvisorTable.NoMessage || table.Find( state.Playing ) != null)
-		&& (!state.DelayedFromPanel || table.Find( state.DelayedMessage )?.ConstantScore != null);
+		&& (!state.DelayedFromPanel || table.Find( state.DelayedMessage ) is { } delayed && Scores( delayed ));
 
 	public void Restore( ThemeParkIncAdvisorSnapshot state )
 	{

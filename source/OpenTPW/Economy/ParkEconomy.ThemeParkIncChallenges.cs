@@ -57,6 +57,8 @@ public sealed partial class ParkEconomy
 			throw new InvalidOperationException( "This park runs no Theme Park Inc challenges." );
 		if ( !CanAcceptThemeParkIncChallenge( index ) )
 			throw new InvalidOperationException( $"Theme Park Inc challenge {index} cannot be accepted now: it must be on offer and the park open." );
+		// [BIN:TPI-EXE:0x5C84EB accept cancel] the accept first cancels the sender's advice (row 0x9CD000 + 36·sender, word 1) on the advisor thing (0x718990)
+		CancelThemeParkIncAdvice( ThemeParkIncChallenges.SenderAdvice( challenges.Slots[index].Sender, ThemeParkIncChallenges.AcceptCancelWord ) );
 		challenges.Accept( index, Turn );
 	}
 
@@ -135,6 +137,9 @@ public sealed partial class ParkEconomy
 	private sealed class ThemeParkIncChallengeHost( ParkEconomy economy ) : IThemeParkIncChallengeHost
 	{
 		public bool ParkOpen => economy.IsParkOpen;
+
+		// [BIN:TPI-EXE:0x5C2150 challenge time-out cancel] word 4 of the sender's row is cancelled on the advisor thing (0x718990)
+		public void CancelSenderAdvice( int sender, int word ) => economy.CancelThemeParkIncAdvice( ThemeParkIncChallenges.SenderAdvice( sender, word ) );
 
 		// [BIN:TPI-EXE:0x5C7967 mission gate] the switch and the availability read the career's +0x105C (ThemeParkIncCareer.MissionCounter)
 		public int MissionCounter => economy.TpiCareer!.MissionCounter;
@@ -223,7 +228,12 @@ public sealed partial class ParkEconomy
 			if ( economy.TpiCareer!.FiringLine > 0 )
 				economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Lost ) );
 			else
+			{
 				economy.PostThemeParkIncMail( ThemeParkIncAdviceMail.ChallengeLost );
+				// [BIN:TPI-EXE:0x5C4979 lost advice] after the letter (whose row builder posts 0x1A3 too, 0x6362AA), the lost branch posts 0x1A3 itself: 0x71A930(0x1A3, locate 0, 0, variant -1, bypass 0,
+				// score -1) -> 0x718820; its limit is 255, so the queue holds both records and the advisor says the letter twice
+				economy.PostThemeParkIncAdvice( ThemeParkIncAdviceMail.ChallengeLost.Message );
+			}
 		}
 
 		public void Offered( int index ) => economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Offered ) );

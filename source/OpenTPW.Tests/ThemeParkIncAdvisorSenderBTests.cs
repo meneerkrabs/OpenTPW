@@ -149,6 +149,7 @@ public sealed class ThemeParkIncAdvisorSenderBTests : ThemeParkIncScienceTestBas
 		// 0x5E2791: fild b, fadd the single wear: the sum is a single at the 24-bit control word, so 39 + 0.99999994f rounds to 40
 		Assert.IsTrue( ParkEconomy.CrossedImminentLine( 39, 0.99999994f, 40f ) );
 		Assert.IsFalse( ParkEconomy.CrossedImminentLine( 39, 1f, float.NaN ), "an unordered fcomp sets C0: below, so no post" );
+		Assert.IsFalse( ParkEconomy.CrossedImminentLine( 39, float.NaN, 40f ), "an unordered sum is below too" );
 	}
 
 	/// <summary>A Robot Swing (Info.Id 1101) built in the economy.</summary>

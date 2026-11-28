@@ -578,13 +578,12 @@ def check_senders_b(image, test_text):
                    stubs={0x5E27A2: mark('post'), 0x5E27F3: mark('none'), 0x5E27F5: mark('none')}, budget=1_000)
     item = wear.object(0x100)
     kind = wear.object(0x400)
-    for row in rows_of(test_text, 'TheImminentAdviceNeedsTheRepairByteToCrossItsLine') + [['39', '0.99999994f', '40f', 'true'], ['39', '1f', 'NaN', 'false']]:
-        repair, worn = number(row[0]), number(row[1])
+    extra = [['39', '0.99999994f', '40f', 'true'], ['39', '1f', 'NaN', 'false'], ['39', 'NaN', '40f', 'false']]
+    for row in rows_of(test_text, 'TheImminentAdviceNeedsTheRepairByteToCrossItsLine') + extra:
+        repair = number(row[0])
+        worn = float('nan') if row[1] == 'NaN' else number(row[1])
         imminent = float('nan') if row[2] == 'NaN' else number(row[2])
         expected = number(row[3])
-        wear.write(item + 0x54, 'f', float(repair))
-        wear.write(kind + 0x3C8, 'f', imminent)
-        wear.executed = 0
         wear.reset()
         wear.set_fpcw(0x7F)
         wear.write(item + 0x54, 'f', float(repair))

@@ -76,7 +76,7 @@ class NativeStatisticsHistoryContract(unittest.TestCase):
         self.assertIn(".TakeLast( MonthsKept )", self.history)
         self.assertIn("Rating.Count == 0", self.history)
         self.assertIn("Rating is null || Rating.IsValid( ParkStatisticsHistory.MonthsKept )", self.history)
-        self.assertIn("park.StatisticsHistory.IsEmpty && park.Ledger.History.Count == 0 ? null", self.save)
+        self.assertIn("park.StatisticsHistory.IsFresh && park.Ledger.History.Count == 0 ? null", self.save)
         self.assertIn("park.StatisticsHistory.Restore( history, park.Ledger.History.Select( month => month.ParkRating ) )", self.save)
         self.assertIn("park.StatisticsHistory.RestoreLegacyRating( park.Ledger.History.Select( month => month.ParkRating ) )", self.save)
         self.assertLess(self.save.index("park.Ledger.Restore("), self.save.index("park.StatisticsHistory.Restore("))

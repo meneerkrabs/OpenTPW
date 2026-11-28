@@ -89,6 +89,21 @@ public sealed class ThemeParkIncGuestRecord
 	/// (<c>0x608F7D</c>); state 7's entry asks for the walk to the target words again while it is set (<c>0x61A9C7</c>). The person save keeps it (<c>0x6095A0</c>).
 	/// </summary>
 	public bool Wandered { get; internal set; }
+	/// <summary>
+	/// The fee word <c>+0x1B4</c>: the attraction's price (<c>+0x94</c>, <c>0x5E6200</c>) that OnAdmittance <c>0x619670</c> records when the ride calls the guest, and the use's payment step <c>0x6126D0</c> takes
+	/// (phase P3b). Nothing clears it: the next call overwrites it.
+	/// </summary>
+	public int Fee { get; internal set; }
+	/// <summary>The byte <c>+0x2E4</c>: the outcome <c>0x612740</c> sets it, a lost use (<c>0x611B76</c>) clears it; state 19's arrival reads it for the mood animation.</summary>
+	public bool UseSucceeded { get; internal set; }
+	/// <summary>The balloon colour <c>+0x2A0</c> (the balloon shop's draw <c>0x690370(0xE, 0)</c>), which state 19's entry gives the balloon again and the litter of a popped balloon reads.</summary>
+	public int BalloonColour { get; internal set; }
+	/// <summary>
+	/// The sprite category <c>+0x34</c> and variant <c>+0x30</c> when a costume shop changed them (<c>0x612F58</c>: category 6, the costumes; taking a costume off sets category 0, <c>0x613079</c>); null while
+	/// the guest keeps the constructor's, its generation and its kid set draw (<c>0x60C8A1</c>..<c>0x60C8F3</c>).
+	/// </summary>
+	public int? SpriteCategory { get; internal set; }
+	public int? SpriteVariant { get; internal set; }
 
 	/// <summary>The number of words at <c>+0x2D0</c>..<c>+0x2E0</c>.</summary>
 	public const int Words2D0Count = 5;

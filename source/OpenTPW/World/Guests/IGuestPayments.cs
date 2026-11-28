@@ -61,4 +61,19 @@ public interface IGuestPayments
 	/// and for an attraction without an economy record.
 	/// </summary>
 	bool AwaitsActivation( IRideVisitorBridge attraction ) => false;
+
+	// ---- Theme Park Inc's native guests' use of an attraction (phase P3b, docs/reverse/TPI-GUESTS.md) ----
+
+	/// <summary>The thing words a native guest's use reads (price, cost of goods, quality, win byte, amount); null without an economy record, which reads the bridge's own words.</summary>
+	ThemeParkIncThingWords? ThemeParkIncThing( IRideVisitorBridge attraction ) => null;
+	/// <summary>The use's income booking (<c>0x5E5DE0</c>): the bank takes the fee, the object's takings rise.</summary>
+	void ThemeParkIncTakings( IRideVisitorBridge attraction, int fee ) { }
+	/// <summary>A customer of the attraction (<c>0x5E5DA0</c>): its daily and monthly customers rise.</summary>
+	void ThemeParkIncCustomer( IRideVisitorBridge attraction ) { }
+	/// <summary>The cost booking <c>0x5E60E0</c> of a sale's goods or a won play's prize.</summary>
+	void ThemeParkIncCostBooked( IRideVisitorBridge attraction, int amount ) { }
+	/// <summary>A shop's cost of goods for one sale (<c>0x5E63E0</c>); 0 without an economy record.</summary>
+	int ThemeParkIncGoodsCost( IRideVisitorBridge attraction ) => 0;
+	/// <summary>The challenge events of a guest the attraction took (state 20's entry <c>0x61A77E</c>).</summary>
+	void ThemeParkIncRideAdmitted( IRideVisitorBridge attraction ) { }
 }

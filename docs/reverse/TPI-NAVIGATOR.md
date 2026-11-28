@@ -169,7 +169,7 @@ Under the switch the guests (`GuestSimulation.StepThemeParkInc`, so a native gue
 A native guest stores the heading in its record's `Heading` (saved since P1); every walker's presentation vector is the word's (`ThemeParkIncWalkStep.Vector`). A staff member keeps the
 word in `SpriteAngle`, not saved yet (NV5 stores the person words). The guard's carry (`0x5D3B20`: state 0x1C) needs the guard's chase, which is not ported (`[EXT:tpi-capability-gates]`).
 The guest states that branch on the step's result (7, 9, 13, 15, 16, 19, 22) see these results; the native-guest tests pass with both switches on
-(`OPENTPW_TEST_TPI_NATIVE_WALK=1` runs every rig of `ThemeParkIncNativeGuestTests` and `ThemeParkIncNativeIdleTests` that way).
+(`OPENTPW_TEST_TPI_NATIVE_WALK=1` runs every rig of `ThemeParkIncNativeGuestTests`, `ThemeParkIncNativeIdleTests`, `ThemeParkIncNativeQueueTests` and `ThemeParkIncNativeVisitTests` that way).
 
 **The speed step `0x60BC90`** [R, O] is Theme Park World's `0x4FA870` value for value (TPI adds +3.0 × `+0xDC` with `faddp` where tp.exe subtracts −3.0 × it; the same single):
 (`+0xD4` + `+0xD6` + `+0xD8`) / `[0x9CFB2C]` (100) + 3 × `+0xDC`, × 0.25, each operation a single; the caps `0x63EF90`; the boost × 99 / 100 as a word; mPreviousX/Y `+0x1A8/+0x1AC` = the
@@ -194,7 +194,7 @@ counts every simulation call of its native routes (`ParkCellMap.CountsSimulation
 | the walk set-up's success | `0x63E79B` | `GuestNavigation.Setup` (a failed set-up keeps its stamp and raises nothing) |
 | the wander: entry gate, a guest's final route, the off-path tries, the stranded mark | `0x609FBE`, `0x60A55F`, `0x60A6FB` / `0x60A83F`, `0x60A4A5` | `Wander` (the guests'; Theme Park World's `0x4F9490` has the same calls) |
 | the cell edits and the queue length change | `0x67CC50`, `0x67CE47`, `0x682FB3`, `0x5E06B3` | `ParkCellMap.SetType`, `StampBlockAt` (already counted) |
-| the sprite placement's simulation calls | `0x60CAC9` (guest constructor), `0x61A70B` (the state setter's entry for state 19) | `ThemeParkIncPlacementStamp` after the constructor's walk to the booth; state 19 is a later guest phase's |
+| the sprite placement's simulation calls | `0x60CAC9` (guest constructor), `0x61A70B` (the state setter's entry for state 19) | `ThemeParkIncPlacementStamp` after the constructor's walk to the booth, and in state 19's entry for a teleporting ride before its beam (guest phase P3b) |
 
 `[EXT:tpi-stamp-counter-sim-only]` (user-approved 2026-11-25, decision N-5): the sprite placement `0x60AE00` also raises the counter once per person per rendered frame (the render pass
 `0x64E270` from the frame loops), which makes the original's stored stamps depend on the frame rate; OpenTPW counts only its simulation calls. The advisor's condition scan reaches the

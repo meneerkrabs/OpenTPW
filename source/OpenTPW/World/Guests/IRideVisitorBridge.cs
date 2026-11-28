@@ -94,6 +94,16 @@ public interface IRideVisitorHost
 	bool WalksToBoard => false;
 	/// <summary>The guest stands in the queue (state 11) at recorded position 0.</summary>
 	bool IsStandingAtFront( IRideVisitorBridge ride, int guestId ) => true;
+	/// <summary>
+	/// Theme Park Inc's native guests (phase P3b): a guest the script took stays in the queue list until its own state 17 (<c>0x61A21D</c>) or the ride's head step (<c>0x6182A0</c>) unlinks it, as
+	/// the original's list does; Theme Park World's guest leaves the list when the bridge boards it. False by default.
+	/// </summary>
+	bool KeepsBoardedGuestQueued( int guestId ) => false;
+	/// <summary>
+	/// The ride's head step (<c>0x5E3CC0</c>) found its queue head: true when the host forced a native guest the script has already admitted onto the ride (state 17, <c>0x6182A0</c>) instead of dismissing
+	/// it. False by default: the head is unlinked and dismissed.
+	/// </summary>
+	bool ForcesAdmittedHead( IRideVisitorBridge ride, int headGuestId ) => false;
 }
 
 /// <summary>

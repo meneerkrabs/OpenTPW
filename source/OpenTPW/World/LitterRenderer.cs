@@ -76,11 +76,14 @@ public sealed class LitterRenderer : Entity
 
 	/// <summary>The animation slot of a litter kind: the ordinary kinds 1-5 take slots 0-4, kind 6 and every unknown kind slot 5 (the "Dodgy litter type" script 0x0074F118), vomit (7) slot 6 and a stinkbomb (8) slot 7.</summary>
 	// [BIN:TPW-EXE:0x004D943E litter switch] the jump table 0x004D95D4 sends kinds 1-5 to the scripts 0x0074F050, 0x0074F078, 0x0074F0A0, 0x0074F0C8, 0x0074F0F0 (slots 0-4), kind 6 and the default (after the "Dodgy litter type" log) to 0x0074F118 (slot 5), kind 7 to 0x0074F140 (slot 6) and kind 8 to 0x0074F168 (slot 7); every script sets the slot, flags 0x80000, frame 0 and loops
-	public static int Slot( LitterType type ) => (byte)type switch
+	// [BIN:TPI-EXE:0x5D8D11 litter switch] Theme Park Inc's table 0x5D8EFC sends the types 1..0xC to the descriptors 0x9B09B8 + 0x24 × (type − 1), whose slot word is type − 1 (its SPR_LI has the
+	// slots 0..11: the burst balloons 9..0xC are the slots 8..11), and the default to 0x9B0A6C (slot 5)
+	public static int Slot( LitterType type, bool themeParkInc = false ) => (byte)type switch
 	{
 		>= 1 and <= ParkLitter.OrdinaryKinds => (byte)type - 1,
 		(byte)LitterType.Vomit => 6,
 		(byte)LitterType.Stinkbomb => 7,
+		>= (byte)LitterType.BurstBalloon1 and <= (byte)LitterType.BurstBalloon4 when themeParkInc => (byte)type - 1,
 		_ => 5
 	};
 
@@ -137,7 +140,7 @@ public sealed class LitterRenderer : Entity
 		{
 			if ( count + VerticesPerSprite > vertices.Length )
 				Array.Resize( ref vertices, Math.Max( 64 * VerticesPerSprite, vertices.Length * 2 ) );
-			var index = atlas.GetFrame( Slot( type ), 0, 0 );
+			var index = atlas.GetFrame( Slot( type, litter?.ThemeParkInc == true ), 0, 0 );
 			var frame = atlas.Frames[index];
 			var (topLeft, topRight, bottomRight, bottomLeft) = Corners( field, x, y, frame, litter?.ThemeParkInc == true );
 			var u0 = frame.X / (float)atlas.Width;

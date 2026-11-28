@@ -57,6 +57,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard, Rules.ThemeParkInc ? RegionEffect.ThemeParkIncCount : RegionEffect.Count );
 		Litter.World = () => World;
+		// the edition's litter types (ParkLitter.MaxType) hold from the start: a load restores the cells before the guests attach the litter (ParkEconomyRuntime.AttachLitter)
+		Litter.ThemeParkInc = Rules.ThemeParkInc;
 		// a park without staff has no pool: the world generator is not drawn from for candidates (the settings hold no staff keys then)
 		if ( Rules.Staff )
 			Staff.CreateInitialPool( World, 0 );
